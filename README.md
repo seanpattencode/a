@@ -11,11 +11,12 @@ No system of rules is perfectly true or self consistent, so minor violations mus
 To extensively use docker in slim mode.
 To have just one database to start with that handles everything related to persistence for user, while the programs otherwise are stateless. This may change later.
 A strong preference for python but not more than that.
+It should run in a single command.
 Don't add more rules than these.
 
 How to run:
 
-
+run orchestrator
 
 
 
