@@ -1,0 +1,606 @@
+2025-09-17 23:42:01,463 [INFO] Orchestrator started on device docker-main with tags {'storage', 'gpu', 'browser'}
+2025-09-17 23:42:01,463 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:01,464 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:01,466 [INFO] Starting job: morning_report
+2025-09-17 23:42:01,466 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:01,468 [INFO] Starting job: backup_data
+2025-09-17 23:42:01,469 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:01,471 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:01,474 [INFO] Running backup_data in process mode (Docker not available or test mode)
+2025-09-17 23:42:01,474 [INFO] Job backup_data completed with result: Backup done
+2025-09-17 23:42:01,517 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:01,519 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:01,521 [INFO] Job morning_report completed with result: Report complete
+2025-09-17 23:42:01,526 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:02,471 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:02,472 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:02,474 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:02,477 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:02,477 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:02,524 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:02,527 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:02,529 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:03,478 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:03,493 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:03,493 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:03,493 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:03,495 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:03,543 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:03,546 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:03,547 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:04,494 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:04,494 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:04,509 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:04,511 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:04,511 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:04,559 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:04,561 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:04,563 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:05,511 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:05,512 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:05,515 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:05,517 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:05,517 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:05,565 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:05,567 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:05,569 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:06,518 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:06,518 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:06,531 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:06,533 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:06,534 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:06,582 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:06,584 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:06,586 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:07,534 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:07,535 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:07,535 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:07,538 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:07,542 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:07,588 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:07,592 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:07,594 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:08,536 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:08,549 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:08,549 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:08,552 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:08,552 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:08,600 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:08,602 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:08,604 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:09,553 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:09,566 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:09,567 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:09,567 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:09,570 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:09,617 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:09,620 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:09,622 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:10,568 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:10,583 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:10,584 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:10,586 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:10,586 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:10,634 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:10,636 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:10,639 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:11,587 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:11,587 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:11,589 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:11,591 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:11,592 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:11,640 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:11,642 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:11,643 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:12,592 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:12,593 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:12,606 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:12,608 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:12,609 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:12,656 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:12,659 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:12,661 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:13,609 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:13,625 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:13,625 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:13,626 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:13,628 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:13,676 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:13,678 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:13,680 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:14,626 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:14,640 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:14,641 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:14,642 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:14,643 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:14,691 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:14,693 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:14,695 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:15,643 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:15,644 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:15,658 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:15,658 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:15,660 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:15,709 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:15,710 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:15,712 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:16,659 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:16,673 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:16,674 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:16,678 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:16,678 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:16,724 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:16,728 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:16,730 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:17,679 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:17,693 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:17,694 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:17,696 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:17,696 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:17,744 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:17,746 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:17,748 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:18,697 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:18,697 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:18,712 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:18,714 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:18,715 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:18,762 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:18,765 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:18,767 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:19,715 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:19,716 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:19,732 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:19,732 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:19,735 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:19,783 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:19,785 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:19,787 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:20,733 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:20,748 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:20,748 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:20,751 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:20,751 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:20,798 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:20,801 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:20,803 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:21,751 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:21,752 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:21,765 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:21,766 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:21,768 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:21,816 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:21,818 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:21,820 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:22,766 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:22,781 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:22,782 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:22,784 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:22,784 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:22,832 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:22,835 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:22,836 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:23,785 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:23,799 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:23,799 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:23,801 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:23,802 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:23,850 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:23,852 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:23,853 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:24,802 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:24,803 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:24,818 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:24,818 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:24,820 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:24,868 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:24,870 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:24,872 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:25,818 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:25,819 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:25,833 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:25,835 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:25,835 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:25,883 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:25,885 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:25,887 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:26,836 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:26,849 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:26,850 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:26,852 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:26,852 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:26,900 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:26,902 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:26,905 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:27,853 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:27,867 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:27,867 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:27,869 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:27,870 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:27,917 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:27,919 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:27,922 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:28,870 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:28,884 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:28,884 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:28,887 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:28,887 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:28,934 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:28,937 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:28,939 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:29,888 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:29,888 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:29,902 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:29,904 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:29,905 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:29,952 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:29,955 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:29,958 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:30,905 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:30,906 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:30,908 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:30,910 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:30,910 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:30,959 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:30,961 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:30,962 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:31,911 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:31,925 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:31,925 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:31,925 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:31,928 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:31,976 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:31,978 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:31,980 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:32,926 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:32,926 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:32,940 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:32,943 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:32,943 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:32,991 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:32,993 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:32,995 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:33,943 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:33,944 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:33,957 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:33,959 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:33,960 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:34,008 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:34,010 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:34,013 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:34,960 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:34,962 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:34,963 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:34,963 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:34,964 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:35,013 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:35,015 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:35,016 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:35,964 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:35,977 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:35,977 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:35,987 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:35,987 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:36,027 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:36,037 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:36,047 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:36,988 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:37,002 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:37,002 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:37,003 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:37,004 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:37,052 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:37,054 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:37,056 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:38,003 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:38,003 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:38,017 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:38,017 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:38,019 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:38,067 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:38,069 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:38,070 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:39,018 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:39,031 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:39,031 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:39,032 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:39,033 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:39,081 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:39,083 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:39,084 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:40,033 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:40,033 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:40,047 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:40,048 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:40,048 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:40,097 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:40,098 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:40,100 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:41,049 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:41,049 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:41,062 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:41,062 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:41,063 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:41,112 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:41,113 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:41,114 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:42,062 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:42,063 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:42,076 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:42,077 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:42,078 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:42,126 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:42,128 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:42,129 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:43,078 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:43,078 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:43,079 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:43,081 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:43,082 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:43,131 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:43,132 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:43,134 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:44,079 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:44,092 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:44,092 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:44,094 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:44,094 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:44,143 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:44,145 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:44,146 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:45,095 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:45,109 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:45,109 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:45,109 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:45,111 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:45,159 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:45,161 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:45,162 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:46,110 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:46,123 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:46,123 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:46,124 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:46,125 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:46,173 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:46,175 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:46,177 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:47,124 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:47,124 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:47,126 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:47,127 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:47,128 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:47,177 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:47,178 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:47,180 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:48,127 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:48,130 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:48,130 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:48,132 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:48,132 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:48,180 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:48,182 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:48,184 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:49,133 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:49,146 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:49,147 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:49,148 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:49,149 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:49,197 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:49,199 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:49,200 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:50,149 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:50,150 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:50,163 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:50,163 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:50,164 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:50,213 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:50,215 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:50,216 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:51,163 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:51,164 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:51,177 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:51,177 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:51,178 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:51,227 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:51,228 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:51,229 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:52,177 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:52,192 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:52,192 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:52,194 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:52,194 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:52,242 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:52,245 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:52,246 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:53,195 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:53,195 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:53,197 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:53,198 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:53,200 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:53,248 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:53,250 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:53,251 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:54,199 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:54,199 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:54,212 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:54,212 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:54,214 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:54,263 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:54,264 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:54,265 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:55,213 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:55,228 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:55,228 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:55,230 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:55,230 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:55,278 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:55,280 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:55,282 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:56,231 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:56,244 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:56,244 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:56,246 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:56,246 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:56,294 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:56,296 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:56,298 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:57,247 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:57,248 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:57,249 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:57,250 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:57,250 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:57,299 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:57,301 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:57,302 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:58,251 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:58,251 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:58,253 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:58,253 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:58,255 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:58,303 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:58,305 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:58,307 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:42:59,254 [INFO] Starting job: web_server_daemon
+2025-09-17 23:42:59,267 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:42:59,267 [INFO] Starting job: stock_monitor
+2025-09-17 23:42:59,269 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:42:59,269 [INFO] Starting job: idle_baseline
+2025-09-17 23:42:59,317 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:42:59,319 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:42:59,321 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:00,270 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:00,270 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:00,283 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:00,284 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:00,285 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:00,334 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:00,335 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:00,336 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:01,284 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:01,297 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:01,298 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:01,298 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:01,299 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:01,348 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:01,349 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:01,350 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:02,298 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:02,298 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:02,311 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:02,312 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:02,313 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:02,362 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:02,363 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:02,364 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:03,312 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:03,315 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:03,315 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:03,316 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:03,317 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:03,366 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:03,367 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:03,369 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:04,316 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:04,316 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:04,318 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:04,318 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:04,320 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:04,369 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:04,371 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:04,372 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:05,319 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:05,332 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:05,332 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:05,333 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:05,334 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:05,383 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:05,384 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:05,386 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:06,333 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:06,334 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:06,347 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:06,347 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:06,349 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:06,398 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:06,399 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:06,400 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:07,348 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:07,348 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:07,348 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:07,362 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:07,363 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:07,412 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:07,413 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:07,414 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:08,349 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:08,350 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:08,351 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:08,352 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:08,352 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:08,401 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:08,403 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:08,404 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:09,353 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:09,366 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:09,366 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:09,368 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:09,368 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:09,417 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:09,418 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:09,420 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:10,369 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:10,371 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:10,371 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:10,371 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:10,373 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:10,422 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:10,423 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:10,424 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:11,372 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:11,386 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:11,386 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:11,386 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:11,388 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:11,436 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:11,438 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:11,439 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:12,386 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:12,387 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:12,399 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:12,400 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:12,401 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:12,449 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:12,451 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:12,452 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:13,401 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:13,401 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:13,414 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:13,414 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:13,416 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:13,465 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:13,466 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:13,467 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:14,415 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:14,415 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:14,428 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:14,429 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:14,430 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:14,479 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:14,480 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:14,481 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:15,429 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:15,432 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:15,432 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:15,432 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:15,433 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:15,482 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:15,484 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:15,485 [INFO] Job idle_baseline completed with result: Idle work done
+2025-09-17 23:43:16,432 [INFO] Starting job: web_server_daemon
+2025-09-17 23:43:16,433 [INFO] Starting job: stock_monitor
+2025-09-17 23:43:16,446 [INFO] Starting job: idle_baseline
+2025-09-17 23:43:16,446 [INFO] Running web_server_daemon in process mode (Docker not available or test mode)
+2025-09-17 23:43:16,448 [INFO] Running stock_monitor in process mode (Docker not available or test mode)
+2025-09-17 23:43:16,496 [INFO] Job web_server_daemon completed with result: Server started
+2025-09-17 23:43:16,498 [INFO] Job stock_monitor completed with result: Monitoring stocks
+2025-09-17 23:43:16,499 [INFO] Job idle_baseline completed with result: Idle work done
