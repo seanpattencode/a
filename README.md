@@ -101,6 +101,32 @@ python manage_jobs.py trigger <job_name> [key=value...]
 ```
 **Note:** The trigger command is intended for debugging and monitoring purposes, not for normal operation. It allows you to manually queue a job for execution with custom parameters to test job functionality or diagnose issues.
 
+#### Modifying Jobs Directly in Database:
+Since jobs are stored in SQLite, you can modify them directly:
+
+```bash
+# View all scheduled jobs
+sqlite3 orchestrator.db "SELECT * FROM scheduled_jobs;"
+
+# Remove a job
+sqlite3 orchestrator.db "DELETE FROM scheduled_jobs WHERE name = 'job_name';"
+
+# Add a new job
+sqlite3 orchestrator.db "INSERT INTO scheduled_jobs (name, file, function, type, tags, retries, interval_minutes, enabled) VALUES ('job_name', 'script.py', 'function_name', 'interval', '[\"tag1\"]', 3, 60, 1);"
+
+# Modify job interval
+sqlite3 orchestrator.db "UPDATE scheduled_jobs SET interval_minutes = 120 WHERE name = 'job_name';"
+
+# Disable a job
+sqlite3 orchestrator.db "UPDATE scheduled_jobs SET enabled = 0 WHERE name = 'job_name';"
+```
+
+**Important:** Default jobs from `orchestrator.py` are only populated on first run. To reset to defaults, delete all jobs and restart:
+```bash
+sqlite3 orchestrator.db "DELETE FROM scheduled_jobs;"
+python orchestrator.py  # Will repopulate with defaults
+```
+
 ### Job Types
 Jobs are automatically populated from defaults on first run:
 - `always`: Continuously running daemons
