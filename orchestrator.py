@@ -24,6 +24,7 @@ SCHEMA = (
     "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp REAL NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, device TEXT NOT NULL);"
     "CREATE TABLE IF NOT EXISTS triggers (id INTEGER PRIMARY KEY AUTOINCREMENT, job_name TEXT NOT NULL, args TEXT NOT NULL, kwargs TEXT NOT NULL, created REAL NOT NULL, processed REAL);"
     "CREATE TABLE IF NOT EXISTS scheduled_jobs (name TEXT PRIMARY KEY, file TEXT NOT NULL, function TEXT NOT NULL, type TEXT NOT NULL, tags TEXT, retries INTEGER DEFAULT 3, time TEXT, after_time TEXT, before_time TEXT, interval_minutes INTEGER, priority INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1);"
+    "CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated REAL NOT NULL);"
 )
 
 DEFAULT_JOBS = [
@@ -79,6 +80,20 @@ def add_trigger(job_name, args=None, kwargs=None):
     db_execute(
         "INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
         (job_name, json.dumps(args or []), json.dumps(kwargs or {}), time.time())
+    )
+
+
+def get_config(key):
+    """Get a config value from the database"""
+    result = db_execute("SELECT value FROM config WHERE key = ?", (key,), fetch="one")
+    return result["value"] if result else None
+
+
+def set_config(key, value):
+    """Set a config value in the database"""
+    db_execute(
+        "INSERT OR REPLACE INTO config (key, value, updated) VALUES (?, ?, ?)",
+        (key, value, time.time())
     )
 
 

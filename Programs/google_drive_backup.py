@@ -4,23 +4,44 @@ import os
 import json
 import threading
 import time
+import sqlite3
 from pathlib import Path
 
 # Add the googleDriveSyncDemo folder to path
 sys.path.insert(0, str(Path(__file__).parent / 'googleDriveSyncDemo'))
 
-TOKEN_FILE = Path(__file__).parent / 'googleDriveSyncDemo' / 'token.json'
+# Database path
+DB_PATH = Path(__file__).parent.parent / 'orchestrator.db'
 WEB_SERVER_THREAD = None
 WEB_SERVER_STARTED = False
 
+def get_config(key):
+    """Get a config value from the database"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.execute("SELECT value FROM config WHERE key = ?", (key,))
+    result = cursor.fetchone()
+    conn.close()
+    return result["value"] if result else None
+
+def set_config(key, value):
+    """Set a config value in the database"""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT OR REPLACE INTO config (key, value, updated) VALUES (?, ?, ?)",
+        (key, value, time.time())
+    )
+    conn.commit()
+    conn.close()
+
 def check_auth():
-    """Check if we have valid authentication"""
-    if TOKEN_FILE.exists():
+    """Check if we have valid authentication in database"""
+    token_data = get_config('google_drive_token')
+    if token_data:
         try:
-            with open(TOKEN_FILE, 'r') as f:
-                token = json.load(f)
-                if 'token' in token or 'refresh_token' in token:
-                    return True
+            token = json.loads(token_data)
+            if 'token' in token or 'refresh_token' in token:
+                return True
         except:
             pass
     return False
@@ -59,11 +80,14 @@ def backup_to_drive(*args, **kwargs):
             from googleapiclient.discovery import build
             from googleapiclient.http import MediaFileUpload
 
-            # Load credentials from token.json
-            with open('token.json', 'r') as f:
-                token_data = json.load(f)
+            # Load credentials from database
+            token_data = get_config('google_drive_token')
+            if not token_data:
+                os.chdir(original_dir)
+                return "No token found in database"
 
-            creds = Credentials.from_authorized_user_info(token_data)
+            token_json = json.loads(token_data)
+            creds = Credentials.from_authorized_user_info(token_json)
             service = build('drive', 'v3', credentials=creds)
 
             # Ensure AIOS_Backups folder exists
@@ -124,7 +148,11 @@ def init_check():
         time.sleep(2)
         return False
     else:
-        print("Google Drive backup: Already authenticated")
+        print("\n" + "="*60)
+        print("GOOGLE DRIVE BACKUP - AUTHENTICATION SUCCESSFUL")
+        print("="*60)
+        print("Backup service is ready and will run every 2 hours")
+        print("="*60 + "\n")
         return True
 
 if __name__ == "__main__":
