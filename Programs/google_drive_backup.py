@@ -133,7 +133,9 @@ def check_auth():
                     set_config('google_drive_token', creds.to_json())
                 return True
         except Exception as e:
-            print(f"Auth check failed: {e}")
+            print(f"[AUTH ERROR] Token validation/refresh failed: {e}")
+            if 'invalid_scope' in str(e):
+                print(f"[AUTH ERROR] Scope mismatch - token has different scope than requested")
     return False
 
 def get_google_auth_flow():
@@ -205,8 +207,12 @@ def backup_to_drive(*args, **kwargs):
 
         # Refresh token if expired
         if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            set_config('google_drive_token', creds.to_json())
+            try:
+                creds.refresh(Request())
+                set_config('google_drive_token', creds.to_json())
+            except Exception as e:
+                print(f"[AUTH ERROR] Token refresh failed in backup: {e}")
+                return f"Authentication failed: {e}"
 
         service = build('drive', 'v3', credentials=creds)
 
@@ -249,7 +255,10 @@ def backup_to_drive(*args, **kwargs):
             return "Database file not found"
 
     except Exception as e:
-        print(f"Backup error: {e}")
+        if 'invalid_grant' in str(e) or 'invalid_scope' in str(e) or '401' in str(e):
+            print(f"[AUTH ERROR] Google Drive authentication failed: {e}")
+            return f"Authentication failed - reauthorization needed: {e}"
+        print(f"[BACKUP ERROR] Non-auth error: {e}")
         return f"Backup failed: {e}"
 
 def init_check():
