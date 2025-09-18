@@ -85,7 +85,6 @@ class JobState:
         self.conn = sqlite3.connect(STATE_DB, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         with self.conn:
-            self.conn.execute("PRAGMA journal_mode=WAL;")
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS jobs (
                     job_name TEXT PRIMARY KEY,
