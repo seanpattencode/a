@@ -455,7 +455,7 @@ def run_todo_server(*args, **kwargs):
 
     # Get IP to bind to - use all interfaces for cloud deployment
     host = '0.0.0.0'
-    port = 8080  # Standard port for web services
+    port = 5000  # Standard port for web services
 
     app = TodoApp()
 

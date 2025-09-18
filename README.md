@@ -31,6 +31,9 @@ docker-compose logs -f
 
 # Stop the service
 docker-compose down
+
+# Access the built-in todo app (if enabled)
+# Open http://localhost:5000 or http://<your-server-ip>:5000
 ```
 
 ### Alternative Docker Run Command
@@ -70,6 +73,7 @@ AIOS/
 │   ├── llm_tasks.py
 │   ├── reports.py
 │   ├── stock_monitor.py
+│   ├── todo_app.py          # Built-in todo app (runs on port 5000)
 │   └── web_server.py
 └── docker/                  # Docker configuration
     ├── Dockerfile
@@ -175,11 +179,20 @@ For enhanced Docker integration, use the wrapper script:
 ./docker/manage_jobs_docker.sh trigger google_drive_backup
 ```
 
+## Built-in Todo App
+
+The AIOS system includes a built-in todo app that runs as a daemon job (`web_server_daemon`). It provides a simple web interface for task management and is accessible on port 5000 by default.
+
+- **Access URL:** `http://localhost:5000` or `http://<your-server-ip>:5000`
+- **Job Name:** `web_server_daemon`
+- **Default Port:** 5000
+- **Program File:** `Programs/todo_app.py`
+
 ## Job Types
 
 The system supports various job scheduling patterns:
 
-- **`always`** - Continuously running daemons (e.g., web servers)
+- **`always`** - Continuously running daemons (e.g., web servers, todo app)
 - **`interval`** - Fixed interval execution (e.g., backups every 2 hours)
 - **`daily`** - Runs once at specified time
 - **`random_daily`** - Random execution within time window
@@ -338,6 +351,29 @@ python3 manage_jobs.py trigger <job_name>
 # Check device tags in container
 docker exec aios-orchestrator env | grep DEVICE_TAGS
 ```
+
+### Todo App Not Accessible
+```bash
+# Check if web_server_daemon is running
+python3 manage_jobs.py check web_server_daemon
+
+# Trigger the todo app to start
+python3 manage_jobs.py trigger web_server_daemon
+
+# Check logs for the todo app
+docker logs aios-orchestrator | grep -E "todo|5000"
+
+# Verify port mapping in docker-compose.yml
+# Should include: ports: - "5000:5000"
+```
+
+**Note for Oracle Cloud Users:**
+- The default configuration uses port 5000 for the todo app
+- Oracle Cloud instances may have firewall rules configured only for port 5000
+- To use a different port, you'll need to:
+  1. Update the port in `Programs/todo_app.py`
+  2. Update the port mapping in `docker/docker-compose.yml`
+  3. Configure the Oracle Cloud security list/iptables for the new port
 
 ### Database Issues
 ```bash

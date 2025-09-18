@@ -13,6 +13,8 @@ services:
       - DEVICE_ID=docker-main
       - DEVICE_TAGS=gpu,storage,browser
       - PYTHONUNBUFFERED=1
+    ports:
+      - "5000:5000"
     restart: unless-stopped
     networks:
       - aios-network
