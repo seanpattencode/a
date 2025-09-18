@@ -88,7 +88,7 @@ def trigger_job(job_name, *args, **kwargs):
     """Add a trigger for a job to be executed"""
     conn = sqlite3.connect(DB_PATH)
 
-    # Check if job exists and is a trigger type
+    # Check if job exists
     cursor = conn.execute("SELECT type FROM scheduled_jobs WHERE name = ?", (job_name,))
     job = cursor.fetchone()
     if not job:
@@ -96,17 +96,38 @@ def trigger_job(job_name, *args, **kwargs):
         conn.close()
         return
 
-    # Insert trigger
-    conn.execute(
-        "INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
-        (job_name, json.dumps(list(args)), json.dumps(kwargs), time.time())
-    )
-    conn.commit()
-    conn.close()
-    print(f"Trigger added for job '{job_name}'")
+    job_type = job[0]
+
+    # Handle different job types
+    if 'trigger' in job_type:
+        # Insert trigger for trigger-type jobs
+        conn.execute(
+            "INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
+            (job_name, json.dumps(list(args)), json.dumps(kwargs), time.time())
+        )
+        conn.commit()
+        print(f"Trigger added for job '{job_name}'")
+    elif 'interval' in job_type or 'daily' in job_type:
+        # For interval/daily jobs, reset their last run to force execution
+        conn.execute("DELETE FROM jobs WHERE job_name = ?", (job_name,))
+        conn.commit()
+        print(f"Force-triggered {job_type} job '{job_name}' by resetting its last run time")
+        print("Note: The job will run on the next scheduler check (usually within 60 seconds)")
+    else:
+        print(f"Warning: Job '{job_name}' is type '{job_type}' and may not support manual triggering")
+        # Try trigger anyway
+        conn.execute(
+            "INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
+            (job_name, json.dumps(list(args)), json.dumps(kwargs), time.time())
+        )
+        conn.commit()
+        print(f"Trigger added anyway - job may or may not execute")
+
     if args or kwargs:
         print(f"  Args: {args}")
         print(f"  Kwargs: {kwargs}")
+
+    conn.close()
 
 def main():
     if len(sys.argv) < 2:

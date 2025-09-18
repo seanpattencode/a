@@ -1,6 +1,8 @@
 services:
   orchestrator:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: aios-orchestrator
     volumes:
       # Mount Programs directory and database from parent
