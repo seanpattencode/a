@@ -55,8 +55,9 @@ docker compose down
 ### Project Structure
 ```
 AIOS/
-├── orchestrator.py      # Main orchestrator (329 lines)
+├── orchestrator.py      # Main orchestrator (with DB-based job management)
 ├── orchestrator.db      # SQLite database (single file, no WAL)
+├── manage_jobs.py       # Job management utility (NEW)
 ├── Programs/            # Job scripts directory
 ├── docker/              # Docker configuration
 │   ├── Dockerfile
@@ -73,9 +74,29 @@ All data is stored in a single `orchestrator.db` SQLite file:
 - **jobs**: Job status and last run times
 - **logs**: All log messages
 - **triggers**: Job trigger queue
+- **scheduled_jobs**: Job configurations and schedules (NEW)
+
+### Job Management
+Jobs are now stored in the database and can be managed at runtime:
+
+#### View all jobs:
+```bash
+python manage_jobs.py list
+```
+
+#### Enable/disable jobs:
+```bash
+python manage_jobs.py enable <job_name>
+python manage_jobs.py disable <job_name>
+```
+
+#### Remove a job:
+```bash
+python manage_jobs.py remove <job_name>
+```
 
 ### Job Types
-Edit the `SCHEDULED_JOBS` list in orchestrator.py to add jobs:
+Jobs are automatically populated from defaults on first run:
 - `always`: Continuously running daemons
 - `daily`: Runs once at specified time
 - `interval`: Fixed interval execution

@@ -19,66 +19,6 @@ DEVICE_TAGS = set(os.environ.get("DEVICE_TAGS", "").split(",")) if os.environ.ge
 
 PROGRAMS_DIR.mkdir(parents=True, exist_ok=True)
 
-SCHEDULED_JOBS = [
-    {
-        "name": "web_server_daemon",
-        "file": "web_server.py",
-        "function": "run_server",
-        "type": "always",
-        "tags": ["browser"],
-        "retries": 999
-    },
-    {
-        "name": "stock_monitor",
-        "file": "stock_monitor.py",
-        "function": "monitor_stocks",
-        "type": "always",
-        "tags": ["gpu"],
-        "retries": 999
-    },
-    {
-        "name": "morning_report",
-        "file": "reports.py",
-        "function": "generate_morning_report",
-        "type": "daily",
-        "time": "09:00",
-        "tags": []
-    },
-    {
-        "name": "random_check",
-        "file": "health_check.py",
-        "function": "random_health_check",
-        "type": "random_daily",
-        "after_time": "14:00",
-        "before_time": "18:00",
-        "tags": []
-    },
-    {
-        "name": "backup_data",
-        "file": "backup.py",
-        "function": "backup_all",
-        "type": "interval",
-        "interval_minutes": 60,
-        "tags": ["storage"],
-        "retries": 3
-    },
-    {
-        "name": "llm_processor",
-        "file": "llm_tasks.py",
-        "function": "process_llm_queue",
-        "type": "trigger",
-        "tags": ["gpu"]
-    },
-    {
-        "name": "idle_baseline",
-        "file": "idle_task.py",
-        "function": "run_idle",
-        "type": "idle",
-        "tags": [],
-        "priority": -1
-    }
-]
-
 class JobState:
     def __init__(self):
         self.lock = threading.Lock()
@@ -110,6 +50,22 @@ class JobState:
                     kwargs TEXT NOT NULL,
                     created REAL NOT NULL,
                     processed REAL
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS scheduled_jobs (
+                    name TEXT PRIMARY KEY,
+                    file TEXT NOT NULL,
+                    function TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    tags TEXT,
+                    retries INTEGER DEFAULT 3,
+                    time TEXT,
+                    after_time TEXT,
+                    before_time TEXT,
+                    interval_minutes INTEGER,
+                    priority INTEGER DEFAULT 0,
+                    enabled INTEGER DEFAULT 1
                 )
             """)
 
@@ -163,7 +119,107 @@ class JobState:
                     (time.time(), trigger_id)
                 )
 
+    def get_scheduled_jobs(self):
+        with self.lock:
+            cursor = self.conn.execute("SELECT * FROM scheduled_jobs WHERE enabled = 1")
+            jobs = []
+            for row in cursor.fetchall():
+                job = dict(row)
+                if job["tags"]:
+                    job["tags"] = json.loads(job["tags"])
+                else:
+                    job["tags"] = []
+                jobs.append(job)
+            return jobs
+
+    def populate_default_jobs(self):
+        default_jobs = [
+            {
+                "name": "web_server_daemon",
+                "file": "web_server.py",
+                "function": "run_server",
+                "type": "always",
+                "tags": ["browser"],
+                "retries": 999
+            },
+            {
+                "name": "stock_monitor",
+                "file": "stock_monitor.py",
+                "function": "monitor_stocks",
+                "type": "always",
+                "tags": ["gpu"],
+                "retries": 999
+            },
+            {
+                "name": "morning_report",
+                "file": "reports.py",
+                "function": "generate_morning_report",
+                "type": "daily",
+                "time": "09:00",
+                "tags": []
+            },
+            {
+                "name": "random_check",
+                "file": "health_check.py",
+                "function": "random_health_check",
+                "type": "random_daily",
+                "after_time": "14:00",
+                "before_time": "18:00",
+                "tags": []
+            },
+            {
+                "name": "backup_data",
+                "file": "backup.py",
+                "function": "backup_all",
+                "type": "interval",
+                "interval_minutes": 60,
+                "tags": ["storage"],
+                "retries": 3
+            },
+            {
+                "name": "llm_processor",
+                "file": "llm_tasks.py",
+                "function": "process_llm_queue",
+                "type": "trigger",
+                "tags": ["gpu"]
+            },
+            {
+                "name": "idle_baseline",
+                "file": "idle_task.py",
+                "function": "run_idle",
+                "type": "idle",
+                "tags": [],
+                "priority": -1
+            }
+        ]
+
+        with self.lock:
+            cursor = self.conn.execute("SELECT COUNT(*) as count FROM scheduled_jobs")
+            if cursor.fetchone()["count"] == 0:
+                with self.conn:
+                    for job in default_jobs:
+                        self.conn.execute("""
+                            INSERT OR IGNORE INTO scheduled_jobs
+                            (name, file, function, type, tags, retries, time, after_time, before_time, interval_minutes, priority, enabled)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            job["name"],
+                            job["file"],
+                            job["function"],
+                            job["type"],
+                            json.dumps(job.get("tags", [])),
+                            job.get("retries", 3),
+                            job.get("time"),
+                            job.get("after_time"),
+                            job.get("before_time"),
+                            job.get("interval_minutes"),
+                            job.get("priority", 0),
+                            1
+                        ))
+                self.log("INFO", "Populated default scheduled jobs")
+
 state = JobState()
+state.populate_default_jobs()
 
 def should_run_daily_job(job, last_run):
     target_hour, target_minute = map(int, job["time"].split(":"))
@@ -263,12 +319,13 @@ class JobScheduler:
         thread.start()
 
     def check_scheduled_jobs(self):
+        scheduled_jobs = state.get_scheduled_jobs()
         non_idle_running = any(
             job["name"] in self.running_jobs and self.running_jobs[job["name"]].is_alive()
-            for job in SCHEDULED_JOBS if job["type"] != "idle"
+            for job in scheduled_jobs if job["type"] != "idle"
         )
 
-        for job in SCHEDULED_JOBS:
+        for job in scheduled_jobs:
             required_tags = set(job.get("tags", []))
             if required_tags and not required_tags.issubset(DEVICE_TAGS):
                 continue
@@ -293,8 +350,9 @@ class JobScheduler:
 
     def check_triggers(self):
         triggers = state.get_pending_triggers()
+        scheduled_jobs = state.get_scheduled_jobs()
         for trigger in triggers:
-            job = next((j for j in SCHEDULED_JOBS if j["name"] == trigger["job_name"]), None)
+            job = next((j for j in scheduled_jobs if j["name"] == trigger["job_name"]), None)
             if job:
                 args = json.loads(trigger["args"])
                 kwargs = json.loads(trigger["kwargs"])
