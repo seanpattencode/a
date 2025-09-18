@@ -3,385 +3,250 @@ import datetime
 import importlib.util
 import json
 import os
+import random
 import sqlite3
-import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).parent.absolute()
+ROOT_DIR = Path(__file__).parent.resolve()
 PROGRAMS_DIR = ROOT_DIR / "Programs"
 STATE_DB = ROOT_DIR / "orchestrator.db"
 
 DEVICE_ID = os.environ.get("DEVICE_ID", str(os.getpid()))
-DEVICE_TAGS = set(os.environ.get("DEVICE_TAGS", "").split(",")) if os.environ.get("DEVICE_TAGS") else set()
+DEVICE_TAGS = {tag for tag in os.environ.get("DEVICE_TAGS", "").split(",") if tag}
 
 PROGRAMS_DIR.mkdir(parents=True, exist_ok=True)
 
-class JobState:
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.conn = sqlite3.connect(STATE_DB, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        with self.conn:
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS jobs (
-                    job_name TEXT PRIMARY KEY,
-                    status TEXT NOT NULL,
-                    device TEXT NOT NULL,
-                    last_update REAL NOT NULL
-                )
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp REAL NOT NULL,
-                    level TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    device TEXT NOT NULL
-                )
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS triggers (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_name TEXT NOT NULL,
-                    args TEXT NOT NULL,
-                    kwargs TEXT NOT NULL,
-                    created REAL NOT NULL,
-                    processed REAL
-                )
-            """)
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS scheduled_jobs (
-                    name TEXT PRIMARY KEY,
-                    file TEXT NOT NULL,
-                    function TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    tags TEXT,
-                    retries INTEGER DEFAULT 3,
-                    time TEXT,
-                    after_time TEXT,
-                    before_time TEXT,
-                    interval_minutes INTEGER,
-                    priority INTEGER DEFAULT 0,
-                    enabled INTEGER DEFAULT 1
-                )
-            """)
+SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS jobs (job_name TEXT PRIMARY KEY, status TEXT NOT NULL, device TEXT NOT NULL, last_update REAL NOT NULL);"
+    "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp REAL NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL, device TEXT NOT NULL);"
+    "CREATE TABLE IF NOT EXISTS triggers (id INTEGER PRIMARY KEY AUTOINCREMENT, job_name TEXT NOT NULL, args TEXT NOT NULL, kwargs TEXT NOT NULL, created REAL NOT NULL, processed REAL);"
+    "CREATE TABLE IF NOT EXISTS scheduled_jobs (name TEXT PRIMARY KEY, file TEXT NOT NULL, function TEXT NOT NULL, type TEXT NOT NULL, tags TEXT, retries INTEGER DEFAULT 3, time TEXT, after_time TEXT, before_time TEXT, interval_minutes INTEGER, priority INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1);"
+)
 
-    def log(self, level, message):
-        with self.lock:
-            with self.conn:
-                self.conn.execute(
-                    "INSERT INTO logs (timestamp, level, message, device) VALUES (?, ?, ?, ?)",
-                    (time.time(), level, message, DEVICE_ID)
-                )
-        print(f"{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} [{level}] {message}")
+DEFAULT_JOBS = [
+    dict(name="web_server_daemon", file="web_server.py", function="run_server", type="always", tags=["browser"], retries=999),
+    dict(name="stock_monitor", file="stock_monitor.py", function="monitor_stocks", type="always", tags=["gpu"], retries=999),
+    dict(name="morning_report", file="reports.py", function="generate_morning_report", type="daily", time="09:00"),
+    dict(name="random_check", file="health_check.py", function="random_health_check", type="random_daily", after_time="14:00", before_time="18:00"),
+    dict(name="backup_data", file="backup.py", function="backup_all", type="interval", interval_minutes=60, tags=["storage"], retries=3),
+    dict(name="llm_processor", file="llm_tasks.py", function="process_llm_queue", type="trigger", tags=["gpu"]),
+    dict(name="idle_baseline", file="idle_task.py", function="run_idle", type="idle", priority=-1),
+]
 
-    def update_job(self, job_name, status):
-        with self.lock:
-            with self.conn:
-                self.conn.execute("""
-                    INSERT INTO jobs (job_name, status, device, last_update)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(job_name) DO UPDATE SET
-                        status=excluded.status,
-                        device=excluded.device,
-                        last_update=excluded.last_update
-                """, (job_name, status, DEVICE_ID, time.time()))
+LOCK = threading.Lock()
+CONN = sqlite3.connect(STATE_DB, check_same_thread=False)
+CONN.row_factory = sqlite3.Row
+EXECUTOR = ThreadPoolExecutor(max_workers=10)
+STOP_EVENT = threading.Event()
 
-    def get_last_run(self, job_name):
-        with self.lock:
-            cursor = self.conn.execute("SELECT last_update FROM jobs WHERE job_name = ?", (job_name,))
-            row = cursor.fetchone()
-            return row["last_update"] if row else None
 
-    def add_trigger(self, job_name, args=None, kwargs=None):
-        with self.lock:
-            with self.conn:
-                self.conn.execute(
-                    "INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
-                    (job_name, json.dumps(args or []), json.dumps(kwargs or {}), time.time())
-                )
-
-    def get_pending_triggers(self):
-        with self.lock:
-            cursor = self.conn.execute(
-                "SELECT id, job_name, args, kwargs FROM triggers WHERE processed IS NULL"
-            )
+def db_execute(sql, params=(), fetch=None):
+    with LOCK:
+        cursor = CONN.execute(sql, params)
+        CONN.commit()
+        if fetch == "one":
+            return cursor.fetchone()
+        if fetch == "all":
             return cursor.fetchall()
+        return None
 
-    def mark_trigger_processed(self, trigger_id):
-        with self.lock:
-            with self.conn:
-                self.conn.execute(
-                    "UPDATE triggers SET processed = ? WHERE id = ?",
-                    (time.time(), trigger_id)
-                )
 
-    def get_scheduled_jobs(self):
-        with self.lock:
-            cursor = self.conn.execute("SELECT * FROM scheduled_jobs WHERE enabled = 1")
-            jobs = []
-            for row in cursor.fetchall():
-                job = dict(row)
-                if job["tags"]:
-                    job["tags"] = json.loads(job["tags"])
-                else:
-                    job["tags"] = []
-                jobs.append(job)
-            return jobs
+def log(level, message):
+    timestamp = time.time()
+    db_execute(
+        "INSERT INTO logs (timestamp, level, message, device) VALUES (?, ?, ?, ?)",
+        (timestamp, level, message, DEVICE_ID)
+    )
+    now = datetime.datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+    print(f"{now} [{level}] {message}")
 
-    def populate_default_jobs(self):
-        default_jobs = [
-            {
-                "name": "web_server_daemon",
-                "file": "web_server.py",
-                "function": "run_server",
-                "type": "always",
-                "tags": ["browser"],
-                "retries": 999
-            },
-            {
-                "name": "stock_monitor",
-                "file": "stock_monitor.py",
-                "function": "monitor_stocks",
-                "type": "always",
-                "tags": ["gpu"],
-                "retries": 999
-            },
-            {
-                "name": "morning_report",
-                "file": "reports.py",
-                "function": "generate_morning_report",
-                "type": "daily",
-                "time": "09:00",
-                "tags": []
-            },
-            {
-                "name": "random_check",
-                "file": "health_check.py",
-                "function": "random_health_check",
-                "type": "random_daily",
-                "after_time": "14:00",
-                "before_time": "18:00",
-                "tags": []
-            },
-            {
-                "name": "backup_data",
-                "file": "backup.py",
-                "function": "backup_all",
-                "type": "interval",
-                "interval_minutes": 60,
-                "tags": ["storage"],
-                "retries": 3
-            },
-            {
-                "name": "llm_processor",
-                "file": "llm_tasks.py",
-                "function": "process_llm_queue",
-                "type": "trigger",
-                "tags": ["gpu"]
-            },
-            {
-                "name": "idle_baseline",
-                "file": "idle_task.py",
-                "function": "run_idle",
-                "type": "idle",
-                "tags": [],
-                "priority": -1
-            }
-        ]
 
-        with self.lock:
-            cursor = self.conn.execute("SELECT COUNT(*) as count FROM scheduled_jobs")
-            if cursor.fetchone()["count"] == 0:
-                with self.conn:
-                    for job in default_jobs:
-                        self.conn.execute("""
-                            INSERT OR IGNORE INTO scheduled_jobs
-                            (name, file, function, type, tags, retries, time, after_time, before_time, interval_minutes, priority, enabled)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            job["name"],
-                            job["file"],
-                            job["function"],
-                            job["type"],
-                            json.dumps(job.get("tags", [])),
-                            job.get("retries", 3),
-                            job.get("time"),
-                            job.get("after_time"),
-                            job.get("before_time"),
-                            job.get("interval_minutes"),
-                            job.get("priority", 0),
-                            1
-                        ))
-                self.log("INFO", "Populated default scheduled jobs")
+def update_job(job_name, status):
+    db_execute(
+        (
+            "INSERT INTO jobs (job_name, status, device, last_update) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(job_name) DO UPDATE SET status=excluded.status, device=excluded.device, last_update=excluded.last_update"
+        ),
+        (job_name, status, DEVICE_ID, time.time())
+    )
 
-state = JobState()
-state.populate_default_jobs()
 
-def should_run_daily_job(job, last_run):
-    target_hour, target_minute = map(int, job["time"].split(":"))
-    now = datetime.datetime.now()
-    current_minutes = now.hour * 60 + now.minute
-    target_minutes = target_hour * 60 + target_minute
+def add_trigger(job_name, args=None, kwargs=None):
+    db_execute(
+        "INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
+        (job_name, json.dumps(args or []), json.dumps(kwargs or {}), time.time())
+    )
 
-    if current_minutes < target_minutes:
+
+def init_db():
+    with CONN:
+        CONN.executescript(SCHEMA)
+    if db_execute("SELECT 1 FROM scheduled_jobs LIMIT 1", fetch="one"):
+        return
+    for job in DEFAULT_JOBS:
+        db_execute(
+            (
+                "INSERT OR IGNORE INTO scheduled_jobs "
+                "(name, file, function, type, tags, retries, time, after_time, before_time, interval_minutes, priority, enabled) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)"
+            ),
+            (
+                job["name"],
+                job["file"],
+                job["function"],
+                job["type"],
+                json.dumps(job.get("tags", [])),
+                job.get("retries", 3),
+                job.get("time"),
+                job.get("after_time"),
+                job.get("before_time"),
+                job.get("interval_minutes"),
+                job.get("priority", 0),
+            )
+        )
+    log("INFO", "Populated default scheduled jobs")
+
+
+def _minutes(value):
+    hours, minutes = map(int, value.split(":"))
+    return hours * 60 + minutes
+
+
+def job_due(job, now_minutes, now_ts, today, non_idle_running):
+    job_type = job["type"]
+    if job_type == "trigger" or (job["tags"] and not job["tag_set"].issubset(DEVICE_TAGS)):
         return False
-
-    if last_run and datetime.datetime.fromtimestamp(last_run).date() == datetime.date.today():
+    status = job.get("status", "")
+    if status == "running":
         return False
-
-    return True
-
-def should_run_random_daily_job(job, last_run):
-    if last_run and datetime.datetime.fromtimestamp(last_run).date() == datetime.date.today():
-        return False
-
-    after_hour, after_minute = map(int, job.get("after_time", "00:00").split(":"))
-    before_hour, before_minute = map(int, job.get("before_time", "23:59").split(":"))
-    now = datetime.datetime.now()
-    current_minutes = now.hour * 60 + now.minute
-
-    if current_minutes < after_hour * 60 + after_minute or current_minutes > before_hour * 60 + before_minute:
-        return False
-
-    return __import__('random').random() < 0.01
-
-def should_run_interval_job(job, last_run):
-    if not last_run:
+    if job_type == "always":
         return True
-    return (time.time() - last_run) / 60 >= job["interval_minutes"]
+    if job_type == "idle":
+        return not non_idle_running
+
+    last_run = job.get("last_update")
+    ran_today = bool(last_run) and datetime.datetime.fromtimestamp(last_run).date() == today
+    if job_type == "daily":
+        target = job.get("time")
+        return bool(target) and now_minutes >= _minutes(target) and not ran_today
+    if job_type == "random_daily":
+        if ran_today:
+            return False
+        start = _minutes(job.get("after_time", "00:00"))
+        end = _minutes(job.get("before_time", "23:59"))
+        return start <= now_minutes <= end and random.random() < 0.01
+    if job_type == "interval":
+        interval = job.get("interval_minutes")
+        return bool(interval) and (not last_run or (now_ts - last_run) / 60 >= interval)
+    return False
+
 
 def load_and_call_function(file_path, function_name, *args, **kwargs):
     script_path = PROGRAMS_DIR / file_path
     if not script_path.exists():
-        script_path.write_text(f'''
-def {function_name}(*args, **kwargs):
-    print(f"{function_name} called")
-    return "{function_name} completed"
-''')
+        script_path.write_text(
+            f"\ndef {function_name}(*args, **kwargs):\n    print(\"{function_name} called\")\n    return \"{function_name} completed\"\n"
+        )
 
     spec = importlib.util.spec_from_file_location("module", script_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    func = getattr(module, function_name, None)
+    return func(*args, **kwargs) if func else None
 
-    if hasattr(module, function_name):
-        return getattr(module, function_name)(*args, **kwargs)
-    return None
 
-def run_job(job, *args, **kwargs):
-    start_time = time.time()
-    try:
-        result = load_and_call_function(job["file"], job["function"], *args, **kwargs)
-        state.log("INFO", f"Job {job['name']} completed with result: {result}")
-        return True, (time.time() - start_time) * 1000
-    except Exception as e:
-        state.log("ERROR", f"Job {job['name']} failed: {e}")
-        return False, (time.time() - start_time) * 1000
-
-def run_job_with_retry(job, *args, **kwargs):
-    max_retries = job.get("retries", 3)
-    for attempt in range(max_retries):
-        state.update_job(job["name"], "running")
-        success, duration_ms = run_job(job, *args, **kwargs)
-
-        if success:
-            state.update_job(job["name"], "completed")
-            return True
-
-        if attempt < max_retries - 1:
-            time.sleep(2 ** attempt)
-
-    state.update_job(job["name"], "failed")
-    return False
-
-class JobScheduler:
-    def __init__(self):
-        self.running_jobs = {}
-        self.executor = ThreadPoolExecutor(max_workers=10)
-        self.stop_event = threading.Event()
-
-    def start_job(self, job, *args, **kwargs):
-        if job["name"] in self.running_jobs and self.running_jobs[job["name"]].is_alive():
+def execute_job(job, args, kwargs):
+    name = job["name"]
+    retries = job.get("retries", 3)
+    log("INFO", f"Starting job: {name}")
+    for attempt in range(retries):
+        update_job(name, "running")
+        try:
+            result = load_and_call_function(job["file"], job["function"], *args, **kwargs)
+        except Exception as exc:
+            log("ERROR", f"Job {name} failed: {exc}")
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
+        else:
+            log("INFO", f"Job {name} completed with result: {result}")
+            update_job(name, "completed")
             return
+    update_job(name, "failed")
 
-        def job_wrapper():
-            try:
-                state.log("INFO", f"Starting job: {job['name']}")
-                run_job_with_retry(job, *args, **kwargs)
-            finally:
-                self.running_jobs.pop(job["name"], None)
 
-        thread = threading.Thread(target=job_wrapper, daemon=True)
-        self.running_jobs[job["name"]] = thread
-        thread.start()
+def start_job(job, *args, **kwargs):
+    update_job(job["name"], "running")
+    EXECUTOR.submit(execute_job, job, args, kwargs)
 
-    def check_scheduled_jobs(self):
-        scheduled_jobs = state.get_scheduled_jobs()
-        non_idle_running = any(
-            job["name"] in self.running_jobs and self.running_jobs[job["name"]].is_alive()
-            for job in scheduled_jobs if job["type"] != "idle"
-        )
 
-        for job in scheduled_jobs:
-            required_tags = set(job.get("tags", []))
-            if required_tags and not required_tags.issubset(DEVICE_TAGS):
-                continue
+def run():
+    log("INFO", f"Orchestrator started on device {DEVICE_ID} with tags {sorted(DEVICE_TAGS)}")
+    while not STOP_EVENT.is_set():
+        try:
+            rows = db_execute(
+                "SELECT s.*, j.status, j.last_update FROM scheduled_jobs s "
+                "LEFT JOIN jobs j ON s.name = j.job_name WHERE s.enabled = 1",
+                fetch="all"
+            ) or []
+            jobs = [
+                {
+                    **dict(row),
+                    "tags": tags,
+                    "tag_set": set(tags),
+                    "status": row["status"] or "",
+                    "last_update": row["last_update"],
+                }
+                for row in rows
+                for tags in [json.loads(row["tags"]) if row["tags"] else []]
+            ]
+            non_idle_running = any(
+                job["status"] == "running" and job["type"] != "idle" for job in jobs
+            )
+            now = datetime.datetime.now()
+            now_minutes = now.hour * 60 + now.minute
+            today = now.date()
+            now_ts = time.time()
 
-            job_name = job["name"]
-            last_run = state.get_last_run(job_name)
-            should_run = False
+            for job in jobs:
+                if job_due(job, now_minutes, now_ts, today, non_idle_running):
+                    start_job(job)
 
-            if job["type"] == "always" and job_name not in self.running_jobs:
-                should_run = True
-            elif job["type"] == "daily":
-                should_run = should_run_daily_job(job, last_run)
-            elif job["type"] == "random_daily":
-                should_run = should_run_random_daily_job(job, last_run)
-            elif job["type"] == "interval":
-                should_run = should_run_interval_job(job, last_run)
-            elif job["type"] == "idle" and not non_idle_running and job_name not in self.running_jobs:
-                should_run = True
-
-            if should_run:
-                self.start_job(job)
-
-    def check_triggers(self):
-        triggers = state.get_pending_triggers()
-        scheduled_jobs = state.get_scheduled_jobs()
-        for trigger in triggers:
-            job = next((j for j in scheduled_jobs if j["name"] == trigger["job_name"]), None)
-            if job:
+            jobs_by_name = {job["name"]: job for job in jobs}
+            triggers = db_execute(
+                "SELECT id, job_name, args, kwargs FROM triggers WHERE processed IS NULL",
+                fetch="all"
+            ) or []
+            for trigger in triggers:
+                job = jobs_by_name.get(trigger["job_name"])
+                if not job or (job["tags"] and not job["tag_set"].issubset(DEVICE_TAGS)):
+                    db_execute("UPDATE triggers SET processed = ? WHERE id = ?", (time.time(), trigger["id"]))
+                    continue
                 args = json.loads(trigger["args"])
                 kwargs = json.loads(trigger["kwargs"])
-                self.start_job(job, *args, **kwargs)
-                state.mark_trigger_processed(trigger["id"])
+                start_job(job, *args, **kwargs)
+                db_execute("UPDATE triggers SET processed = ? WHERE id = ?", (time.time(), trigger["id"]))
+        except Exception as exc:
+            log("ERROR", f"Scheduler error: {exc}")
+        time.sleep(1)
 
-    def run(self):
-        state.log("INFO", f"Orchestrator started on device {DEVICE_ID} with tags {DEVICE_TAGS}")
 
-        while not self.stop_event.is_set():
-            try:
-                self.check_scheduled_jobs()
-                self.check_triggers()
-            except Exception as e:
-                state.log("ERROR", f"Scheduler error: {e}")
+def stop():
+    STOP_EVENT.set()
+    EXECUTOR.shutdown(wait=True)
 
-            time.sleep(1)
-
-    def stop(self):
-        self.stop_event.set()
-        self.executor.shutdown(wait=True)
 
 def main():
-    scheduler = JobScheduler()
     try:
-        scheduler.run()
+        run()
     except KeyboardInterrupt:
-        state.log("INFO", "Shutting down orchestrator")
-        scheduler.stop()
+        log("INFO", "Shutting down orchestrator")
+        stop()
+
+
+init_db()
 
 if __name__ == "__main__":
     main()
