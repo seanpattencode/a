@@ -5,6 +5,7 @@ Utility script to manage scheduled jobs in the AIOS orchestrator database.
 import sqlite3
 import json
 import sys
+import time
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "orchestrator.db"
@@ -83,6 +84,30 @@ def remove_job(job_name):
     conn.close()
     print(f"Job '{job_name}' removed")
 
+def trigger_job(job_name, *args, **kwargs):
+    """Add a trigger for a job to be executed"""
+    conn = sqlite3.connect(DB_PATH)
+
+    # Check if job exists and is a trigger type
+    cursor = conn.execute("SELECT type FROM scheduled_jobs WHERE name = ?", (job_name,))
+    job = cursor.fetchone()
+    if not job:
+        print(f"Error: Job '{job_name}' not found")
+        conn.close()
+        return
+
+    # Insert trigger
+    conn.execute(
+        "INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
+        (job_name, json.dumps(list(args)), json.dumps(kwargs), time.time())
+    )
+    conn.commit()
+    conn.close()
+    print(f"Trigger added for job '{job_name}'")
+    if args or kwargs:
+        print(f"  Args: {args}")
+        print(f"  Kwargs: {kwargs}")
+
 def main():
     if len(sys.argv) < 2:
         print("Usage:")
@@ -90,6 +115,7 @@ def main():
         print("  python manage_jobs.py enable <job_name>   - Enable a job")
         print("  python manage_jobs.py disable <job_name>  - Disable a job")
         print("  python manage_jobs.py remove <job_name>   - Remove a job")
+        print("  python manage_jobs.py trigger <job_name> [key=value...] - Trigger a job")
         print("  python manage_jobs.py add <name> <file> <function> <type> [options]")
         return
 
@@ -103,6 +129,15 @@ def main():
         disable_job(sys.argv[2])
     elif command == "remove" and len(sys.argv) >= 3:
         remove_job(sys.argv[2])
+    elif command == "trigger" and len(sys.argv) >= 3:
+        job_name = sys.argv[2]
+        # Parse key=value arguments
+        kwargs = {}
+        for arg in sys.argv[3:]:
+            if '=' in arg:
+                key, value = arg.split('=', 1)
+                kwargs[key] = value
+        trigger_job(job_name, **kwargs)
     elif command == "add" and len(sys.argv) >= 5:
         # Basic add functionality
         add_job(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])

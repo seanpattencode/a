@@ -95,6 +95,12 @@ python manage_jobs.py disable <job_name>
 python manage_jobs.py remove <job_name>
 ```
 
+#### Trigger a job (for debugging/monitoring):
+```bash
+python manage_jobs.py trigger <job_name> [key=value...]
+```
+**Note:** The trigger command is intended for debugging and monitoring purposes, not for normal operation. It allows you to manually queue a job for execution with custom parameters to test job functionality or diagnose issues.
+
 ### Job Types
 Jobs are automatically populated from defaults on first run:
 - `always`: Continuously running daemons
@@ -104,13 +110,21 @@ Jobs are automatically populated from defaults on first run:
 - `trigger`: Database-triggered execution
 - `idle`: Runs when system is idle
 
-### Adding a Trigger
+### Adding a Trigger Programmatically
 ```python
-# Insert trigger into database
+# Insert trigger into database from your programs
 import sqlite3
+import json
+import time
+
 conn = sqlite3.connect('orchestrator.db')
 conn.execute("INSERT INTO triggers (job_name, args, kwargs, created) VALUES (?, ?, ?, ?)",
              ('llm_processor', '[]', '{"prompt": "test"}', time.time()))
 conn.commit()
+```
+
+For debugging and testing, use the manage_jobs.py command:
+```bash
+python manage_jobs.py trigger llm_processor prompt="test" model=gpt-4
 ```
 
