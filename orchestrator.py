@@ -249,5 +249,12 @@ def main():
 
 init_db()
 
+# Check Google Drive authentication at startup
+try:
+    from Programs.google_drive_backup import init_check
+    init_check()
+except:
+    pass
+
 if __name__ == "__main__":
     main()
