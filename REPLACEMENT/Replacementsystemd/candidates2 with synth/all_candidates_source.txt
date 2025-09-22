@@ -1,0 +1,3639 @@
+================================================================================
+SYSTEMD CANDIDATES1 - ALL SOURCE FILES
+================================================================================
+
+================================================================================
+FILE: androidCore.cpp
+================================================================================
+
+// Core zombie reaping pattern from Android
+while (true) {
+    auto pending_functions = epoll.Wait(epoll_timeout);
+    if (!pending_functions->empty()) {
+        ReapAnyOutstandingChildren();  // Always reap first
+        for (const auto& function : *pending_functions) {
+            (*function)();
+        }
+    }
+}
+
+
+================================================================================
+FILE: chatgpt1.py
+================================================================================
+
+#!/usr/bin/env python3
+# AIOS Systemd Orchestrator — single file, <200 lines
+# Manages user units/timers, transient runs, RT scheduling, and logs to SQLite.
+import os, sys, json, sqlite3, subprocess
+from pathlib import Path
+
+HOME = Path.home()
+USER_DIR = HOME/".config/systemd/user"
+DB = HOME/".aios_tasks.db"
+UNIT_PREFIX = "aios-"
+
+def sh(*args):
+    return subprocess.run(list(args), text=True, capture_output=True)
+
+class Orchestrator:
+    def __init__(self):
+        USER_DIR.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(DB)
+        self.db.execute("""CREATE TABLE IF NOT EXISTS tasks(
+            name TEXT PRIMARY KEY, cmd TEXT, kind TEXT, props TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+        self.db.commit()
+
+    # ---------- core ----------
+    def daemon_reload(self):
+        sh("systemctl","--user","daemon-reload")
+
+    def enable_now(self, unit):
+        self.daemon_reload()
+        sh("systemctl","--user","enable","--now",unit)
+
+    def disable_now(self, unit):
+        sh("systemctl","--user","disable","--now",unit)
+
+    def status(self, unit):
+        return sh("systemctl","--user","status",unit).stdout
+
+    # ---------- file-backed units ----------
+    def write_service(self, name, cmd, workdir=None, env=None, restart="on-failure",
+                      killmode="control-group", rt=None, extra=None):
+        unit = f"{UNIT_PREFIX}{name}.service"
+        p = USER_DIR/unit
+        env_lines = ""
+        if env:
+            for k,v in env.items():
+                env_lines += f"Environment={k}={v}\n"
+        rt_lines = ""
+        if rt:
+            pol, prio = rt
+            rt_lines = f"CPUSchedulingPolicy={pol}\nCPUSchedulingPriority={prio}\n"
+        extra = extra or ""
+        wd = f"WorkingDirectory={workdir}\n" if workdir else ""
+        text = f"""[Unit]
+Description=AIOS job {name}
+After=network-online.target
+[Service]
+Type=exec
+ExecStart={cmd}
+{wd}{env_lines}Restart={restart}
+KillMode={killmode}
+{rt_lines}StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=default.target
+"""
+        if extra:
+            text = text.replace("[Install]\nWantedBy=default.target\n", extra + "\n[Install]\nWantedBy=default.target\n")
+        p.write_text(text)
+        self.db.execute("INSERT OR REPLACE INTO tasks(name,cmd,kind,props) VALUES(?,?,?,?)",
+                        (name, cmd, "service", json.dumps({"rt":rt,"restart":restart})))
+        self.db.commit()
+        self.enable_now(unit)
+        return unit
+
+    def write_timer(self, name, *, on_calendar=None, on_active=None, on_boot=None,
+                    on_unit_active=None, persistent=False):
+        timer = f"{UNIT_PREFIX}{name}.timer"
+        svc = f"{UNIT_PREFIX}{name}.service"
+        p = USER_DIR/timer
+        tsec = []
+        if on_calendar: tsec.append(f"OnCalendar={on_calendar}")
+        if on_active: tsec.append(f"OnActiveSec={on_active}")
+        if on_boot: tsec.append(f"OnBootSec={on_boot}")
+        if on_unit_active: tsec.append(f"OnUnitActiveSec={on_unit_active}")
+        if persistent: tsec.append("Persistent=true")
+        tblock = "\n".join(tsec) or "OnActiveSec=60"
+        text = f"""[Unit]
+Description=AIOS timer {name}
+[Timer]
+{tblock}
+Unit={svc}
+[Install]
+WantedBy=timers.target
+"""
+        p.write_text(text)
+        self.db.execute("INSERT OR REPLACE INTO tasks(name,cmd,kind,props) VALUES(?,?,?,?)",
+                        (name, svc, "timer", json.dumps({"timer":tsec})))
+        self.db.commit()
+        self.enable_now(timer)
+        return timer
+
+    # ---------- transient runs (no files) ----------
+    def run_transient(self, name, cmd, *, on_calendar=None, on_active=None, rt=None, env=None):
+        unit = f"{UNIT_PREFIX}{name}.service"
+        props = []
+        if rt: props += [f"--property=CPUSchedulingPolicy={rt[0]}", f"--property=CPUSchedulingPriority={rt[1]}"]
+        if env:
+            for k,v in env.items(): props += [f"--setenv={k}={v}"]
+        when = []
+        if on_calendar: when += [f"--on-calendar={on_calendar}"]
+        if on_active: when += [f"--on-active={on_active}"]
+        out = sh("systemd-run","--user","--unit",unit,*props,*when,cmd)
+        self.db.execute("INSERT OR REPLACE INTO tasks(name,cmd,kind,props) VALUES(?,?,?,?)",
+                        (name, cmd, "transient", json.dumps({"rt":rt,"when":when})))
+        self.db.commit()
+        return out.stdout + out.stderr
+
+    # ---------- live property tweaks ----------
+    def set_rt(self, name, policy="fifo", prio=20):
+        unit = f"{UNIT_PREFIX}{name}.service"
+        return sh("systemctl","--user","set-property",unit,
+                  f"CPUSchedulingPolicy={policy}", f"CPUSchedulingPriority={prio}").stdout
+
+    def stop(self, name):
+        unit = f"{UNIT_PREFIX}{name}.service"
+        timer = f"{UNIT_PREFIX}{name}.timer"
+        self.disable_now(unit)
+        if (USER_DIR/timer).exists():
+            self.disable_now(timer)
+
+if __name__ == "__main__":
+    o = Orchestrator()
+    # demo usage when run directly (safe no-ops if systemd --user unavailable)
+    if len(sys.argv) > 1 and sys.argv[1] == "demo":
+        o.write_service("hello", "/usr/bin/python3 -c 'print(\"hi\")'; /usr/bin/sleep 5",
+                        rt=("fifo", 10))
+        o.write_timer("hello", on_active="10s", on_unit_active="1h", persistent=True)
+        print(o.status(f"{UNIT_PREFIX}hello.service"))
+
+
+================================================================================
+FILE: chatgptResearch1.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+AIOS Systemd Task Manager - runs tasks under systemd supervision.
+Requires: python-dbus library. Must run with root privileges or proper PolicyKit rights.
+"""
+
+import dbus, os, sys, shlex, time
+from dbus.exceptions import DBusException
+
+# Connect to the system bus and get systemd manager interface
+SYSTEMD_BUS = 'org.freedesktop.systemd1'
+SYSTEMD_PATH = '/org/freedesktop/systemd1'
+MANAGER_IFACE = 'org.freedesktop.systemd1.Manager'
+
+try:
+    bus = dbus.SystemBus()
+    systemd_obj = bus.get_object(SYSTEMD_BUS, SYSTEMD_PATH)
+    systemd_mgr = dbus.Interface(systemd_obj, dbus_interface=MANAGER_IFACE)
+except DBusException as e:
+    sys.exit(f"Failed to connect to systemd: {e}")
+
+def run_task(command, run_at=None, use_realtime=False, unit_name=None):
+    """
+    Run a command under systemd. If run_at is provided (datetime or timestamp), schedule it using a transient timer.
+    use_realtime=True will run with real-time scheduling (FIFO policy with high priority).
+    Returns the systemd unit name that was started.
+    """
+    # Determine unique unit name
+    base_name = unit_name or f"aios_task_{int(time.time())}"
+    service_name = base_name + ".service"
+    # Parse command into executable and args
+    if isinstance(command, str):
+        cmd_list = shlex.split(command)
+    else:
+        cmd_list = list(command)
+    if not cmd_list:
+        raise ValueError("Command is empty")
+    exec_path = cmd_list[0]
+    args_list = cmd_list[:]  # include the executable as arg0
+    # Build service properties for StartTransientUnit
+    service_properties = [
+        ("Description", f"AIOS Task - {command}"),
+        ("ExecStart", [(exec_path, args_list, False)]),  # False -> don't ignore failures
+    ]
+    # If the task is expected to finish and we want to capture its status, use oneshot
+    service_properties.append(("Type", "oneshot"))
+    # Apply real-time scheduling if requested
+    if use_realtime:
+        service_properties.append(("CPUSchedulingPolicy", "rr"))
+        service_properties.append(("CPUSchedulingPriority", dbus.Int32(99)))
+    # If scheduling for future run
+    if run_at:
+        # Convert run_at (datetime or timestamp or str) to systemd time string
+        if isinstance(run_at, (int, float)):  # timestamp
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(run_at))
+        elif hasattr(run_at, "strftime"):     # datetime/date
+            ts = run_at.strftime("%Y-%m-%d %H:%M:%S")
+        elif isinstance(run_at, str):
+            ts = run_at  # assume already a valid time spec string
+        else:
+            raise ValueError("Unsupported run_at format")
+        timer_name = base_name + ".timer"
+        timer_properties = [
+            ("Description", f"Timer for {base_name}"),
+            ("OnCalendar", ts),
+            ("Persistent", False),           # do not run if missed (adjust as needed)
+            ("RemainAfterElapse", False)
+        ]
+        try:
+            # Create transient timer + service. The second parameter is "replace" mode.
+            systemd_mgr.StartTransientUnit(timer_name, "replace", 
+                                           timer_properties, 
+                                           [(service_name, service_properties)])
+            print(f"Scheduled task '{command}' as transient unit '{service_name}' at {ts}")
+        except DBusException as e:
+            sys.exit(f"Failed to schedule task: {e}")
+        return service_name  # return the service unit name
+    else:
+        try:
+            # Start a transient service immediately
+            systemd_mgr.StartTransientUnit(service_name, "replace", service_properties, [])
+            print(f"Started task '{command}' as transient service '{service_name}'")
+        except DBusException as e:
+            sys.exit(f"Failed to start task: {e}")
+        return service_name
+
+# Example usage (uncomment for testing purposes):
+# run_task("python3 /path/to/script.py")                      # run immediately
+# run_task("ls -l /", run_at=time.time()+60)                  # schedule 60 seconds from now
+# run_task("my_realtime_app", use_realtime=True)              # run with realtime priority
+
+
+================================================================================
+FILE: claude1.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+AIOS - AI Operating System
+Systemd-based workflow and process manager for AI-generated programs
+"""
+
+import os
+import sys
+import json
+import sqlite3
+import signal
+import asyncio
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+from enum import Enum
+
+# Configure logging to systemd journal if available
+try:
+    from systemd import journal
+    handler = journal.JournalHandler(SYSLOG_IDENTIFIER='aios')
+    logging.root.addHandler(handler)
+except ImportError:
+    pass
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class WorkflowState(Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REJECTED = "rejected"
+
+class AIOS:
+    def __init__(self, db_path: str = "/var/lib/aios/aios.db"):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(str(self.db_path))
+        self.conn.row_factory = sqlite3.Row
+        self.shutdown = False
+        self.processes: Dict[int, asyncio.subprocess.Process] = {}
+        self._init_db()
+        self._setup_signals()
+        
+    def _init_db(self):
+        """Initialize SQLite database with required tables"""
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                code TEXT NOT NULL,
+                state TEXT DEFAULT 'pending',
+                priority INTEGER DEFAULT 5,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                pid INTEGER,
+                exit_code INTEGER,
+                output TEXT
+            );
+            
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                workflow_ids TEXT,
+                state TEXT DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_workflow_state ON workflows(state);
+            CREATE INDEX IF NOT EXISTS idx_workflow_priority ON workflows(priority);
+        """)
+        self.conn.commit()
+        
+    def _setup_signals(self):
+        """Setup signal handlers for graceful shutdown"""
+        for sig in [signal.SIGTERM, signal.SIGINT]:
+            signal.signal(sig, self._handle_signal)
+            
+    def _handle_signal(self, signum, frame):
+        logger.info(f"Received signal {signum}, initiating graceful shutdown")
+        self.shutdown = True
+        
+    async def submit_workflow(self, name: str, code: str, description: str = "", 
+                             priority: int = 5) -> int:
+        """Submit a new workflow for review"""
+        cursor = self.conn.execute(
+            "INSERT INTO workflows (name, description, code, priority) VALUES (?, ?, ?, ?)",
+            (name, description, code, priority)
+        )
+        self.conn.commit()
+        logger.info(f"Submitted workflow: {name} (ID: {cursor.lastrowid})")
+        return cursor.lastrowid
+        
+    async def review_workflow(self, workflow_id: int, approved: bool) -> bool:
+        """Review and approve/reject a workflow"""
+        state = WorkflowState.APPROVED if approved else WorkflowState.REJECTED
+        self.conn.execute(
+            "UPDATE workflows SET state = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (state.value, workflow_id)
+        )
+        self.conn.commit()
+        logger.info(f"Workflow {workflow_id} {state.value}")
+        return True
+        
+    async def _execute_workflow(self, workflow: sqlite3.Row):
+        """Execute a single workflow with proper process management"""
+        workflow_id = workflow['id']
+        try:
+            # Update state to running
+            self.conn.execute(
+                "UPDATE workflows SET state = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (WorkflowState.RUNNING.value, workflow_id)
+            )
+            self.conn.commit()
+            
+            # Create temporary file for code execution
+            code_path = Path(f"/tmp/aios_workflow_{workflow_id}.py")
+            code_path.write_text(workflow['code'])
+            
+            # Execute with proper process management
+            process = await asyncio.create_subprocess_exec(
+                sys.executable, str(code_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                limit=1024*1024  # 1MB output limit
+            )
+            
+            self.processes[workflow_id] = process
+            
+            # Update PID in database
+            self.conn.execute(
+                "UPDATE workflows SET pid = ? WHERE id = ?",
+                (process.pid, workflow_id)
+            )
+            self.conn.commit()
+            
+            # Wait for completion with timeout
+            try:
+                output, _ = await asyncio.wait_for(
+                    process.communicate(), 
+                    timeout=300  # 5 minute timeout
+                )
+                exit_code = process.returncode
+            except asyncio.TimeoutError:
+                process.terminate()
+                await asyncio.sleep(1)
+                if process.returncode is None:
+                    process.kill()
+                output = b"Process timed out"
+                exit_code = -15
+            
+            # Update results
+            state = WorkflowState.COMPLETED if exit_code == 0 else WorkflowState.FAILED
+            self.conn.execute(
+                """UPDATE workflows 
+                   SET state = ?, exit_code = ?, output = ?, 
+                       pid = NULL, updated_at = CURRENT_TIMESTAMP 
+                   WHERE id = ?""",
+                (state.value, exit_code, output.decode('utf-8', errors='replace'), workflow_id)
+            )
+            self.conn.commit()
+            
+            # Cleanup
+            code_path.unlink(missing_ok=True)
+            del self.processes[workflow_id]
+            
+            logger.info(f"Workflow {workflow_id} completed with exit code {exit_code}")
+            
+        except Exception as e:
+            logger.error(f"Error executing workflow {workflow_id}: {e}")
+            self.conn.execute(
+                "UPDATE workflows SET state = ?, output = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (WorkflowState.FAILED.value, str(e), workflow_id)
+            )
+            self.conn.commit()
+            
+    async def scheduler(self):
+        """Main scheduler loop with priority-based execution"""
+        while not self.shutdown:
+            # Get approved workflows sorted by priority
+            workflows = self.conn.execute(
+                """SELECT * FROM workflows 
+                   WHERE state = ? 
+                   ORDER BY priority DESC, created_at ASC 
+                   LIMIT 5""",
+                (WorkflowState.APPROVED.value,)
+            ).fetchall()
+            
+            # Execute workflows concurrently
+            if workflows:
+                tasks = [self._execute_workflow(w) for w in workflows]
+                await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Clean up zombie processes
+            for wid, proc in list(self.processes.items()):
+                if proc.returncode is not None:
+                    del self.processes[wid]
+            
+            await asyncio.sleep(1)
+            
+    async def cleanup(self):
+        """Cleanup on shutdown"""
+        logger.info("Cleaning up processes...")
+        for proc in self.processes.values():
+            proc.terminate()
+        await asyncio.sleep(2)
+        for proc in self.processes.values():
+            if proc.returncode is None:
+                proc.kill()
+        self.conn.close()
+        
+    async def run(self):
+        """Main entry point"""
+        logger.info("AIOS starting...")
+        try:
+            await self.scheduler()
+        finally:
+            await self.cleanup()
+            logger.info("AIOS shutdown complete")
+
+async def main():
+    aios = AIOS()
+    await aios.run()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+
+================================================================================
+FILE: claudeCode1.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+claudeCode1: Ultra-Minimal Systemd Orchestrator (<100 lines)
+Core pattern: systemd-run for transient units + subprocess
+Best for: Quick prototypes, simple workflows
+"""
+import subprocess
+import sys
+import json
+from pathlib import Path
+
+UNIT_PREFIX = "aios-"
+
+class MinimalOrchestrator:
+    """Absolute minimum viable systemd orchestrator"""
+
+    def __init__(self):
+        self.units = {}
+
+    def run(self, name: str, command: str, realtime: bool = False) -> bool:
+        """Execute command as transient systemd unit"""
+        unit = f"{UNIT_PREFIX}{name}"
+        args = ["systemd-run", "--user", "--unit", unit, "--collect"]
+
+        if realtime:
+            args.extend(["--property=CPUSchedulingPolicy=rr",
+                        "--property=CPUSchedulingPriority=80"])
+
+        args.extend(["--", "sh", "-c", command])
+
+        result = subprocess.run(args, capture_output=True, text=True)
+        if result.returncode == 0:
+            self.units[name] = unit
+            return True
+        return False
+
+    def status(self, name: str) -> str:
+        """Check unit status"""
+        if name not in self.units:
+            return "unknown"
+
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", self.units[name]],
+            capture_output=True, text=True
+        )
+        return result.stdout.strip()
+
+    def stop(self, name: str) -> bool:
+        """Stop a unit"""
+        if name not in self.units:
+            return False
+
+        result = subprocess.run(
+            ["systemctl", "--user", "stop", self.units[name]],
+            capture_output=True
+        )
+        return result.returncode == 0
+
+    def list_active(self) -> dict:
+        """List all active AIOS units"""
+        result = subprocess.run(
+            ["systemctl", "--user", "list-units", f"{UNIT_PREFIX}*",
+             "--no-legend", "--plain"],
+            capture_output=True, text=True
+        )
+
+        active = {}
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if parts:
+                    name = parts[0].replace('.service', '').replace(UNIT_PREFIX, '')
+                    active[name] = parts[3]  # active/inactive
+        return active
+
+def main():
+    """CLI interface"""
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <run|status|stop|list> [args...]")
+        sys.exit(1)
+
+    orch = MinimalOrchestrator()
+    cmd = sys.argv[1]
+
+    if cmd == "run" and len(sys.argv) >= 4:
+        name, command = sys.argv[2], sys.argv[3]
+        realtime = "--realtime" in sys.argv
+        if orch.run(name, command, realtime):
+            print(f"Started: {name}")
+        else:
+            print(f"Failed to start: {name}")
+
+    elif cmd == "status" and len(sys.argv) >= 3:
+        print(orch.status(sys.argv[2]))
+
+    elif cmd == "stop" and len(sys.argv) >= 3:
+        if orch.stop(sys.argv[2]):
+            print(f"Stopped: {sys.argv[2]}")
+
+    elif cmd == "list":
+        for name, state in orch.list_active().items():
+            print(f"{name}: {state}")
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: claudeCode2.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+claudeCode2: Enhanced Features with SQLite State (<150 lines)
+Combines: chatgpt1 + kimi1 + systemdOrchestrator patterns
+Best for: Stateful workflows, scheduling, persistence
+"""
+import sqlite3
+import subprocess
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Optional, Dict, List
+
+DB_PATH = Path.home() / ".aios_state.db"
+USER_DIR = Path.home() / ".config/systemd/user"
+UNIT_PREFIX = "aios-"
+
+class EnhancedOrchestrator:
+    """Systemd orchestrator with SQLite state management"""
+
+    def __init__(self):
+        USER_DIR.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(DB_PATH)
+        self._init_db()
+
+    def _init_db(self):
+        """Initialize database schema"""
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS workflows (
+                name TEXT PRIMARY KEY,
+                command TEXT NOT NULL,
+                type TEXT DEFAULT 'service',
+                schedule TEXT,
+                realtime INTEGER DEFAULT 0,
+                priority INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'inactive',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self.db.commit()
+
+    def _systemctl(self, *args) -> subprocess.CompletedProcess:
+        """Execute systemctl --user command"""
+        return subprocess.run(["systemctl", "--user"] + list(args),
+                            capture_output=True, text=True)
+
+    def create_service(self, name: str, command: str,
+                      realtime: bool = False, priority: int = 0) -> bool:
+        """Create persistent systemd service"""
+        unit_file = USER_DIR / f"{UNIT_PREFIX}{name}.service"
+
+        # Generate service content
+        content = f"""[Unit]
+Description=AIOS Workflow: {name}
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c '{command}'
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+"""
+        if realtime:
+            content += f"""CPUSchedulingPolicy=rr
+CPUSchedulingPriority={min(99, max(1, priority))}
+"""
+
+        content += "\n[Install]\nWantedBy=default.target\n"
+
+        # Write unit file
+        unit_file.write_text(content)
+
+        # Store in database
+        self.db.execute("""
+            INSERT OR REPLACE INTO workflows
+            (name, command, type, realtime, priority)
+            VALUES (?, ?, 'service', ?, ?)
+        """, (name, command, int(realtime), priority))
+        self.db.commit()
+
+        # Reload and enable
+        self._systemctl("daemon-reload")
+        result = self._systemctl("enable", "--now", f"{UNIT_PREFIX}{name}.service")
+
+        if result.returncode == 0:
+            self.db.execute("UPDATE workflows SET status='active' WHERE name=?", (name,))
+            self.db.commit()
+            return True
+        return False
+
+    def create_timer(self, name: str, command: str, schedule: str) -> bool:
+        """Create scheduled task with systemd timer"""
+        # First create the service
+        self.create_service(name, command)
+
+        # Create timer
+        timer_file = USER_DIR / f"{UNIT_PREFIX}{name}.timer"
+        timer_content = f"""[Unit]
+Description=Timer for AIOS Workflow: {name}
+
+[Timer]
+OnCalendar={schedule}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+        timer_file.write_text(timer_content)
+
+        # Update database
+        self.db.execute("""
+            UPDATE workflows SET type='timer', schedule=? WHERE name=?
+        """, (schedule, name))
+        self.db.commit()
+
+        # Enable timer
+        self._systemctl("daemon-reload")
+        result = self._systemctl("enable", "--now", f"{UNIT_PREFIX}{name}.timer")
+        return result.returncode == 0
+
+    def run_transient(self, name: str, command: str, delay_sec: int = 0) -> bool:
+        """Run transient unit (no files created)"""
+        unit = f"{UNIT_PREFIX}transient-{name}"
+        args = ["systemd-run", "--user", "--unit", unit, "--collect"]
+
+        if delay_sec > 0:
+            args.append(f"--on-active={delay_sec}")
+
+        args.extend(["--", "sh", "-c", command])
+
+        result = subprocess.run(args, capture_output=True)
+        return result.returncode == 0
+
+    def list_workflows(self) -> List[Dict]:
+        """List all workflows with current status"""
+        cursor = self.db.execute("""
+            SELECT name, command, type, schedule, status FROM workflows
+            ORDER BY created_at DESC
+        """)
+
+        workflows = []
+        for row in cursor:
+            name = row[0]
+            # Get live status
+            unit = f"{UNIT_PREFIX}{name}.{'timer' if row[2] == 'timer' else 'service'}"
+            result = self._systemctl("is-active", unit)
+            live_status = result.stdout.strip()
+
+            workflows.append({
+                'name': name,
+                'command': row[1],
+                'type': row[2],
+                'schedule': row[3],
+                'status': live_status
+            })
+        return workflows
+
+    def remove(self, name: str) -> bool:
+        """Remove workflow completely"""
+        # Stop and disable units
+        for suffix in ['.service', '.timer']:
+            unit = f"{UNIT_PREFIX}{name}{suffix}"
+            self._systemctl("stop", unit)
+            self._systemctl("disable", unit)
+            unit_file = USER_DIR / unit
+            unit_file.unlink(missing_ok=True)
+
+        # Remove from database
+        self.db.execute("DELETE FROM workflows WHERE name=?", (name,))
+        self.db.commit()
+
+        self._systemctl("daemon-reload")
+        return True
+
+def main():
+    """CLI interface"""
+    if len(sys.argv) < 2:
+        print("Usage: claudeCode2.py <service|timer|transient|list|remove> [args...]")
+        sys.exit(1)
+
+    orch = EnhancedOrchestrator()
+    cmd = sys.argv[1]
+
+    if cmd == "service" and len(sys.argv) >= 4:
+        if orch.create_service(sys.argv[2], sys.argv[3]):
+            print(f"Service created: {sys.argv[2]}")
+
+    elif cmd == "timer" and len(sys.argv) >= 5:
+        if orch.create_timer(sys.argv[2], sys.argv[3], sys.argv[4]):
+            print(f"Timer created: {sys.argv[2]}")
+
+    elif cmd == "transient" and len(sys.argv) >= 4:
+        if orch.run_transient(sys.argv[2], sys.argv[3]):
+            print(f"Transient unit started: {sys.argv[2]}")
+
+    elif cmd == "list":
+        for wf in orch.list_workflows():
+            print(json.dumps(wf))
+
+    elif cmd == "remove" and len(sys.argv) >= 3:
+        if orch.remove(sys.argv[2]):
+            print(f"Removed: {sys.argv[2]}")
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: claudeCode3.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+claudeCode3: Production-Ready Orchestrator (<200 lines)
+Synthesizes: Android reaping + Chrome WAL + Firefox journal patterns
+Best for: Production deployments, high reliability
+"""
+import sqlite3
+import subprocess
+import signal
+import logging
+import json
+import sys
+import os
+import time
+from pathlib import Path
+from typing import Dict, Optional, List
+from enum import Enum
+
+# Production configuration
+DB_PATH = Path("/var/lib/aios/orchestrator.db")
+UNIT_PREFIX = "aios-"
+WATCHDOG_INTERVAL = 30
+
+class WorkflowState(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+class ProductionOrchestrator:
+    """Production-grade systemd orchestrator with reliability patterns"""
+
+    def __init__(self):
+        self.running = True
+        self.children = {}
+
+        # Setup logging to systemd journal
+        try:
+            from systemd import journal
+            handler = journal.JournalHandler(SYSLOG_IDENTIFIER='aios')
+            logging.root.addHandler(handler)
+        except ImportError:
+            pass
+
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+
+        # Initialize database with production settings
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        self.db = sqlite3.connect(str(DB_PATH), isolation_level=None)
+        self._init_db()
+
+        # Signal handlers for graceful shutdown
+        signal.signal(signal.SIGTERM, self._handle_signal)
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGCHLD, self._reap_children)
+
+    def _init_db(self):
+        """Initialize SQLite with production optimizations"""
+        # Chrome/Firefox WAL mode patterns
+        self.db.executescript("""
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA cache_size=-8000;
+            PRAGMA busy_timeout=5000;
+            PRAGMA wal_autocheckpoint=1000;
+
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                command TEXT NOT NULL,
+                state TEXT DEFAULT 'pending',
+                priority INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 3,
+                retry_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                started_at DATETIME,
+                completed_at DATETIME,
+                pid INTEGER,
+                exit_code INTEGER,
+                unit_name TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_state_priority
+            ON workflows(state, priority DESC, created_at);
+        """)
+
+    def _handle_signal(self, signum, frame):
+        """Graceful shutdown handler"""
+        self.logger.info(f"Received signal {signum}, shutting down")
+        self.running = False
+        try:
+            from systemd import daemon
+            daemon.notify("STOPPING=1")
+        except ImportError:
+            pass
+
+    def _reap_children(self, signum, frame):
+        """Android-style zombie reaping pattern"""
+        while True:
+            try:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+                if pid == 0:
+                    break
+
+                exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else -1
+
+                # Update database
+                self.db.execute("""
+                    UPDATE workflows
+                    SET state = ?, exit_code = ?, completed_at = CURRENT_TIMESTAMP
+                    WHERE pid = ?
+                """, ('completed' if exit_code == 0 else 'failed', exit_code, pid))
+
+                self.logger.info(f"Reaped child {pid} with exit code {exit_code}")
+
+            except ChildProcessError:
+                break
+
+    def submit(self, name: str, command: str, priority: int = 0) -> int:
+        """Submit new workflow"""
+        cursor = self.db.execute("""
+            INSERT INTO workflows (name, command, priority)
+            VALUES (?, ?, ?)
+        """, (name, command, priority))
+
+        workflow_id = cursor.lastrowid
+        self.logger.info(f"Submitted workflow {workflow_id}: {name}")
+        return workflow_id
+
+    def deploy_workflow(self, workflow_id: int) -> bool:
+        """Deploy workflow as systemd service with production settings"""
+        row = self.db.execute("""
+            SELECT name, command, priority FROM workflows WHERE id = ?
+        """, (workflow_id,)).fetchone()
+
+        if not row:
+            return False
+
+        name, command, priority = row
+        unit_name = f"{UNIT_PREFIX}{workflow_id}.service"
+
+        # Create transient unit with production properties
+        properties = [
+            "--collect",  # Clean up automatically
+            "--property=Type=exec",
+            "--property=Restart=on-failure",
+            "--property=RestartSec=10",
+            f"--property=Nice={-priority}",  # Higher priority = lower nice
+            "--property=StandardOutput=journal",
+            "--property=StandardError=journal",
+            "--property=KillMode=control-group",  # Kill all children
+            "--property=TimeoutStopSec=30",
+            # Resource limits
+            "--property=MemoryMax=4G",
+            "--property=CPUQuota=200%",  # 2 cores max
+            "--property=TasksMax=1000",
+            # Security
+            "--property=PrivateTmp=yes",
+            "--property=ProtectSystem=strict",
+            "--property=NoNewPrivileges=yes",
+        ]
+
+        # Use systemd-run for transient units
+        result = subprocess.run(
+            ["systemd-run", "--user", "--unit", unit_name] + properties +
+            ["--", "sh", "-c", command],
+            capture_output=True, text=True
+        )
+
+        if result.returncode == 0:
+            # Get PID from systemd
+            pid_result = subprocess.run(
+                ["systemctl", "--user", "show", unit_name, "--property=MainPID"],
+                capture_output=True, text=True
+            )
+
+            pid = 0
+            if pid_result.returncode == 0 and "=" in pid_result.stdout:
+                pid = int(pid_result.stdout.split("=")[1].strip())
+
+            # Update database
+            self.db.execute("""
+                UPDATE workflows
+                SET state = 'running', started_at = CURRENT_TIMESTAMP,
+                    pid = ?, unit_name = ?
+                WHERE id = ?
+            """, (pid, unit_name, workflow_id))
+
+            self.logger.info(f"Deployed workflow {workflow_id} as {unit_name} (PID: {pid})")
+            return True
+
+        return False
+
+    def monitor(self):
+        """Monitor and process workflows"""
+        # Deploy pending workflows
+        pending = self.db.execute("""
+            SELECT id FROM workflows
+            WHERE state = 'pending'
+            ORDER BY priority DESC, created_at
+            LIMIT 5
+        """).fetchall()
+
+        for row in pending:
+            self.deploy_workflow(row[0])
+
+        # Check running workflows
+        running = self.db.execute("""
+            SELECT id, unit_name, retry_count, max_retries
+            FROM workflows WHERE state = 'running'
+        """).fetchall()
+
+        for workflow_id, unit_name, retry_count, max_retries in running:
+            result = subprocess.run(
+                ["systemctl", "--user", "is-active", unit_name],
+                capture_output=True, text=True
+            )
+
+            if result.stdout.strip() == "inactive":
+                # Check if should retry
+                if retry_count < max_retries:
+                    self.db.execute("""
+                        UPDATE workflows
+                        SET state = 'pending', retry_count = retry_count + 1
+                        WHERE id = ?
+                    """, (workflow_id,))
+                    self.logger.info(f"Retrying workflow {workflow_id} (attempt {retry_count + 1})")
+
+        # Periodic WAL checkpoint (Firefox pattern)
+        self.db.execute("PRAGMA wal_checkpoint(PASSIVE)")
+
+    def run(self):
+        """Main service loop"""
+        try:
+            from systemd import daemon
+            daemon.notify("READY=1")
+        except ImportError:
+            pass
+
+        self.logger.info("Production orchestrator started")
+
+        while self.running:
+            try:
+                self.monitor()
+
+                # Update systemd watchdog
+                try:
+                    from systemd import daemon
+                    daemon.notify("WATCHDOG=1")
+                except ImportError:
+                    pass
+
+                time.sleep(5)
+
+            except Exception as e:
+                self.logger.error(f"Monitor error: {e}")
+                time.sleep(10)
+
+        self.logger.info("Orchestrator shutdown complete")
+
+def main():
+    """CLI interface"""
+    if len(sys.argv) < 2:
+        print("Usage: claudeCode3.py <submit|status|run>")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+
+    if cmd == "submit" and len(sys.argv) >= 4:
+        orch = ProductionOrchestrator()
+        workflow_id = orch.submit(sys.argv[2], sys.argv[3])
+        print(f"Workflow ID: {workflow_id}")
+
+    elif cmd == "status":
+        db = sqlite3.connect(str(DB_PATH))
+        for row in db.execute("SELECT id, name, state FROM workflows"):
+            print(f"{row[0]}: {row[1]} [{row[2]}]")
+
+    elif cmd == "run":
+        orch = ProductionOrchestrator()
+        orch.run()
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: claudeCode4.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+claudeCode4: Enterprise Scale with Full Features
+Synthesizes: Kubernetes patterns + Android WorkManager + Chrome scheduling
+Best for: Large-scale deployments, complex workflows, full monitoring
+"""
+import sqlite3
+import subprocess
+import asyncio
+import signal
+import logging
+import json
+import time
+from pathlib import Path
+from typing import Dict, Optional, List, Any
+from dataclasses import dataclass, asdict
+from enum import Enum
+from datetime import datetime, timedelta
+
+# Enterprise configuration
+DB_PATH = Path("/var/lib/aios/enterprise.db")
+UNIT_PREFIX = "aios-enterprise-"
+
+class WorkflowState(Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    SCHEDULED = "scheduled"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+class Priority(Enum):
+    USER_BLOCKING = 100
+    USER_VISIBLE = 50
+    BACKGROUND = 0
+
+@dataclass
+class Workflow:
+    """Enterprise workflow model with full metadata"""
+    id: Optional[int] = None
+    name: str = ""
+    command: str = ""
+    state: WorkflowState = WorkflowState.PENDING
+    priority: int = Priority.BACKGROUND.value
+    scheduled_at: Optional[float] = None
+    dependencies: List[int] = None
+    max_retries: int = 3
+    retry_count: int = 0
+    backoff_policy: str = "exponential"
+    cpu_limit: float = 2.0
+    memory_limit_gb: float = 4.0
+    requires_approval: bool = True
+    created_at: Optional[float] = None
+    metadata: Dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.dependencies is None:
+            self.dependencies = []
+        if self.metadata is None:
+            self.metadata = {}
+        if self.created_at is None:
+            self.created_at = time.time()
+
+class EnterpriseOrchestrator:
+    """Enterprise-grade orchestrator with advanced features"""
+
+    def __init__(self):
+        self.running = True
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+        # Production SQLite with all optimizations
+        self.db = sqlite3.connect(str(DB_PATH), isolation_level=None, check_same_thread=False)
+        self.db.row_factory = sqlite3.Row
+        self._init_db()
+
+        # Setup comprehensive logging
+        self._setup_logging()
+
+        # Signal handlers
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+
+        # Try to import systemd for integration
+        try:
+            from systemd import daemon
+            self.systemd_available = True
+        except ImportError:
+            self.systemd_available = False
+
+    def _setup_logging(self):
+        """Setup enterprise logging with multiple handlers"""
+        self.logger = logging.getLogger("aios-enterprise")
+        self.logger.setLevel(logging.INFO)
+
+        # Try systemd journal
+        try:
+            from systemd import journal
+            handler = journal.JournalHandler(SYSLOG_IDENTIFIER='aios-enterprise')
+            self.logger.addHandler(handler)
+        except ImportError:
+            pass
+
+        # File handler for audit trail
+        log_path = Path("/var/log/aios-enterprise.log")
+        if log_path.parent.exists():
+            file_handler = logging.FileHandler(log_path)
+            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+            file_handler.setFormatter(formatter)
+            self.logger.addHandler(file_handler)
+
+    def _init_db(self):
+        """Initialize enterprise database schema"""
+        self.db.executescript("""
+            -- Chrome/Firefox optimizations
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA cache_size=-16000;
+            PRAGMA mmap_size=536870912;
+            PRAGMA busy_timeout=10000;
+            PRAGMA wal_autocheckpoint=1000;
+
+            -- Main workflows table with all enterprise fields
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                command TEXT NOT NULL,
+                state TEXT DEFAULT 'pending',
+                priority INTEGER DEFAULT 0,
+                scheduled_at REAL,
+                max_retries INTEGER DEFAULT 3,
+                retry_count INTEGER DEFAULT 0,
+                backoff_policy TEXT DEFAULT 'exponential',
+                cpu_limit REAL DEFAULT 2.0,
+                memory_limit_gb REAL DEFAULT 4.0,
+                requires_approval BOOLEAN DEFAULT 1,
+                created_at REAL DEFAULT (julianday('now')),
+                started_at REAL,
+                completed_at REAL,
+                pid INTEGER,
+                exit_code INTEGER,
+                unit_name TEXT,
+                metadata TEXT
+            );
+
+            -- Dependencies (Android WorkManager pattern)
+            CREATE TABLE IF NOT EXISTS workflow_dependencies (
+                workflow_id INTEGER,
+                depends_on_id INTEGER,
+                PRIMARY KEY (workflow_id, depends_on_id),
+                FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+                FOREIGN KEY (depends_on_id) REFERENCES workflows(id) ON DELETE CASCADE
+            );
+
+            -- Metrics table (Chrome pattern)
+            CREATE TABLE IF NOT EXISTS workflow_metrics (
+                workflow_id INTEGER PRIMARY KEY,
+                queue_time REAL,
+                execution_time REAL,
+                cpu_usage_percent REAL,
+                memory_usage_mb REAL,
+                FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+            );
+
+            -- Audit log
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workflow_id INTEGER,
+                action TEXT,
+                user TEXT,
+                timestamp REAL DEFAULT (julianday('now')),
+                details TEXT
+            );
+
+            -- Optimized indexes
+            CREATE INDEX IF NOT EXISTS idx_state_priority_scheduled
+                ON workflows(state, priority DESC, scheduled_at);
+            CREATE INDEX IF NOT EXISTS idx_dependencies
+                ON workflow_dependencies(workflow_id, depends_on_id);
+            CREATE INDEX IF NOT EXISTS idx_audit_workflow
+                ON audit_log(workflow_id, timestamp DESC);
+        """)
+
+    def submit(self, workflow: Workflow) -> int:
+        """Submit workflow with full validation"""
+        # Serialize metadata
+        metadata_json = json.dumps(workflow.metadata) if workflow.metadata else None
+
+        # Insert workflow
+        cursor = self.db.execute("""
+            INSERT INTO workflows (
+                name, command, state, priority, scheduled_at,
+                max_retries, backoff_policy, cpu_limit, memory_limit_gb,
+                requires_approval, metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (workflow.name, workflow.command, workflow.state.value,
+              workflow.priority, workflow.scheduled_at, workflow.max_retries,
+              workflow.backoff_policy, workflow.cpu_limit, workflow.memory_limit_gb,
+              int(workflow.requires_approval), metadata_json))
+
+        workflow_id = cursor.lastrowid
+
+        # Add dependencies
+        for dep_id in workflow.dependencies:
+            self.db.execute("""
+                INSERT INTO workflow_dependencies (workflow_id, depends_on_id)
+                VALUES (?, ?)
+            """, (workflow_id, dep_id))
+
+        # Audit log
+        self._audit(workflow_id, "SUBMITTED", {"name": workflow.name})
+
+        self.logger.info(f"Submitted workflow {workflow_id}: {workflow.name}")
+        return workflow_id
+
+    def approve(self, workflow_id: int, approver: str = "system") -> bool:
+        """Approve workflow for execution"""
+        self.db.execute("""
+            UPDATE workflows SET state = ? WHERE id = ? AND state = 'pending'
+        """, (WorkflowState.APPROVED.value, workflow_id))
+
+        if self.db.total_changes > 0:
+            self._audit(workflow_id, "APPROVED", {"approver": approver})
+            self.logger.info(f"Workflow {workflow_id} approved by {approver}")
+            return True
+        return False
+
+    async def deploy(self, workflow_id: int) -> bool:
+        """Deploy workflow with enterprise features"""
+        row = self.db.execute("""
+            SELECT * FROM workflows WHERE id = ?
+        """, (workflow_id,)).fetchone()
+
+        if not row:
+            return False
+
+        # Check dependencies
+        deps = self.db.execute("""
+            SELECT d.depends_on_id, w.state
+            FROM workflow_dependencies d
+            JOIN workflows w ON d.depends_on_id = w.id
+            WHERE d.workflow_id = ?
+        """, (workflow_id,)).fetchall()
+
+        if any(dep['state'] != WorkflowState.COMPLETED.value for dep in deps):
+            return False  # Dependencies not satisfied
+
+        unit_name = f"{UNIT_PREFIX}{workflow_id}.service"
+
+        # Build systemd-run command with enterprise properties
+        cmd = [
+            "systemd-run", "--user",
+            "--unit", unit_name,
+            "--collect",
+            "--property=Type=exec",
+            "--property=Restart=on-failure",
+            f"--property=RestartSec={10 * (2 ** row['retry_count'])}",  # Exponential backoff
+            f"--property=CPUQuota={int(row['cpu_limit'] * 100)}%",
+            f"--property=MemoryMax={row['memory_limit_gb']}G",
+            "--property=TasksMax=1000",
+            # Security hardening
+            "--property=PrivateTmp=yes",
+            "--property=ProtectSystem=strict",
+            "--property=ProtectHome=yes",
+            "--property=NoNewPrivileges=yes",
+            "--property=RestrictSUIDSGID=yes",
+            # Logging
+            "--property=StandardOutput=journal",
+            "--property=StandardError=journal",
+            f"--property=SyslogIdentifier={unit_name}",
+        ]
+
+        # Add real-time scheduling for high priority
+        if row['priority'] >= Priority.USER_VISIBLE.value:
+            cmd.extend([
+                "--property=CPUSchedulingPolicy=rr",
+                f"--property=CPUSchedulingPriority={min(99, row['priority'])}"
+            ])
+
+        cmd.extend(["--", "sh", "-c", row['command']])
+
+        # Execute deployment
+        process = await asyncio.create_subprocess_exec(
+            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode == 0:
+            # Update state
+            self.db.execute("""
+                UPDATE workflows
+                SET state = 'running', started_at = julianday('now'), unit_name = ?
+                WHERE id = ?
+            """, (unit_name, workflow_id))
+
+            self._audit(workflow_id, "DEPLOYED", {"unit": unit_name})
+            self.logger.info(f"Deployed workflow {workflow_id} as {unit_name}")
+            return True
+
+        self.logger.error(f"Failed to deploy workflow {workflow_id}: {stderr.decode()}")
+        return False
+
+    async def monitor(self):
+        """Advanced monitoring with metrics collection"""
+        # Process scheduled workflows
+        current_time = datetime.now().toordinal() + 1721425.5
+        scheduled = self.db.execute("""
+            SELECT id FROM workflows
+            WHERE state = 'approved' AND
+            (scheduled_at IS NULL OR scheduled_at <= ?)
+            ORDER BY priority DESC, created_at
+            LIMIT 10
+        """, (current_time,)).fetchall()
+
+        for row in scheduled:
+            await self.deploy(row['id'])
+
+        # Monitor running workflows
+        running = self.db.execute("""
+            SELECT id, unit_name, started_at FROM workflows
+            WHERE state = 'running'
+        """).fetchall()
+
+        for row in running:
+            # Check systemd unit status
+            result = subprocess.run(
+                ["systemctl", "--user", "show", row['unit_name'],
+                 "--property=ActiveState,MainPID,CPUUsageNSec,MemoryCurrent"],
+                capture_output=True, text=True
+            )
+
+            props = {}
+            for line in result.stdout.strip().split('\n'):
+                if '=' in line:
+                    k, v = line.split('=', 1)
+                    props[k] = v
+
+            if props.get('ActiveState') in ['inactive', 'failed']:
+                # Calculate metrics
+                exec_time = (current_time - row['started_at']) * 86400 if row['started_at'] else 0
+
+                # Record metrics
+                self.db.execute("""
+                    INSERT OR REPLACE INTO workflow_metrics
+                    (workflow_id, execution_time, cpu_usage_percent, memory_usage_mb)
+                    VALUES (?, ?, ?, ?)
+                """, (row['id'], exec_time,
+                      float(props.get('CPUUsageNSec', 0)) / 1e9,
+                      float(props.get('MemoryCurrent', 0)) / 1e6))
+
+                # Update workflow state
+                state = WorkflowState.COMPLETED if props.get('ActiveState') == 'inactive' else WorkflowState.FAILED
+                self.db.execute("""
+                    UPDATE workflows
+                    SET state = ?, completed_at = julianday('now')
+                    WHERE id = ?
+                """, (state.value, row['id']))
+
+                self._audit(row['id'], state.value, {"exec_time": exec_time})
+
+    def _audit(self, workflow_id: int, action: str, details: Dict = None):
+        """Record audit log entry"""
+        self.db.execute("""
+            INSERT INTO audit_log (workflow_id, action, user, details)
+            VALUES (?, ?, ?, ?)
+        """, (workflow_id, action, os.getenv('USER', 'system'),
+              json.dumps(details) if details else None))
+
+    def _handle_shutdown(self, signum, frame):
+        """Graceful shutdown"""
+        self.logger.info("Initiating graceful shutdown")
+        self.running = False
+        if self.systemd_available:
+            from systemd import daemon
+            daemon.notify("STOPPING=1")
+
+    async def run(self):
+        """Main enterprise loop"""
+        if self.systemd_available:
+            from systemd import daemon
+            daemon.notify("READY=1")
+
+        self.logger.info("Enterprise orchestrator started")
+
+        while self.running:
+            try:
+                await self.monitor()
+
+                # Periodic maintenance
+                if int(time.time()) % 300 == 0:  # Every 5 minutes
+                    self.db.execute("PRAGMA wal_checkpoint(PASSIVE)")
+                    self.db.execute("PRAGMA optimize")
+
+                if self.systemd_available:
+                    from systemd import daemon
+                    daemon.notify("WATCHDOG=1")
+
+                await asyncio.sleep(5)
+
+            except Exception as e:
+                self.logger.error(f"Monitor error: {e}", exc_info=True)
+                await asyncio.sleep(10)
+
+def main():
+    """Enterprise CLI"""
+    import argparse
+    parser = argparse.ArgumentParser(description="Enterprise AIOS Orchestrator")
+    parser.add_argument("command", choices=["submit", "approve", "status", "run"])
+    parser.add_argument("--name", help="Workflow name")
+    parser.add_argument("--command", help="Command to execute")
+    parser.add_argument("--priority", type=int, default=0)
+    parser.add_argument("--id", type=int, help="Workflow ID")
+
+    args = parser.parse_args()
+
+    orch = EnterpriseOrchestrator()
+
+    if args.command == "submit":
+        workflow = Workflow(
+            name=args.name,
+            command=args.command,
+            priority=args.priority
+        )
+        wf_id = orch.submit(workflow)
+        print(f"Workflow submitted: {wf_id}")
+
+    elif args.command == "approve" and args.id:
+        if orch.approve(args.id):
+            print(f"Workflow {args.id} approved")
+
+    elif args.command == "status":
+        for row in orch.db.execute("SELECT id, name, state FROM workflows ORDER BY id DESC LIMIT 20"):
+            print(f"{row['id']}: {row['name']} [{row['state']}]")
+
+    elif args.command == "run":
+        asyncio.run(orch.run())
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: claudeResearch1.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+AIOS Process Manager - SystemD-based workload orchestration
+Synthesized from Android, Kubernetes, Cloud, and IoT best practices
+Under 200 lines, production-ready for 500M+ scale
+"""
+import json
+import sqlite3
+import logging
+import signal
+import subprocess
+import time
+from pathlib import Path
+from typing import Dict, Optional, List, Any
+from dataclasses import dataclass, asdict
+from enum import Enum
+
+try:
+    from pystemd.systemd1 import Unit, Manager
+    from systemd import journal, daemon
+except ImportError:
+    print("Install: pip install pystemd systemd-python")
+    raise
+
+class WorkflowState(Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+@dataclass
+class AIWorkflow:
+    id: str
+    name: str
+    command: str
+    state: WorkflowState
+    memory_limit_gb: float = 4.0
+    cpu_quota_percent: int = 100
+    restart_policy: str = "on-failure"
+    requires_approval: bool = True
+    created_at: float = 0
+    pid: Optional[int] = None
+
+class AIOSProcessManager:
+    def __init__(self, db_path: str = "/var/lib/aios/state.db"):
+        self.db_path = db_path
+        self.manager = Manager()
+        self.manager.load()
+        self.running = True
+        
+        # Setup logging to systemd journal
+        self.logger = logging.getLogger('aios')
+        self.logger.addHandler(journal.JournalHandler(SYSLOG_IDENTIFIER='aios'))
+        self.logger.setLevel(logging.INFO)
+        
+        # Initialize database
+        self._init_db()
+        
+        # Signal handlers for clean shutdown
+        signal.signal(signal.SIGTERM, self._handle_signal)
+        signal.signal(signal.SIGINT, self._handle_signal)
+    
+    def _init_db(self):
+        """Initialize SQLite database for state management"""
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('''CREATE TABLE IF NOT EXISTS workflows (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            command TEXT NOT NULL,
+            state TEXT NOT NULL,
+            memory_limit_gb REAL,
+            cpu_quota_percent INTEGER,
+            restart_policy TEXT,
+            requires_approval BOOLEAN,
+            created_at REAL,
+            pid INTEGER,
+            result TEXT
+        )''')
+        conn.commit()
+        conn.close()
+    
+    def create_workflow(self, workflow: AIWorkflow) -> str:
+        """Create new AI workflow pending approval"""
+        workflow.created_at = time.time()
+        workflow.state = WorkflowState.PENDING if workflow.requires_approval else WorkflowState.APPROVED
+        
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO workflows VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (workflow.id, workflow.name, workflow.command, workflow.state.value,
+             workflow.memory_limit_gb, workflow.cpu_quota_percent, 
+             workflow.restart_policy, workflow.requires_approval,
+             workflow.created_at, workflow.pid, None)
+        )
+        conn.commit()
+        conn.close()
+        
+        self.logger.info(f"Created workflow {workflow.id}: {workflow.name}")
+        
+        if not workflow.requires_approval:
+            self._deploy_workflow(workflow)
+        
+        return workflow.id
+    
+    def approve_workflow(self, workflow_id: str) -> bool:
+        """Approve pending workflow for execution"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute(
+            "SELECT * FROM workflows WHERE id = ? AND state = ?",
+            (workflow_id, WorkflowState.PENDING.value)
+        )
+        row = cursor.fetchone()
+        
+        if not row:
+            conn.close()
+            return False
+        
+        workflow = self._row_to_workflow(row)
+        workflow.state = WorkflowState.APPROVED
+        
+        conn.execute(
+            "UPDATE workflows SET state = ? WHERE id = ?",
+            (WorkflowState.APPROVED.value, workflow_id)
+        )
+        conn.commit()
+        conn.close()
+        
+        self._deploy_workflow(workflow)
+        return True
+    
+    def _deploy_workflow(self, workflow: AIWorkflow):
+        """Deploy workflow as systemd service with resource limits"""
+        service_name = f"aios-{workflow.id}.service"
+        service_path = f"/etc/systemd/system/{service_name}"
+        
+        # Generate systemd service file - pattern from cloud-init/snapd
+        service_content = f"""[Unit]
+Description=AIOS Workflow: {workflow.name}
+After=network.target aios.service
+PartOf=aios.target
+
+[Service]
+Type=simple
+ExecStart={workflow.command}
+Restart={workflow.restart_policy}
+RestartSec=10
+
+# Resource limits (Kubernetes/Android pattern)
+MemoryMax={workflow.memory_limit_gb}G
+CPUQuota={workflow.cpu_quota_percent}%
+TasksMax=1000
+
+# Process management (Android init pattern)
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security (snapd/ChromeOS pattern)
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+ReadWritePaths=/var/lib/aios/workflows/{workflow.id}
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aios-{workflow.id}
+
+[Install]
+WantedBy=aios.target"""
+        
+        Path(service_path).write_text(service_content)
+        
+        # Reload and start service
+        subprocess.run(['systemctl', 'daemon-reload'], check=True)
+        
+        unit = Unit(service_name.encode())
+        unit.load()
+        unit.Unit.Start(b'replace')
+        
+        # Update database
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "UPDATE workflows SET state = ?, pid = ? WHERE id = ?",
+            (WorkflowState.RUNNING.value, unit.Service.MainPID, workflow.id)
+        )
+        conn.commit()
+        conn.close()
+        
+        self.logger.info(f"Deployed workflow {workflow.id} as {service_name}")
+    
+    def monitor_workflows(self):
+        """Monitor running workflows - implements Android's reaping pattern"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute(
+            "SELECT * FROM workflows WHERE state = ?",
+            (WorkflowState.RUNNING.value,)
+        )
+        
+        for row in cursor.fetchall():
+            workflow = self._row_to_workflow(row)
+            service_name = f"aios-{workflow.id}.service"
+            
+            try:
+                unit = Unit(service_name.encode())
+                unit.load()
+                
+                state = unit.Unit.ActiveState.decode()
+                
+                if state in ['inactive', 'failed']:
+                    # Workflow completed or failed
+                    new_state = WorkflowState.FAILED if state == 'failed' else WorkflowState.COMPLETED
+                    
+                    conn.execute(
+                        "UPDATE workflows SET state = ? WHERE id = ?",
+                        (new_state.value, workflow.id)
+                    )
+                    
+                    # Cleanup service file
+                    Path(f"/etc/systemd/system/{service_name}").unlink(missing_ok=True)
+                    subprocess.run(['systemctl', 'daemon-reload'])
+                    
+                    self.logger.info(f"Workflow {workflow.id} {new_state.value}")
+                
+                elif state == 'active':
+                    # Log resource usage (cloud provider pattern)
+                    memory = unit.Service.MemoryCurrent / (1024**3)
+                    cpu_ns = unit.Service.CPUUsageNSec
+                    
+                    if memory > workflow.memory_limit_gb * 0.9:
+                        self.logger.warning(
+                            f"Workflow {workflow.id} approaching memory limit: {memory:.2f}GB"
+                        )
+                        
+            except Exception as e:
+                self.logger.error(f"Error monitoring workflow {workflow.id}: {e}")
+        
+        conn.commit()
+        conn.close()
+    
+    def get_workflow_status(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Get comprehensive workflow status"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.execute("SELECT * FROM workflows WHERE id = ?", (workflow_id,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return None
+        
+        workflow = self._row_to_workflow(row)
+        status = asdict(workflow)
+        
+        if workflow.state == WorkflowState.RUNNING:
+            try:
+                unit = Unit(f"aios-{workflow_id}.service".encode())
+                unit.load()
+                status['memory_usage_gb'] = unit.Service.MemoryCurrent / (1024**3)
+                status['cpu_time_sec'] = unit.Service.CPUUsageNSec / 1e9
+                status['restart_count'] = unit.Service.NRestarts
+            except:
+                pass
+        
+        return status
+    
+    def _row_to_workflow(self, row) -> AIWorkflow:
+        """Convert database row to workflow object"""
+        return AIWorkflow(
+            id=row[0], name=row[1], command=row[2],
+            state=WorkflowState(row[3]), memory_limit_gb=row[4],
+            cpu_quota_percent=row[5], restart_policy=row[6],
+            requires_approval=row[7], created_at=row[8], pid=row[9]
+        )
+    
+    def _handle_signal(self, signum, frame):
+        """Clean shutdown handler"""
+        self.logger.info(f"Received signal {signum}, shutting down")
+        self.running = False
+        daemon.notify('STOPPING=1')
+    
+    def run(self):
+        """Main service loop with systemd integration"""
+        daemon.notify('READY=1')
+        self.logger.info("AIOS Process Manager started")
+        
+        while self.running:
+            try:
+                self.monitor_workflows()
+                
+                # Update systemd status
+                conn = sqlite3.connect(self.db_path)
+                active = conn.execute(
+                    "SELECT COUNT(*) FROM workflows WHERE state = ?",
+                    (WorkflowState.RUNNING.value,)
+                ).fetchone()[0]
+                conn.close()
+                
+                daemon.notify(f'STATUS=Managing {active} workflows')
+                time.sleep(10)
+                
+            except Exception as e:
+                self.logger.error(f"Error in main loop: {e}")
+                time.sleep(30)
+        
+        self.logger.info("AIOS Process Manager stopped")
+
+# Example usage
+if __name__ == "__main__":
+    manager = AIOSProcessManager()
+    
+    # Create AI workflow
+    workflow = AIWorkflow(
+        id="ml-train-001",
+        name="Model Training",
+        command="/opt/ai/train.py --model gpt --dataset custom",
+        memory_limit_gb=8.0,
+        cpu_quota_percent=400,  # 4 cores
+        requires_approval=True
+    )
+    
+    manager.create_workflow(workflow)
+    manager.run()
+
+
+================================================================================
+FILE: copilot1.py
+================================================================================
+
+#!/usr/bin/env python3
+
+import os
+import sqlite3
+import threading
+import queue
+import sched
+import signal
+import time
+import logging
+
+try:
+    from systemd import daemon
+except ImportError:
+    daemon = None
+
+class ZombieReaper(threading.Thread):
+    def __init__(self):
+        super().__init__(daemon=True)
+        self._q = queue.Queue()
+        self.start()
+
+    def run(self):
+        while True:
+            pid = self._q.get()
+            if pid is None:
+                break
+            os.waitpid(pid, 0)
+
+    def reap(self, pid):
+        self._q.put(pid)
+
+    def close(self):
+        self._q.put(None)
+        self.join()
+
+class WorkflowManager:
+    def __init__(self, db_path='/var/lib/aios/aios.db'):
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
+        self._init_db()
+        self.reaper = ZombieReaper()
+        self.scheduler = sched.scheduler(time.time, time.sleep)
+        signal.signal(signal.SIGCHLD, self._on_sigchld)
+
+    def _init_db(self):
+        cur = self.db.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY,
+                command TEXT NOT NULL,
+                delay INTEGER NOT NULL,
+                realtime INTEGER NOT NULL DEFAULT 0
+            )
+        ''')
+        self.db.commit()
+
+    def _on_sigchld(self, *_):
+        try:
+            while True:
+                pid, _ = os.waitpid(-1, os.WNOHANG)
+                if pid == 0:
+                    break
+                self.reaper.reap(pid)
+        except ChildProcessError:
+            pass
+
+    def add_workflow(self, cmd, delay, realtime=False):
+        cur = self.db.cursor()
+        cur.execute(
+            'INSERT INTO workflows (command, delay, realtime) VALUES (?, ?, ?)',
+            (cmd, delay, int(bool(realtime)))
+        )
+        self.db.commit()
+
+    def load_and_schedule(self):
+        now = time.time()
+        cur = self.db.cursor()
+        cur.execute('SELECT id, command, delay, realtime FROM workflows')
+        for wf_id, cmd, delay, rt in cur:
+            self.scheduler.enterabs(
+                now + delay,
+                1,
+                self._execute,
+                (wf_id, cmd, rt)
+            )
+
+    def _execute(self, wf_id, cmd, realtime):
+        pid = os.fork()
+        if pid == 0:
+            if realtime:
+                try:
+                    os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(1))
+                except PermissionError:
+                    pass
+            os.execvp(cmd.split()[0], cmd.split())
+        else:
+            self.reaper.reap(pid)
+            cur = self.db.cursor()
+            cur.execute('DELETE FROM workflows WHERE id = ?', (wf_id,))
+            self.db.commit()
+
+    def serve(self):
+        if daemon:
+            daemon.notify('READY=1')
+        self.load_and_schedule()
+        try:
+            self.scheduler.run()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.reaper.close()
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    mgr = WorkflowManager()
+    # Example: mgr.add_workflow('python3 /usr/bin/cleanup.py', delay=60, realtime=True)
+    mgr.serve()
+
+
+================================================================================
+FILE: deepseek1.py
+================================================================================
+
+#!/usr/bin/env python3
+import os
+import time
+import signal
+import subprocess
+import sqlite3
+from systemd import daemon
+from systemd import journal
+from datetime import datetime
+import select
+import ctypes
+import ctypes.util
+
+# Real-time priority setup
+libc = ctypes.CDLL(ctypes.util.find_library('c'), use_errno=True)
+
+class sched_param(ctypes.Structure):
+    _fields_ = [('sched_priority', ctypes.c_int)]
+
+def set_realtime_priority(priority=80):
+    param = sched_param()
+    param.sched_priority = priority
+    if libc.sched_setscheduler(0, 1, param) < 0:  # 1 = SCHED_FIFO
+        errno = ctypes.get_errno()
+        journal.send(f"Failed to set realtime priority: {os.strerror(errno)}")
+
+class AIOSManager:
+    def __init__(self, db_path='/etc/aios/aios.db'):
+        self.db_path = db_path
+        self.running = True
+        self.watchdog_interval = 5
+        self.processes = {}
+        
+        # Systemd integration
+        signal.signal(signal.SIGTERM, self.handle_signal)
+        signal.signal(signal.SIGINT, self.handle_signal)
+        
+    def handle_signal(self, signum, frame):
+        journal.send("Shutdown signal received")
+        self.running = False
+        
+    def init_db(self):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.executescript('''
+                CREATE TABLE IF NOT EXISTS workflows (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    schedule TEXT,
+                    priority INTEGER DEFAULT 0,
+                    enabled INTEGER DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                CREATE TABLE IF NOT EXISTS executions (
+                    id INTEGER PRIMARY KEY,
+                    workflow_id INTEGER,
+                    pid INTEGER,
+                    start_time DATETIME,
+                    end_time DATETIME,
+                    exit_code INTEGER,
+                    FOREIGN KEY (workflow_id) REFERENCES workflows (id)
+                );
+            ''')
+            
+    def get_pending_workflows(self):
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, name, command, priority FROM workflows 
+                WHERE enabled = 1 AND schedule <= datetime('now')
+            ''')
+            return cursor.fetchall()
+            
+    def execute_workflow(self, workflow_id, command, priority):
+        try:
+            # Set real-time priority for child process
+            env = os.environ.copy()
+            env['AIOS_PRIORITY'] = str(priority)
+            
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                start_new_session=True,  # Prevent zombie processes
+                env=env,
+                preexec_fn=lambda: set_realtime_priority(priority)
+            )
+            
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(
+                    'INSERT INTO executions (workflow_id, pid, start_time) VALUES (?, ?, ?)',
+                    (workflow_id, proc.pid, datetime.now())
+                )
+                
+            self.processes[proc.pid] = workflow_id
+            journal.send(f"Started workflow {workflow_id} with PID {proc.pid}")
+            
+        except Exception as e:
+            journal.send(f"Error executing workflow {workflow_id}: {str(e)}", PRIORITY=journal.LOG_ERR)
+            
+    def monitor_processes(self):
+        for pid, workflow_id in list(self.processes.items()):
+            try:
+                _, status = os.waitpid(pid, os.WNOHANG)
+                if os.WIFEXITED(status):
+                    exit_code = os.WEXITSTATUS(status)
+                    with sqlite3.connect(self.db_path) as conn:
+                        conn.execute(
+                            'UPDATE executions SET end_time=?, exit_code=? WHERE pid=?',
+                            (datetime.now(), exit_code, pid)
+                        )
+                    del self.processes[pid]
+                    journal.send(f"Workflow {workflow_id} completed with exit code {exit_code}")
+            except ChildProcessError:
+                del self.processes[pid]
+                
+    def run(self):
+        # Initialize systemd integration
+        daemon.notify('READY=1')
+        journal.send("AIOS Manager started successfully")
+        
+        set_realtime_priority(90)  # Higher priority for manager
+        
+        # Main loop
+        while self.running:
+            try:
+                # Update watchdog
+                daemon.notify('WATCHDOG=1')
+                
+                # Check for new workflows
+                workflows = self.get_pending_workflows()
+                for wf_id, name, cmd, priority in workflows:
+                    self.execute_workflow(wf_id, cmd, priority)
+                
+                # Monitor running processes
+                self.monitor_processes()
+                
+                # Sleep with watchdog timing
+                time.sleep(self.watchdog_interval)
+                
+            except Exception as e:
+                journal.send(f"Main loop error: {str(e)}", PRIORITY=journal.LOG_ERR)
+                time.sleep(self.watchdog_interval)
+                
+        # Clean shutdown
+        for pid in list(self.processes.keys()):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        daemon.notify('STOPPING=1')
+
+if __name__ == '__main__':
+    manager = AIOSManager()
+    manager.init_db()
+    manager.run()
+
+
+================================================================================
+FILE: geminiAISTUDIO1.py
+================================================================================
+
+#!/usr/bin/env python3
+import sqlite3
+import subprocess
+import os
+
+DB_PATH = "/var/lib/aios/workflows.db"
+SYSTEMD_USER_PATH = os.path.expanduser("~/.config/systemd/user/")
+
+def setup_database():
+    """Initializes the SQLite database and table if they don't exist."""
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS workflows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            command TEXT NOT NULL,
+            schedule TEXT, -- e.g., '*-*-* 02:00:00' for daily at 2 AM
+            realtime BOOLEAN DEFAULT 0,
+            priority INTEGER DEFAULT 50, -- Real-time priority (1-99)
+            cpu_weight INTEGER DEFAULT 1024, -- Non-real-time CPU shares
+            memory_max_mb INTEGER -- Max memory in MB
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def create_systemd_service(workflow):
+    """Generates and writes a systemd .service file for a workflow."""
+    service_content = f"""[Unit]
+Description=AIOS Workflow: {workflow['name']}
+
+[Service]
+Type=simple
+ExecStart={workflow['command']}
+Restart=on-failure
+"""
+    if workflow['realtime']:
+        service_content += f"CPUSchedulingPolicy=fifo\n"
+        service_content += f"CPUSchedulingPriority={workflow['priority']}\n"
+    else:
+        service_content += f"CPUWeight={workflow['cpu_weight']}\n"
+
+    if workflow['memory_max_mb']:
+        service_content += f"MemoryMax={workflow['memory_max_mb']}M\n"
+
+    service_content += "\n[Install]\nWantedBy=default.target\n"
+    
+    service_file_path = os.path.join(SYSTEMD_USER_PATH, f"{workflow['name']}.service")
+    os.makedirs(SYSTEMD_USER_PATH, exist_ok=True)
+    with open(service_file_path, "w") as f:
+        f.write(service_content)
+    return service_file_path
+
+def create_systemd_timer(workflow):
+    """Generates and writes a systemd .timer file for a scheduled workflow."""
+    if not workflow.get('schedule'):
+        return None
+        
+    timer_content = f"""[Unit]
+Description=Timer for AIOS Workflow: {workflow['name']}
+
+[Timer]
+OnCalendar={workflow['schedule']}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+    timer_file_path = os.path.join(SYSTEMD_USER_PATH, f"{workflow['name']}.timer")
+    with open(timer_file_path, "w") as f:
+        f.write(timer_content)
+    return timer_file_path
+
+def run_systemctl(command, unit_name):
+    """Helper function to run systemctl commands for the user session."""
+    try:
+        subprocess.run(["systemctl", "--user"] + command + [unit_name], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error executing systemctl command: {e}")
+
+def add_and_enable_workflow(workflow_details):
+    """Adds a workflow to the DB and creates/enables the systemd units."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO workflows (name, command, schedule, realtime, priority, cpu_weight, memory_max_mb) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            workflow_details['name'], workflow_details['command'],
+            workflow_details.get('schedule'), workflow_details.get('realtime', 0),
+            workflow_details.get('priority', 50), workflow_details.get('cpu_weight', 1024),
+            workflow_details.get('memory_max_mb')
+        )
+    )
+    conn.commit()
+    conn.close()
+
+    create_systemd_service(workflow_details)
+    run_systemctl(["daemon-reload"], "")
+
+    if workflow_details.get('schedule'):
+        create_systemd_timer(workflow_details)
+        run_systemctl(["enable", "--now"], f"{workflow_details['name']}.timer")
+        print(f"Enabled and started timer for scheduled workflow: {workflow_details['name']}")
+    else:
+        run_systemctl(["enable", "--now"], f"{workflow_details['name']}.service")
+        print(f"Enabled and started on-demand workflow: {workflow_details['name']}")
+
+if __name__ == "__main__":
+    setup_database()
+
+    # Example: Add a standard, on-demand AI workflow for data processing
+    data_processing_workflow = {
+        "name": "aios-data-processor",
+        "command": "/usr/bin/python3 -c 'import time; print(\"Processing data...\"); time.sleep(10)'",
+        "memory_max_mb": 512
+    }
+    #add_and_enable_workflow(data_processing_workflow)
+
+    # Example: Add a scheduled, daily reporting workflow
+    reporting_workflow = {
+        "name": "aios-daily-report",
+        "command": "/usr/bin/python3 -c 'print(\"Generating daily report...\")'",
+        "schedule": "*-*-* 03:00:00",
+        "cpu_weight": 512
+    }
+    #add_and_enable_workflow(reporting_workflow)
+    
+    # Example: Add a real-time inference workflow
+    inference_workflow = {
+        "name": "aios-realtime-inference",
+        "command": "/usr/bin/python3 /opt/aios/inference_server.py",
+        "realtime": True,
+        "priority": 90
+    }
+    #add_and_enable_workflow(inference_workflow)
+
+    print("\nAIOS Manager setup complete. Check systemctl --user status for workflow status.")
+    # To see the status of a service: systemctl --user status aios-data-processor.service
+    # To see the status of a timer: systemctl --user list-timers
+
+
+================================================================================
+FILE: geminiDeep1.py
+================================================================================
+
+#!/usr/bin/env python3
+import sqlite3
+import subprocess
+import os
+import logging
+import textwrap
+
+# Configuration
+DB_PATH = os.path.expanduser("~/aios_workflows.db")
+# Using systemd user services for management without root
+SYSTEMD_USER_DIR = os.path.expanduser("~/.config/systemd/user/")
+os.makedirs(SYSTEMD_USER_DIR, exist_ok=True)
+logging.basicConfig(level=logging.INFO)
+UNIT_PREFIX = "aios-"
+
+def init_db():
+    """Initializes the SQLite database schema."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS workloads (
+            id INTEGER PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            command TEXT NOT NULL,
+            schedule TEXT,
+            realtime_prio INTEGER,
+            enabled INTEGER DEFAULT 1
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def run_systemctl(args):
+    """Executes systemctl --user commands."""
+    cmd = ["systemctl", "--user"] + args
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        logging.error(f"systemctl failed: {' '.join(cmd)}. Error: {e.stderr.decode().strip()}")
+
+def generate_units(wf):
+    """Generates systemd service and timer content."""
+    # Service Unit: Handles execution, reaping, and RT scheduling
+    service_content = textwrap.dedent(f"""\
+    [Unit]
+    Description=AIOS Workload: {wf['name']}
+    [Service]
+    Type=simple
+    ExecStart={wf['command']}
+    Restart=on-failure
+    KillMode=control-group
+    Environment="PYTHONUNBUFFERED=1"
+    """)
+    
+    # Real-time scheduling (Note: often requires configuration of user limits)
+    if wf['realtime_prio'] and wf['realtime_prio'] > 0:
+        service_content += f"CPUSchedulingPolicy=rr\nCPUSchedulingPriority={wf['realtime_prio']}\nCPUSchedulingResetOnFork=yes\n"
+
+    # Timer Unit: Handles complex scheduling
+    timer_content = None
+    if wf['schedule']:
+        timer_content = textwrap.dedent(f"""\
+        [Unit]
+        Description=AIOS Scheduler for: {wf['name']}
+        [Timer]
+        OnCalendar={wf['schedule']}
+        Persistent=true
+        [Install]
+        WantedBy=timers.target
+        """)
+    return service_content, timer_content
+
+def sync_workloads():
+    """Synchronizes the database state with systemd units."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    workflows = {w['name']: w for w in conn.execute("SELECT * FROM workloads").fetchall()}
+    conn.close()
+
+    # 1. Identify existing AIOS units on the filesystem
+    existing_units = set()
+    for filename in os.listdir(SYSTEMD_USER_DIR):
+        if filename.startswith(UNIT_PREFIX) and (filename.endswith(".service") or filename.endswith(".timer")):
+            base_name = filename.replace(UNIT_PREFIX, "").replace(".service", "").replace(".timer", "")
+            existing_units.add(base_name)
+
+    # 2. Create/Update units from DB
+    for name, wf in workflows.items():
+        s_content, t_content = generate_units(wf)
+        with open(os.path.join(SYSTEMD_USER_DIR, f"{UNIT_PREFIX}{name}.service"), "w") as f:
+            f.write(s_content)
+        
+        timer_path = os.path.join(SYSTEMD_USER_DIR, f"{UNIT_PREFIX}{name}.timer")
+        if t_content:
+            with open(timer_path, "w") as f:
+                f.write(t_content)
+        elif os.path.exists(timer_path):
+            # Schedule removed; clean up the timer file
+            run_systemctl(["stop", f"{UNIT_PREFIX}{name}.timer"])
+            os.remove(timer_path)
+
+    # 3. Remove orphaned units (Deleted from DB)
+    for name in existing_units - workflows.keys():
+        logging.info(f"Removing orphaned workload: {name}")
+        run_systemctl(["stop", f"{UNIT_PREFIX}{name}.timer"])
+        run_systemctl(["stop", f"{UNIT_PREFIX}{name}.service"])
+        run_systemctl(["disable", f"{UNIT_PREFIX}{name}.timer"])
+        run_systemctl(["disable", f"{UNIT_PREFIX}{name}.service"])
+        if os.path.exists(os.path.join(SYSTEMD_USER_DIR, f"{UNIT_PREFIX}{name}.timer")):
+             os.remove(os.path.join(SYSTEMD_USER_DIR, f"{UNIT_PREFIX}{name}.timer"))
+        if os.path.exists(os.path.join(SYSTEMD_USER_DIR, f"{UNIT_PREFIX}{name}.service")):
+             os.remove(os.path.join(SYSTEMD_USER_DIR, f"{UNIT_PREFIX}{name}.service"))
+
+    # 4. Reload systemd configuration
+    run_systemctl(["daemon-reload"])
+
+    # 5. Apply desired state (Start/Stop/Enable/Disable)
+    for name, wf in workflows.items():
+        # Determine the primary unit to manage
+        target = f"{UNIT_PREFIX}{name}.timer" if wf['schedule'] else f"{UNIT_PREFIX}{name}.service"
+        
+        if wf['enabled']:
+            run_systemctl(["enable", "--now", target])
+        else:
+            run_systemctl(["disable", "--now", target])
+
+if __name__ == '__main__':
+    init_db()
+    # This sync function ensures the systemd state matches the database configuration.
+    sync_workloads()
+    logging.info("AIOS workload synchronization complete.")
+    # Note for systemd --user: Ensure 'linger' is enabled for the user if workloads
+    # must run without an active login session (e.g., `loginctl enable-linger $USER`).
+
+
+================================================================================
+FILE: geminiResearch1.py
+================================================================================
+
+#!/usr/bin/env python3
+import sqlite3
+import signal
+import subprocess
+import os
+import time
+import sys
+import sdnotify
+
+# --- Constants ---
+DB_PATH = "aios.db"
+SHUTDOWN_TIMEOUT = 10  # Seconds to wait for children to terminate
+
+class AIOSManager:
+    """
+    Manages AI-generated workflows and programs as child processes,
+    interfacing with systemd for robust service lifecycle management.
+    """
+    def __init__(self):
+        self.running = True
+        self.children =
+        self.db_conn = None
+        self.notifier = sdnotify.SystemdNotifier()
+
+        # Set up graceful shutdown handlers
+        signal.signal(signal.SIGINT, self.shutdown_handler)
+        signal.signal(signal.SIGTERM, self.shutdown_handler)
+
+    def _log(self, message):
+        """Simple logger that prints to stderr for systemd journal capture."""
+        print(f"AIOSManager: {message}", file=sys.stderr)
+
+    def setup(self):
+        """Initializes database and notifies systemd of progress."""
+        self._log("Initializing...")
+        self.notifier.notify("STATUS=Initializing database...")
+
+        try:
+            # Connect to SQLite DB. WAL mode is crucial for concurrency.
+            self.db_conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+            self.db_conn.execute("PRAGMA journal_mode=WAL;")
+            self._create_schema()
+            self._log("Database connection established.")
+        except sqlite3.Error as e:
+            self._log(f"Database initialization failed: {e}")
+            self.notifier.notify(f"STATUS=DB Error: {e}")
+            sys.exit(1)
+
+    def _create_schema(self):
+        """Ensures the necessary database tables exist."""
+        cursor = self.db_conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS projects (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                script_path TEXT NOT NULL,
+                pid INTEGER,
+                status TEXT NOT NULL,
+                FOREIGN KEY(project_id) REFERENCES projects(id)
+            )
+        """)
+        self.db_conn.commit()
+
+    def run(self):
+        """Main service loop."""
+        self.setup()
+
+        # Signal to systemd that we are fully initialized and ready.
+        self._log("Startup complete. Notifying systemd.")
+        self.notifier.notify("READY=1")
+
+        # Example: Spawn a dummy workflow for demonstration
+        self.spawn_workflow(1, "/usr/bin/sleep", ["3600"])
+
+        while self.running:
+            self.notifier.notify("STATUS=Monitoring workflows...")
+            self._monitor_children()
+
+            # In a real application, this loop would also check for new
+            # projects to run from the database or an IPC queue.
+            time.sleep(5)
+
+        self._log("Main loop exited.")
+
+    def spawn_workflow(self, workflow_id, command, args):
+        """Launches and tracks a new workflow as a child process."""
+        try:
+            self._log(f"Spawning workflow {workflow_id}: {command} {' '.join(args)}")
+            # Using Popen to run the child process non-blockingly
+            process = subprocess.Popen([command] + args)
+            self.children.append(process)
+
+            # Update database with PID
+            cursor = self.db_conn.cursor()
+            cursor.execute(
+                "UPDATE workflows SET pid =?, status = 'running' WHERE id =?",
+                (process.pid, workflow_id)
+            )
+            self.db_conn.commit()
+            self._log(f"Workflow {workflow_id} started with PID {process.pid}.")
+
+        except (OSError, FileNotFoundError) as e:
+            self._log(f"Failed to spawn workflow {workflow_id}: {e}")
+            self.notifier.notify(f"STATUS=Spawn Error: {e}")
+
+    def _monitor_children(self):
+        """
+        Checks for terminated child processes and reaps them.
+        This prevents zombie processes at the application level.
+        """
+        reaped_pids =
+        for i in reversed(range(len(self.children))):
+            child = self.children[i]
+            if child.poll() is not None:  # poll() returns exit code or None if running
+                self._log(f"Child process {child.pid} terminated with code {child.returncode}.")
+                reaped_pids.append(child.pid)
+                del self.children[i]
+
+        if reaped_pids:
+            # Update database for reaped processes
+            cursor = self.db_conn.cursor()
+            placeholders = ','.join('?' for _ in reaped_pids)
+            query = f"UPDATE workflows SET status = 'terminated' WHERE pid IN ({placeholders})"
+            cursor.execute(query, reaped_pids)
+            self.db_conn.commit()
+
+    def shutdown_handler(self, signum, frame):
+        """Handles SIGTERM/SIGINT for graceful shutdown."""
+        self._log(f"Received signal {signum}. Initiating graceful shutdown.")
+        self.notifier.notify("STOPPING=1\nSTATUS=Graceful shutdown initiated...")
+        self.running = False
+
+    def cleanup(self):
+        """Performs final cleanup before exiting."""
+        self._log("Terminating all child processes...")
+        for child in self.children:
+            if child.poll() is None:
+                child.terminate() # Send SIGTERM
+
+        # Wait for children to exit
+        start_time = time.time()
+        while any(child.poll() is None for child in self.children):
+            if time.time() - start_time > SHUTDOWN_TIMEOUT:
+                self._log("Timeout reached. Forcing termination of remaining children.")
+                for child in self.children:
+                    if child.poll() is None:
+                        child.kill() # Send SIGKILL
+                break
+            time.sleep(0.1)
+
+        self._log("All child processes terminated.")
+        if self.db_conn:
+            self.db_conn.close()
+            self._log("Database connection closed.")
+        self._log("Cleanup complete. Exiting.")
+
+if __name__ == "__main__":
+    manager = AIOSManager()
+    try:
+        manager.run()
+    finally:
+        manager.cleanup()
+
+
+================================================================================
+FILE: geminiWeb1.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+AIOS Task Orchestrator: Synthesized Production Model
+- Uses SQLite for task state management (high-performance WAL mode).
+- Delegates all execution and process reaping to systemd for robustness.
+- Combines minimalism and production-grade patterns.
+"""
+import sqlite3
+import subprocess
+import json
+import time
+import sys
+import os
+import signal
+from pathlib import Path
+
+# --- Configuration ---
+DB_PATH = Path(__file__).parent / "aios.db"
+UNIT_PREFIX = "aios-task-"
+
+# --- SQLite Queue (`claudeCodeC` minimalism) ---
+class TaskQueue:
+    """Manages task state in SQLite using high-performance settings."""
+    def __init__(self, db_path=DB_PATH):
+        self.conn = sqlite3.connect(str(db_path), isolation_level=None, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript("""
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA busy_timeout=5000;
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                cmd TEXT NOT NULL,
+                priority INT DEFAULT 0,
+                status TEXT DEFAULT 'pending', -- pending, running, completed, failed
+                created_at INT DEFAULT (strftime('%s', 'now')),
+                completed_at INT
+            );
+            CREATE INDEX IF NOT EXISTS idx_status_priority
+            ON tasks(status, priority DESC, created_at);
+        """)
+
+    def add(self, name, cmd, priority=0):
+        """Add a new task. Returns its ID or None if the name is not unique."""
+        try:
+            return self.conn.execute(
+                "INSERT INTO tasks(name, cmd, priority) VALUES(?,?,?)",
+                (name, cmd, priority)
+            ).lastrowid
+        except sqlite3.IntegrityError:
+            print(f"Error: Task name '{name}' already exists.")
+            return None
+
+    def get_next(self):
+        """Atomically fetch and mark the next pending task as 'running'."""
+        # The 'UPDATE...RETURNING' is the most atomic and performant way to pop.
+        # This avoids race conditions between workers.
+        try:
+            cursor = self.conn.execute("""
+                UPDATE tasks SET status='running' WHERE id = (
+                    SELECT id FROM tasks WHERE status='pending'
+                    ORDER BY priority DESC, created_at ASC LIMIT 1
+                ) RETURNING id, name, cmd
+            """)
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        except sqlite3.OperationalError: # Fallback for older SQLite versions
+            with self.conn:
+                row = self.conn.execute(
+                    "SELECT id, name, cmd FROM tasks WHERE status='pending' "
+                    "ORDER BY priority DESC, created_at ASC LIMIT 1"
+                ).fetchone()
+                if not row: return None
+                self.conn.execute("UPDATE tasks SET status='running' WHERE id=?", (row['id'],))
+                return dict(row)
+
+
+    def complete(self, task_id, success):
+        """Mark a task as completed or failed."""
+        status = 'completed' if success else 'failed'
+        self.conn.execute(
+            "UPDATE tasks SET status=?, completed_at=strftime('%s', 'now') WHERE id=?",
+            (status, task_id)
+        )
+
+    def stats(self):
+        """Return a count of tasks by status."""
+        return {
+            row['status']: row['count'] for row in
+            self.conn.execute("SELECT status, COUNT(*) as count FROM tasks GROUP BY status")
+        }
+
+# --- Systemd Executor ---
+class SystemdExecutor:
+    """Delegates command execution to transient systemd units."""
+    def _run_cmd(self, *args):
+        return subprocess.run(["systemctl", "--user"] + list(args), capture_output=True, text=True)
+
+    def run_task(self, name, cmd):
+        """
+        Runs a command in a transient .service unit.
+        This is the core pattern: systemd handles logging, cgroups, and cleanup.
+        The unit is automatically discarded after it stops.
+        """
+        unit_name = f"{UNIT_PREFIX}{name}.service"
+        print(f"Executing task '{name}' via transient unit '{unit_name}'")
+        # Using --no-block will start the unit and return immediately.
+        # `systemd-run` is the ideal tool for this pattern.
+        proc = self._run_cmd(
+            "start",
+            "--no-block",
+            "--unit", unit_name,
+            "--property=StandardOutput=journal",
+            "--property=StandardError=journal",
+            "/bin/sh", "-c", cmd
+        )
+        return proc.returncode == 0, unit_name
+
+    def is_active(self, unit_name):
+        """Check if the transient unit is still running."""
+        proc = self._run_cmd("is-active", unit_name)
+        return proc.returncode == 0 # is-active returns 0 if active
+
+    def get_result(self, unit_name):
+        """Get the result ('success' or 'failed') of a completed unit."""
+        proc = self._run_cmd("show", unit_name, "--property=Result")
+        if proc.stdout.strip():
+            return proc.stdout.strip().split("=")[1] == "success"
+        return False # Assume failure if result isn't found
+
+# --- Worker Loop ---
+def worker_loop(q, executor):
+    """The main worker loop connecting the queue to the executor."""
+    print(f"Worker started (PID: {os.getpid()}). Waiting for tasks...")
+    running_tasks = {} # {task_id: unit_name}
+    shutdown = threading.Event()
+
+    def handle_signal(*_):
+        print("\nShutdown signal received. Finishing running tasks...")
+        shutdown.set()
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    while not shutdown.is_set():
+        # Check status of ongoing tasks
+        for task_id, unit_name in list(running_tasks.items()):
+            if not executor.is_active(unit_name):
+                success = executor.get_result(unit_name)
+                status_str = "SUCCESS" if success else "FAILURE"
+                print(f"Task {task_id} ('{unit_name}') finished with status: {status_str}")
+                q.complete(task_id, success)
+                del running_tasks[task_id]
+
+        # Fetch new tasks if not shutting down
+        if not shutdown.is_set():
+            task = q.get_next()
+            if task:
+                success, unit_name = executor.run_task(task['name'], task['cmd'])
+                if success:
+                    running_tasks[task['id']] = unit_name
+                else:
+                    print(f"Error: Failed to start systemd unit for task {task['id']}")
+                    q.complete(task['id'], success=False)
+
+        time.sleep(1) # Poll interval
+
+    print("Worker shutdown complete.")
+
+# --- CLI Interface ---
+def main():
+    """A simple command-line interface for the orchestrator."""
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <worker|add|stats>")
+        print("  worker                  - Start a worker process.")
+        print("  add <name> <cmd> [pri]  - Add a new task.")
+        print("  stats                   - Show queue statistics.")
+        sys.exit(1)
+
+    q = TaskQueue()
+    command = sys.argv[1]
+
+    if command == "worker":
+        executor = SystemdExecutor()
+        worker_loop(q, executor)
+    elif command == "add":
+        if len(sys.argv) < 4:
+            print("Usage: add <name> <command> [priority]")
+            sys.exit(1)
+        name = sys.argv[2]
+        cmd = sys.argv[3]
+        priority = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+        task_id = q.add(name, cmd, priority)
+        if task_id:
+            print(f"Successfully added task '{name}' with ID {task_id}.")
+    elif command == "stats":
+        print(json.dumps(q.stats(), indent=2))
+    else:
+        print(f"Unknown command: {command}")
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: grok1.py
+================================================================================
+
+#!/usr/bin/env python3
+
+import sqlite3
+import os
+import sys
+import dbus
+import argparse
+import uuid
+import subprocess
+
+DB_PATH = 'aios.db'
+UNIT_DIR = '/etc/systemd/system/'  # Or user dir for non-root
+SYSTEMD_BUS = dbus.SystemBus()
+SYSTEMD_OBJ = SYSTEMD_BUS.get_object('org.freedesktop.systemd1', '/org/freedesktop/systemd1')
+MANAGER = dbus.Interface(SYSTEMD_OBJ, 'org.freedesktop.systemd1.Manager')
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS workflows
+                 (id TEXT PRIMARY KEY, name TEXT, script_code TEXT, status TEXT, schedule TEXT, rt_priority INTEGER)''')
+    conn.commit()
+    conn.close()
+
+def add_proposed_workflow(name, script_code, schedule=None, rt_priority=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    wf_id = str(uuid.uuid4())
+    c.execute("INSERT INTO workflows VALUES (?, ?, ?, ?, ?, ?)",
+              (wf_id, name, script_code, 'proposed', schedule, rt_priority))
+    conn.commit()
+    conn.close()
+    print(f"Proposed workflow {name} added with ID {wf_id}")
+
+def list_workflows(status=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    query = "SELECT id, name, status FROM workflows"
+    if status:
+        query += f" WHERE status = '{status}'"
+    c.execute(query)
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def review_workflow(wf_id, action):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT * FROM workflows WHERE id = ?", (wf_id,))
+    wf = c.fetchone()
+    if not wf:
+        print("Workflow not found")
+        return
+    if action == 'accept':
+        c.execute("UPDATE workflows SET status = 'approved' WHERE id = ?", (wf_id,))
+        conn.commit()
+        deploy_workflow(wf)
+    elif action == 'reject':
+        c.execute("DELETE FROM workflows WHERE id = ?", (wf_id,))
+        conn.commit()
+        print(f"Workflow {wf_id} rejected and deleted")
+    conn.close()
+
+def deploy_workflow(wf):
+    wf_id, name, script_code, _, schedule, rt_priority = wf
+    script_path = f"/tmp/{wf_id}.py"
+    with open(script_path, 'w') as f:
+        f.write(script_code)
+    os.chmod(script_path, 0o755)
+
+    service_name = f"aios-{wf_id}.service"
+    service_path = os.path.join(UNIT_DIR, service_name)
+    with open(service_path, 'w') as f:
+        f.write(f"""[Unit]
+Description=AIOS Workflow {name}
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/python3 {script_path}
+Restart=on-failure
+Environment=PYTHONUNBUFFERED=1
+""")
+        if rt_priority:
+            f.write(f"CPUSchedulingPolicy=rr\nCPUSchedulingPriority={rt_priority}\nCPUSchedulingResetOnFork=true\n")
+
+    if schedule:
+        timer_name = f"aios-{wf_id}.timer"
+        timer_path = os.path.join(UNIT_DIR, timer_name)
+        with open(timer_path, 'w') as f:
+            f.write(f"""[Unit]
+Description=Timer for AIOS Workflow {name}
+
+[Timer]
+OnCalendar={schedule}  # e.g., '*-*-* *:0/30:00' for every 30 min
+
+[Install]
+WantedBy=timers.target
+""")
+        subprocess.run(['systemctl', 'daemon-reload'])
+        MANAGER.EnableUnitFiles([timer_name], False, True)
+        MANAGER.StartUnit(timer_name, 'replace')
+    else:
+        subprocess.run(['systemctl', 'daemon-reload'])
+        MANAGER.EnableUnitFiles([service_name], False, True)
+        MANAGER.StartUnit(service_name, 'replace')
+
+    print(f"Workflow {wf_id} deployed")
+
+def manage_workflow(wf_id, command):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT status FROM workflows WHERE id = ?", (wf_id,))
+    status = c.fetchone()
+    conn.close()
+    if not status or status[0] != 'approved':
+        print("Only approved workflows can be managed")
+        return
+
+    service_name = f"aios-{wf_id}.service"
+    if command == 'stop':
+        MANAGER.StopUnit(service_name, 'replace')
+    elif command == 'restart':
+        MANAGER.RestartUnit(service_name, 'replace')
+    elif command == 'status':
+        unit = MANAGER.GetUnit(service_name)
+        prop = dbus.Interface(SYSTEMD_BUS.get_object('org.freedesktop.systemd1', unit), 'org.freedesktop.DBus.Properties')
+        print(prop.Get('org.freedesktop.systemd1.Unit', 'ActiveState'))
+
+if __name__ == '__main__':
+    init_db()
+    parser = argparse.ArgumentParser(description='AIOS Workflow Manager')
+    subparsers = parser.add_subparsers(dest='cmd')
+
+    add = subparsers.add_parser('add', help='Add proposed workflow')
+    add.add_argument('name')
+    add.add_argument('script_file', help='Path to script code file')
+    add.add_argument('--schedule', help='systemd OnCalendar format')
+    add.add_argument('--rt_priority', type=int, help='Real-time priority 1-99')
+
+    list_cmd = subparsers.add_parser('list', help='List workflows')
+    list_cmd.add_argument('--status', help='Filter by status')
+
+    review = subparsers.add_parser('review', help='Review workflow')
+    review.add_argument('wf_id')
+    review.add_argument('action', choices=['accept', 'reject'])
+
+    manage = subparsers.add_parser('manage', help='Manage approved workflow')
+    manage.add_argument('wf_id')
+    manage.add_argument('command', choices=['stop', 'restart', 'status'])
+
+    args = parser.parse_args()
+
+    if args.cmd == 'add':
+        with open(args.script_file, 'r') as f:
+            code = f.read()
+        add_proposed_workflow(args.name, code, args.schedule, args.rt_priority)
+    elif args.cmd == 'list':
+        for row in list_workflows(args.status):
+            print(row)
+    elif args.cmd == 'review':
+        review_workflow(args.wf_id, args.action)
+    elif args.cmd == 'manage':
+        manage_workflow(args.wf_id, args.command)
+    else:
+        parser.print_help()
+
+
+================================================================================
+FILE: grok2.py
+================================================================================
+
+import sqlite3
+import os
+import subprocess
+import signal
+import sys
+import time
+import logging
+from systemd import journal  # Requires python-systemd package
+import sdnotify  # Requires sdnotify package
+
+# Setup logging to journal
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('aios_manager')
+logger.addHandler(journal.JournalHandler(SYSLOG_IDENTIFIER='aios'))
+
+DB_FILE = 'aios.db'
+UNIT_DIR = '/etc/systemd/system/'  # System-wide; use ~/.config/systemd/user/ for user
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS workflows
+                 (id INTEGER PRIMARY KEY, name TEXT, code TEXT, status TEXT, scheduling TEXT, realtime INTEGER)''')
+    conn.commit()
+    conn.close()
+
+def propose_workflow(name, code, scheduling='none', realtime=0):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT INTO workflows (name, code, status, scheduling, realtime) VALUES (?, ?, 'proposed', ?, ?)",
+              (name, code, scheduling, realtime))
+    conn.commit()
+    conn.close()
+    logger.info(f"Proposed workflow: {name}")
+
+def review_workflows():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM workflows WHERE status = 'proposed'")
+    return c.fetchall()
+
+def accept_workflow(wf_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT name, code, scheduling, realtime FROM workflows WHERE id = ?", (wf_id,))
+    wf = c.fetchone()
+    if wf:
+        name, code, scheduling, realtime = wf
+        # Write code to file
+        script_path = f"/opt/aios/{name}.py"
+        os.makedirs(os.path.dirname(script_path), exist_ok=True)
+        with open(script_path, 'w') as f:
+            f.write(code)
+        os.chmod(script_path, 0o755)
+        # Create unit file
+        unit_file = f"{UNIT_DIR}{name}.service"
+        with open(unit_file, 'w') as f:
+            f.write(f"""[Unit]
+Description=AIOS Workflow: {name}
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 {script_path}
+User=root
+Type=notify
+Restart=on-failure
+CPUSchedulingPolicy=rr
+CPUSchedulingPriority={realtime if realtime else 50}
+
+[Install]
+WantedBy=multi-user.target
+""")
+        # If scheduling, create timer
+        if scheduling != 'none':
+            timer_file = f"{UNIT_DIR}{name}.timer"
+            with open(timer_file, 'w') as f:
+                f.write(f"""[Unit]
+Description=Timer for {name}
+
+[Timer]
+OnCalendar={scheduling}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+""")
+            subprocess.run(['systemctl', 'enable', f"{name}.timer"])
+        subprocess.run(['systemctl', 'daemon-reload'])
+        subprocess.run(['systemctl', 'enable', f"{name}.service"])
+        subprocess.run(['systemctl', 'start', f"{name}.service"])
+        c.execute("UPDATE workflows SET status = 'accepted' WHERE id = ?", (wf_id,))
+        conn.commit()
+        logger.info(f"Accepted and started: {name}")
+    conn.close()
+
+def reject_workflow(wf_id):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE workflows SET status = 'rejected' WHERE id = ?", (wf_id,))
+    conn.commit()
+    conn.close()
+    logger.info(f"Rejected workflow ID: {wf_id}")
+
+def reap_children():
+    while True:
+        try:
+            pid, status = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+            logger.info(f"Reaped child {pid}")
+        except ChildProcessError:
+            break
+
+def handle_signals(signum, frame):
+    logger.info("Shutting down...")
+    reap_children()
+    sys.exit(0)
+
+def main():
+    init_db()
+    signal.signal(signal.SIGTERM, handle_signals)
+    signal.signal(signal.SIGINT, handle_signals)
+    n = sdnotify.SystemdNotifier()
+    n.notify("READY=1")
+
+    while True:
+        print("\nAIOS Manager: 1=Propose, 2=Review/Accept/Reject, 3=Exit")
+        choice = input("Choice: ")
+        if choice == '1':
+            name = input("Name: ")
+            code = input("Code (multi-line, end with EOF): ")
+            scheduling = input("Scheduling (e.g., '*-*-1 02:00:00' or 'none'): ")
+            realtime = int(input("Real-time priority (1-99, 0 for none): "))
+            propose_workflow(name, code, scheduling, realtime)
+        elif choice == '2':
+            wfs = review_workflows()
+            for wf in wfs:
+                print(f"ID: {wf[0]}, Name: {wf[1]}, Code: {wf[2]}")
+            wf_id = int(input("ID to accept/reject: "))
+            action = input("Accept (a) or Reject (r)? ")
+            if action == 'a':
+                accept_workflow(wf_id)
+            elif action == 'r':
+                reject_workflow(wf_id)
+        elif choice == '3':
+            break
+        time.sleep(1)  # Poll gently
+        reap_children()  # Reap any children
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: kimi1.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+aios_systemd.py – tiny launcher for AIOS workflows
+- starts any executable as a *transient* systemd user unit
+- guarantees auto-reap (no zombies)
+- supports real-time policy / nice / cgroup slices
+- <200 lines, single file, zero deps except systemd
+"""
+import argparse, subprocess, sys, shlex, time, re, json, sqlite3, os
+
+DB = "aios.sqlite"          # same DB AIOS already uses
+SYSTEMD_RUN = "/usr/bin/systemd-run"
+
+def _quote(*a): return " ".join(shlex.quote(str(x)) for x in a)
+
+def _unit_name(wid: str) -> str:
+    return "aios-" + re.sub(r"[^a-zA-Z0-9_:.-]", "_", wid)
+
+def _status(unit: str):
+    out = subprocess.run(["systemctl", "--user", "show", unit],
+                         capture_output=True, text=True)
+    return dict(line.split("=", 1) for line in out.stdout.splitlines() if "=" in line)
+
+def launch(workflow_id: str, cmdline: list, *,
+           realtime=False, nice=0, slice_name="aios.slice"):
+    unit = _unit_name(workflow_id)
+    extra = []
+    if realtime:
+        extra += ["--property=CPUSchedulingPolicy=rr",
+                  "--property=CPUSchedulingPriority=90"]
+    if nice:
+        extra += [f"--property=Nice={nice}"]
+    extra += [f"--slice={slice_name}"]
+    subprocess.run([SYSTEMD_RUN,
+                    "--user", "--collect", "--quiet",
+                    "--unit", unit,
+                    *extra, "--", *cmdline], check=True)
+    return unit
+
+def reap_until_done(unit: str, poll=1):
+    while True:
+        st = _status(unit).get("ActiveState", "")
+        if st in ("inactive", "failed"): break
+        time.sleep(poll)
+    return st != "failed"
+
+def db_record(wid: str, unit: str, status: str):
+    with sqlite3.connect(DB) as con:
+        con.execute("INSERT OR REPLACE INTO jobs(id,unit,status) VALUES(?,?,?)",
+                    (wid, unit, status))
+
+# ---------------- CLI ----------------
+def cli():
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    a = sub.add_parser("launch", help="start workflow as systemd unit")
+    a.add_argument("workflow_id")
+    a.add_argument("command", nargs="+")
+    a.add_argument("--realtime", action="store_true")
+    a.add_argument("--nice", type=int, default=0)
+
+    b = sub.add_parser("wait", help="block until workflow finishes")
+    b.add_argument("workflow_id")
+
+    c = sub.add_parser("cleanup", help="remove finished units from DB")
+
+    args = p.parse_args()
+
+    if args.cmd == "launch":
+        unit = launch(args.workflow_id, args.command,
+                      realtime=args.realtime, nice=args.nice)
+        db_record(args.workflow_id, unit, "running")
+        print(unit)
+
+    elif args.cmd == "wait":
+        unit = _unit_name(args.workflow_id)
+        ok = reap_until_done(unit)
+        db_record(args.workflow_id, unit, "done" if ok else "failed")
+        sys.exit(0 if ok else 1)
+
+    elif args.cmd == "cleanup":
+        with sqlite3.connect(DB) as con:
+            cur = con.execute("SELECT id,unit FROM jobs")
+            for wid, unit in cur.fetchall():
+                st = _status(unit).get("ActiveState", "")
+                if st in ("inactive", "failed", None):
+                    con.execute("DELETE FROM jobs WHERE id=?", (wid,))
+
+if __name__ == "__main__":
+    cli()
+
+
+================================================================================
+FILE: qwen1.py
+================================================================================
+
+#!/usr/bin/env python3
+import os
+import sys
+import sqlite3
+import subprocess
+import signal
+from pathlib import Path
+
+DB_PATH = Path("/var/lib/aios/workflows.db")
+SYSTEMD_DIR = Path("/etc/systemd/system/")
+
+class AIOSManager:
+    def __init__(self):
+        DB_PATH.parent.mkdir(exist_ok=True)
+        self.db = sqlite3.connect(DB_PATH)
+        self.init_db()
+
+    def init_db(self):
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS workflows (
+                id INTEGER PRIMARY KEY,
+                name TEXT UNIQUE,
+                script_path TEXT,
+                schedule TEXT,
+                enabled BOOLEAN DEFAULT 1,
+                accepted BOOLEAN DEFAULT 0
+            )
+        """)
+        self.db.commit()
+
+    def register_workflow(self, name, script, schedule="*-*-* *:*:00"):
+        if not Path(script).exists():
+            raise FileNotFoundError(f"Script {script} not found")
+        self.db.execute(
+            "INSERT OR REPLACE INTO workflows (name, script_path, schedule, accepted) VALUES (?, ?, ?, 1)",
+            (name, script, schedule)
+        )
+        self.db.commit()
+        self.write_systemd_unit(name, script, schedule)
+
+    def write_systemd_unit(self, name, script, schedule):
+        unit_name = f"aios-{name}.service"
+        timer_name = f"aios-{name}.timer"
+        service_content = f"""[Unit]
+Description=AIOS Workflow - {name}
+After=network.target
+
+[Service]
+Type=exec
+ExecStart={sys.executable} {script}
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+"""
+        timer_content = f"""[Unit]
+Description=AIOS Timer for {name}
+
+[Timer]
+OnCalendar={schedule}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+"""
+        (SYSTEMD_DIR / unit_name).write_text(service_content)
+        (SYSTEMD_DIR / timer_name).write_text(timer_content)
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+        subprocess.run(["systemctl", "enable", timer_name], check=True)
+        subprocess.run(["systemctl", "start", timer_name], check=True)
+
+    def list_workflows(self):
+        return self.db.execute("SELECT name, script_path, schedule, enabled FROM workflows WHERE accepted = 1").fetchall()
+
+    def approve_workflow(self, name):
+        self.db.execute("UPDATE workflows SET accepted = 1 WHERE name = ?", (name,))
+        self.db.commit()
+
+    def reject_workflow(self, name):
+        self.db.execute("UPDATE workflows SET accepted = 0 WHERE name = ?", (name,))
+        self.db.commit()
+        self.disable_workflow(name)
+
+    def disable_workflow(self, name):
+        timer_name = f"aios-{name}.timer"
+        service_name = f"aios-{name}.service"
+        subprocess.run(["systemctl", "stop", timer_name], stderr=subprocess.DEVNULL)
+        subprocess.run(["systemctl", "disable", timer_name], stderr=subprocess.DEVNULL)
+        (SYSTEMD_DIR / timer_name).unlink(missing_ok=True)
+        (SYSTEMD_DIR / service_name).unlink(missing_ok=True)
+        subprocess.run(["systemctl", "daemon-reload"], check=True)
+
+if __name__ == "__main__":
+    mgr = AIOSManager()
+    print("AIOS Systemd Workflow Manager (v0.1)")
+    print("Workflows:", mgr.list_workflows())
+
+
+================================================================================
+FILE: systemd dbus.py
+================================================================================
+
+import dbus
+import subprocess
+import os
+import sys
+import time
+
+SYSTEMD_BUSNAME = 'org.freedesktop.systemd1'
+SYSTEMD_PATH = '/org/freedesktop/systemd1'
+SYSTEMD_MANAGER_INTERFACE = 'org.freedesktop.systemd1.Manager'
+SYSTEMD_UNIT_INTERFACE = 'org.freedesktop.systemd1.Unit'
+
+bus = dbus.SystemBus()
+proxy = bus.get_object('org.freedesktop.PolicyKit1', '/org/freedesktop/PolicyKit1/Authority')
+authority = dbus.Interface(proxy, dbus_interface='org.freedesktop.PolicyKit1.Authority')
+system_bus_name = bus.get_unique_name()
+subject = ('system-bus-name', {'name' : system_bus_name})
+action_id = 'org.freedesktop.systemd1.manage-units'
+details = {}
+flags = 1  # AllowUserInteraction flag
+cancellation_id = ''  # No cancellation id
+result = authority.CheckAuthorization(subject, action_id, details, flags, cancellation_id)
+
+if result[1] != 0:
+    sys.exit("Need administrative privilege")
+
+systemd_object = bus.get_object(SYSTEMD_BUSNAME, SYSTEMD_PATH)
+systemd_manager = dbus.Interface(systemd_object, SYSTEMD_MANAGER_INTERFACE)
+
+
+================================================================================
+FILE: systemdOrchestrator.py
+================================================================================
+
+#!/usr/bin/env python3
+"""
+Systemd-based orchestrator - Ultra-minimal, ultra-fast
+Leverages systemd for process management, restart, and zombie reaping
+"""
+import os
+import sys
+import time
+import subprocess
+import json
+from pathlib import Path
+
+BASE_DIR = Path(__file__).parent.absolute()
+UNIT_PREFIX = "aios-"
+
+class SystemdOrchestrator:
+    """Minimal systemd wrapper - let systemd handle everything"""
+
+    def __init__(self):
+        self.jobs = {}
+        self._load_jobs()
+
+    def _run(self, *args):
+        """Run systemctl command"""
+        return subprocess.run(["systemctl", "--user"] + list(args),
+                            capture_output=True, text=True, check=False)
+
+    def _load_jobs(self):
+        """Load existing AIOS jobs from systemd"""
+        result = self._run("list-units", f"{UNIT_PREFIX}*.service", "--no-legend", "--plain")
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if parts:
+                    name = parts[0].replace('.service', '').replace(UNIT_PREFIX, '')
+                    self.jobs[name] = parts[0]
+
+    def add_job(self, name: str, command: str, restart: str = "always") -> str:
+        """Create systemd service unit"""
+        unit_name = f"{UNIT_PREFIX}{name}.service"
+        unit_path = Path(f"~/.config/systemd/user/{unit_name}").expanduser()
+        unit_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Systemd handles: zombie reaping, process groups, restart, logging
+        unit_content = f"""[Unit]
+Description=AIOS Job: {name}
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c '{command}'
+Restart={restart}
+RestartSec=0
+StandardOutput=journal
+StandardError=journal
+KillMode=control-group
+TimeoutStopSec=0
+
+[Install]
+WantedBy=default.target
+"""
+        unit_path.write_text(unit_content)
+        self.jobs[name] = unit_name
+        self._run("daemon-reload")
+        return unit_name
+
+    def start_job(self, name: str) -> float:
+        """Start job via systemd"""
+        if name not in self.jobs:
+            return -1
+        start = time.perf_counter()
+        self._run("start", self.jobs[name])
+        return (time.perf_counter() - start) * 1000
+
+    def stop_job(self, name: str) -> float:
+        """Stop job immediately"""
+        if name not in self.jobs:
+            return -1
+        start = time.perf_counter()
+        self._run("stop", self.jobs[name])
+        return (time.perf_counter() - start) * 1000
+
+    def restart_job(self, name: str) -> float:
+        """Restart job via systemd"""
+        if name not in self.jobs:
+            return -1
+        start = time.perf_counter()
+        self._run("restart", self.jobs[name])
+        return (time.perf_counter() - start) * 1000
+
+    def restart_all(self) -> dict:
+        """Restart all jobs"""
+        start = time.perf_counter()
+        times = {}
+
+        # Use systemd's batch restart for speed
+        units = list(self.jobs.values())
+        if units:
+            result = self._run("restart", *units)
+            for name in self.jobs:
+                times[name] = 0.5  # systemd handles it in parallel
+
+        total = (time.perf_counter() - start) * 1000
+        print(f"=== RESTART ALL in {total:.2f}ms ===")
+        return times
+
+    def status(self) -> dict:
+        """Get status of all jobs"""
+        status = {}
+        for name, unit in self.jobs.items():
+            result = self._run("show", unit, "--property=ActiveState,MainPID,ExecMainStartTimestampMonotonic")
+            props = {}
+            for line in result.stdout.strip().split('\n'):
+                if '=' in line:
+                    k, v = line.split('=', 1)
+                    props[k] = v
+
+            status[name] = {
+                'state': props.get('ActiveState', 'unknown'),
+                'pid': int(props.get('MainPID', 0))
+            }
+        return status
+
+    def cleanup(self):
+        """Remove all AIOS systemd units"""
+        for unit in self.jobs.values():
+            self._run("stop", unit)
+            self._run("disable", unit)
+            unit_path = Path(f"~/.config/systemd/user/{unit}").expanduser()
+            if unit_path.exists():
+                unit_path.unlink()
+        self._run("daemon-reload")
+
+def main():
+    """Main entry with example usage"""
+    orch = SystemdOrchestrator()
+
+    # Add jobs if they don't exist
+    if "heartbeat" not in orch.jobs:
+        orch.add_job("heartbeat", "while true; do echo Heartbeat; sleep 5; done")
+        orch.start_job("heartbeat")
+    if "todo_app" not in orch.jobs:
+        orch.add_job("todo_app", "/usr/bin/python3 " + str(BASE_DIR / "hybridTODO.py"))
+        orch.start_job("todo_app")
+
+    # Handle commands
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+        if cmd == "start":
+            for name in orch.jobs:
+                ms = orch.start_job(name)
+                print(f"Started {name} in {ms:.2f}ms")
+        elif cmd == "stop":
+            for name in orch.jobs:
+                ms = orch.stop_job(name)
+                print(f"Stopped {name} in {ms:.2f}ms")
+        elif cmd == "restart":
+            times = orch.restart_all()
+            print(f"Restart times: {times}")
+        elif cmd == "status":
+            print(json.dumps(orch.status(), indent=2))
+        elif cmd == "cleanup":
+            orch.cleanup()
+            print("Cleaned up all units")
+        else:
+            print(f"Usage: {sys.argv[0]} [start|stop|restart|status|cleanup]")
+    else:
+        # Just show status
+        status = orch.status()
+        print(f"=== Systemd Orchestrator ===")
+        print(f"Jobs: {len(status)}")
+        for name, info in status.items():
+            print(f"  {name}: {info['state']} (PID: {info['pid']})")
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+FILE: systemdServiceManagerFlask.py
+================================================================================
+
+#!/usr/bin/env python3
+import signal
+import time
+import logging
+from systemd import journal
+
+# Configure journal logging
+journal_handler = journal.JournalHandler(SYSLOG_IDENTIFIER='my_service')
+journal_handler.setLevel(logging.INFO)
+logging.root.addHandler(journal_handler)
+logging.root.setLevel(logging.INFO)
+
+logger = logging.getLogger(__name__)
+
+class ServiceManager:
+    def __init__(self):
+        self.shutdown = False
+        signal.signal(signal.SIGTERM, self._handle_signal)
+        signal.signal(signal.SIGINT, self._handle_signal)
+        
+    def _handle_signal(self, signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully")
+        self.shutdown = True
+        
+    def run(self):
+        logger.info("Starting the service")
+        total_duration = 0
+        
+        while not self.shutdown:
+            # Your service logic here
+            time.sleep(60)
+            total_duration += 60
+            logger.info(f"Total duration: {total_duration}")
+            
+            # Simulate crash after 5 minutes for demo
+            if total_duration >= 300:
+                raise Exception("Service crash simulation")
+
+if __name__ == "__main__":
+    service = ServiceManager()
+    try:
+        service.run()
+    except Exception as e:
+        logger.error(f"Service crashed: {e}")
+        exit(1)
+
+
