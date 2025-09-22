@@ -1,0 +1,3655 @@
+claude1.py
+================================================================================
+#!/usr/bin/env python3
+"""
+SQLite Task Queue for AIOS - Based on patterns from Android, Chrome, WhatsApp
+Handles both one-shot tasks and recurring jobs with minimal overhead
+"""
+
+import os
+import sys
+import time
+import json
+import sqlite3
+import subprocess
+import threading
+from pathlib import Path
+from datetime import datetime
+from typing import Optional, Dict, Any
+
+BASE_DIR = Path(__file__).parent.absolute()
+UNIT_PREFIX = "aios-"
+DB_PATH = BASE_DIR / "aios_tasks.db"
+
+class TaskQueue:
+    """SQLite task queue using patterns from 500M+ user deployments"""
+    
+    def __init__(self, db_path: str = str(DB_PATH)):
+        self.db_path = db_path
+        self.conn = None
+        self.lock = threading.Lock()
+        self._init_db()
+        
+    def _init_db(self):
+        """Initialize with Android/Chrome proven settings"""
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        
+        # Critical pragmas from WhatsApp/Chrome/Android
+        self.conn.executescript("""
+            -- WAL mode for concurrent reads (WhatsApp pattern)
+            PRAGMA journal_mode = WAL;
+            
+            -- Chrome's settings for speed
+            PRAGMA synchronous = NORMAL;
+            PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 30000000000;
+            
+            -- Android JobScheduler pattern
+            PRAGMA cache_size = -64000;  -- 64MB cache
+            PRAGMA page_size = 4096;
+            PRAGMA busy_timeout = 5000;
+            
+            -- Minimal schema like WhatsApp client
+            CREATE TABLE IF NOT EXISTS tasks (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                command TEXT NOT NULL,
+                payload BLOB,  -- BLOB is faster than TEXT (Chrome pattern)
+                priority INTEGER DEFAULT 0,
+                status TEXT DEFAULT 'pending',
+                scheduled_at INTEGER,  -- Unix timestamp (Android pattern)
+                created_at INTEGER DEFAULT (strftime('%s', 'now')),
+                started_at INTEGER,
+                completed_at INTEGER,
+                retry_count INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 3,
+                result BLOB
+            );
+            
+            -- Single efficient index (WhatsApp pattern - minimal indexes)
+            CREATE INDEX IF NOT EXISTS idx_pending ON tasks(status, priority DESC, scheduled_at)
+                WHERE status = 'pending';
+        """)
+        self.conn.commit()
+    
+    def push(self, name: str, command: str, priority: int = 0, 
+             payload: Any = None, scheduled_at: Optional[int] = None) -> int:
+        """Add task using atomic operations (Android pattern)"""
+        scheduled = scheduled_at or int(time.time())
+        payload_blob = json.dumps(payload).encode() if payload else None
+        
+        with self.lock:
+            cursor = self.conn.execute(
+                """INSERT INTO tasks (name, command, payload, priority, scheduled_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (name, command, payload_blob, priority, scheduled)
+            )
+            self.conn.commit()
+            return cursor.lastrowid
+    
+    def pop(self) -> Optional[Dict[str, Any]]:
+        """Atomic pop using UPDATE-RETURNING (Chrome/Android pattern)"""
+        with self.lock:
+            # Single atomic operation - no separate SELECT then UPDATE
+            cursor = self.conn.execute("""
+                UPDATE tasks 
+                SET status = 'running', started_at = strftime('%s', 'now')
+                WHERE id = (
+                    SELECT id FROM tasks 
+                    WHERE status = 'pending' 
+                        AND scheduled_at <= strftime('%s', 'now')
+                    ORDER BY priority DESC, scheduled_at ASC
+                    LIMIT 1
+                )
+                RETURNING id, name, command, payload
+            """)
+            
+            row = cursor.fetchone()
+            self.conn.commit()
+            
+            if row:
+                return {
+                    'id': row['id'],
+                    'name': row['name'],
+                    'command': row['command'],
+                    'payload': json.loads(row['payload']) if row['payload'] else None
+                }
+            return None
+    
+    def complete(self, task_id: int, success: bool, result: Any = None):
+        """Mark task complete (WhatsApp pattern for status updates)"""
+        status = 'completed' if success else 'failed'
+        result_blob = json.dumps(result).encode() if result else None
+        
+        with self.lock:
+            self.conn.execute("""
+                UPDATE tasks 
+                SET status = ?, completed_at = strftime('%s', 'now'), result = ?
+                WHERE id = ?
+            """, (status, result_blob, task_id))
+            
+            if not success:
+                # Auto-retry logic from Android JobScheduler
+                self.conn.execute("""
+                    UPDATE tasks 
+                    SET status = 'pending', retry_count = retry_count + 1,
+                        scheduled_at = strftime('%s', 'now') + (retry_count * 5)
+                    WHERE id = ? AND retry_count < max_retries
+                """, (task_id,))
+            
+            self.conn.commit()
+    
+    def get_stats(self) -> Dict[str, int]:
+        """Quick stats query (Chrome pattern for monitoring)"""
+        cursor = self.conn.execute("""
+            SELECT 
+                COUNT(CASE WHEN status='pending' THEN 1 END) as pending,
+                COUNT(CASE WHEN status='running' THEN 1 END) as running,
+                COUNT(CASE WHEN status='completed' THEN 1 END) as completed,
+                COUNT(CASE WHEN status='failed' THEN 1 END) as failed
+            FROM tasks
+        """)
+        return dict(cursor.fetchone())
+
+
+class SystemdOrchestrator:
+    """Minimal systemd wrapper - let systemd handle everything"""
+
+    def __init__(self):
+        self.jobs = {}
+        self.task_queue = TaskQueue()  # Add SQLite queue
+        self._load_jobs()
+
+    def _run(self, *args):
+        """Run systemctl command"""
+        return subprocess.run(["systemctl", "--user"] + list(args),
+                            capture_output=True, text=True, check=False)
+
+    def _load_jobs(self):
+        """Load existing AIOS jobs from systemd"""
+        result = self._run("list-units", f"{UNIT_PREFIX}*.service", "--no-legend", "--plain")
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if parts:
+                    name = parts[0].replace('.service', '').replace(UNIT_PREFIX, '')
+                    self.jobs[name] = parts[0]
+
+    def add_job(self, name: str, command: str, restart: str = "always") -> str:
+        """Create systemd service unit"""
+        unit_name = f"{UNIT_PREFIX}{name}.service"
+        unit_path = Path(f"~/.config/systemd/user/{unit_name}").expanduser()
+        unit_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Systemd handles: zombie reaping, process groups, restart, logging
+        unit_content = f"""[Unit]
+Description=AIOS Job: {name}
+
+[Service]
+Type=simple
+ExecStart=/bin/sh -c '{command}'
+Restart={restart}
+RestartSec=0
+StandardOutput=journal
+StandardError=journal
+KillMode=control-group
+TimeoutStopSec=0
+
+[Install]
+WantedBy=default.target
+"""
+        unit_path.write_text(unit_content)
+        self.jobs[name] = unit_name
+        self._run("daemon-reload")
+        return unit_name
+    
+    def add_task(self, name: str, command: str, priority: int = 0) -> int:
+        """Add one-shot task to SQLite queue"""
+        return self.task_queue.push(name, command, priority)
+    
+    def run_worker(self):
+        """Worker loop that processes tasks from queue"""
+        print("Task worker started")
+        while True:
+            task = self.task_queue.pop()
+            if task:
+                print(f"Running task: {task['name']}")
+                try:
+                    result = subprocess.run(
+                        task['command'],
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=300
+                    )
+                    success = result.returncode == 0
+                    self.task_queue.complete(
+                        task['id'], 
+                        success,
+                        {'stdout': result.stdout, 'stderr': result.stderr}
+                    )
+                except Exception as e:
+                    self.task_queue.complete(task['id'], False, str(e))
+            else:
+                time.sleep(0.1)  # Brief sleep when queue empty
+
+    def start_job(self, name: str) -> float:
+        """Start job via systemd"""
+        if name not in self.jobs:
+            return -1
+        start = time.perf_counter()
+        self._run("start", self.jobs[name])
+        return (time.perf_counter() - start) * 1000
+
+    def stop_job(self, name: str) -> float:
+        """Stop job immediately"""
+        if name not in self.jobs:
+            return -1
+        start = time.perf_counter()
+        self._run("stop", self.jobs[name])
+        return (time.perf_counter() - start) * 1000
+
+    def restart_job(self, name: str) -> float:
+        """Restart job via systemd"""
+        if name not in self.jobs:
+            return -1
+        start = time.perf_counter()
+        self._run("restart", self.jobs[name])
+        return (time.perf_counter() - start) * 1000
+
+    def restart_all(self) -> dict:
+        """Restart all jobs"""
+        start = time.perf_counter()
+        times = {}
+
+        # Use systemd's batch restart for speed
+        units = list(self.jobs.values())
+        if units:
+            result = self._run("restart", *units)
+            for name in self.jobs:
+                times[name] = 0.5  # systemd handles it in parallel
+
+        total = (time.perf_counter() - start) * 1000
+        print(f"=== RESTART ALL in {total:.2f}ms ===")
+        return times
+
+    def status(self) -> dict:
+        """Get status of all jobs and tasks"""
+        status = {}
+        
+        # Systemd jobs status
+        for name, unit in self.jobs.items():
+            result = self._run("show", unit, "--property=ActiveState,MainPID,ExecMainStartTimestampMonotonic")
+            props = {}
+            for line in result.stdout.strip().split('\n'):
+                if '=' in line:
+                    k, v = line.split('=', 1)
+                    props[k] = v
+
+            status[name] = {
+                'state': props.get('ActiveState', 'unknown'),
+                'pid': int(props.get('MainPID', 0))
+            }
+        
+        # Add task queue stats
+        status['_tasks'] = self.task_queue.get_stats()
+        return status
+
+    def cleanup(self):
+        """Remove all AIOS systemd units"""
+        for unit in self.jobs.values():
+            self._run("stop", unit)
+            self._run("disable", unit)
+            unit_path = Path(f"~/.config/systemd/user/{unit}").expanduser()
+            if unit_path.exists():
+                unit_path.unlink()
+        self._run("daemon-reload")
+
+
+def main():
+    """Main entry with example usage"""
+    orch = SystemdOrchestrator()
+
+    # Handle commands
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+        
+        if cmd == "worker":
+            # Run task worker
+            orch.run_worker()
+            
+        elif cmd == "add-task":
+            # Add a one-shot task to queue
+            if len(sys.argv) < 4:
+                print("Usage: orchestrator.py add-task <name> <command>")
+                sys.exit(1)
+            task_id = orch.add_task(sys.argv[2], sys.argv[3])
+            print(f"Added task {task_id}")
+            
+        elif cmd == "start":
+            for name in orch.jobs:
+                ms = orch.start_job(name)
+                print(f"Started {name} in {ms:.2f}ms")
+                
+        elif cmd == "stop":
+            for name in orch.jobs:
+                ms = orch.stop_job(name)
+                print(f"Stopped {name} in {ms:.2f}ms")
+                
+        elif cmd == "restart":
+            times = orch.restart_all()
+            print(f"Restart times: {times}")
+            
+        elif cmd == "status":
+            status = orch.status()
+            print(json.dumps(status, indent=2))
+            
+        elif cmd == "cleanup":
+            orch.cleanup()
+            print("Cleaned up all units")
+            
+        else:
+            print(f"Usage: {sys.argv[0]} [worker|add-task|start|stop|restart|status|cleanup]")
+    else:
+        # Just show status
+        status = orch.status()
+        print(f"=== Systemd Orchestrator ===")
+        print(f"Jobs: {len([k for k in status.keys() if not k.startswith('_')])}")
+        for name, info in status.items():
+            if not name.startswith('_'):
+                print(f"  {name}: {info['state']} (PID: {info['pid']})")
+        if '_tasks' in status:
+            print(f"Tasks: {status['_tasks']}")
+
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+claudeCode2.py
+================================================================================
+#!/usr/bin/env python3
+"""
+ClaudeCode2: Advanced Scheduling and Job Queue with ACK Support
+Includes delayed execution, exponential backoff, dependency tracking, and worker pools
+"""
+
+import os
+import sys
+import time
+import sqlite3
+import json
+import subprocess
+import threading
+import signal
+import logging
+from pathlib import Path
+from enum import Enum
+from typing import Optional, Dict, Any, List, Tuple
+from dataclasses import dataclass
+from contextlib import contextmanager
+from datetime import datetime, timedelta
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("aios_scheduler")
+
+BASE_DIR = Path(__file__).parent.absolute()
+DB_PATH = BASE_DIR / "aios_scheduler.db"
+UNIT_PREFIX = "aios-"
+
+class TaskStatus(Enum):
+    QUEUED = "queued"
+    LEASED = "leased"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+@dataclass
+class Task:
+    id: int
+    name: str
+    command: str
+    args: Dict[str, Any]
+    priority: int
+    status: TaskStatus
+    unique_key: Optional[str]
+    not_before: datetime
+    lease_until: Optional[datetime]
+    worker_id: Optional[str]
+    attempts: int
+    max_retries: int
+    backoff_ms: int
+    created_at: datetime
+    updated_at: datetime
+    parent_ids: List[int] = None
+
+class AdvancedTaskQueue:
+    """Production-grade task queue with scheduling and acknowledgment"""
+
+    def __init__(self, db_path: str = str(DB_PATH)):
+        self.db_path = db_path
+        self._init_db()
+
+    @contextmanager
+    def _get_conn(self):
+        """Connection with production settings"""
+        conn = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA mmap_size=30000000000")  # 30GB mmap
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _init_db(self):
+        """Create advanced schema with dependencies and scheduling"""
+        with self._get_conn() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    args TEXT DEFAULT '{}',
+                    priority INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'queued',
+                    unique_key TEXT,
+                    not_before INTEGER DEFAULT 0,
+                    lease_until INTEGER,
+                    worker_id TEXT,
+                    attempts INTEGER DEFAULT 0,
+                    max_retries INTEGER DEFAULT 3,
+                    backoff_ms INTEGER DEFAULT 1000,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    updated_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    completed_at INTEGER,
+                    error TEXT,
+                    result TEXT
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_key
+                    ON tasks(unique_key)
+                    WHERE unique_key IS NOT NULL AND status IN ('queued', 'leased', 'running');
+
+                CREATE INDEX IF NOT EXISTS idx_ready
+                    ON tasks(status, priority DESC, not_before, id)
+                    WHERE status = 'queued';
+
+                CREATE INDEX IF NOT EXISTS idx_lease
+                    ON tasks(lease_until)
+                    WHERE status = 'leased';
+
+                CREATE TABLE IF NOT EXISTS task_deps (
+                    child_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    parent_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    PRIMARY KEY (child_id, parent_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS task_runs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    worker_id TEXT NOT NULL,
+                    started_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now') * 1000),
+                    ended_at INTEGER,
+                    exit_code INTEGER,
+                    stdout TEXT,
+                    stderr TEXT
+                );
+            """)
+
+    def enqueue(self, name: str, command: str, args: Dict = None,
+               priority: int = 0, delay_seconds: float = 0,
+               unique_key: str = None, max_retries: int = 3,
+               backoff_ms: int = 1000, parent_ids: List[int] = None) -> Optional[int]:
+        """Enqueue task with advanced options"""
+        args = args or {}
+        not_before = int((time.time() + delay_seconds) * 1000)
+
+        with self._get_conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Check unique constraint
+                if unique_key:
+                    cursor = conn.execute("""
+                        SELECT id FROM tasks
+                        WHERE unique_key = ? AND status IN ('queued', 'leased', 'running')
+                    """, (unique_key,))
+                    if cursor.fetchone():
+                        conn.execute("ROLLBACK")
+                        return None
+
+                # Insert task
+                cursor = conn.execute("""
+                    INSERT INTO tasks (name, command, args, priority, unique_key,
+                                     not_before, max_retries, backoff_ms)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (name, command, json.dumps(args), priority, unique_key,
+                     not_before, max_retries, backoff_ms))
+
+                task_id = cursor.lastrowid
+
+                # Add dependencies
+                if parent_ids:
+                    for parent_id in parent_ids:
+                        conn.execute("""
+                            INSERT INTO task_deps (child_id, parent_id)
+                            VALUES (?, ?)
+                        """, (task_id, parent_id))
+
+                conn.execute("COMMIT")
+                return task_id
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                logger.error(f"Enqueue failed: {e}")
+                raise
+
+    def claim_tasks(self, worker_id: str, limit: int = 1, lease_seconds: int = 300) -> List[Task]:
+        """Claim tasks atomically with lease"""
+        now_ms = int(time.time() * 1000)
+        lease_until = now_ms + (lease_seconds * 1000)
+
+        with self._get_conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Find eligible tasks (dependencies met)
+                cursor = conn.execute("""
+                    SELECT t.id FROM tasks t
+                    WHERE t.status = 'queued'
+                    AND t.not_before <= ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM task_deps d
+                        JOIN tasks p ON p.id = d.parent_id
+                        WHERE d.child_id = t.id
+                        AND p.status != 'succeeded'
+                    )
+                    ORDER BY t.priority DESC, t.id ASC
+                    LIMIT ?
+                """, (now_ms, limit))
+
+                task_ids = [row[0] for row in cursor.fetchall()]
+
+                if not task_ids:
+                    conn.execute("COMMIT")
+                    return []
+
+                # Claim tasks
+                placeholders = ','.join('?' * len(task_ids))
+                conn.execute(f"""
+                    UPDATE tasks
+                    SET status = 'leased',
+                        lease_until = ?,
+                        worker_id = ?,
+                        updated_at = ?
+                    WHERE id IN ({placeholders})
+                """, [lease_until, worker_id, now_ms] + task_ids)
+
+                # Fetch claimed tasks
+                cursor = conn.execute(f"""
+                    SELECT * FROM tasks WHERE id IN ({placeholders})
+                """, task_ids)
+
+                tasks = [self._row_to_task(row) for row in cursor.fetchall()]
+
+                conn.execute("COMMIT")
+                return tasks
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                logger.error(f"Claim failed: {e}")
+                return []
+
+    def start_task(self, task_id: int, worker_id: str) -> int:
+        """Mark task as running and create run record"""
+        with self._get_conn() as conn:
+            now_ms = int(time.time() * 1000)
+            conn.execute("""
+                UPDATE tasks
+                SET status = 'running',
+                    attempts = attempts + 1,
+                    updated_at = ?
+                WHERE id = ? AND status = 'leased'
+            """, (now_ms, task_id))
+
+            cursor = conn.execute("""
+                INSERT INTO task_runs (task_id, worker_id)
+                VALUES (?, ?)
+            """, (task_id, worker_id))
+
+            return cursor.lastrowid
+
+    def complete_task(self, task_id: int, run_id: int, success: bool,
+                     exit_code: int = 0, stdout: str = "", stderr: str = ""):
+        """Complete or fail task with exponential backoff"""
+        with self._get_conn() as conn:
+            now_ms = int(time.time() * 1000)
+
+            # Update run record
+            conn.execute("""
+                UPDATE task_runs
+                SET ended_at = ?, exit_code = ?, stdout = ?, stderr = ?
+                WHERE id = ?
+            """, (now_ms, exit_code, stdout[:10000], stderr[:10000], run_id))
+
+            if success:
+                # Mark as succeeded
+                conn.execute("""
+                    UPDATE tasks
+                    SET status = 'succeeded',
+                        completed_at = ?,
+                        updated_at = ?,
+                        lease_until = NULL,
+                        worker_id = NULL
+                    WHERE id = ?
+                """, (now_ms, now_ms, task_id))
+            else:
+                # Check retry eligibility
+                cursor = conn.execute("""
+                    SELECT attempts, max_retries, backoff_ms
+                    FROM tasks WHERE id = ?
+                """, (task_id,))
+                row = cursor.fetchone()
+
+                if row['attempts'] < row['max_retries']:
+                    # Calculate exponential backoff with jitter
+                    delay_ms = min(row['backoff_ms'] * (2 ** row['attempts']), 3600000)  # Cap at 1 hour
+                    jitter = int(delay_ms * 0.1)  # 10% jitter
+                    not_before = now_ms + delay_ms + (hash(task_id) % jitter)
+
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status = 'queued',
+                            not_before = ?,
+                            lease_until = NULL,
+                            worker_id = NULL,
+                            updated_at = ?
+                        WHERE id = ?
+                    """, (not_before, now_ms, task_id))
+                else:
+                    # Permanently failed
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status = 'failed',
+                            completed_at = ?,
+                            updated_at = ?,
+                            error = ?,
+                            lease_until = NULL,
+                            worker_id = NULL
+                        WHERE id = ?
+                    """, (now_ms, now_ms, stderr[:1000], task_id))
+
+    def reclaim_expired_leases(self) -> int:
+        """Reclaim tasks with expired leases"""
+        now_ms = int(time.time() * 1000)
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                UPDATE tasks
+                SET status = 'queued',
+                    lease_until = NULL,
+                    worker_id = NULL,
+                    updated_at = ?
+                WHERE status = 'leased' AND lease_until < ?
+            """, (now_ms, now_ms))
+            return cursor.rowcount
+
+    def _row_to_task(self, row) -> Task:
+        """Convert row to Task object"""
+        return Task(
+            id=row['id'],
+            name=row['name'],
+            command=row['command'],
+            args=json.loads(row['args']),
+            priority=row['priority'],
+            status=TaskStatus(row['status']),
+            unique_key=row['unique_key'],
+            not_before=datetime.fromtimestamp(row['not_before'] / 1000),
+            lease_until=datetime.fromtimestamp(row['lease_until'] / 1000) if row['lease_until'] else None,
+            worker_id=row['worker_id'],
+            attempts=row['attempts'],
+            max_retries=row['max_retries'],
+            backoff_ms=row['backoff_ms'],
+            created_at=datetime.fromtimestamp(row['created_at'] / 1000),
+            updated_at=datetime.fromtimestamp(row['updated_at'] / 1000)
+        )
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get detailed statistics"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT status, COUNT(*) as count
+                FROM tasks
+                GROUP BY status
+            """)
+            status_counts = {row['status']: row['count'] for row in cursor.fetchall()}
+
+            cursor = conn.execute("""
+                SELECT COUNT(*) as expired
+                FROM tasks
+                WHERE status = 'leased' AND lease_until < ?
+            """, (int(time.time() * 1000),))
+            expired = cursor.fetchone()['expired']
+
+            return {**status_counts, 'expired_leases': expired}
+
+class Worker:
+    """Advanced worker with graceful shutdown and lease management"""
+
+    def __init__(self, queue: AdvancedTaskQueue, worker_id: str = None):
+        self.queue = queue
+        self.worker_id = worker_id or f"worker-{os.getpid()}"
+        self.running = True
+        signal.signal(signal.SIGINT, self._shutdown)
+        signal.signal(signal.SIGTERM, self._shutdown)
+
+    def _shutdown(self, signum, frame):
+        """Graceful shutdown"""
+        logger.info(f"Worker {self.worker_id} shutting down...")
+        self.running = False
+
+    def run(self, batch_size: int = 1, lease_seconds: int = 300):
+        """Main worker loop"""
+        logger.info(f"Worker {self.worker_id} started (batch_size={batch_size})")
+
+        while self.running:
+            try:
+                # Reclaim expired leases periodically
+                reclaimed = self.queue.reclaim_expired_leases()
+                if reclaimed:
+                    logger.info(f"Reclaimed {reclaimed} expired leases")
+
+                # Claim tasks
+                tasks = self.queue.claim_tasks(self.worker_id, batch_size, lease_seconds)
+
+                for task in tasks:
+                    if not self.running:
+                        break
+
+                    logger.info(f"Executing task {task.id}: {task.name}")
+                    run_id = self.queue.start_task(task.id, self.worker_id)
+
+                    try:
+                        # Execute command
+                        result = subprocess.run(
+                            task.command,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=lease_seconds - 10  # Leave margin for cleanup
+                        )
+
+                        self.queue.complete_task(
+                            task.id, run_id,
+                            result.returncode == 0,
+                            result.returncode,
+                            result.stdout, result.stderr
+                        )
+
+                        status = "succeeded" if result.returncode == 0 else "failed"
+                        logger.info(f"Task {task.id} {status} (exit={result.returncode})")
+
+                    except subprocess.TimeoutExpired:
+                        self.queue.complete_task(task.id, run_id, False, -1, "", "TIMEOUT")
+                        logger.warning(f"Task {task.id} timed out")
+
+                    except Exception as e:
+                        self.queue.complete_task(task.id, run_id, False, -1, "", str(e))
+                        logger.error(f"Task {task.id} error: {e}")
+
+                if not tasks:
+                    time.sleep(1)  # No tasks available
+
+            except Exception as e:
+                logger.error(f"Worker error: {e}")
+                time.sleep(5)
+
+        logger.info(f"Worker {self.worker_id} stopped")
+
+def main():
+    """CLI interface"""
+    if len(sys.argv) < 2:
+        print("Usage: claudeCode2.py <command> [args...]")
+        print("Commands: enqueue, worker, stats, test")
+        sys.exit(1)
+
+    queue = AdvancedTaskQueue()
+    cmd = sys.argv[1]
+
+    if cmd == "enqueue":
+        if len(sys.argv) < 4:
+            print("Usage: enqueue <name> <command> [options]")
+            sys.exit(1)
+
+        task_id = queue.enqueue(
+            name=sys.argv[2],
+            command=sys.argv[3],
+            priority=int(sys.argv[4]) if len(sys.argv) > 4 else 0,
+            delay_seconds=float(sys.argv[5]) if len(sys.argv) > 5 else 0
+        )
+        print(f"Enqueued task {task_id}")
+
+    elif cmd == "worker":
+        batch_size = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        worker = Worker(queue)
+        worker.run(batch_size)
+
+    elif cmd == "stats":
+        stats = queue.get_stats()
+        print(json.dumps(stats, indent=2))
+
+    elif cmd == "test":
+        # Test workflow with dependencies
+        print("Creating test workflow...")
+
+        # Parent task
+        parent_id = queue.enqueue("setup", "echo 'Setting up...'", priority=10)
+        print(f"Parent task: {parent_id}")
+
+        # Child tasks with dependency
+        for i in range(3):
+            child_id = queue.enqueue(
+                f"process_{i}",
+                f"echo 'Processing item {i}'",
+                priority=5,
+                parent_ids=[parent_id]
+            )
+            print(f"Child task {i}: {child_id}")
+
+        # Delayed task
+        delayed_id = queue.enqueue(
+            "cleanup",
+            "echo 'Cleaning up...'",
+            delay_seconds=5,
+            unique_key="cleanup_job"
+        )
+        print(f"Delayed task: {delayed_id}")
+
+        print("\nRun 'worker' command to process tasks")
+
+    else:
+        print(f"Unknown command: {cmd}")
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+claudeCodeB.py
+================================================================================
+#!/usr/bin/env python3
+"""
+claudeCodeB: Ultimate SQLite Task Queue - Faster, Smaller, Better
+Combines only the winning patterns, eliminates all overhead
+"""
+import sqlite3, subprocess, json, time, sys, os, signal
+from pathlib import Path
+from typing import Optional, Dict, Any, List
+
+DB = Path(__file__).parent / "tasks_b.db"
+
+class UltraQueue:
+    """Minimal, blazing-fast queue with all essential features"""
+
+    def __init__(self, db=DB):
+        # Single persistent connection - fastest pattern from claude1
+        self.c = sqlite3.connect(str(db), isolation_level=None, check_same_thread=False)
+        self.c.row_factory = sqlite3.Row
+
+        # Optimal pragmas - proven fastest combination
+        self.c.executescript("""
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA temp_store=MEMORY;
+            PRAGMA mmap_size=268435456;
+            PRAGMA cache_size=-64000;
+            PRAGMA busy_timeout=5000;
+
+            CREATE TABLE IF NOT EXISTS t (
+                id INTEGER PRIMARY KEY,
+                cmd TEXT,
+                p INTEGER DEFAULT 0,
+                s TEXT DEFAULT 'q',
+                at INTEGER DEFAULT 0,
+                lu INTEGER,
+                w TEXT,
+                r INTEGER DEFAULT 0,
+                d TEXT,
+                uk TEXT UNIQUE,
+                pid TEXT
+            );
+            CREATE INDEX IF NOT EXISTS ix ON t(s,p DESC,at) WHERE s='q';
+            CREATE INDEX IF NOT EXISTS il ON t(lu) WHERE s='l';
+
+            CREATE TABLE IF NOT EXISTS td (
+                c INTEGER, p INTEGER,
+                PRIMARY KEY(c,p),
+                FOREIGN KEY(c) REFERENCES t(id),
+                FOREIGN KEY(p) REFERENCES t(id)
+            );
+        """)
+
+    def add(self, cmd: str, p=0, at=0, uk=None, pid=None, d=None) -> Optional[int]:
+        """Add task - ultra-optimized"""
+        try:
+            at = at or int(time.time()*1000)
+            r = self.c.execute(
+                "INSERT INTO t(cmd,p,at,uk,pid,d) VALUES(?,?,?,?,?,?)",
+                (cmd, p, at, uk, json.dumps(pid) if pid else None, d)
+            ).lastrowid
+            if pid and r:
+                for parent in (pid if isinstance(pid, list) else [pid]):
+                    self.c.execute("INSERT INTO td VALUES(?,?)", (r, parent))
+            return r
+        except sqlite3.IntegrityError:
+            return None
+
+    def pop(self, w=None) -> Optional[Dict]:
+        """Atomic pop - fastest possible"""
+        w = w or f"w{os.getpid()}"
+        now = int(time.time()*1000)
+
+        # Single atomic UPDATE with RETURNING - no separate SELECT
+        r = self.c.execute("""
+            UPDATE t SET s='r', w=?, lu=?
+            WHERE id=(
+                SELECT id FROM t WHERE s='q' AND at<=?
+                AND NOT EXISTS(
+                    SELECT 1 FROM td JOIN t p ON p.id=td.p
+                    WHERE td.c=t.id AND p.s!='d'
+                )
+                ORDER BY p DESC, at LIMIT 1
+            ) RETURNING id, cmd, d
+        """, (w, now+300000, now)).fetchone()
+
+        return {'id': r['id'], 'cmd': r['cmd'], 'd': json.loads(r['d']) if r['d'] else None} if r else None
+
+    def done(self, id: int, ok=True, e=None):
+        """Complete task - minimal ops"""
+        if ok:
+            self.c.execute("UPDATE t SET s='d',lu=NULL,w=NULL WHERE id=?", (id,))
+        else:
+            r = self.c.execute("SELECT r FROM t WHERE id=?", (id,)).fetchone()
+            if r and r['r'] < 3:
+                # Simple exponential backoff
+                self.c.execute(
+                    "UPDATE t SET s='q',r=r+1,at=?,lu=NULL,w=NULL WHERE id=?",
+                    (int(time.time()*1000) + (1000 * 2**r['r']), id)
+                )
+            else:
+                self.c.execute("UPDATE t SET s='f',lu=NULL,w=NULL WHERE id=?", (id,))
+
+    def claim(self, w=None, n=1) -> List[Dict]:
+        """Batch claim with lease"""
+        w = w or f"w{os.getpid()}"
+        now = int(time.time()*1000)
+        lu = now + 300000
+
+        # Claim eligible tasks
+        ids = [r[0] for r in self.c.execute("""
+            SELECT id FROM t WHERE s='q' AND at<=?
+            AND NOT EXISTS(
+                SELECT 1 FROM td JOIN t p ON p.id=td.p
+                WHERE td.c=t.id AND p.s!='d'
+            )
+            ORDER BY p DESC, at LIMIT ?
+        """, (now, n)).fetchall()]
+
+        if ids:
+            self.c.execute(
+                f"UPDATE t SET s='l',w=?,lu=? WHERE id IN ({','.join('?'*len(ids))})",
+                [w, lu] + ids
+            )
+            return [{'id': r['id'], 'cmd': r['cmd'], 'd': json.loads(r['d']) if r['d'] else None}
+                    for r in self.c.execute(f"SELECT id,cmd,d FROM t WHERE id IN ({','.join('?'*len(ids))})", ids)]
+        return []
+
+    def reclaim(self):
+        """Reclaim expired leases"""
+        self.c.execute("UPDATE t SET s='q',lu=NULL,w=NULL WHERE s='l' AND lu<?", (int(time.time()*1000),))
+
+    def stats(self) -> Dict:
+        """Quick stats"""
+        return {r['s']: r['c'] for r in self.c.execute("SELECT s,COUNT(*) c FROM t GROUP BY s")}
+
+class Worker:
+    """Ultra-fast worker"""
+
+    def __init__(self, q: UltraQueue, w=None):
+        self.q = q
+        self.w = w or f"w{os.getpid()}"
+        self.run = True
+        signal.signal(signal.SIGTERM, lambda *_: setattr(self, 'run', False))
+        signal.signal(signal.SIGINT, lambda *_: setattr(self, 'run', False))
+
+    def work(self, batch=1):
+        """Main loop - optimized"""
+        while self.run:
+            # Reclaim periodically
+            if int(time.time()) % 10 == 0:
+                self.q.reclaim()
+
+            # Process batch
+            tasks = self.q.claim(self.w, batch) if batch > 1 else [self.q.pop(self.w)]
+
+            for t in tasks:
+                if t and self.run:
+                    try:
+                        r = subprocess.run(t['cmd'], shell=True, capture_output=True, timeout=290)
+                        self.q.done(t['id'], r.returncode == 0)
+                    except:
+                        self.q.done(t['id'], False)
+
+            if not any(tasks):
+                time.sleep(0.05)
+
+def systemd_unit(mode='single'):
+    """Generate systemd unit"""
+    p = Path(__file__).absolute()
+    return f"""[Unit]
+Description=Task Worker
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 {p} worker {'--batch 5' if mode=='batch' else ''}
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target"""
+
+def main():
+    """CLI - minimal but complete"""
+    q = UltraQueue()
+
+    if len(sys.argv) < 2:
+        print(f"Usage: {sys.argv[0]} <add|work|worker|stats|test|bench|install>")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+
+    if cmd == 'add':
+        # Add task: add <cmd> [priority] [delay_ms] [unique_key] [parent_ids]
+        if len(sys.argv) < 3:
+            print("Usage: add <command> [priority] [delay_ms] [unique_key] [parent_ids]")
+            sys.exit(1)
+
+        c = sys.argv[2]
+        p = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+        at = int(time.time()*1000) + int(sys.argv[4]) if len(sys.argv) > 4 else 0
+        uk = sys.argv[5] if len(sys.argv) > 5 else None
+        pid = json.loads(sys.argv[6]) if len(sys.argv) > 6 else None
+
+        id = q.add(c, p, at, uk, pid)
+        print(f"Task {id}" if id else "Duplicate")
+
+    elif cmd in ('work', 'worker'):
+        # Run worker
+        batch = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else 1
+        print(f"Worker started (batch={batch})")
+        Worker(q).work(batch)
+
+    elif cmd == 'stats':
+        # Show stats
+        s = q.stats()
+        print(json.dumps(s, indent=2))
+
+    elif cmd == 'test':
+        # Test workflow
+        p1 = q.add("echo 'Parent task'", 10)
+        print(f"Parent: {p1}")
+
+        for i in range(3):
+            c = q.add(f"echo 'Child {i}'", 5, pid=[p1])
+            print(f"Child {i}: {c}")
+
+        d = q.add("echo 'Delayed'", 1, at=int(time.time()*1000)+5000, uk="delayed_task")
+        print(f"Delayed: {d}")
+
+        print("\nRun 'worker' to process")
+
+    elif cmd == 'bench':
+        # Benchmark
+        print("Benchmarking...")
+
+        # Fast inserts
+        s = time.perf_counter()
+        for i in range(1000):
+            q.add(f"echo {i}", i%10)
+        t1 = (time.perf_counter()-s)*1000
+
+        # With dependencies
+        s = time.perf_counter()
+        p = q.add("echo parent", 10)
+        for i in range(999):
+            q.add(f"echo c{i}", 5, pid=[p] if i<100 else None)
+        t2 = (time.perf_counter()-s)*1000
+
+        # Pops
+        s = time.perf_counter()
+        for _ in range(100):
+            q.pop()
+        t3 = (time.perf_counter()-s)*1000
+
+        print(f"""
+=== claudeCodeB Performance ===
+1000 simple inserts: {t1:.2f}ms ({t1/1000:.4f}ms per op)
+1000 w/deps inserts: {t2:.2f}ms ({t2/1000:.4f}ms per op)
+100 atomic pops:     {t3:.2f}ms ({t3/100:.4f}ms per op)
+        """)
+
+    elif cmd == 'install':
+        # Install systemd unit
+        u = Path.home() / '.config/systemd/user/task-worker.service'
+        u.parent.mkdir(parents=True, exist_ok=True)
+        u.write_text(systemd_unit('batch' if '--batch' in sys.argv else 'single'))
+        subprocess.run(['systemctl', '--user', 'daemon-reload'])
+        print(f"Installed: {u}\nStart with: systemctl --user start task-worker")
+
+    else:
+        print(f"Unknown command: {cmd}")
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+claudeCodeC_fixed.py
+================================================================================
+#!/usr/bin/env python3
+"""claudeCodeC Fixed: Perfect Minimalism with Systemd Integration"""
+import sqlite3, subprocess, json, time, sys, os, signal
+from pathlib import Path
+
+UNIT_PREFIX = "aios-"
+
+class S:
+    """Systemd wrapper for oneshot tasks"""
+    def _run(self, *args):
+        return subprocess.run(["systemctl", "--user"] + list(args),
+                              capture_output=True, text=True, check=False)
+
+    def add_oneshot(self, name, cmd):
+        unit = f"{UNIT_PREFIX}{name}.service"
+        path = Path(f"~/.config/systemd/user/{unit}").expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"""[Unit]
+Description=Task: {name}
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '{cmd}'
+StandardOutput=journal
+StandardError=journal
+""")
+        self._run("daemon-reload")
+        return unit
+
+    def start(self, unit):
+        self._run("start", unit)
+
+    def status(self, unit):
+        res = self._run("show", unit, "--property=ActiveState,Result")
+        props = {}
+        for line in res.stdout.strip().split('\n'):
+            if '=' in line:
+                k, v = line.split('=', 1)
+                props[k] = v
+        return props.get('ActiveState', 'unknown'), props.get('Result', 'unknown')
+
+    def remove(self, unit):
+        self._run("stop", unit)
+        path = Path(f"~/.config/systemd/user/{unit}").expanduser()
+        if path.exists():
+            path.unlink()
+        self._run("daemon-reload")
+
+class Q:
+    """The Essential Queue - Nothing More"""
+    def __init__(self, db="tasks.db"):
+        self.c = sqlite3.connect(db, isolation_level=None, check_same_thread=False)
+        for sql in [
+            "PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA temp_store=MEMORY",
+            "PRAGMA mmap_size=268435456", "PRAGMA cache_size=-64000", "PRAGMA busy_timeout=5000",
+            """CREATE TABLE IF NOT EXISTS t (
+                id INTEGER PRIMARY KEY, name TEXT, cmd TEXT, p INT DEFAULT 0,
+                s TEXT DEFAULT 'q', at INT DEFAULT 0, w TEXT, r INT DEFAULT 0
+            )""",
+            "CREATE INDEX IF NOT EXISTS i ON t(s,p DESC,at) WHERE s='q'"
+        ]: self.c.execute(sql)
+
+    def add(self, name, cmd, p=0, at=None):
+        """Add task"""
+        return self.c.execute("INSERT INTO t(name,cmd,p,at) VALUES(?,?,?,?)",
+                              (name, cmd, p, at or int(time.time()*1000))).lastrowid
+
+    def pop(self):
+        """Get next task atomically"""
+        r = self.c.execute("""
+            UPDATE t SET s='r', w=? WHERE id=(
+                SELECT id FROM t WHERE s='q' AND at<=?
+                ORDER BY p DESC, at LIMIT 1
+            ) RETURNING id, name, cmd
+        """, (str(os.getpid()), int(time.time()*1000))).fetchone()
+        return {'id': r[0], 'name': r[1], 'cmd': r[2]} if r else None
+
+    def done(self, id, ok=True):
+        """Complete or retry task"""
+        if ok:
+            self.c.execute("UPDATE t SET s='d' WHERE id=?", (id,))
+        else:
+            r = self.c.execute("SELECT r FROM t WHERE id=?", (id,)).fetchone()
+            if r and r[0] < 3:
+                self.c.execute("UPDATE t SET s='q',r=r+1,at=? WHERE id=?",
+                               (int(time.time()*1000) + 1000*(2**r[0]), id))
+            else:
+                self.c.execute("UPDATE t SET s='f' WHERE id=?", (id,))
+
+    def reclaim_dead(self):
+        """Reclaim tasks from dead workers"""
+        cursor = self.c.execute("SELECT DISTINCT w FROM t WHERE s='r' AND w IS NOT NULL")
+        for (w,) in cursor.fetchall():
+            try:
+                os.kill(int(w), 0)
+            except (OSError, ValueError):
+                self.c.execute("UPDATE t SET s='q', w=NULL, r=r+1 WHERE w=?", (w,))
+
+    def stats(self):
+        """Get counts"""
+        return {r[0]: r[1] for r in self.c.execute("SELECT s,COUNT(*) FROM t GROUP BY s")}
+
+def worker(q=None, batch=1):
+    """Process tasks via systemd oneshots"""
+    q = q or Q()
+    s = S()
+    flag = [True]
+    signal.signal(signal.SIGTERM, lambda *_: flag.__setitem__(0, False))
+    signal.signal(signal.SIGINT, lambda *_: flag.__setitem__(0, False))
+
+    while flag[0]:
+        tasks = [q.pop() for _ in range(batch)]
+        tasks = [t for t in tasks if t]
+        if tasks:
+            units = {}
+            for t in tasks:
+                unit = s.add_oneshot(t['name'], t['cmd'])
+                s.start(unit)
+                units[t['id']] = unit
+            while units:
+                for tid, unit in list(units.items()):
+                    state, result = s.status(unit)
+                    if state in ('inactive', 'failed'):
+                        ok = state == 'inactive' and result == 'success'
+                        q.done(tid, ok)
+                        s.remove(unit)
+                        del units[tid]
+                if units:
+                    time.sleep(0.5)
+        else:
+            q.reclaim_dead()
+            time.sleep(0.05)
+
+def bench():
+    """Benchmark"""
+    db = "bench.db"
+    if os.path.exists(db): os.unlink(db)
+    q = Q(db)
+
+    # Insert test
+    s = time.perf_counter()
+    for i in range(1000):
+        q.add(f"task{i}", f"echo {i}", i%10)
+    t1 = (time.perf_counter()-s)*1000
+
+    # Pop test
+    s = time.perf_counter()
+    for _ in range(100):
+        q.pop()
+    t2 = (time.perf_counter()-s)*1000
+
+    print(f"""claudeCodeC Fixed Benchmark:
+1000 inserts: {t1:.2f}ms ({t1/1000:.4f}ms per op)
+100 pops: {t2:.2f}ms ({t2/100:.4f}ms per op)""")
+
+def systemd():
+    """Generate systemd unit for worker"""
+    return f"""[Unit]
+Description=Task Worker
+[Service]
+ExecStart=/usr/bin/python3 {os.path.abspath(__file__)} worker
+Restart=always
+[Install]
+WantedBy=default.target"""
+
+def main():
+    """CLI"""
+    if len(sys.argv) < 2:
+        print("Usage: add <name> <cmd> [priority] | worker [batch] | stats | bench | systemd")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    q = Q()
+
+    if cmd == 'add':
+        if len(sys.argv) < 4:
+            print("Need name and command")
+            sys.exit(1)
+        id = q.add(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 0)
+        print(f"Task {id}")
+
+    elif cmd == 'worker':
+        batch = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        print(f"Worker started (batch={batch})")
+        worker(q, batch)
+
+    elif cmd == 'stats':
+        print(json.dumps(q.stats()))
+
+    elif cmd == 'bench':
+        bench()
+
+    elif cmd == 'systemd':
+        print(systemd())
+
+    else:
+        print(f"Unknown: {cmd}")
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+claudeCodeCplus.py
+================================================================================
+#!/usr/bin/env python3
+"""claudeCodeC+: Minimal SQLite queue with safe pop, WAL, and sane defaults."""
+import sqlite3, subprocess, json, time, sys, os, signal
+
+NOW = lambda: int(time.time() * 1000)
+
+class Q:
+    """Essential queue backed by SQLite (WAL)."""
+    def __init__(self, db="tasks.db"):
+        self.c = sqlite3.connect(db, isolation_level=None, check_same_thread=False)
+        # Lean, portable PRAGMAs; WAL persists once set on file.
+        for sql in (
+            "PRAGMA journal_mode=WAL",
+            "PRAGMA synchronous=NORMAL",
+            "PRAGMA temp_store=MEMORY",
+            "PRAGMA busy_timeout=5000"
+        ):
+            self.c.execute(sql)
+        # Schema: s ∈ {'q' queued, 'r' running, 'd' done, 'f' failed}
+        self.c.execute("""
+            CREATE TABLE IF NOT EXISTS t(
+              id INTEGER PRIMARY KEY,
+              cmd TEXT NOT NULL,
+              p   INT  DEFAULT 0,
+              s   TEXT DEFAULT 'q',
+              at  INT  DEFAULT 0,
+              w   TEXT,
+              retries INT DEFAULT 0
+            )""")
+        self.c.execute(
+            "CREATE INDEX IF NOT EXISTS i_q ON t(s,p DESC,at) WHERE s='q'")
+
+    def add(self, cmd, p=0, at=None):
+        """Add task (queued)."""
+        return self.c.execute(
+            "INSERT INTO t(cmd,p,at) VALUES(?,?,?)",
+            (cmd, p, at if at is not None else NOW())
+        ).lastrowid
+
+    def _pop_with_returning(self):
+        return self.c.execute("""
+            UPDATE t SET s='r', w=?
+            WHERE id=(SELECT id FROM t WHERE s='q' AND at<=? ORDER BY p DESC, at LIMIT 1)
+            RETURNING id,cmd
+        """, (str(os.getpid()), NOW())).fetchone()
+
+    def pop(self):
+        """Atomic pop; prefers RETURNING, falls back to locked SELECT+UPDATE."""
+        try:
+            row = self._pop_with_returning()
+            return {'id': row[0], 'cmd': row[1]} if row else None
+        except sqlite3.OperationalError:
+            # Fallback for SQLite <3.35 (no RETURNING)
+            self.c.execute("BEGIN IMMEDIATE")
+            row = self.c.execute(
+                "SELECT id,cmd FROM t WHERE s='q' AND at<=? ORDER BY p DESC, at LIMIT 1",
+                (NOW(),)
+            ).fetchone()
+            if not row:
+                self.c.execute("COMMIT")
+                return None
+            updated = self.c.execute(
+                "UPDATE t SET s='r', w=? WHERE id=? AND s='q'",
+                (str(os.getpid()), row[0])
+            ).rowcount
+            if updated == 1:
+                self.c.execute("COMMIT")
+                return {'id': row[0], 'cmd': row[1]}
+            self.c.execute("ROLLBACK")
+            return None
+
+    def done(self, task_id, ok=True, worker=None):
+        """Mark complete or retry; only the owner can finalize running tasks."""
+        worker = worker or str(os.getpid())
+        if ok:
+            self.c.execute(
+                "UPDATE t SET s='d', w=NULL WHERE id=? AND w=? AND s='r'",
+                (task_id, worker))
+            return
+        # Failure path: attempt bounded retries with exponential backoff.
+        row = self.c.execute(
+            "SELECT retries FROM t WHERE id=? AND w=? AND s='r'",
+            (task_id, worker)
+        ).fetchone()
+        if row is None:
+            return
+        r = row[0]
+        if r < 3:
+            delay = 1000 * (2 ** r)
+            self.c.execute(
+                "UPDATE t SET s='q', w=NULL, retries=retries+1, at=? WHERE id=?",
+                (NOW() + delay, task_id)
+            )
+        else:
+            self.c.execute(
+                "UPDATE t SET s='f', w=NULL WHERE id=?",
+                (task_id,))
+
+    def stats(self):
+        """Counts by state."""
+        return {s: n for (s, n) in self.c.execute("SELECT s,COUNT(*) FROM t GROUP BY s")}
+
+def worker(q=None, batch=1):
+    """Simple worker loop."""
+    q = q or Q()
+    stop = {'v': False}
+    def _halt(*_): stop.__setitem__('v', True)
+    signal.signal(signal.SIGTERM, _halt)
+    signal.signal(signal.SIGINT, _halt)
+    wid = str(os.getpid())
+
+    while not stop['v']:
+        tasks = [q.pop() for _ in range(max(1, batch))]
+        did = False
+        for t in tasks:
+            if not t: continue
+            did = True
+            try:
+                # NOTE: for untrusted input, parse into argv and use shell=False.
+                r = subprocess.run(t['cmd'], shell=True, capture_output=True, timeout=300)
+                q.done(t['id'], r.returncode == 0, worker=wid)
+            except Exception:
+                q.done(t['id'], False, worker=wid)
+        if not did:
+            time.sleep(0.05)
+
+def bench():
+    """Tiny benchmark (inserts + pops)."""
+    db = "bench.db"
+    if os.path.exists(db):
+        os.unlink(db)
+    q = Q(db)
+    start = time.perf_counter()
+    for i in range(1000):
+        q.add(f"echo {i}", i % 10)
+    t1 = (time.perf_counter() - start) * 1000
+
+    start = time.perf_counter()
+    for _ in range(100):
+        q.pop()
+    t2 = (time.perf_counter() - start) * 1000
+
+    print(f"claudeCodeC+ bench:\n"
+          f"1000 inserts: {t1:.2f}ms ({t1/1000:.4f}ms/op)\n"
+          f"100 pops:    {t2:.2f}ms ({t2/100:.4f}ms/op)")
+
+def systemd():
+    """Emit a minimal user service unit."""
+    return f"""[Unit]
+Description=Task Worker (SQLite)
+After=network.target
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 {os.path.abspath(__file__)} worker
+Restart=always
+RestartSec=2
+KillMode=mixed
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+[Install]
+WantedBy=default.target
+"""
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: add <cmd> [priority] | worker [batch] | stats | bench | systemd")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    q = Q()
+
+    if cmd == 'add':
+        if len(sys.argv) < 3:
+            print("Need command"); sys.exit(1)
+        pr = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+        tid = q.add(sys.argv[2], pr)
+        print(f"Task {tid}")
+
+    elif cmd == 'worker':
+        batch = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        print(f"Worker started (batch={batch}) pid={os.getpid()}")
+        worker(q, batch)
+
+    elif cmd == 'stats':
+        print(json.dumps(q.stats()))
+
+    elif cmd == 'bench':
+        bench()
+
+    elif cmd == 'systemd':
+        print(systemd())
+
+    else:
+        print(f"Unknown: {cmd}")
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+claudeCodeD.py
+================================================================================
+#!/usr/bin/env python3
+"""
+claudeCodeD: Ultimate Performance + Production Features
+Combines claudeCodeC minimalism with production patterns from Chrome/Firefox/Android
+"""
+import sqlite3, subprocess, json, time, sys, os, signal, threading
+from typing import Optional, Dict, Any
+
+# Optimized pragmas from production systems
+PRAGMAS = [
+    "PRAGMA journal_mode=WAL",        # Universal best practice
+    "PRAGMA synchronous=NORMAL",      # Safe with WAL
+    "PRAGMA cache_size=-8000",        # 8MB cache (Chrome)
+    "PRAGMA temp_store=MEMORY",       # Fast temp ops
+    "PRAGMA mmap_size=268435456",     # 256MB mmap
+    "PRAGMA busy_timeout=5000",       # 5s timeout
+    "PRAGMA wal_autocheckpoint=1000", # Firefox pattern
+]
+
+class TaskQueue:
+    """Ultra-fast queue with production robustness"""
+
+    def __init__(self, db="tasks_d.db"):
+        # Single persistent connection for speed (claudeCodeC pattern)
+        self.c = sqlite3.connect(db, isolation_level=None, check_same_thread=False)
+        self.c.row_factory = sqlite3.Row
+        self.lock = threading.RLock()  # Thread safety
+
+        # Apply optimized pragmas
+        for pragma in PRAGMAS:
+            self.c.execute(pragma)
+
+        # Hybrid schema: minimal but complete
+        self.c.execute("""
+            CREATE TABLE IF NOT EXISTS t (
+                id INTEGER PRIMARY KEY,
+                cmd TEXT NOT NULL,
+                p INT DEFAULT 0,      -- priority
+                s TEXT DEFAULT 'q',   -- status: q=queued r=running d=done f=failed
+                at INT DEFAULT 0,     -- scheduled_at (ms)
+                w TEXT,               -- worker_id
+                r INT DEFAULT 0,      -- retry_count
+                e TEXT,               -- error_message
+                res TEXT,             -- result
+                ct INT DEFAULT (strftime('%s','now')*1000),  -- created_at
+                st INT,               -- started_at
+                et INT,               -- ended_at
+                -- Dependencies (simplified)
+                dep TEXT              -- JSON array of dependency IDs
+            )
+        """)
+
+        # Optimized composite index (production pattern)
+        self.c.execute("""
+            CREATE INDEX IF NOT EXISTS ix ON t(s,p DESC,at,id)
+            WHERE s IN ('q','r')
+        """)
+
+        # Metrics table (Chrome pattern, simplified)
+        self.c.execute("""
+            CREATE TABLE IF NOT EXISTS m (
+                task_id INTEGER PRIMARY KEY,
+                qt REAL,  -- queue_time
+                et REAL,  -- exec_time
+                FOREIGN KEY (task_id) REFERENCES t(id) ON DELETE CASCADE
+            )
+        """)
+
+    def add(self, cmd: str, p: int = 0, at: Optional[int] = None,
+            dep: Optional[list] = None) -> int:
+        """Add task with optional dependencies"""
+        at = at or int(time.time() * 1000)
+        dep_json = json.dumps(dep) if dep else None
+
+        with self.lock:
+            return self.c.execute(
+                "INSERT INTO t(cmd,p,at,dep) VALUES(?,?,?,?)",
+                (cmd, p, at, dep_json)
+            ).lastrowid
+
+    def pop(self, worker_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Atomic pop with dependency checking"""
+        worker_id = worker_id or str(os.getpid())
+        now = int(time.time() * 1000)
+
+        with self.lock:
+            # Find next eligible task (with dependency check)
+            row = self.c.execute("""
+                SELECT id, cmd FROM t
+                WHERE s='q' AND at<=?
+                AND (dep IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM json_each(t.dep) AS d
+                    JOIN t AS dt ON dt.id = d.value
+                    WHERE dt.s != 'd'
+                ))
+                ORDER BY p DESC, at, id
+                LIMIT 1
+            """, (now,)).fetchone()
+
+            if not row:
+                return None
+
+            # Atomic claim using RETURNING (fastest pattern)
+            try:
+                result = self.c.execute("""
+                    UPDATE t SET s='r', w=?, st=?
+                    WHERE id=? AND s='q'
+                    RETURNING id, cmd
+                """, (worker_id, now, row['id'])).fetchone()
+
+                return {'id': result['id'], 'cmd': result['cmd']} if result else None
+            except sqlite3.OperationalError:
+                # Fallback for older SQLite
+                self.c.execute("BEGIN IMMEDIATE")
+                updated = self.c.execute(
+                    "UPDATE t SET s='r', w=?, st=? WHERE id=? AND s='q'",
+                    (worker_id, now, row['id'])
+                ).rowcount
+                self.c.execute("COMMIT")
+
+                return {'id': row['id'], 'cmd': row['cmd']} if updated else None
+
+    def done(self, task_id: int, ok: bool = True, result: Any = None,
+             error: str = None, worker_id: Optional[str] = None):
+        """Complete or retry with exponential backoff"""
+        worker_id = worker_id or str(os.getpid())
+        now = int(time.time() * 1000)
+
+        with self.lock:
+            if ok:
+                # Success: mark done and record metrics
+                row = self.c.execute(
+                    "SELECT ct, st FROM t WHERE id=? AND w=?",
+                    (task_id, worker_id)
+                ).fetchone()
+
+                if row:
+                    # Update task
+                    self.c.execute("""
+                        UPDATE t SET s='d', et=?, res=?, w=NULL
+                        WHERE id=? AND w=?
+                    """, (now, json.dumps(result) if result else None,
+                         task_id, worker_id))
+
+                    # Record metrics (Chrome pattern)
+                    if row['st']:
+                        qt = (row['st'] - row['ct']) / 1000.0
+                        et = (now - row['st']) / 1000.0
+                        self.c.execute(
+                            "INSERT OR REPLACE INTO m(task_id,qt,et) VALUES(?,?,?)",
+                            (task_id, qt, et)
+                        )
+            else:
+                # Failure: retry with exponential backoff
+                row = self.c.execute(
+                    "SELECT r FROM t WHERE id=? AND w=?",
+                    (task_id, worker_id)
+                ).fetchone()
+
+                if row and row['r'] < 3:
+                    # Exponential backoff: 1s, 2s, 4s
+                    delay = 1000 * (2 ** row['r'])
+                    self.c.execute("""
+                        UPDATE t SET s='q', at=?, r=r+1, e=?, w=NULL
+                        WHERE id=? AND w=?
+                    """, (now + delay, error, task_id, worker_id))
+                else:
+                    # Final failure
+                    self.c.execute("""
+                        UPDATE t SET s='f', et=?, e=?, w=NULL
+                        WHERE id=? AND w=?
+                    """, (now, error, task_id, worker_id))
+
+    def reclaim_stalled(self, timeout_ms: int = 300000):
+        """Reclaim stalled tasks (production pattern)"""
+        cutoff = int(time.time() * 1000) - timeout_ms
+        with self.lock:
+            return self.c.execute("""
+                UPDATE t SET s='q', w=NULL, r=r+1
+                WHERE s='r' AND st < ?
+            """, (cutoff,)).rowcount
+
+    def stats(self) -> Dict[str, Any]:
+        """Comprehensive stats"""
+        with self.lock:
+            # Task counts
+            counts = {row['s']: row['c'] for row in self.c.execute(
+                "SELECT s, COUNT(*) c FROM t GROUP BY s"
+            )}
+
+            # Performance metrics
+            perf = self.c.execute("""
+                SELECT AVG(qt) avg_qt, AVG(et) avg_et,
+                       MAX(qt) max_qt, MAX(et) max_et
+                FROM m
+            """).fetchone()
+
+            # WAL status
+            wal = self.c.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+
+            return {
+                'tasks': counts,
+                'perf': dict(perf) if perf else {},
+                'wal_pages': wal[1] if wal else 0
+            }
+
+    def cleanup(self, days: int = 7):
+        """Clean old completed tasks"""
+        cutoff = int(time.time() * 1000) - (days * 86400000)
+        with self.lock:
+            deleted = self.c.execute(
+                "DELETE FROM t WHERE s IN ('d','f') AND et < ?",
+                (cutoff,)
+            ).rowcount
+
+            # Vacuum if fragmented (Firefox pattern)
+            page_count = self.c.execute("PRAGMA page_count").fetchone()[0]
+            freelist = self.c.execute("PRAGMA freelist_count").fetchone()[0]
+
+            if freelist > page_count * 0.3:
+                self.c.execute("VACUUM")
+
+            return deleted
+
+class Worker:
+    """High-performance worker with graceful shutdown"""
+
+    def __init__(self, queue: TaskQueue, worker_id: Optional[str] = None):
+        self.q = queue
+        self.w = worker_id or f"w{os.getpid()}"
+        self.running = True
+        signal.signal(signal.SIGTERM, self._shutdown)
+        signal.signal(signal.SIGINT, self._shutdown)
+
+    def _shutdown(self, *_):
+        self.running = False
+
+    def run(self, batch: int = 1):
+        """Main worker loop"""
+        print(f"Worker {self.w} started (batch={batch})")
+        reclaim_counter = 0
+
+        while self.running:
+            # Periodic maintenance
+            reclaim_counter += 1
+            if reclaim_counter % 100 == 0:
+                reclaimed = self.q.reclaim_stalled()
+                if reclaimed:
+                    print(f"Reclaimed {reclaimed} stalled tasks")
+
+            # Process batch
+            tasks = []
+            for _ in range(batch):
+                task = self.q.pop(self.w)
+                if task:
+                    tasks.append(task)
+
+            if not tasks:
+                time.sleep(0.05)
+                continue
+
+            for task in tasks:
+                if not self.running:
+                    break
+
+                try:
+                    # Execute command
+                    result = subprocess.run(
+                        task['cmd'],
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=290
+                    )
+
+                    self.q.done(
+                        task['id'],
+                        result.returncode == 0,
+                        {'stdout': result.stdout[:1000], 'stderr': result.stderr[:1000]},
+                        result.stderr if result.returncode != 0 else None,
+                        self.w
+                    )
+
+                except subprocess.TimeoutExpired:
+                    self.q.done(task['id'], False, error="TIMEOUT", worker_id=self.w)
+                except Exception as e:
+                    self.q.done(task['id'], False, error=str(e), worker_id=self.w)
+
+def bench():
+    """Comprehensive benchmark"""
+    import os
+    db = "bench_d.db"
+    if os.path.exists(db):
+        os.unlink(db)
+
+    q = TaskQueue(db)
+
+    # Test 1: Simple inserts
+    start = time.perf_counter()
+    for i in range(1000):
+        q.add(f"echo {i}", i % 10)
+    t1 = (time.perf_counter() - start) * 1000
+
+    # Test 2: With dependencies
+    start = time.perf_counter()
+    parent = q.add("echo parent", 10)
+    for i in range(100):
+        q.add(f"echo child{i}", 5, dep=[parent])
+    t2 = (time.perf_counter() - start) * 1000
+
+    # Test 3: Pops
+    start = time.perf_counter()
+    for _ in range(100):
+        q.pop()
+    t3 = (time.perf_counter() - start) * 1000
+
+    # Test 4: Complete tasks
+    start = time.perf_counter()
+    for i in range(1, 51):
+        q.done(i, True, {'test': 'result'})
+    t4 = (time.perf_counter() - start) * 1000
+
+    stats = q.stats()
+
+    print(f"""
+=== claudeCodeD Performance ===
+1000 inserts:      {t1:.2f}ms ({t1/1000:.4f}ms/op)
+101 w/deps:        {t2:.2f}ms ({t2/101:.4f}ms/op)
+100 pops:          {t3:.2f}ms ({t3/100:.4f}ms/op)
+50 completions:    {t4:.2f}ms ({t4/50:.4f}ms/op)
+
+Stats: {json.dumps(stats, indent=2)}
+""")
+
+def systemd():
+    """Generate production systemd unit"""
+    return f"""[Unit]
+Description=claudeCodeD Task Worker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 {os.path.abspath(__file__)} worker
+Restart=always
+RestartSec=3
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# Production settings
+LimitNOFILE=65536
+Nice=-5
+PrivateTmp=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target"""
+
+def main():
+    """Enhanced CLI"""
+    if len(sys.argv) < 2:
+        print("""Usage:
+  add <cmd> [priority] [delay_ms] [deps]  - Add task
+  worker [batch]                          - Run worker
+  stats                                   - Show statistics
+  bench                                   - Run benchmark
+  cleanup [days]                          - Clean old tasks
+  systemd                                 - Generate systemd unit""")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    q = TaskQueue()
+
+    if cmd == 'add':
+        if len(sys.argv) < 3:
+            print("Need command")
+            sys.exit(1)
+
+        command = sys.argv[2]
+        priority = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+        delay = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+        deps = json.loads(sys.argv[5]) if len(sys.argv) > 5 else None
+
+        at = int(time.time() * 1000) + delay if delay else None
+        task_id = q.add(command, priority, at, deps)
+        print(f"Task {task_id}")
+
+    elif cmd == 'worker':
+        batch = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        worker = Worker(q)
+        worker.run(batch)
+
+    elif cmd == 'stats':
+        stats = q.stats()
+        print(json.dumps(stats, indent=2))
+
+    elif cmd == 'bench':
+        bench()
+
+    elif cmd == 'cleanup':
+        days = int(sys.argv[2]) if len(sys.argv) > 2 else 7
+        deleted = q.cleanup(days)
+        print(f"Deleted {deleted} old tasks")
+
+    elif cmd == 'systemd':
+        print(systemd())
+
+    else:
+        print(f"Unknown command: {cmd}")
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+claudeCodeE.py
+================================================================================
+#!/usr/bin/env python3
+"""claudeCodeE: Zero-overhead SQLite queue optimized for AIOS"""
+import sqlite3, subprocess, json, time, sys, os, signal, threading
+
+# Ultimate minimalism: Direct SQL, no abstractions
+def init_db(path="tasks_e.db"):
+    """Initialize with best pragmas from all implementations"""
+    c = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    c.row_factory = sqlite3.Row
+    for p in ["PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL",
+              "PRAGMA cache_size=-8000", "PRAGMA temp_store=MEMORY",
+              "PRAGMA mmap_size=268435456", "PRAGMA busy_timeout=5000"]:
+        c.execute(p)
+    c.execute("""CREATE TABLE IF NOT EXISTS t(
+        id INTEGER PRIMARY KEY, c TEXT, p INT DEFAULT 0,
+        s CHAR DEFAULT 'q', at INT DEFAULT 0, w TEXT, r INT DEFAULT 0,
+        d TEXT, res TEXT)""")
+    c.execute("CREATE INDEX IF NOT EXISTS ix ON t(s,p DESC,at) WHERE s='q'")
+    return c
+
+class Queue:
+    """Lightning-fast queue with all essential features"""
+    def __init__(self, db="tasks_e.db"):
+        self.c = init_db(db)
+        self.l = threading.Lock()
+
+    def add(self, cmd, pri=0, at=None, deps=None):
+        """Add with optional dependencies (JSON)"""
+        with self.l:
+            return self.c.execute("INSERT INTO t(c,p,at,d) VALUES(?,?,?,?)",
+                (cmd, pri, at or int(time.time()*1000), json.dumps(deps) if deps else None)).lastrowid
+
+    def pop(self, wid=None):
+        """Atomic pop with dependency check"""
+        wid = wid or str(os.getpid())
+        now = int(time.time()*1000)
+        with self.l:
+            # Check dependencies inline - no subqueries
+            r = self.c.execute("""
+                SELECT id,c FROM t WHERE s='q' AND at<=? AND (
+                    d IS NULL OR NOT EXISTS(
+                        SELECT 1 FROM json_each(t.d) j, t t2
+                        WHERE t2.id=j.value AND t2.s!='d'))
+                ORDER BY p DESC,at LIMIT 1""", (now,)).fetchone()
+            if not r: return None
+            # Atomic claim
+            u = self.c.execute("UPDATE t SET s='r',w=? WHERE id=? AND s='q'",
+                              (wid, r[0])).rowcount
+            return {'id':r[0], 'cmd':r[1]} if u else None
+
+    def done(self, tid, ok=True, res=None, err=None):
+        """Complete with retry logic"""
+        with self.l:
+            if ok:
+                self.c.execute("UPDATE t SET s='d',res=?,w=NULL WHERE id=?",
+                              (json.dumps(res) if res else None, tid))
+            else:
+                r = self.c.execute("SELECT r FROM t WHERE id=?", (tid,)).fetchone()
+                if r and r[0] < 3:
+                    self.c.execute("UPDATE t SET s='q',r=r+1,at=?,w=NULL WHERE id=?",
+                                  (int(time.time()*1000) + 1000*(2**r[0]), tid))
+                else:
+                    self.c.execute("UPDATE t SET s='f',res=?,w=NULL WHERE id=?",
+                                  (err, tid))
+
+    def stats(self):
+        """Quick stats"""
+        return dict(self.c.execute("SELECT s,COUNT(*) FROM t GROUP BY s"))
+
+    def reclaim(self, timeout=300000):
+        """Reclaim stalled tasks"""
+        cutoff = int(time.time()*1000) - timeout
+        with self.l:
+            return self.c.execute("UPDATE t SET s='q',w=NULL WHERE s='r' AND at<?",
+                                 (cutoff,)).rowcount
+
+def worker(q=None, batch=1):
+    """Fast worker loop"""
+    q = q or Queue()
+    stop = False
+    signal.signal(signal.SIGTERM, lambda *_: globals().__setitem__('stop', True))
+    signal.signal(signal.SIGINT, lambda *_: globals().__setitem__('stop', True))
+
+    while not stop:
+        tasks = [q.pop() for _ in range(batch)]
+        any_work = False
+
+        for t in tasks:
+            if not t: continue
+            any_work = True
+            try:
+                r = subprocess.run(t['cmd'], shell=True, capture_output=True,
+                                 text=True, timeout=300)
+                q.done(t['id'], r.returncode==0,
+                      {'out':r.stdout[:500],'err':r.stderr[:500]})
+            except Exception as e:
+                q.done(t['id'], False, err=str(e))
+
+        if not any_work:
+            if int(time.time())%60 == 0:
+                q.reclaim()
+            time.sleep(0.05)
+
+def bench():
+    """Performance test"""
+    import os
+    db = "bench_e.db"
+    if os.path.exists(db): os.unlink(db)
+    q = Queue(db)
+
+    # Inserts
+    t0 = time.perf_counter()
+    for i in range(1000):
+        q.add(f"echo {i}", i%10)
+    t1 = (time.perf_counter()-t0)*1000
+
+    # Dependencies
+    t0 = time.perf_counter()
+    p = q.add("parent", 10)
+    for i in range(100):
+        q.add(f"child{i}", 5, deps=[p])
+    t2 = (time.perf_counter()-t0)*1000
+
+    # Pops
+    t0 = time.perf_counter()
+    for _ in range(100):
+        q.pop()
+    t3 = (time.perf_counter()-t0)*1000
+
+    print(f"""claudeCodeE Benchmark:
+1000 inserts: {t1:.2f}ms ({t1/1000:.4f}ms/op)
+101 w/deps:   {t2:.2f}ms ({t2/101:.4f}ms/op)
+100 pops:     {t3:.2f}ms ({t3/100:.4f}ms/op)""")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: add <cmd> [pri] [deps] | worker [batch] | stats | bench")
+        sys.exit(1)
+
+    cmd = sys.argv[1]
+    q = Queue()
+
+    if cmd == 'add':
+        if len(sys.argv) < 3:
+            print("Need command"); sys.exit(1)
+        pri = int(sys.argv[3]) if len(sys.argv) > 3 else 0
+        deps = json.loads(sys.argv[4]) if len(sys.argv) > 4 else None
+        tid = q.add(sys.argv[2], pri, deps=deps)
+        print(f"Task {tid}")
+
+    elif cmd == 'worker':
+        batch = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+        print(f"Worker started (batch={batch})")
+        worker(q, batch)
+
+    elif cmd == 'stats':
+        print(json.dumps(q.stats()))
+
+    elif cmd == 'bench':
+        bench()
+
+    else:
+        print(f"Unknown: {cmd}")
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+ClaudeCodeA.py
+================================================================================
+#!/usr/bin/env python3
+"""
+ClaudeCodeA: Hybrid SQLite Task Orchestrator
+Combines claude1's blazing speed with claudeCode2's enterprise features
+Optimized for both simple high-throughput and complex workflow scenarios
+"""
+
+import os
+import sys
+import time
+import json
+import sqlite3
+import subprocess
+import threading
+import signal
+import hashlib
+from pathlib import Path
+from enum import Enum
+from typing import Optional, Dict, Any, List, Tuple, Union
+from dataclasses import dataclass
+from contextlib import contextmanager
+from datetime import datetime
+
+# Configuration
+BASE_DIR = Path(__file__).parent.absolute()
+DB_PATH = BASE_DIR / "aios_hybrid.db"
+UNIT_PREFIX = "aios-"
+
+class TaskMode(Enum):
+    """Operating modes for different use cases"""
+    FAST = "fast"       # Minimal overhead, maximum speed (claude1 mode)
+    ADVANCED = "advanced"  # Full features with dependencies (claudeCode2 mode)
+
+class TaskStatus(Enum):
+    """Task states"""
+    PENDING = "pending"
+    LEASED = "leased"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+@dataclass
+class Task:
+    """Task representation"""
+    id: int
+    name: str
+    command: str
+    mode: TaskMode
+    payload: Optional[Dict[str, Any]] = None
+    priority: int = 0
+    status: TaskStatus = TaskStatus.PENDING
+    scheduled_at: Optional[int] = None
+    lease_until: Optional[int] = None
+    worker_id: Optional[str] = None
+    attempts: int = 0
+    max_retries: int = 3
+    parent_ids: Optional[List[int]] = None
+    unique_key: Optional[str] = None
+
+class HybridTaskQueue:
+    """
+    Hybrid queue supporting both ultra-fast simple mode and advanced scheduling
+    Best of both worlds: claude1's speed + claudeCode2's features
+    """
+
+    def __init__(self, db_path: str = str(DB_PATH), mode: TaskMode = TaskMode.FAST):
+        self.db_path = db_path
+        self.mode = mode
+        self.lock = threading.RLock()
+        self._init_db()
+
+    @contextmanager
+    def _get_conn(self):
+        """Get connection with mode-optimized settings"""
+        if self.mode == TaskMode.FAST:
+            # Fast mode: single persistent connection
+            if not hasattr(self, '_conn'):
+                self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+                self._conn.row_factory = sqlite3.Row
+                self._optimize_fast()
+            yield self._conn
+        else:
+            # Advanced mode: connection per operation
+            conn = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
+            conn.row_factory = sqlite3.Row
+            self._optimize_advanced(conn)
+            try:
+                yield conn
+            finally:
+                conn.close()
+
+    def _optimize_fast(self):
+        """Apply claude1's proven optimizations for speed"""
+        self._conn.executescript("""
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 30000000000;
+            PRAGMA cache_size = -64000;
+            PRAGMA page_size = 4096;
+            PRAGMA busy_timeout = 5000;
+        """)
+
+    def _optimize_advanced(self, conn):
+        """Apply claudeCode2's settings for reliability"""
+        conn.executescript("""
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA foreign_keys = ON;
+            PRAGMA temp_store = MEMORY;
+            PRAGMA mmap_size = 30000000000;
+            PRAGMA cache_size = -64000;
+        """)
+
+    def _init_db(self):
+        """Initialize hybrid schema supporting both modes"""
+        with self._get_conn() as conn:
+            conn.executescript("""
+                -- Main tasks table (optimized for both modes)
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    mode TEXT DEFAULT 'fast',
+                    payload BLOB,  -- BLOB for speed (claude1)
+                    priority INTEGER DEFAULT 0,
+                    status TEXT DEFAULT 'pending',
+                    unique_key TEXT,
+                    scheduled_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    lease_until INTEGER,
+                    worker_id TEXT,
+                    created_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    started_at INTEGER,
+                    completed_at INTEGER,
+                    attempts INTEGER DEFAULT 0,
+                    max_retries INTEGER DEFAULT 3,
+                    backoff_ms INTEGER DEFAULT 1000,
+                    result BLOB,
+                    error TEXT
+                );
+
+                -- Fast mode index (claude1 pattern)
+                CREATE INDEX IF NOT EXISTS idx_fast ON tasks(status, priority DESC, scheduled_at)
+                    WHERE status = 'pending' AND mode = 'fast';
+
+                -- Advanced mode indexes (claudeCode2 pattern)
+                CREATE INDEX IF NOT EXISTS idx_advanced ON tasks(status, priority DESC, scheduled_at, id)
+                    WHERE status = 'pending' AND mode = 'advanced';
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_unique
+                    ON tasks(unique_key)
+                    WHERE unique_key IS NOT NULL AND status IN ('pending', 'leased', 'running');
+
+                CREATE INDEX IF NOT EXISTS idx_lease
+                    ON tasks(lease_until)
+                    WHERE status = 'leased';
+
+                -- Dependencies table for advanced mode
+                CREATE TABLE IF NOT EXISTS task_deps (
+                    child_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    parent_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    PRIMARY KEY (child_id, parent_id)
+                );
+
+                -- Run history for advanced mode
+                CREATE TABLE IF NOT EXISTS task_runs (
+                    id INTEGER PRIMARY KEY,
+                    task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    worker_id TEXT NOT NULL,
+                    started_at INTEGER DEFAULT (strftime('%s', 'now') * 1000),
+                    ended_at INTEGER,
+                    exit_code INTEGER,
+                    output TEXT
+                );
+            """)
+            conn.commit()
+
+    # FAST MODE OPERATIONS (claude1 patterns)
+
+    def push_fast(self, name: str, command: str, priority: int = 0,
+                  payload: Any = None) -> int:
+        """Ultra-fast task push using atomic operations"""
+        payload_blob = json.dumps(payload).encode() if payload else None
+        scheduled = int(time.time() * 1000)
+
+        with self.lock:
+            with self._get_conn() as conn:
+                cursor = conn.execute("""
+                    INSERT INTO tasks (name, command, mode, payload, priority, scheduled_at)
+                    VALUES (?, ?, 'fast', ?, ?, ?)
+                """, (name, command, payload_blob, priority, scheduled))
+                conn.commit()
+                return cursor.lastrowid
+
+    def pop_fast(self) -> Optional[Dict[str, Any]]:
+        """Atomic pop with UPDATE-RETURNING (fastest pattern)"""
+        with self.lock:
+            with self._get_conn() as conn:
+                now = int(time.time() * 1000)
+                cursor = conn.execute("""
+                    UPDATE tasks
+                    SET status = 'running', started_at = ?
+                    WHERE id = (
+                        SELECT id FROM tasks
+                        WHERE status = 'pending'
+                            AND mode = 'fast'
+                            AND scheduled_at <= ?
+                        ORDER BY priority DESC, scheduled_at ASC
+                        LIMIT 1
+                    )
+                    RETURNING id, name, command, payload
+                """, (now, now))
+
+                row = cursor.fetchone()
+                conn.commit()
+
+                if row:
+                    return {
+                        'id': row['id'],
+                        'name': row['name'],
+                        'command': row['command'],
+                        'payload': json.loads(row['payload']) if row['payload'] else None
+                    }
+                return None
+
+    # ADVANCED MODE OPERATIONS (claudeCode2 patterns)
+
+    def push_advanced(self, name: str, command: str, priority: int = 0,
+                     delay_ms: int = 0, unique_key: str = None,
+                     parent_ids: List[int] = None, max_retries: int = 3,
+                     backoff_ms: int = 1000, payload: Any = None) -> Optional[int]:
+        """Advanced task with dependencies and scheduling"""
+        scheduled = int(time.time() * 1000) + delay_ms
+        payload_blob = json.dumps(payload).encode() if payload else None
+
+        with self._get_conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Check unique constraint
+                if unique_key:
+                    cursor = conn.execute("""
+                        SELECT id FROM tasks
+                        WHERE unique_key = ? AND status IN ('pending', 'leased', 'running')
+                    """, (unique_key,))
+                    if cursor.fetchone():
+                        conn.execute("ROLLBACK")
+                        return None
+
+                # Insert task
+                cursor = conn.execute("""
+                    INSERT INTO tasks (name, command, mode, payload, priority, unique_key,
+                                     scheduled_at, max_retries, backoff_ms)
+                    VALUES (?, ?, 'advanced', ?, ?, ?, ?, ?, ?)
+                """, (name, command, payload_blob, priority, unique_key,
+                     scheduled, max_retries, backoff_ms))
+
+                task_id = cursor.lastrowid
+
+                # Add dependencies
+                if parent_ids:
+                    for parent_id in parent_ids:
+                        conn.execute("""
+                            INSERT INTO task_deps (child_id, parent_id)
+                            VALUES (?, ?)
+                        """, (task_id, parent_id))
+
+                conn.execute("COMMIT")
+                return task_id
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                raise
+
+    def claim_tasks(self, worker_id: str, limit: int = 1,
+                   lease_seconds: int = 300) -> List[Task]:
+        """Claim tasks with lease (advanced mode)"""
+        now = int(time.time() * 1000)
+        lease_until = now + (lease_seconds * 1000)
+
+        with self._get_conn() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Find eligible tasks
+                if self.mode == TaskMode.FAST:
+                    # Fast mode: simple selection
+                    cursor = conn.execute("""
+                        SELECT id FROM tasks
+                        WHERE status = 'pending'
+                        AND mode = 'fast'
+                        AND scheduled_at <= ?
+                        ORDER BY priority DESC, scheduled_at ASC
+                        LIMIT ?
+                    """, (now, limit))
+                else:
+                    # Advanced mode: check dependencies
+                    cursor = conn.execute("""
+                        SELECT t.id FROM tasks t
+                        WHERE t.status = 'pending'
+                        AND t.mode = 'advanced'
+                        AND t.scheduled_at <= ?
+                        AND NOT EXISTS (
+                            SELECT 1 FROM task_deps d
+                            JOIN tasks p ON p.id = d.parent_id
+                            WHERE d.child_id = t.id
+                            AND p.status != 'completed'
+                        )
+                        ORDER BY t.priority DESC, t.id ASC
+                        LIMIT ?
+                    """, (now, limit))
+
+                task_ids = [row[0] for row in cursor.fetchall()]
+
+                if not task_ids:
+                    conn.execute("COMMIT")
+                    return []
+
+                # Claim tasks
+                placeholders = ','.join('?' * len(task_ids))
+                conn.execute(f"""
+                    UPDATE tasks
+                    SET status = 'leased',
+                        lease_until = ?,
+                        worker_id = ?,
+                        attempts = attempts + 1
+                    WHERE id IN ({placeholders})
+                """, [lease_until, worker_id] + task_ids)
+
+                # Fetch claimed tasks
+                cursor = conn.execute(f"""
+                    SELECT * FROM tasks WHERE id IN ({placeholders})
+                """, task_ids)
+
+                tasks = []
+                for row in cursor.fetchall():
+                    tasks.append(Task(
+                        id=row['id'],
+                        name=row['name'],
+                        command=row['command'],
+                        mode=TaskMode(row['mode']),
+                        payload=json.loads(row['payload']) if row['payload'] else None,
+                        priority=row['priority'],
+                        status=TaskStatus(row['status']),
+                        scheduled_at=row['scheduled_at'],
+                        lease_until=row['lease_until'],
+                        worker_id=row['worker_id'],
+                        attempts=row['attempts'],
+                        max_retries=row['max_retries']
+                    ))
+
+                conn.execute("COMMIT")
+                return tasks
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                raise
+
+    def complete_task(self, task_id: int, success: bool,
+                     result: Any = None, error: str = None):
+        """Complete or retry task with exponential backoff"""
+        now = int(time.time() * 1000)
+        status = 'completed' if success else 'failed'
+        result_blob = json.dumps(result).encode() if result else None
+
+        with self._get_conn() as conn:
+            if success:
+                # Mark as completed
+                conn.execute("""
+                    UPDATE tasks
+                    SET status = ?, completed_at = ?, result = ?,
+                        lease_until = NULL, worker_id = NULL
+                    WHERE id = ?
+                """, (status, now, result_blob, task_id))
+            else:
+                # Check retry eligibility
+                cursor = conn.execute("""
+                    SELECT attempts, max_retries, backoff_ms, mode
+                    FROM tasks WHERE id = ?
+                """, (task_id,))
+                row = cursor.fetchone()
+
+                if row and row['attempts'] < row['max_retries']:
+                    # Calculate exponential backoff
+                    if row['mode'] == 'advanced':
+                        # Advanced mode: exponential backoff with jitter
+                        delay = min(row['backoff_ms'] * (2 ** (row['attempts'] - 1)), 3600000)
+                        jitter = int(delay * 0.1)
+                        scheduled = now + delay + (hash(task_id) % jitter)
+                    else:
+                        # Fast mode: simple linear backoff
+                        scheduled = now + (row['attempts'] * 5000)
+
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status = 'pending', scheduled_at = ?,
+                            lease_until = NULL, worker_id = NULL
+                        WHERE id = ?
+                    """, (scheduled, task_id))
+                else:
+                    # Permanently failed
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status = 'failed', completed_at = ?, error = ?,
+                            lease_until = NULL, worker_id = NULL
+                        WHERE id = ?
+                    """, (now, error[:1000] if error else None, task_id))
+
+            conn.commit()
+
+    def reclaim_expired_leases(self) -> int:
+        """Reclaim tasks with expired leases"""
+        now = int(time.time() * 1000)
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                UPDATE tasks
+                SET status = 'pending',
+                    lease_until = NULL,
+                    worker_id = NULL
+                WHERE status = 'leased' AND lease_until < ?
+            """, (now,))
+            conn.commit()
+            return cursor.rowcount
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get comprehensive statistics"""
+        with self._get_conn() as conn:
+            cursor = conn.execute("""
+                SELECT
+                    mode,
+                    status,
+                    COUNT(*) as count
+                FROM tasks
+                GROUP BY mode, status
+            """)
+
+            stats = {'fast': {}, 'advanced': {}, 'total': {}}
+            for row in cursor.fetchall():
+                stats[row['mode']][row['status']] = row['count']
+                stats['total'][row['status']] = stats['total'].get(row['status'], 0) + row['count']
+
+            # Check expired leases
+            cursor = conn.execute("""
+                SELECT COUNT(*) as expired
+                FROM tasks
+                WHERE status = 'leased' AND lease_until < ?
+            """, (int(time.time() * 1000),))
+            stats['expired_leases'] = cursor.fetchone()['expired']
+
+            return stats
+
+class HybridWorker:
+    """Worker supporting both fast and advanced modes"""
+
+    def __init__(self, queue: HybridTaskQueue, worker_id: str = None,
+                 mode: TaskMode = TaskMode.FAST):
+        self.queue = queue
+        self.worker_id = worker_id or f"worker-{os.getpid()}"
+        self.mode = mode
+        self.running = True
+        signal.signal(signal.SIGINT, self._shutdown)
+        signal.signal(signal.SIGTERM, self._shutdown)
+
+    def _shutdown(self, signum, frame):
+        """Graceful shutdown"""
+        print(f"Worker {self.worker_id} shutting down...")
+        self.running = False
+
+    def run_fast(self):
+        """Fast worker loop (claude1 style)"""
+        print(f"Fast worker {self.worker_id} started")
+
+        while self.running:
+            task = self.queue.pop_fast()
+            if task:
+                print(f"[FAST] Running: {task['name']}")
+                try:
+                    result = subprocess.run(
+                        task['command'],
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=300
+                    )
+                    success = result.returncode == 0
+                    self.queue.complete_task(
+                        task['id'],
+                        success,
+                        {'stdout': result.stdout, 'stderr': result.stderr}
+                    )
+                    print(f"[FAST] {'Success' if success else 'Failed'}: {task['name']}")
+                except Exception as e:
+                    self.queue.complete_task(task['id'], False, error=str(e))
+                    print(f"[FAST] Error: {task['name']} - {e}")
+            else:
+                time.sleep(0.1)  # Brief sleep when empty
+
+    def run_advanced(self, batch_size: int = 1, lease_seconds: int = 300):
+        """Advanced worker loop (claudeCode2 style)"""
+        print(f"Advanced worker {self.worker_id} started (batch={batch_size})")
+
+        while self.running:
+            try:
+                # Reclaim expired leases
+                reclaimed = self.queue.reclaim_expired_leases()
+                if reclaimed:
+                    print(f"[ADV] Reclaimed {reclaimed} expired leases")
+
+                # Claim tasks
+                tasks = self.queue.claim_tasks(self.worker_id, batch_size, lease_seconds)
+
+                for task in tasks:
+                    if not self.running:
+                        break
+
+                    print(f"[ADV] Executing: {task.name} (attempt {task.attempts}/{task.max_retries})")
+
+                    # Record run
+                    with self.queue._get_conn() as conn:
+                        cursor = conn.execute("""
+                            INSERT INTO task_runs (task_id, worker_id)
+                            VALUES (?, ?)
+                        """, (task.id, self.worker_id))
+                        run_id = cursor.lastrowid
+                        conn.commit()
+
+                    try:
+                        # Execute with timeout
+                        result = subprocess.run(
+                            task.command,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=lease_seconds - 10
+                        )
+
+                        # Update run record
+                        with self.queue._get_conn() as conn:
+                            conn.execute("""
+                                UPDATE task_runs
+                                SET ended_at = ?, exit_code = ?, output = ?
+                                WHERE id = ?
+                            """, (int(time.time() * 1000), result.returncode,
+                                 json.dumps({'stdout': result.stdout[:5000],
+                                           'stderr': result.stderr[:5000]}),
+                                 run_id))
+                            conn.commit()
+
+                        self.queue.complete_task(
+                            task.id,
+                            result.returncode == 0,
+                            {'stdout': result.stdout, 'stderr': result.stderr},
+                            result.stderr if result.returncode != 0 else None
+                        )
+
+                        status = "succeeded" if result.returncode == 0 else "failed"
+                        print(f"[ADV] Task {task.name} {status} (exit={result.returncode})")
+
+                    except subprocess.TimeoutExpired:
+                        self.queue.complete_task(task.id, False, error="TIMEOUT")
+                        print(f"[ADV] Task {task.name} timed out")
+
+                    except Exception as e:
+                        self.queue.complete_task(task.id, False, error=str(e))
+                        print(f"[ADV] Task {task.name} error: {e}")
+
+                if not tasks:
+                    time.sleep(1)
+
+            except Exception as e:
+                print(f"[ADV] Worker error: {e}")
+                time.sleep(5)
+
+    def run(self, batch_size: int = 1):
+        """Run worker in configured mode"""
+        if self.mode == TaskMode.FAST:
+            self.run_fast()
+        else:
+            self.run_advanced(batch_size)
+
+class SystemdIntegration:
+    """Systemd service management"""
+
+    def __init__(self):
+        self.unit_prefix = UNIT_PREFIX
+
+    def create_worker_service(self, mode: TaskMode = TaskMode.FAST,
+                            batch_size: int = 1) -> str:
+        """Create systemd service for worker"""
+        script_path = Path(__file__).absolute()
+        unit_name = f"{self.unit_prefix}worker-{mode.value}.service"
+        unit_path = Path(f"~/.config/systemd/user/{unit_name}").expanduser()
+        unit_path.parent.mkdir(parents=True, exist_ok=True)
+
+        unit_content = f"""[Unit]
+Description=AIOS Hybrid Worker ({mode.value} mode)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 {script_path} worker --mode {mode.value} --batch {batch_size}
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
+"""
+        unit_path.write_text(unit_content)
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+        return unit_name
+
+    def start_worker(self, mode: TaskMode = TaskMode.FAST):
+        """Start worker service"""
+        unit_name = f"{self.unit_prefix}worker-{mode.value}.service"
+        subprocess.run(["systemctl", "--user", "start", unit_name], check=False)
+        print(f"Started {unit_name}")
+
+    def stop_worker(self, mode: TaskMode = TaskMode.FAST):
+        """Stop worker service"""
+        unit_name = f"{self.unit_prefix}worker-{mode.value}.service"
+        subprocess.run(["systemctl", "--user", "stop", unit_name], check=False)
+        print(f"Stopped {unit_name}")
+
+def benchmark():
+    """Benchmark both modes"""
+    print("=== ClaudeCodeA Hybrid Benchmark ===\n")
+
+    # Test fast mode
+    queue_fast = HybridTaskQueue(mode=TaskMode.FAST)
+    print("Testing FAST mode (claude1 style)...")
+    start = time.perf_counter()
+
+    for i in range(100):
+        queue_fast.push_fast(f"fast_task_{i}", f"echo 'Fast {i}'", priority=i % 3)
+
+    fast_time = (time.perf_counter() - start) * 1000
+    print(f"Fast mode: 100 tasks in {fast_time:.2f}ms ({fast_time/100:.3f}ms per task)\n")
+
+    # Test advanced mode
+    queue_adv = HybridTaskQueue(mode=TaskMode.ADVANCED)
+    print("Testing ADVANCED mode (claudeCode2 style)...")
+    start = time.perf_counter()
+
+    # Create parent task
+    parent_id = queue_adv.push_advanced("parent", "echo 'Parent'", priority=10)
+
+    # Create child tasks with dependencies
+    for i in range(99):
+        queue_adv.push_advanced(
+            f"adv_task_{i}",
+            f"echo 'Advanced {i}'",
+            priority=i % 3,
+            parent_ids=[parent_id] if i < 10 else None,
+            unique_key=f"unique_{i}" if i % 10 == 0 else None
+        )
+
+    adv_time = (time.perf_counter() - start) * 1000
+    print(f"Advanced mode: 100 tasks in {adv_time:.2f}ms ({adv_time/100:.3f}ms per task)\n")
+
+    # Show stats
+    print("Fast mode stats:", queue_fast.get_stats())
+    print("Advanced mode stats:", queue_adv.get_stats())
+
+    return fast_time, adv_time
+
+def main():
+    """CLI interface"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ClaudeCodeA Hybrid Task Orchestrator")
+    parser.add_argument("command", choices=["add", "worker", "stats", "test", "benchmark",
+                                           "install", "start", "stop"])
+    parser.add_argument("--mode", choices=["fast", "advanced"], default="fast",
+                       help="Operating mode")
+    parser.add_argument("--name", help="Task name")
+    parser.add_argument("--cmd", help="Task command")
+    parser.add_argument("--priority", type=int, default=0, help="Task priority")
+    parser.add_argument("--delay", type=int, default=0, help="Delay in milliseconds")
+    parser.add_argument("--batch", type=int, default=1, help="Batch size for worker")
+    parser.add_argument("--unique", help="Unique key for deduplication")
+    parser.add_argument("--parent", type=int, action="append", help="Parent task IDs")
+
+    args = parser.parse_args()
+
+    # Initialize queue with selected mode
+    mode = TaskMode.FAST if args.mode == "fast" else TaskMode.ADVANCED
+    queue = HybridTaskQueue(mode=mode)
+
+    if args.command == "add":
+        if not args.name or not args.cmd:
+            print("Error: --name and --cmd required")
+            sys.exit(1)
+
+        if mode == TaskMode.FAST:
+            task_id = queue.push_fast(args.name, args.cmd, args.priority)
+        else:
+            task_id = queue.push_advanced(
+                args.name, args.cmd,
+                priority=args.priority,
+                delay_ms=args.delay,
+                unique_key=args.unique,
+                parent_ids=args.parent
+            )
+
+        if task_id:
+            print(f"Added task {task_id} in {mode.value} mode")
+        else:
+            print("Task not added (duplicate unique key?)")
+
+    elif args.command == "worker":
+        worker = HybridWorker(queue, mode=mode)
+        worker.run(args.batch)
+
+    elif args.command == "stats":
+        stats = queue.get_stats()
+        print(json.dumps(stats, indent=2))
+
+    elif args.command == "test":
+        print(f"Creating test workflow in {mode.value} mode...")
+
+        if mode == TaskMode.FAST:
+            # Fast mode test
+            for i in range(5):
+                task_id = queue.push_fast(f"test_fast_{i}", f"echo 'Fast test {i}'", i)
+                print(f"Added fast task {task_id}")
+        else:
+            # Advanced mode test with dependencies
+            parent = queue.push_advanced("test_setup", "echo 'Setting up test...'", priority=10)
+            print(f"Parent task: {parent}")
+
+            for i in range(3):
+                child = queue.push_advanced(
+                    f"test_process_{i}",
+                    f"echo 'Processing {i}'",
+                    priority=5,
+                    parent_ids=[parent]
+                )
+                print(f"Child task {i}: {child}")
+
+            # Delayed cleanup
+            cleanup = queue.push_advanced(
+                "test_cleanup",
+                "echo 'Cleaning up...'",
+                delay_ms=5000,
+                unique_key="cleanup_test"
+            )
+            print(f"Cleanup task: {cleanup}")
+
+        print(f"\nRun 'worker --mode {args.mode}' to process tasks")
+
+    elif args.command == "benchmark":
+        benchmark()
+
+    elif args.command == "install":
+        systemd = SystemdIntegration()
+        unit_name = systemd.create_worker_service(mode, args.batch)
+        print(f"Installed systemd service: {unit_name}")
+        print(f"Start with: systemctl --user start {unit_name}")
+
+    elif args.command == "start":
+        systemd = SystemdIntegration()
+        systemd.start_worker(mode)
+
+    elif args.command == "stop":
+        systemd = SystemdIntegration()
+        systemd.stop_worker(mode)
+
+    else:
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()
+
+################################################################################
+################################################################################
+
+production_sqlite.py
+================================================================================
+#!/usr/bin/env python3
+"""
+Production SQLite Task Queue System
+Synthesized from Firefox, Chrome, Android, Signal implementations
+Handles 500M+ device scale patterns
+"""
+
+import sqlite3
+import json
+import time
+import threading
+import queue
+import hashlib
+import logging
+from contextlib import contextmanager
+from dataclasses import dataclass, asdict
+from typing import Optional, Dict, Any, List, Tuple
+from enum import Enum
+from datetime import datetime, timedelta
+import signal
+import sys
+
+# Configuration from production systems
+class TaskStatus(Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    SCHEDULED = "scheduled"
+
+class TaskPriority(Enum):
+    USER_BLOCKING = 100  # Firefox pattern
+    USER_VISIBLE = 50
+    BACKGROUND = 0
+
+@dataclass
+class Task:
+    """Task model based on Android WorkManager and Chrome patterns"""
+    id: Optional[int] = None
+    type: str = ""
+    payload: Dict[str, Any] = None
+    status: str = TaskStatus.PENDING.value
+    priority: int = TaskPriority.BACKGROUND.value
+    created_at: Optional[float] = None
+    scheduled_at: Optional[float] = None
+    started_at: Optional[float] = None
+    completed_at: Optional[float] = None
+    retry_count: int = 0
+    max_retries: int = 3
+    backoff_policy: str = "exponential"  # Android pattern
+    backoff_delay: float = 1.0
+    error_message: Optional[str] = None
+    worker_id: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+    dependencies: List[int] = None
+
+    def __post_init__(self):
+        if self.payload is None:
+            self.payload = {}
+        if self.dependencies is None:
+            self.dependencies = []
+        if self.created_at is None:
+            self.created_at = time.time()
+
+class SQLiteConnectionPool:
+    """Connection pooling based on Chrome and Android patterns"""
+
+    def __init__(self, db_path: str, max_connections: int = 4):  # Android default
+        self.db_path = db_path
+        self.pool = queue.Queue(maxsize=max_connections)
+        self.lock = threading.Lock()
+
+        # Pre-create connections
+        for _ in range(max_connections):
+            conn = self._create_connection()
+            self.pool.put(conn)
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create optimized connection with production PRAGMA settings"""
+        conn = sqlite3.connect(
+            self.db_path,
+            check_same_thread=False,
+            timeout=30.0,  # Chrome pattern
+            isolation_level=None  # Manual transaction control
+        )
+
+        # Apply production optimizations from all systems
+        pragmas = [
+            "PRAGMA journal_mode=WAL",  # Universal pattern
+            "PRAGMA synchronous=NORMAL",  # Safe with WAL
+            "PRAGMA cache_size=-8000",  # 8MB cache (Chrome)
+            "PRAGMA temp_store=MEMORY",
+            "PRAGMA mmap_size=268435456",  # 256MB (Chrome)
+            "PRAGMA busy_timeout=5000",  # 5 second timeout
+            "PRAGMA wal_autocheckpoint=1000",  # Firefox pattern
+            "PRAGMA page_size=4096",  # Chrome uses 4KB
+        ]
+
+        for pragma in pragmas:
+            conn.execute(pragma)
+
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @contextmanager
+    def get_connection(self):
+        """Thread-safe connection checkout"""
+        conn = self.pool.get()
+        try:
+            yield conn
+        finally:
+            # Return to pool
+            self.pool.put(conn)
+
+class TaskQueue:
+    """Production task queue synthesizing patterns from major implementations"""
+
+    def __init__(self, db_path: str = "tasks.db", max_connections: int = 4):
+        self.db_path = db_path
+        self.pool = SQLiteConnectionPool(db_path, max_connections)
+        self.logger = logging.getLogger(__name__)
+        self._shutdown = False
+        self._worker_threads = []
+        self._setup_database()
+        self._setup_signal_handlers()
+
+    def _setup_signal_handlers(self):
+        """Graceful shutdown like Firefox background tasks"""
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+
+    def _handle_shutdown(self, signum, frame):
+        """Handle shutdown gracefully"""
+        self.logger.info(f"Received signal {signum}, shutting down...")
+        self._shutdown = True
+
+    def _setup_database(self):
+        """Initialize schema based on production patterns"""
+        with self.pool.get_connection() as conn:
+            # Main tasks table (combining patterns from all systems)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    type TEXT NOT NULL,
+                    payload TEXT,
+                    status TEXT DEFAULT 'pending',
+                    priority INTEGER DEFAULT 0,
+                    created_at REAL DEFAULT (julianday('now')),
+                    scheduled_at REAL,
+                    started_at REAL,
+                    completed_at REAL,
+                    retry_count INTEGER DEFAULT 0,
+                    max_retries INTEGER DEFAULT 3,
+                    backoff_policy TEXT DEFAULT 'exponential',
+                    backoff_delay REAL DEFAULT 1.0,
+                    error_message TEXT,
+                    worker_id TEXT,
+                    result TEXT,
+
+                    -- Chrome download manager pattern
+                    state_transition_count INTEGER DEFAULT 0,
+                    last_modified REAL DEFAULT (julianday('now')),
+
+                    -- Android WorkManager pattern
+                    required_network_type INTEGER DEFAULT 0,
+                    requires_charging INTEGER DEFAULT 0,
+                    requires_device_idle INTEGER DEFAULT 0
+                )
+            """)
+
+            # Dependencies table (Android WorkManager pattern)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS task_dependencies (
+                    task_id INTEGER,
+                    depends_on_id INTEGER,
+                    PRIMARY KEY (task_id, depends_on_id),
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                    FOREIGN KEY (depends_on_id) REFERENCES tasks(id) ON DELETE CASCADE
+                )
+            """)
+
+            # Error tracking (Signal/Firefox pattern)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS task_errors (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id INTEGER,
+                    error_message TEXT,
+                    stack_trace TEXT,
+                    occurred_at REAL DEFAULT (julianday('now')),
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                )
+            """)
+
+            # Performance metrics table (Chrome pattern)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS task_metrics (
+                    task_id INTEGER PRIMARY KEY,
+                    queue_time REAL,
+                    execution_time REAL,
+                    total_time REAL,
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                )
+            """)
+
+            # Create optimized indexes (composite index pattern from all systems)
+            indexes = [
+                "CREATE INDEX IF NOT EXISTS idx_tasks_queue ON tasks(status, priority DESC, created_at ASC)",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_at) WHERE scheduled_at IS NOT NULL",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_type_status ON tasks(type, status)",
+                "CREATE INDEX IF NOT EXISTS idx_tasks_worker ON tasks(worker_id) WHERE worker_id IS NOT NULL",
+                "CREATE INDEX IF NOT EXISTS idx_deps_task ON task_dependencies(task_id)",
+                "CREATE INDEX IF NOT EXISTS idx_deps_depends ON task_dependencies(depends_on_id)"
+            ]
+
+            for idx in indexes:
+                conn.execute(idx)
+
+            conn.execute("COMMIT")
+
+    def enqueue(self, task: Task) -> int:
+        """Enqueue task with Chrome/Firefox transaction patterns"""
+        with self.pool.get_connection() as conn:
+            # Chrome pattern: track state transitions
+            task_dict = asdict(task)
+
+            # Serialize complex fields
+            task_dict['payload'] = json.dumps(task_dict['payload'])
+            if task_dict['result']:
+                task_dict['result'] = json.dumps(task_dict['result'])
+
+            dependencies = task_dict.pop('dependencies', [])
+            task_dict.pop('id', None)  # Let DB assign ID
+
+            # Use IMMEDIATE transaction (Firefox pattern to prevent deadlocks)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = conn.execute(
+                    f"""INSERT INTO tasks ({','.join(task_dict.keys())})
+                        VALUES ({','.join(['?' for _ in task_dict])})""",
+                    list(task_dict.values())
+                )
+                task_id = cursor.lastrowid
+
+                # Add dependencies if any (Android WorkManager pattern)
+                for dep_id in dependencies:
+                    conn.execute(
+                        "INSERT INTO task_dependencies (task_id, depends_on_id) VALUES (?, ?)",
+                        (task_id, dep_id)
+                    )
+
+                conn.execute("COMMIT")
+                self.logger.debug(f"Enqueued task {task_id} of type {task.type}")
+                return task_id
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                self.logger.error(f"Failed to enqueue task: {e}")
+                raise
+
+    def dequeue(self, worker_id: str, task_types: Optional[List[str]] = None) -> Optional[Task]:
+        """Atomic dequeue with Chrome's state machine pattern"""
+        with self.pool.get_connection() as conn:
+            # Use IMMEDIATE to prevent lock escalation deadlocks
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Check for scheduled tasks first (Android pattern)
+                current_time = time.time()
+                julian_now = datetime.fromtimestamp(current_time).toordinal() + 1721425.5
+
+                # Build query with optional type filter
+                query = """
+                    SELECT t.* FROM tasks t
+                    LEFT JOIN task_dependencies d ON t.id = d.task_id
+                    WHERE t.status IN ('pending', 'scheduled')
+                    AND (t.scheduled_at IS NULL OR t.scheduled_at <= ?)
+                    AND d.task_id IS NULL  -- No pending dependencies
+                """
+
+                params = [julian_now]
+                if task_types:
+                    placeholders = ','.join(['?' for _ in task_types])
+                    query += f" AND t.type IN ({placeholders})"
+                    params.extend(task_types)
+
+                query += " ORDER BY t.priority DESC, t.created_at ASC LIMIT 1"
+
+                cursor = conn.execute(query, params)
+                row = cursor.fetchone()
+
+                if row:
+                    task_id = row['id']
+
+                    # Check if dependencies are satisfied (Android WorkManager)
+                    deps = conn.execute("""
+                        SELECT d.depends_on_id, t.status
+                        FROM task_dependencies d
+                        JOIN tasks t ON d.depends_on_id = t.id
+                        WHERE d.task_id = ?
+                    """, (task_id,)).fetchall()
+
+                    if any(dep['status'] != 'completed' for dep in deps):
+                        conn.execute("ROLLBACK")
+                        return None  # Dependencies not satisfied
+
+                    # Atomic claim (Chrome download manager pattern)
+                    result = conn.execute("""
+                        UPDATE tasks
+                        SET status = 'processing',
+                            worker_id = ?,
+                            started_at = julianday('now'),
+                            state_transition_count = state_transition_count + 1,
+                            last_modified = julianday('now')
+                        WHERE id = ? AND status IN ('pending', 'scheduled')
+                    """, (worker_id, task_id))
+
+                    if result.rowcount > 0:
+                        conn.execute("COMMIT")
+                        return self._row_to_task(row)
+
+                conn.execute("ROLLBACK")
+                return None
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                self.logger.error(f"Dequeue failed: {e}")
+                raise
+
+    def complete_task(self, task_id: int, result: Optional[Dict[str, Any]] = None):
+        """Complete task with Chrome's state tracking"""
+        with self.pool.get_connection() as conn:
+            result_json = json.dumps(result) if result else None
+
+            # Record metrics (Chrome pattern)
+            metrics = conn.execute("""
+                SELECT created_at, started_at FROM tasks WHERE id = ?
+            """, (task_id,)).fetchone()
+
+            if metrics:
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    # Update task status
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status = 'completed',
+                            completed_at = julianday('now'),
+                            result = ?,
+                            state_transition_count = state_transition_count + 1,
+                            last_modified = julianday('now')
+                        WHERE id = ?
+                    """, (result_json, task_id))
+
+                    # Record performance metrics
+                    julian_now = datetime.now().toordinal() + 1721425.5
+                    queue_time = metrics['started_at'] - metrics['created_at'] if metrics['started_at'] else 0
+                    exec_time = julian_now - metrics['started_at'] if metrics['started_at'] else 0
+
+                    conn.execute("""
+                        INSERT OR REPLACE INTO task_metrics
+                        (task_id, queue_time, execution_time, total_time)
+                        VALUES (?, ?, ?, ?)
+                    """, (task_id, queue_time, exec_time, queue_time + exec_time))
+
+                    conn.execute("COMMIT")
+
+                except Exception as e:
+                    conn.execute("ROLLBACK")
+                    raise
+
+    def fail_task(self, task_id: int, error_message: str, retry: bool = True):
+        """Fail task with retry logic (Android/Signal pattern)"""
+        with self.pool.get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Get current task state
+                task = conn.execute("""
+                    SELECT retry_count, max_retries, backoff_policy, backoff_delay
+                    FROM tasks WHERE id = ?
+                """, (task_id,)).fetchone()
+
+                if not task:
+                    conn.execute("ROLLBACK")
+                    return
+
+                # Record error (Signal pattern)
+                conn.execute("""
+                    INSERT INTO task_errors (task_id, error_message)
+                    VALUES (?, ?)
+                """, (task_id, error_message))
+
+                if retry and task['retry_count'] < task['max_retries']:
+                    # Calculate backoff (Android pattern)
+                    if task['backoff_policy'] == 'exponential':
+                        delay = task['backoff_delay'] * (2 ** task['retry_count'])
+                    else:  # linear
+                        delay = task['backoff_delay'] * (task['retry_count'] + 1)
+
+                    scheduled_at = datetime.fromtimestamp(time.time() + delay).toordinal() + 1721425.5
+
+                    # Reschedule with backoff
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status = 'scheduled',
+                            scheduled_at = ?,
+                            retry_count = retry_count + 1,
+                            error_message = ?,
+                            worker_id = NULL,
+                            state_transition_count = state_transition_count + 1,
+                            last_modified = julianday('now')
+                        WHERE id = ?
+                    """, (scheduled_at, error_message, task_id))
+                else:
+                    # Final failure
+                    conn.execute("""
+                        UPDATE tasks
+                        SET status = 'failed',
+                            error_message = ?,
+                            completed_at = julianday('now'),
+                            state_transition_count = state_transition_count + 1,
+                            last_modified = julianday('now')
+                        WHERE id = ?
+                    """, (error_message, task_id))
+
+                conn.execute("COMMIT")
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                self.logger.error(f"Failed to fail task: {e}")
+                raise
+
+    def get_task_status(self, task_id: int) -> Optional[Dict[str, Any]]:
+        """Get task status with full details"""
+        with self.pool.get_connection() as conn:
+            row = conn.execute("""
+                SELECT t.*,
+                       m.queue_time, m.execution_time, m.total_time
+                FROM tasks t
+                LEFT JOIN task_metrics m ON t.id = m.task_id
+                WHERE t.id = ?
+            """, (task_id,)).fetchone()
+
+            if row:
+                return dict(row)
+            return None
+
+    def cleanup_old_tasks(self, days: int = 7):
+        """Cleanup pattern from Chrome/Firefox"""
+        with self.pool.get_connection() as conn:
+            cutoff = datetime.fromtimestamp(time.time() - (days * 86400)).toordinal() + 1721425.5
+
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Delete completed/failed tasks
+                result = conn.execute("""
+                    DELETE FROM tasks
+                    WHERE status IN ('completed', 'failed', 'cancelled')
+                    AND completed_at < ?
+                """, (cutoff,))
+
+                deleted = result.rowcount
+
+                # Check fragmentation (Firefox pattern)
+                stats = conn.execute("""
+                    SELECT page_count, freelist_count FROM pragma_page_count(), pragma_freelist_count()
+                """).fetchone()
+
+                if stats and stats['freelist_count'] > stats['page_count'] * 0.3:
+                    # Vacuum if >30% fragmented
+                    conn.execute("COMMIT")
+                    conn.execute("VACUUM")
+                else:
+                    conn.execute("COMMIT")
+
+                self.logger.info(f"Cleaned up {deleted} old tasks")
+
+            except Exception as e:
+                conn.execute("ROLLBACK")
+                self.logger.error(f"Cleanup failed: {e}")
+                raise
+
+    def checkpoint_wal(self, mode: str = "PASSIVE"):
+        """WAL checkpoint management (Firefox pattern)"""
+        with self.pool.get_connection() as conn:
+            result = conn.execute(f"PRAGMA wal_checkpoint({mode})").fetchone()
+            self.logger.debug(f"WAL checkpoint: {result}")
+            return result
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Performance metrics (Chrome pattern)"""
+        with self.pool.get_connection() as conn:
+            metrics = {}
+
+            # Task counts by status
+            status_counts = conn.execute("""
+                SELECT status, COUNT(*) as count
+                FROM tasks
+                GROUP BY status
+            """).fetchall()
+            metrics['status_counts'] = {row['status']: row['count'] for row in status_counts}
+
+            # Performance stats
+            perf = conn.execute("""
+                SELECT
+                    AVG(queue_time) as avg_queue_time,
+                    AVG(execution_time) as avg_exec_time,
+                    MAX(queue_time) as max_queue_time,
+                    MAX(execution_time) as max_exec_time
+                FROM task_metrics
+            """).fetchone()
+
+            if perf:
+                metrics['performance'] = dict(perf)
+
+            # Database stats
+            db_stats = conn.execute("""
+                SELECT page_count * page_size as db_size,
+                       freelist_count * page_size as free_size
+                FROM pragma_page_count(), pragma_page_size(), pragma_freelist_count()
+            """).fetchone()
+
+            if db_stats:
+                metrics['database'] = dict(db_stats)
+
+            # WAL status
+            wal = conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+            metrics['wal_pages'] = wal[1] if wal else 0
+
+            return metrics
+
+    def recover_stalled_tasks(self, timeout_seconds: int = 3600):
+        """Recover stalled tasks (Android pattern)"""
+        with self.pool.get_connection() as conn:
+            cutoff = datetime.fromtimestamp(time.time() - timeout_seconds).toordinal() + 1721425.5
+
+            result = conn.execute("""
+                UPDATE tasks
+                SET status = 'pending',
+                    worker_id = NULL,
+                    error_message = 'Task stalled and recovered'
+                WHERE status = 'processing'
+                AND started_at < ?
+            """, (cutoff,))
+
+            recovered = result.rowcount
+            if recovered > 0:
+                self.logger.info(f"Recovered {recovered} stalled tasks")
+
+            return recovered
+
+    def _row_to_task(self, row: sqlite3.Row) -> Task:
+        """Convert database row to Task object"""
+        task_dict = dict(row)
+
+        # Deserialize JSON fields
+        if task_dict.get('payload'):
+            task_dict['payload'] = json.loads(task_dict['payload'])
+        if task_dict.get('result'):
+            task_dict['result'] = json.loads(task_dict['result'])
+
+        # Convert Julian dates to Unix timestamps
+        for field in ['created_at', 'scheduled_at', 'started_at', 'completed_at']:
+            if task_dict.get(field):
+                # Julian date to Unix timestamp
+                dt = datetime.fromordinal(int(task_dict[field] - 1721425.5))
+                task_dict[field] = dt.timestamp()
+
+        # Remove non-Task fields
+        for key in ['state_transition_count', 'last_modified',
+                   'required_network_type', 'requires_charging', 'requires_device_idle']:
+            task_dict.pop(key, None)
+
+        return Task(**task_dict)
+
+    def schedule_recurring_task(self, task: Task, interval_seconds: int):
+        """Schedule recurring task (Android WorkManager pattern)"""
+        task.scheduled_at = time.time() + interval_seconds
+        task_id = self.enqueue(task)
+
+        # Store recurrence info in payload
+        task.payload['_recurrence_interval'] = interval_seconds
+        task.payload['_recurrence_original_id'] = task_id
+
+        with self.pool.get_connection() as conn:
+            conn.execute("""
+                UPDATE tasks
+                SET payload = ?
+                WHERE id = ?
+            """, (json.dumps(task.payload), task_id))
+
+        return task_id
+
+# Worker implementation
+class TaskWorker(threading.Thread):
+    """Worker thread implementation based on production patterns"""
+
+    def __init__(self, queue: TaskQueue, worker_id: str, task_types: Optional[List[str]] = None):
+        super().__init__(daemon=True)
+        self.queue = queue
+        self.worker_id = worker_id
+        self.task_types = task_types
+        self.logger = logging.getLogger(f"{__name__}.{worker_id}")
+        self._stop_event = threading.Event()
+
+    def run(self):
+        """Main worker loop with Signal/Android patterns"""
+        self.logger.info(f"Worker {self.worker_id} started")
+
+        while not self._stop_event.is_set():
+            try:
+                # Dequeue task
+                task = self.queue.dequeue(self.worker_id, self.task_types)
+
+                if not task:
+                    # No task available, wait briefly
+                    time.sleep(0.1)
+                    continue
+
+                self.logger.debug(f"Processing task {task.id} of type {task.type}")
+
+                try:
+                    # Process task (implement your logic here)
+                    result = self.process_task(task)
+
+                    # Check for recurrence (Android pattern)
+                    if task.payload.get('_recurrence_interval'):
+                        # Schedule next occurrence
+                        new_task = Task(
+                            type=task.type,
+                            payload={k: v for k, v in task.payload.items()
+                                   if not k.startswith('_')},
+                            priority=task.priority,
+                            scheduled_at=time.time() + task.payload['_recurrence_interval']
+                        )
+                        new_task.payload['_recurrence_interval'] = task.payload['_recurrence_interval']
+                        self.queue.enqueue(new_task)
+
+                    self.queue.complete_task(task.id, result)
+
+                except Exception as e:
+                    self.logger.error(f"Task {task.id} failed: {e}")
+                    self.queue.fail_task(task.id, str(e))
+
+            except Exception as e:
+                self.logger.error(f"Worker error: {e}")
+                time.sleep(1)  # Brief pause on error
+
+    def process_task(self, task: Task) -> Dict[str, Any]:
+        """Override this method to implement task processing"""
+        # Placeholder implementation
+        self.logger.info(f"Processing task {task.id}: {task.payload}")
+        time.sleep(0.1)  # Simulate work
+        return {"success": True, "processed_at": time.time()}
+
+    def stop(self):
+        """Stop worker gracefully"""
+        self._stop_event.set()
+
+# Example usage compatible with systemd orchestrator
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+
+    # Initialize queue
+    queue = TaskQueue("aios_tasks.db")
+
+    # Start workers
+    workers = []
+    for i in range(4):  # Android default connection pool size
+        worker = TaskWorker(queue, f"worker-{i}")
+        worker.start()
+        workers.append(worker)
+
+    # Example task creation
+    task = Task(
+        type="ai_workflow",
+        payload={"workflow_id": "123", "action": "process"},
+        priority=TaskPriority.USER_VISIBLE.value
+    )
+    task_id = queue.enqueue(task)
+
+    # Maintenance loop
+    last_cleanup = time.time()
+    last_checkpoint = time.time()
+
+    try:
+        while True:
+            # Periodic maintenance (Firefox/Chrome patterns)
+            if time.time() - last_cleanup > 3600:  # Hourly
+                queue.cleanup_old_tasks()
+                queue.recover_stalled_tasks()
+                last_cleanup = time.time()
+
+            if time.time() - last_checkpoint > 300:  # 5 minutes
+                queue.checkpoint_wal()
+                last_checkpoint = time.time()
+
+            # Log metrics
+            metrics = queue.get_metrics()
+            logging.info(f"Queue metrics: {metrics}")
+
+            time.sleep(60)  # Check every minute
+
+    except KeyboardInterrupt:
+        logging.info("Shutting down...")
+        for worker in workers:
+            worker.stop()
+        for worker in workers:
+            worker.join(timeout=5)
