@@ -137,8 +137,10 @@ def main():
     # Add jobs if they don't exist
     if "heartbeat" not in orch.jobs:
         orch.add_job("heartbeat", "while true; do echo Heartbeat; sleep 5; done")
+        orch.start_job("heartbeat")
     if "todo_app" not in orch.jobs:
-        orch.add_job("todo_app", "/usr/bin/python3 " + str(BASE_DIR / "problematictodo.py"))
+        orch.add_job("todo_app", "/usr/bin/python3 " + str(BASE_DIR / "hybridTODO.py"))
+        orch.start_job("todo_app")
 
     # Handle commands
     if len(sys.argv) > 1:
