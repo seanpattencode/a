@@ -30,3 +30,19 @@
 2025-09-22 16:03:15,968 - "GET /api/stats HTTP/1.1" 200 -
 2025-09-22 16:03:16,968 - "GET /api/stats HTTP/1.1" 200 -
 2025-09-22 16:03:17,968 - Not collecting these logs: "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 20:08:26,405 - App started in 0.62ms
+2025-09-22 20:08:26,412 - server listening on 127.0.0.1:50967
+2025-09-22 20:08:27,474 - connection open
+2025-09-22 20:08:27,476 - "GET /api/tasks?filter=next HTTP/1.1" 200 -
+2025-09-22 20:08:27,476 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 20:08:28,471 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 20:08:40,085 - App started in 0.58ms
+2025-09-22 20:08:40,093 - server listening on 127.0.0.1:54829
+2025-09-22 20:08:41,157 - connection open
+2025-09-22 20:08:41,158 - "GET /api/tasks?filter=next HTTP/1.1" 200 -
+2025-09-22 20:08:41,158 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 20:08:42,155 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 20:08:43,155 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 20:08:44,155 - Not collecting these logs: "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 20:08:45,359 - "GET /api/tasks?filter=next HTTP/1.1" 200 -
+2025-09-22 20:08:45,359 - connection open

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html>
-<head><script>var B='http://localhost:43153';(function(){const F=window.fetch;window.fetch=(p,o)=>F(p.startsWith('/')?B+p:p,o);})();</script>
+<head><script>var B='http://localhost:36485';(function(){const F=window.fetch;window.fetch=(p,o)=>F(p.startsWith('/')?B+p:p,o);})();</script>
   <title>Todo App</title>
   <style>
     body{font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px;background:#f5f5f5}
@@ -49,7 +49,7 @@
   <div id="tasks"></div>
   <div id="logs" class="hidden"></div>
 <script>
-const WS_URL = "ws://localhost:44459";
+const WS_URL = "ws://localhost:54829";
 const q = s => document.querySelector(s);
 const qa = s => [...document.querySelectorAll(s)];
 const get = p => fetch(p).then(r=>r.json());
