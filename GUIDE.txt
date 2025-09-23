@@ -8,8 +8,9 @@ BASIC COMMANDS:
 # View help
 python3 chatgpt2AIOSE.py -h
 
-# Add a task
-python3 chatgpt2AIOSE.py add <task_name> <command>
+# Add a task (creates systemd service)
+python3 chatgpt2AIOSE.py add --name <name> "<command>"
+# Example: python3 chatgpt2AIOSE.py add --name hybridTODO "python3 /full/path/to/script.py"
 
 # List all tasks
 python3 chatgpt2AIOSE.py list
@@ -17,7 +18,7 @@ python3 chatgpt2AIOSE.py list
 # Check task status
 python3 chatgpt2AIOSE.py status <task_id_or_name>
 
-# Start a task
+# Start a task (restartable)
 python3 chatgpt2AIOSE.py start <task_id_or_name>
 
 # Stop a task
@@ -29,8 +30,54 @@ python3 chatgpt2AIOSE.py stats
 # Clean up old tasks
 python3 chatgpt2AIOSE.py cleanup
 
-# Run worker (processes tasks)
+# Run worker (systemd reconciliation only)
 python3 chatgpt2AIOSE.py worker
 
 # Reconcile systemd units
 python3 chatgpt2AIOSE.py reconcile
+
+============================================================
+HOW TO ADD A PROGRAM TO BE MANAGED
+============================================================
+
+1. PREPARE YOUR PROGRAM:
+   - Ensure it uses absolute paths for files
+   - Add logging to stdout/stderr for monitoring
+   - Make it a long-running service (loop/server)
+
+2. ADD TO AIOSE:
+   python3 chatgpt2AIOSE.py add --name <service_name> "python3 /full/path/to/script.py"
+
+   Examples:
+   # Python script
+   python3 chatgpt2AIOSE.py add --name my_service "python3 $(pwd)/my_service.py"
+
+   # Web application
+   python3 chatgpt2AIOSE.py add --name webapp "python3 $(pwd)/hybridTODO.py"
+
+   # With working directory
+   python3 chatgpt2AIOSE.py add --name worker --cwd /opt/app "python3 worker.py"
+
+3. MANAGE THE SERVICE:
+   # Check status
+   python3 chatgpt2AIOSE.py status <service_name>
+
+   # Start service
+   python3 chatgpt2AIOSE.py start <service_name>
+
+   # Stop service
+   python3 chatgpt2AIOSE.py stop <service_name>
+
+   # View logs
+   journalctl --user -u aiose-<service_name>.service --follow
+
+4. REMOVE SERVICE:
+   # Stop and remove
+   python3 chatgpt2AIOSE.py stop <service_name>
+   sqlite3 ~/.aiose.db "DELETE FROM tasks WHERE name='<service_name>';"
+
+NOTES:
+- Services run as systemd user units
+- Logs go to systemd journal
+- Services auto-restart on failure
+- Always use full paths for scripts

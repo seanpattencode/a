@@ -182,7 +182,8 @@ def systemd_start(db:Store, task:sqlite3.Row) -> tuple[bool,str,str]:
     props = ["--property=StandardOutput=journal",
              "--property=StandardError=journal",
              "--property=KillMode=control-group",
-             "--property=TimeoutSec={}".format(task["timeout"] or DEFAULT_TIMEOUT)]
+             "--property=TimeoutSec={}".format(task["timeout"] or DEFAULT_TIMEOUT),
+             "--property=Persistent=true"]
     if task["cwd"]:  props += [f"--property=WorkingDirectory={task['cwd']}"]
     if task["nice"] is not None: props += [f"--property=Nice={int(task['nice'])}"]
     if task["rtprio"] is not None:
@@ -327,10 +328,10 @@ def main():
 
     # add
     pa = sub.add_parser("add", help="add task")
-    pa.add_argument("task_cmd", help="shell string")
+    pa.add_argument("cmd", help="shell string OR py:module.func")
     pa.add_argument("args", nargs="*", help="args (joined for shell; passed to py func)")
     pa.add_argument("--name")
-    pa.add_argument("--mode", choices=["systemd"], default="systemd")
+    pa.add_argument("--mode", choices=["local","systemd","py"], default="local")
     pa.add_argument("--priority", type=int, default=0)
     pa.add_argument("--delay-ms", type=int, default=0)
     pa.add_argument("--deps", help="JSON list of task IDs")
@@ -369,14 +370,17 @@ def main():
         at  = now_ms() + max(0, args.delay_ms)
         dep = json.dumps(json.loads(args.deps)) if args.deps else None
         tid = db.add(
-            name=args.name, cmd=args.task_cmd, mode="systemd", args=json.dumps(args.args) if args.args else None,
+            name=args.name, cmd=args.cmd, mode=args.mode, args=json.dumps(args.args) if args.args else None,
             env=(json.dumps(env) if env else None), cwd=args.cwd, p=args.priority, s="q",
             at=at, schedule=args.on_calendar, dep=dep, timeout=args.timeout, maxr=args.retries,
             rtprio=args.rtprio, nice=args.nice, slice=args.slice, cpu_weight=args.cpu_weight, mem_max_mb=args.mem_max_mb
         )
-        row = db.get_by_id(tid)
-        ok, unit, msg = systemd_start(db, row)
-        print(unit if ok else f"ERROR: {msg}")
+        if args.mode=="systemd" and (args.start or args.on_calendar or args.delay_ms>0):
+            row = db.get_by_id(tid)
+            ok, unit, msg = systemd_start(db, row)
+            print(unit if ok else f"ERROR: {msg}")
+        else:
+            print(f"queued task {tid}")
 
     elif args.cmd=="worker":
         Worker(db).loop(batch=args.batch, idle_ms=args.idle_ms)

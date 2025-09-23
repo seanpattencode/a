@@ -1,0 +1,32 @@
+2025-09-22 16:00:57,195 - Added task: coding
+2025-09-22 16:00:57,197 - Added task: work task
+2025-09-22 16:00:57,198 - Added task: gre prep question
+2025-09-22 16:00:57,200 - Added task: physical therapy exercises
+2025-09-22 16:00:57,201 - Added task: Plan next 24 hrs
+2025-09-22 16:00:57,203 - Added task: Answer one top question
+2025-09-22 16:00:57,204 - Added task: review/rank 16 tasks
+2025-09-22 16:00:57,205 - Added task: ask future success method
+2025-09-22 16:00:57,207 - Added task: start schedule usage
+2025-09-22 16:00:57,208 - Added task: read one ai development
+2025-09-22 16:00:57,210 - Added task: read bio book
+2025-09-22 16:00:57,211 - Added task: read direct top material
+2025-09-22 16:00:57,212 - Added task: noot 1, spices, creatine
+2025-09-22 16:00:57,214 - Added task: noot 2, spices
+2025-09-22 16:00:57,215 - Added task: noot 3, spices
+2025-09-22 16:00:57,216 - Added task: noot 4, spices, garlic
+2025-09-22 16:00:57,216 - App started in 0.66ms
+2025-09-22 16:00:57,228 - server listening on 127.0.0.1:39179
+2025-09-22 16:00:58,290 - connection open
+2025-09-22 16:00:58,292 - "GET /api/tasks?filter=next HTTP/1.1" 200 -
+2025-09-22 16:00:58,293 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 16:00:59,287 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 16:01:00,286 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 16:01:01,287 - Not collecting these logs: "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 16:03:13,898 - App started in 0.61ms
+2025-09-22 16:03:13,905 - server listening on 127.0.0.1:44459
+2025-09-22 16:03:14,972 - connection open
+2025-09-22 16:03:14,975 - "GET /api/tasks?filter=next HTTP/1.1" 200 -
+2025-09-22 16:03:14,975 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 16:03:15,968 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 16:03:16,968 - "GET /api/stats HTTP/1.1" 200 -
+2025-09-22 16:03:17,968 - Not collecting these logs: "GET /api/stats HTTP/1.1" 200 -
