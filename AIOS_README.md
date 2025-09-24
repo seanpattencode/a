@@ -1,8 +1,3 @@
-./setup.py all - Complete initial setup
-./setup.py minimal - Quick setup only
-./setup.py check - Verify installation status
-./setup.py reset - Clear all configuration
-
 ./smart_todo.py list - Show all tasks
 ./smart_todo.py add <task> - Add new task
 ./smart_todo.py done <id> - Mark task complete
