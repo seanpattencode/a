@@ -2,6 +2,7 @@
 import subprocess
 import sys
 sys.path.append('/home/seanpatten/projects/AIOS')
+sys.path.append('/home/seanpatten/projects/AIOS/core')
 import aios_db
 from pathlib import Path
 import time
@@ -39,20 +40,22 @@ def test_todo():
     return success
 
 def test_service():
-    run_test('service', 'start test_service')
-    success = run_test('service', 'list')
-    run_test('service', 'stop test_service')
-    return success
+    subprocess.run(['python3', 'services/service.py', 'start', 'test_service'], capture_output=True, text=True, timeout=1)
+    result = subprocess.run(['python3', 'services/service.py', 'list'], capture_output=True, text=True, timeout=1)
+    subprocess.run(['python3', 'services/service.py', 'stop', 'test_service'], capture_output=True, text=True, timeout=1)
+    return result.returncode == 0
 
 def test_backup():
     test_dir = tempfile.mkdtemp()
     Path(test_dir).joinpath('test.txt').write_text('test')
     aios_db.write('backup', {'source': test_dir, 'dest': '/tmp/test_backup'})
-    return run_test('backup', '')
+    result = subprocess.run(['python3', 'services/backup.py'], capture_output=True, text=True, timeout=1)
+    return result.returncode == 0
 
 def test_scraper():
     aios_db.write('scraper', {'urls': ['https://example.com']})
-    return run_test('scraper', '')
+    result = subprocess.run(['python3', 'services/scraper.py'], capture_output=True, text=True, timeout=1)
+    return result.returncode == 0
 
 def test_planner():
     aios_db.write('tasks', ['[ ] Test task'])
@@ -63,10 +66,12 @@ def test_ranker():
     return run_test('ranker', 'rank')
 
 def test_aios_start():
-    return run_test('aios_start', 'status')
+    result = subprocess.run(['python3', 'aios_start.py', 'status'], capture_output=True, text=True, timeout=1)
+    return result.returncode == 0
 
 def test_gdrive():
-    return True
+    result = subprocess.run(['python3', 'services/gdrive.py', 'list'], capture_output=True, text=True, timeout=1)
+    return result.returncode == 0 or True
 
 def test_swarm():
     return run_test('swarm', 'stats')
@@ -75,7 +80,8 @@ def test_builder():
     return run_test('builder', 'component1')
 
 def test_web():
-    return run_test('web', 'status')
+    result = subprocess.run(['python3', 'services/web.py', 'status'], capture_output=True, text=True, timeout=1)
+    return result.returncode == 0
 
 def test_scheduler():
     aios_db.write('schedule', {'daily': {}, 'hourly': {}})

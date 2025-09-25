@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 sys.path.append('/home/seanpatten/projects/AIOS')
+sys.path.append('/home/seanpatten/projects/AIOS/core')
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
 import aios_db
@@ -17,7 +18,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-            result = subprocess.run("python3 programs/service/service.py list", shell=True, capture_output=True, text=True)
+            result = subprocess.run("python3 services/service.py list", shell=True, capture_output=True, text=True)
             services_text = result.stdout
             schedule = aios_db.read("schedule") or {}
             html = f"""<html>

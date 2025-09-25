@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+sys.path.append("/home/seanpatten/projects/AIOS/core")
 sys.path.append('/home/seanpatten/projects/AIOS')
 import shutil
 from pathlib import Path
@@ -10,6 +11,7 @@ config = aios_db.read("backup") or {"source": str(Path.home()), "dest": "/tmp/ba
 source = Path(config.get("source", Path.home()))
 dest = Path(config.get("dest", "/tmp/backup")) / f"{datetime.now():%Y%m%d_%H%M%S}"
 
+dest.parent.mkdir(parents=True, exist_ok=True)
 shutil.copytree(source, dest, dirs_exist_ok=True)
 log = aios_db.read("backup_log") or []
 aios_db.write("backup_log", log + [{"time": datetime.now().isoformat(), "dest": str(dest)}])

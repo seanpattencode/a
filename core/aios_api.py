@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from fastapi import FastAPI, Request
+import sys
+sys.path.append('/home/seanpatten/projects/AIOS/core')
 import aios_db
 import uvicorn
 

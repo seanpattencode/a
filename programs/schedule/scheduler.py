@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+sys.path.append("/home/seanpatten/projects/AIOS/core")
 sys.path.append('/home/seanpatten/projects/AIOS')
 import schedule as sched
 import time

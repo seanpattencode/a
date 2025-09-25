@@ -1,27 +1,29 @@
-python3 programs/aios_start/aios_start.py - start/restart AIOS
-python3 programs/aios_start/aios_start.py stop - stop all services
-python3 test_all.py - test programs
-python3 programs/todo/todo.py list - show tasks
-python3 programs/todo/todo.py add - create task
-python3 programs/todo/todo.py done - complete task
-python3 programs/todo/todo.py clear - remove done
-python3 programs/service/service.py list - show services
-python3 programs/service/service.py start - start service
-python3 programs/service/service.py stop - stop service
-python3 programs/service/service.py status - check status
-python3 programs/backup/backup.py - backup files
-python3 programs/schedule/scheduler.py - run scheduler (Ctrl+C to stop)
-python3 programs/planner/planner.py - plan daily tasks
-python3 programs/ranker/ranker.py add - add idea
-python3 programs/ranker/ranker.py rank - score ideas
-python3 programs/ranker/ranker.py pick - best idea
-python3 programs/ranker/ranker.py list - show ideas
-python3 programs/builder/builder.py - build components
-python3 programs/scraper/scraper.py - scrape urls
-python3 programs/swarm/swarm.py ask - query llm
-python3 programs/swarm/swarm.py stats - cache info
-python3 programs/gdrive/gdrive.py sync - upload files
-python3 programs/gdrive/gdrive.py list - show files
-python3 programs/web/web.py start - AIOS control center
-python3 programs/web/web.py kill - stop server
-python3 programs/web/web.py status - show server info
+python aios_start.py start - start system
+python aios_start.py stop - stop system
+python aios_start.py status - show processes
+python core/test_all.py - run tests
+python programs/todo/todo.py list - show tasks
+python programs/todo/todo.py add - create task
+python programs/todo/todo.py done - complete task
+python programs/todo/todo.py clear - remove done
+python services/service.py list - show services
+python services/service.py start - start service
+python services/service.py stop - stop service
+python services/service.py status - check status
+python services/backup.py - backup files
+python programs/schedule/scheduler.py - run scheduler
+python programs/planner/planner.py - plan tasks
+python programs/ranker/ranker.py add - add idea
+python programs/ranker/ranker.py rank - score ideas
+python programs/ranker/ranker.py pick - best idea
+python programs/ranker/ranker.py list - show ideas
+python programs/builder/builder.py - build components
+python services/scraper.py - scrape urls
+python programs/swarm/swarm.py ask - query llm
+python programs/swarm/swarm.py stats - cache info
+python services/gdrive.py sync - upload files
+python services/gdrive.py list - show files
+python services/web.py start - web interface
+python services/web.py kill - stop server
+python services/web.py status - server info
+python programs/autollm/autollm.py - auto llm
