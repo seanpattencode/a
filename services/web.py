@@ -21,22 +21,29 @@ class Handler(BaseHTTPRequestHandler):
             result = subprocess.run("python3 services/service.py list", shell=True, capture_output=True, text=True)
             services_text = result.stdout
             schedule = aios_db.read("schedule") or {}
+            theme = self.headers.get('Cookie', '').split('theme=')[-1].split(';')[0] if 'theme=' in self.headers.get('Cookie', '') else 'dark'
+            is_light = theme == 'light'
+            bg = '#fff' if is_light else '#000'
+            fg = '#000' if is_light else '#fff'
+            bg2 = '#f0f0f0' if is_light else '#1a1a1a'
             html = f"""<html>
 <head><title>AIOS Control Center</title>
 <style>
-body{{font-family:monospace;background:#1a1a1a;color:#0f0;padding:20px}}
+body{{font-family:monospace;background:{bg};color:{fg};padding:20px}}
 .container{{max-width:1200px;margin:0 auto}}
-.service{{background:#2a2a2a;padding:10px;margin:10px 0;border-radius:5px}}
-button{{background:#0f0;color:#000;border:none;padding:5px 15px;cursor:pointer;margin:5px}}
-input{{background:#2a2a2a;color:#0f0;border:1px solid #0f0;padding:10px;width:80%;margin:10px 0}}
-.running{{color:#0f0}} .stopped{{color:#f00}}
-a{{color:#0ff;text-decoration:none}}
+.service{{background:{bg2};padding:10px;margin:10px 0;border-radius:5px}}
+button{{background:{fg};color:{bg};border:none;padding:5px 15px;cursor:pointer;margin:5px}}
+input{{background:{bg2};color:{fg};border:1px solid {fg};padding:10px;width:80%;margin:10px 0}}
+.running{{color:#0a0}} .stopped{{color:#a00}}
+a{{color:{fg};text-decoration:underline}}
+.theme-toggle{{position:fixed;top:20px;right:20px;cursor:pointer;padding:10px;background:{fg};color:{bg};border-radius:5px}}
 </style></head>
-<body><div class="container">
+<body>
+<div class="theme-toggle" onclick="document.cookie='theme=' + (document.cookie.includes('theme=light') ? 'dark' : 'light') + ';path=/'; location.reload()">{'Light' if not is_light else 'Dark'}</div>
+<div class="container">
 <h1>AIOS Control Center</h1>
 <h2>Quick Links</h2>
-<a href="/todo" target="_blank">Todo Manager</a> |
-<a href="http://localhost:8000/status" target="_blank">API Status</a>
+<a href="/todo" target="_blank">Todo Manager</a>
 <h2>Services</h2>
 <pre>{services_text}</pre>
 <h2>Schedule</h2>
@@ -56,16 +63,23 @@ a{{color:#0ff;text-decoration:none}}
             self.end_headers()
             result = subprocess.run("python3 programs/todo/todo.py list", shell=True, capture_output=True, text=True)
             tasks = result.stdout.strip().split('\n') if result.stdout else []
+            theme = self.headers.get('Cookie', '').split('theme=')[-1].split(';')[0] if 'theme=' in self.headers.get('Cookie', '') else 'dark'
+            is_light = theme == 'light'
+            bg = '#fff' if is_light else '#000'
+            fg = '#000' if is_light else '#fff'
+            bg2 = '#f0f0f0' if is_light else '#1a1a1a'
             html = f"""<html>
 <head><title>Todo</title>
 <style>
-body{{font-family:monospace;background:#1a1a1a;color:#0f0;padding:20px}}
-.task{{background:#2a2a2a;padding:10px;margin:5px 0;border-radius:5px}}
+body{{font-family:monospace;background:{bg};color:{fg};padding:20px}}
+.task{{background:{bg2};padding:10px;margin:5px 0;border-radius:5px}}
 .done{{text-decoration:line-through;color:#666}}
-button{{background:#0f0;color:#000;border:none;padding:5px 10px;cursor:pointer;margin:2px}}
-input{{background:#2a2a2a;color:#0f0;border:1px solid #0f0;padding:10px;width:50%;margin:10px 0}}
+button{{background:{fg};color:{bg};border:none;padding:5px 10px;cursor:pointer;margin:2px}}
+input{{background:{bg2};color:{fg};border:1px solid {fg};padding:10px;width:50%;margin:10px 0}}
+.theme-toggle{{position:fixed;top:20px;right:20px;cursor:pointer;padding:10px;background:{fg};color:{bg};border-radius:5px}}
 </style></head>
 <body>
+<div class="theme-toggle" onclick="document.cookie='theme=' + (document.cookie.includes('theme=light') ? 'dark' : 'light') + ';path=/'; location.reload()">{'Light' if not is_light else 'Dark'}</div>
 <h1>Todo Manager</h1>
 <form action="/todo/add" method="POST">
 <input name="task" placeholder="New task...">
