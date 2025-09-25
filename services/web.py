@@ -99,7 +99,7 @@ function toggleDropdown(type) {{
   dropdown.classList.toggle('show');
 }}
 window.onclick = function(e) {{
-  if (!e.target.matches('.menu-btn')) {{
+  if (!e.target.matches('.menu-btn') && !e.target.closest('.dropdown')) {{
     document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('show'));
   }}
 }}
