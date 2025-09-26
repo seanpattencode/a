@@ -11,13 +11,13 @@ from core import aios_db
 from services import context_generator
 
 aios_path = Path.home() / ".aios"
-command = sys.argv[1:2] and sys.argv[1] or "start"
+command = (sys.argv + ["start"])[1]
 
 def kill_existing():
     subprocess.run(["pkill", "-f", "core/aios_api.py"], stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-f", "services/web.py"], stderr=subprocess.DEVNULL)
     pids = aios_db.read("aios_pids") or {}
-    [subprocess.run(["kill", str(pid)], stderr=subprocess.DEVNULL) for pid in pids.values() or []]
+    any(subprocess.run(["kill", str(pid)], stderr=subprocess.DEVNULL) for pid in pids.values())
 
 def start():
     start_time = time.time()
