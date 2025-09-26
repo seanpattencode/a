@@ -8,7 +8,8 @@ db_path.mkdir(exist_ok=True)
 
 def read(name):
     file = db_path / f"{name}.json"
-    return json.loads(file.read_text()) if file.exists() else {}
+    assert file.exists(), f"Missing: {file}"
+    return json.loads(file.read_text())
 
 def write(name, data):
     (db_path / f"{name}.json").write_text(json.dumps(data, indent=2))

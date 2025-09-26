@@ -16,6 +16,7 @@ command = (sys.argv + ["start"])[1]
 def kill_existing():
     subprocess.run(["pkill", "-f", "core/aios_api.py"], stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-f", "services/web.py"], stderr=subprocess.DEVNULL)
+    aios_db.write("aios_pids", {})
     pids = aios_db.read("aios_pids")
     subprocess.run(["kill"] + list(map(str, getattr(pids, 'values', list)())), stderr=subprocess.DEVNULL)
 
@@ -39,6 +40,7 @@ def stop():
     print("AIOS stopped")
 
 def status():
+    aios_db.write("aios_pids", aios_db.write("aios_pids", {}))
     print(f"PIDs: {aios_db.read('aios_pids')}")
 
 actions = {"start": start, "stop": stop, "status": status}

@@ -1,4 +1,4 @@
-Generated: 2025-09-26 14:19:26
+Generated: 2025-09-26 14:35:44
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -19,6 +19,7 @@ command = (sys.argv + ["start"])[1]
 def kill_existing():
     subprocess.run(["pkill", "-f", "core/aios_api.py"], stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-f", "services/web.py"], stderr=subprocess.DEVNULL)
+    aios_db.write("aios_pids", {})
     pids = aios_db.read("aios_pids")
     subprocess.run(["kill"] + list(map(str, getattr(pids, 'values', list)())), stderr=subprocess.DEVNULL)
 
@@ -42,6 +43,7 @@ def stop():
     print("AIOS stopped")
 
 def status():
+    aios_db.write("aios_pids", aios_db.write("aios_pids", {}))
     print(f"PIDs: {aios_db.read('aios_pids')}")
 
 actions = {"start": start, "stop": stop, "status": status}
@@ -68,7 +70,8 @@ db_path.mkdir(exist_ok=True)
 
 def read(name):
     file = db_path / f"{name}.json"
-    return json.loads(file.read_text()) if file.exists() else {}
+    assert file.exists(), f"Missing: {file}"
+    return json.loads(file.read_text())
 
 def write(name, data):
     (db_path / f"{name}.json").write_text(json.dumps(data, indent=2))
