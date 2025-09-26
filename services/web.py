@@ -15,7 +15,14 @@ from datetime import datetime
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
-        if path == '/':
+        if path == '/api/jobs':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            jobs = aios_db.query("jobs", "SELECT id, name, status, output FROM jobs ORDER BY created DESC")
+            result = [{"id": j[0], "name": j[1], "status": j[2], "output": j[3]} for j in jobs]
+            self.wfile.write(json.dumps(result).encode())
+        elif path == '/':
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
@@ -167,11 +174,7 @@ input[type="checkbox"]{{margin-right:10px;accent-color:{fg}}}
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-            jobs_data = aios_db.read("jobs") or {"done": [], "ongoing": [], "scheduled": []}
-            schedule = aios_db.read("schedule") or {}
-            scheduled_jobs = []
-            [[scheduled_jobs.append({"time": t, "desc": c, "type": "daily"})] for t,c in sorted(schedule.get("daily",{}).items())]
-            [[scheduled_jobs.append({"time": f":{int(m):02d}", "desc": c, "type": "hourly"})] for m,c in sorted(schedule.get("hourly",{}).items(), key=lambda x: int(x[0]))]
+            jobs = aios_db.query("jobs", "SELECT id, name, status, output FROM jobs ORDER BY id DESC LIMIT 100")
             settings = aios_db.read("settings") or {}
             theme = settings.get('theme', 'dark')
             is_light = theme == 'light'
@@ -179,14 +182,14 @@ input[type="checkbox"]{{margin-right:10px;accent-color:{fg}}}
             fg = '#000' if is_light else '#fff'
             bg2 = '#f0f0f0' if is_light else '#1a1a1a'
 
-            done_html = "".join(f'<div class="job-item">{j} <button onclick="checkOff(\'{j}\')">Done</button><button onclick="edit(\'{j}\')">Edit</button><button onclick="redo(\'{j}\')">Redo</button></div>'
-                                for j in jobs_data.get("done", []))
+            done_html = "".join(f'<div class="job-item" data-id="{j[0]}"><span>{j[1]}</span><div><span class="output">{(j[3] or "")[:50]}...</span></div></div>'
+                                for j in jobs if j[2] == "done")
 
-            ongoing_html = "".join(f'<div class="job-item">{j} <span class="status active">*</span></div>'
-                                 for j in jobs_data.get("ongoing", []))
+            review_html = "".join(f'<div class="job-item" data-id="{j[0]}"><span>{j[1]}</span><div><span class="output">{(j[3] or "")[:50]}...</span><button onclick="acceptJob({j[0]})">Accept</button><button onclick="editJob({j[0]})">Edit</button><button onclick="redoJob({j[0]})">Redo</button></div></div>'
+                                 for j in jobs if j[2] == "review")
 
-            scheduled_html = "".join(f'<div class="job-item"><span class="time">{j["time"]}</span> {j["desc"]} <button onclick="editSchedule(\'{j["type"]}\', \'{j["time"]}\', \'{j["desc"]}\')">Edit</button></div>'
-                                    for j in scheduled_jobs)
+            running_html = "".join(f'<div class="job-item" data-id="{j[0]}"><span>{j[1]}</span><span class="status running">Running...</span></div>'
+                                  for j in jobs if j[2] == "running")
 
             html = f"""<html>
 <head><title>Jobs</title>
@@ -194,53 +197,92 @@ input[type="checkbox"]{{margin-right:10px;accent-color:{fg}}}
 body{{font-family:monospace;background:{bg};color:{fg};padding:20px;max-width:1200px;margin:0 auto}}
 h2{{margin:25px 0 10px;font-size:16px;color:{fg}99}}
 .section{{margin-bottom:30px}}
-.job-item{{background:{bg2};padding:12px;margin:4px 0;border-radius:5px;display:flex;justify-content:space-between;align-items:center}}
-.time{{color:{fg}88;margin-right:15px;font-weight:bold}}
+.job-item{{background:{bg2};padding:15px;margin:8px 0;border-radius:5px;display:flex;justify-content:space-between;align-items:center}}
 .status{{margin:0 10px}}
-.status.active{{color:#0a0}}
-button{{background:{fg};color:{bg};border:none;padding:4px 12px;cursor:pointer;border-radius:3px;font-size:12px}}
+.status.running{{color:#fa0}}
+.output{{color:{fg}88;margin:0 15px;font-size:12px;flex:1}}
+button{{background:{fg};color:{bg};border:none;padding:8px 16px;cursor:pointer;border-radius:3px;font-size:12px;margin:0 5px}}
 button:hover{{opacity:0.8}}
-.toggle-section{{cursor:pointer;user-select:none;color:{fg}66;font-size:12px;margin-top:15px}}
-.hidden{{display:none}}
+.new-job-btn{{background:{fg};color:{bg};border:none;padding:10px 20px;cursor:pointer;border-radius:5px;font-size:14px;margin:10px 0}}
 </style>
 <script>
-function checkOff(job) {{
-    fetch('/job/checkoff', {{method: 'POST', body: new URLSearchParams({{'job': job}})}}
-    ).then(() => location.reload());
+let pollInterval;
+function startPolling() {{
+    pollInterval = setInterval(() => {{
+        fetch('/api/jobs')
+            .then(r => r.json())
+            .then(data => updateJobs(data));
+    }}, 100);
 }}
-function edit(job) {{
-    const newJob = prompt('Edit job:', job);
-    if (newJob) {{
-        fetch('/job/edit', {{method: 'POST', body: new URLSearchParams({{'old': job, 'new': newJob}})}}
-        ).then(() => location.reload());
-    }}
+function updateJobs(data) {{
+    const running = data.filter(j => j.status === 'running');
+    const review = data.filter(j => j.status === 'review');
+    const done = data.filter(j => j.status === 'done');
+
+    document.getElementById('running-count').textContent = running.length;
+    document.getElementById('review-count').textContent = review.length;
+    document.getElementById('done-count').textContent = done.length;
+
+    document.getElementById('running-section').innerHTML = running.length ? running.map(j =>
+        `<div class="job-item"><span>${{j.name}}</span><span class="status running">Running...</span></div>`
+    ).join('') : '<div style="color:#888;padding:10px">No running jobs</div>';
+
+    document.getElementById('review-section').innerHTML = review.length ? review.map(j =>
+        `<div class="job-item"><span>${{j.name}}</span><div style="display:flex;align-items:center"><span class="output">${{(j.output || '').slice(0, 50)}}...</span><button onclick="acceptJob(${{j.id}})">Accept</button><button onclick="editJob(${{j.id}})">Edit</button><button onclick="redoJob(${{j.id}})">Redo</button></div></div>`
+    ).join('') : '<div style="color:#888;padding:10px">No jobs in review</div>';
+
+    document.getElementById('done-section').innerHTML = done.slice(0, 10).map(j =>
+        `<div class="job-item"><span>${{j.name}}</span><span style="color:#0a0">Done: ${{(j.output || '').slice(0, 50)}}...</span></div>`
+    ).join('') || '<div style="color:#888;padding:10px">No completed jobs</div>';
 }}
-function redo(job) {{
-    fetch('/job/redo', {{method: 'POST', body: new URLSearchParams({{'job': job}})}}
-    ).then(() => location.reload());
+function showJobMenu() {{
+    document.getElementById('job-menu').style.display = 'block';
 }}
-function editSchedule(type, time, desc) {{
-    alert('Edit schedule: ' + type + ' at ' + time + ' - ' + desc);
+function hideJobMenu() {{
+    document.getElementById('job-menu').style.display = 'none';
 }}
+function runWikipedia() {{
+    hideJobMenu();
+    fetch('/api/job/run', {{method: 'POST'}}).then(() => location.reload());
+}}
+function acceptJob(id) {{
+    fetch('/api/job/accept', {{method: 'POST', body: JSON.stringify({{id: id}}), headers: {{'Content-Type': 'application/json'}}}})
+        .then(() => location.reload());
+}}
+function editJob(id) {{
+    const output = prompt('Edit output:');
+    output !== null && fetch('/api/job/edit', {{method: 'POST', body: JSON.stringify({{id: id, output: output}}), headers: {{'Content-Type': 'application/json'}}}})
+        .then(() => location.reload());
+}}
+function redoJob(id) {{
+    fetch('/api/job/redo', {{method: 'POST', body: JSON.stringify({{id: id}}), headers: {{'Content-Type': 'application/json'}}}})
+        .then(() => location.reload());
+}}
+window.onload = () => startPolling();
 </script>
 </head>
-<body>
+<body onclick="event.target.id !== 'job-menu' && !event.target.closest('#job-menu') && !event.target.classList.contains('new-job-btn') && hideJobMenu()">
 <div style="margin-bottom:20px"><a href="/" style="padding:10px;background:{fg};color:{bg};border-radius:5px;text-decoration:none">Back</a></div>
 <h1>Jobs</h1>
-
-<div class="section">
-<h2>DONE</h2>
-{done_html if done_html else '<div style="color:#888;padding:10px">No completed jobs</div>'}
+<button class="new-job-btn" onclick="showJobMenu()">Run New Job ▼</button>
+<div id="job-menu" style="display:none;position:absolute;background:{bg2};border:1px solid {fg};border-radius:5px;padding:10px;margin-top:5px;box-shadow:0 2px 5px rgba(0,0,0,0.2)">
+  <div style="padding:8px;cursor:pointer;hover:background:{bg}" onclick="runWikipedia()">📖 Wikipedia Random Article</div>
+  <div style="padding:8px;color:{fg}66;font-size:11px">More jobs coming soon...</div>
 </div>
 
 <div class="section">
-<h2>ONGOING</h2>
-{ongoing_html if ongoing_html else '<div style="color:#888;padding:10px">No ongoing jobs</div>'}
+<h2>RUNNING (<span id="running-count">0</span>)</h2>
+<div id="running-section">{running_html if running_html else '<div style="color:#888;padding:10px">No running jobs</div>'}</div>
 </div>
 
 <div class="section">
-<h2>SCHEDULED</h2>
-{scheduled_html if scheduled_html else '<div style="color:#888;padding:10px">No scheduled jobs</div>'}
+<h2>REVIEW (<span id="review-count">0</span>)</h2>
+<div id="review-section">{review_html if review_html else '<div style="color:#888;padding:10px">No jobs in review</div>'}</div>
+</div>
+
+<div class="section">
+<h2>DONE (<span id="done-count">0</span>)</h2>
+<div id="done-section">{done_html if done_html else '<div style="color:#888;padding:10px">No completed jobs</div>'}</div>
 </div>
 
 </body></html>"""
@@ -352,6 +394,32 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:10px;width:50%;
     def do_POST(self):
         path = urlparse(self.path).path
         length = int(self.headers['Content-Length'])
+
+        if path.startswith('/api/'):
+            if path == '/api/job/run':
+                aios_db.execute("jobs", "INSERT INTO jobs(name, status, output) VALUES ('wiki', 'running', NULL)")
+                subprocess.Popen(["python3", "-c", "import time; time.sleep(2); import urllib.request, json, sys; sys.path.append('/home/seanpatten/projects/AIOS/core'); import aios_db; req=urllib.request.Request('https://en.wikipedia.org/api/rest_v1/page/random/summary', headers={'User-Agent': 'Mozilla/5.0'}); data=json.loads(urllib.request.urlopen(req).read().decode()); output=data.get('title', 'Unknown') + ': ' + data.get('extract', 'No extract available')[:200] + '...'; aios_db.execute('jobs', 'UPDATE jobs SET status=?, output=? WHERE id=(SELECT MAX(id) FROM jobs)', ('review', output))"])
+                self.send_response(200)
+                self.end_headers()
+            else:
+                body = self.rfile.read(length).decode()
+                data = json.loads(body) if body else {}
+                job_id = int(data.get('id', 0))
+                if path == '/api/job/accept':
+                    aios_db.execute("jobs", "UPDATE jobs SET status='done' WHERE id=?", (job_id,))
+                    self.send_response(200)
+                    self.end_headers()
+                elif path == '/api/job/edit':
+                    aios_db.execute("jobs", "UPDATE jobs SET output=? WHERE id=?", (data.get('output', ''), job_id))
+                    self.send_response(200)
+                    self.end_headers()
+                elif path == '/api/job/redo':
+                    aios_db.execute("jobs", "UPDATE jobs SET status='running', output=NULL WHERE id=?", (job_id,))
+                    subprocess.Popen(["python3", "-c", f"import time; time.sleep(2); import urllib.request, json, sys; sys.path.append('/home/seanpatten/projects/AIOS/core'); import aios_db; req=urllib.request.Request('https://en.wikipedia.org/api/rest_v1/page/random/summary', headers={{'User-Agent': 'Mozilla/5.0'}}); data=json.loads(urllib.request.urlopen(req).read().decode()); output=data.get('title', 'Unknown') + ': ' + data.get('extract', 'No extract available')[:200] + '...'; aios_db.execute('jobs', 'UPDATE jobs SET status=?, output=? WHERE id=?', ('review', output, {job_id}))"])
+                    self.send_response(200)
+                    self.end_headers()
+            return
+
         data = parse_qs(self.rfile.read(length).decode())
 
         if path == '/run':
