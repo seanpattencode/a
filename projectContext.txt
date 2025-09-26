@@ -1,4 +1,4 @@
-Generated: 2025-09-26 13:46:55
+Generated: 2025-09-26 14:04:57
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -14,13 +14,13 @@ from core import aios_db
 from services import context_generator
 
 aios_path = Path.home() / ".aios"
-command = sys.argv[1] if len(sys.argv) > 1 else "start"
+command = sys.argv[1:2] and sys.argv[1] or "start"
 
 def kill_existing():
     subprocess.run(["pkill", "-f", "core/aios_api.py"], stderr=subprocess.DEVNULL)
     subprocess.run(["pkill", "-f", "services/web.py"], stderr=subprocess.DEVNULL)
     pids = aios_db.read("aios_pids") or {}
-    [[os.kill(pid, signal.SIGTERM)] for pid in pids.values() if pid and subprocess.run(["kill", "-0", str(pid)], capture_output=True).returncode == 0]
+    [subprocess.run(["kill", str(pid)], stderr=subprocess.DEVNULL) for pid in pids.values() or []]
 
 def start():
     start_time = time.time()
@@ -31,7 +31,8 @@ def start():
     aios_db.write("aios_pids", {"api": api_proc.pid, "web": web_proc.pid})
     url = f"http://localhost:8080"
     elapsed = time.time() - start_time
-    print(f"AIOS started in {elapsed:.3f}s: {url}") if elapsed <= 0.05 else (print("PERFORMANCE UNACCEPTABLE: Over .05 seconds. Do not remove this message."), sys.exit(1))
+    assert elapsed <= 0.05, "PERFORMANCE UNACCEPTABLE: Over .05 seconds. Do not remove this message."
+    print(f"AIOS started in {elapsed:.3f}s: {url}")
     webbrowser.open(url)
     subprocess.Popen(["python3", "-c", "from services import context_generator; context_generator.generate()"], cwd="/home/seanpatten/projects/AIOS")
 
