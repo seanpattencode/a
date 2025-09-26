@@ -40,7 +40,6 @@ def stop():
     print("AIOS stopped")
 
 def status():
-    aios_db.write("aios_pids", aios_db.write("aios_pids", {}))
     print(f"PIDs: {aios_db.read('aios_pids')}")
 
 actions = {"start": start, "stop": stop, "status": status}

@@ -3,17 +3,51 @@ import sys
 sys.path.append("/home/seanpatten/projects/AIOS/core")
 import aios_db
 import subprocess
-import time
 
 aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 
-cmd = sys.argv[1:] and sys.argv[1] or "list"
+cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
+job_id = sys.argv[2] if len(sys.argv) > 2 else None
 
-cmd == "run" and (aios_db.execute("jobs", "INSERT INTO jobs(name, status, output) VALUES ('wiki', 'running', NULL)"), time.sleep(2), subprocess.run(["python3", "-c", "import urllib.request, json, sys; sys.path.append('/home/seanpatten/projects/AIOS/core'); import aios_db; req=urllib.request.Request('https://en.wikipedia.org/api/rest_v1/page/random/summary', headers={'User-Agent': 'Mozilla/5.0'}); data=json.loads(urllib.request.urlopen(req).read().decode()); output=data.get('title', 'Unknown') + ': ' + data.get('extract', 'No extract available')[:200] + '...'; aios_db.execute('jobs', 'UPDATE jobs SET status=?, output=? WHERE id=(SELECT MAX(id) FROM jobs)', ('review', output))"]))
+jobs = aios_db.query("jobs", "SELECT id, name, status, output FROM jobs ORDER BY created DESC")
 
-cmd == "accept" and aios_db.execute("jobs", "UPDATE jobs SET status='done' WHERE id=?", (sys.argv[2],))
-cmd == "edit" and aios_db.execute("jobs", "UPDATE jobs SET output=? WHERE id=?", (' '.join(sys.argv[3:]), sys.argv[2]))
-cmd == "redo" and (aios_db.execute("jobs", "UPDATE jobs SET status='running', output=NULL WHERE id=?", (sys.argv[2],)), time.sleep(2), subprocess.run(["python3", "-c", f"import urllib.request, json, sys; sys.path.append('/home/seanpatten/projects/AIOS/core'); import aios_db; req=urllib.request.Request('https://en.wikipedia.org/api/rest_v1/page/random/summary', headers={{'User-Agent': 'Mozilla/5.0'}}); data=json.loads(urllib.request.urlopen(req).read().decode()); output=data.get('title', 'Unknown') + ': ' + data.get('extract', 'No extract available')[:200] + '...'; aios_db.execute('jobs', 'UPDATE jobs SET status=?, output=? WHERE id=?', ('review', output, {sys.argv[2]}))"]))
-cmd == "clear" and aios_db.execute("jobs", "DELETE FROM jobs")
+def print_job(j):
+    print(f"{j[0]}: {j[1]} - {j[2]} - {(j[3] or 'No output')[:50]}...")
 
-[[print(f"{r[0]}: {r[1]} - {r[2]} - {(r[3] or 'No output')[:50]}...")] for r in aios_db.query("jobs", "SELECT id, name, status, output FROM jobs ORDER BY id DESC LIMIT 20")]
+def print_running(j):
+    print(f'<div class="job-item">{j[1]} <span class="status running">Running...</span></div>')
+
+def print_review(j):
+    output = (j[3] or "")[:50] + "..." if j[3] else ""
+    print(f'<div class="job-item">{j[1]} <span class="output">{output}</span>')
+    print(f'<form action="/job/accept" method="POST" style="display:inline"><input type="hidden" name="id" value="{j[0]}"><button class="action-btn">Accept</button></form>')
+    print(f'<form action="/job/redo" method="POST" style="display:inline"><input type="hidden" name="id" value="{j[0]}"><button class="action-btn">Redo</button></form></div>')
+
+def print_done(j):
+    output = (j[3] or "")[:50] + "..." if j[3] else ""
+    print(f'<div class="job-item">{j[1]} <span class="output">{output}</span></div>')
+
+if cmd == "summary":
+    running = list(filter(lambda j: j[2] == "running", jobs))
+    review = list(filter(lambda j: j[2] == "review", jobs))
+    done = list(filter(lambda j: j[2] == "done", jobs))[:5]
+    summary = []
+    list(map(summary.extend, [[f"RUN {j[1]}" for j in running[:2]], [f"? {j[1]}" for j in review[:1]], [f"DONE {j[1]}" for j in done[:1]]]))
+    list(map(print, summary[:4]))
+elif cmd == "running":
+    list(map(print_running, filter(lambda j: j[2] == "running", jobs[:10])))
+elif cmd == "review":
+    list(map(print_review, filter(lambda j: j[2] == "review", jobs[:10])))
+elif cmd == "done":
+    list(map(print_done, filter(lambda j: j[2] == "done", jobs[:50])))
+elif cmd == "run_wiki":
+    aios_db.execute("jobs", "INSERT INTO jobs(name, status) VALUES ('wiki', 'running')")
+    new_id = aios_db.query("jobs", "SELECT MAX(id) FROM jobs")[0][0]
+    subprocess.Popen(["python3", "programs/wiki_fetcher/wiki_fetcher.py", str(new_id)])
+elif cmd == "accept" and job_id:
+    aios_db.execute("jobs", "UPDATE jobs SET status='done' WHERE id=?", (int(job_id),))
+elif cmd == "redo" and job_id:
+    aios_db.execute("jobs", "UPDATE jobs SET status='running' WHERE id=?", (int(job_id),))
+    subprocess.Popen(["python3", "programs/wiki_fetcher/wiki_fetcher.py", str(job_id)])
+else:
+    list(map(print_job, jobs[:20]))

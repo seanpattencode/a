@@ -9,11 +9,16 @@ services = aios_db.read("services") or {}
 command = sys.argv[1] if len(sys.argv) > 1 else "list"
 name = sys.argv[2] if len(sys.argv) > 2 else None
 
-actions = {
-    "list": lambda: [print(f"{k}: {v.get('status', 'unknown')}") for k, v in services.items()],
-    "start": lambda: aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "running"}}),
-    "stop": lambda: aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "stopped"}}),
-    "status": lambda: print(services.get(name, {}).get("status", "unknown") if name else "specify service")
-}
+def cmd_list():
+    list(map(print, [f"{k}: {v.get('status', 'unknown')}" for k, v in services.items()]))
 
-actions.get(command, actions["list"])()
+def cmd_start():
+    aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "running"}})
+
+def cmd_stop():
+    aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "stopped"}})
+
+def cmd_status():
+    print(name and services.get(name, {}).get("status", "unknown") or "specify service")
+
+{"list": cmd_list, "start": cmd_start, "stop": cmd_stop, "status": cmd_status}.get(command, cmd_list)()

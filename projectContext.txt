@@ -1,4 +1,4 @@
-Generated: 2025-09-26 17:08:53
+Generated: 2025-09-26 17:58:26
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -43,7 +43,6 @@ def stop():
     print("AIOS stopped")
 
 def status():
-    aios_db.write("aios_pids", aios_db.write("aios_pids", {}))
     print(f"PIDs: {aios_db.read('aios_pids')}")
 
 actions = {"start": start, "stop": stop, "status": status}
@@ -505,7 +504,7 @@ class Handler(BaseHTTPRequestHandler):
     def handle_home(self):
         tr = subprocess.run("python3 programs/todo/todo.py list", shell=True, capture_output=True, text=True)
         m = aios_db.query("feed", "SELECT content, timestamp FROM messages ORDER BY timestamp DESC LIMIT 4")
-        j = subprocess.run("python3 programs/job_status.py summary", shell=True, capture_output=True, text=True)
+        j = subprocess.run("python3 services/jobs.py summary", shell=True, capture_output=True, text=True)
 
         todo_items = tr.stdout.strip().split('\n')[:4] or []
         def format_feed_item(x):
@@ -557,9 +556,9 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/settings'].format(**self.c, theme_dark_style=theme_dark_style, theme_light_style=theme_light_style, time_12h_style=time_12h_style, time_24h_style=time_24h_style), 'text/html'
 
     def handle_jobs(self):
-        running = subprocess.run("python3 programs/job_status.py running", shell=True, capture_output=True, text=True)
-        review = subprocess.run("python3 programs/job_status.py review", shell=True, capture_output=True, text=True)
-        done = subprocess.run("python3 programs/job_status.py done", shell=True, capture_output=True, text=True)
+        running = subprocess.run("python3 services/jobs.py running", shell=True, capture_output=True, text=True)
+        review = subprocess.run("python3 services/jobs.py review", shell=True, capture_output=True, text=True)
+        done = subprocess.run("python3 services/jobs.py done", shell=True, capture_output=True, text=True)
 
         running_html = running.stdout.strip() or '<div style="color:#888;padding:10px">No running jobs</div>'
         review_html = review.stdout.strip() or '<div style="color:#888;padding:10px">No jobs in review</div>'
@@ -568,13 +567,13 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/jobs'].format(**self.c, running_jobs=running_html, review_jobs=review_html, done_jobs=done_html), 'text/html'
 
     def post_job_run(self):
-        return subprocess.run("python3 programs/job_status.py run_wiki", shell=True)
+        return subprocess.run("python3 services/jobs.py run_wiki", shell=True)
 
     def post_job_accept(self):
-        return subprocess.run(f"python3 programs/job_status.py accept {self.data.get('id', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 services/jobs.py accept {self.data.get('id', [''])[0]}", shell=True)
 
     def post_job_redo(self):
-        return subprocess.run(f"python3 programs/job_status.py redo {self.data.get('id', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 services/jobs.py redo {self.data.get('id', [''])[0]}", shell=True)
 
     def post_run_cmd(self):
         return subprocess.run(self.data.get('cmd', [''])[0], shell=True, capture_output=True, text=True, timeout=5)
@@ -656,14 +655,19 @@ services = aios_db.read("services") or {}
 command = sys.argv[1] if len(sys.argv) > 1 else "list"
 name = sys.argv[2] if len(sys.argv) > 2 else None
 
-actions = {
-    "list": lambda: [print(f"{k}: {v.get('status', 'unknown')}") for k, v in services.items()],
-    "start": lambda: aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "running"}}),
-    "stop": lambda: aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "stopped"}}),
-    "status": lambda: print(services.get(name, {}).get("status", "unknown") if name else "specify service")
-}
+def cmd_list():
+    list(map(print, [f"{k}: {v.get('status', 'unknown')}" for k, v in services.items()]))
 
-actions.get(command, actions["list"])()
+def cmd_start():
+    aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "running"}})
+
+def cmd_stop():
+    aios_db.write("services", {**services, name: {**services.get(name, {}), "status": "stopped"}})
+
+def cmd_status():
+    print(name and services.get(name, {}).get("status", "unknown") or "specify service")
+
+{"list": cmd_list, "start": cmd_start, "stop": cmd_stop, "status": cmd_status}.get(command, cmd_list)()
 
 services/scraper.py:
 #!/usr/bin/env python3
@@ -730,20 +734,54 @@ import sys
 sys.path.append("/home/seanpatten/projects/AIOS/core")
 import aios_db
 import subprocess
-import time
 
 aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 
-cmd = sys.argv[1:] and sys.argv[1] or "list"
+cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
+job_id = sys.argv[2] if len(sys.argv) > 2 else None
 
-cmd == "run" and (aios_db.execute("jobs", "INSERT INTO jobs(name, status, output) VALUES ('wiki', 'running', NULL)"), time.sleep(2), subprocess.run(["python3", "-c", "import urllib.request, json, sys; sys.path.append('/home/seanpatten/projects/AIOS/core'); import aios_db; req=urllib.request.Request('https://en.wikipedia.org/api/rest_v1/page/random/summary', headers={'User-Agent': 'Mozilla/5.0'}); data=json.loads(urllib.request.urlopen(req).read().decode()); output=data.get('title', 'Unknown') + ': ' + data.get('extract', 'No extract available')[:200] + '...'; aios_db.execute('jobs', 'UPDATE jobs SET status=?, output=? WHERE id=(SELECT MAX(id) FROM jobs)', ('review', output))"]))
+jobs = aios_db.query("jobs", "SELECT id, name, status, output FROM jobs ORDER BY created DESC")
 
-cmd == "accept" and aios_db.execute("jobs", "UPDATE jobs SET status='done' WHERE id=?", (sys.argv[2],))
-cmd == "edit" and aios_db.execute("jobs", "UPDATE jobs SET output=? WHERE id=?", (' '.join(sys.argv[3:]), sys.argv[2]))
-cmd == "redo" and (aios_db.execute("jobs", "UPDATE jobs SET status='running', output=NULL WHERE id=?", (sys.argv[2],)), time.sleep(2), subprocess.run(["python3", "-c", f"import urllib.request, json, sys; sys.path.append('/home/seanpatten/projects/AIOS/core'); import aios_db; req=urllib.request.Request('https://en.wikipedia.org/api/rest_v1/page/random/summary', headers={{'User-Agent': 'Mozilla/5.0'}}); data=json.loads(urllib.request.urlopen(req).read().decode()); output=data.get('title', 'Unknown') + ': ' + data.get('extract', 'No extract available')[:200] + '...'; aios_db.execute('jobs', 'UPDATE jobs SET status=?, output=? WHERE id=?', ('review', output, {sys.argv[2]}))"]))
-cmd == "clear" and aios_db.execute("jobs", "DELETE FROM jobs")
+def print_job(j):
+    print(f"{j[0]}: {j[1]} - {j[2]} - {(j[3] or 'No output')[:50]}...")
 
-[[print(f"{r[0]}: {r[1]} - {r[2]} - {(r[3] or 'No output')[:50]}...")] for r in aios_db.query("jobs", "SELECT id, name, status, output FROM jobs ORDER BY id DESC LIMIT 20")]
+def print_running(j):
+    print(f'<div class="job-item">{j[1]} <span class="status running">Running...</span></div>')
+
+def print_review(j):
+    output = (j[3] or "")[:50] + "..." if j[3] else ""
+    print(f'<div class="job-item">{j[1]} <span class="output">{output}</span>')
+    print(f'<form action="/job/accept" method="POST" style="display:inline"><input type="hidden" name="id" value="{j[0]}"><button class="action-btn">Accept</button></form>')
+    print(f'<form action="/job/redo" method="POST" style="display:inline"><input type="hidden" name="id" value="{j[0]}"><button class="action-btn">Redo</button></form></div>')
+
+def print_done(j):
+    output = (j[3] or "")[:50] + "..." if j[3] else ""
+    print(f'<div class="job-item">{j[1]} <span class="output">{output}</span></div>')
+
+if cmd == "summary":
+    running = list(filter(lambda j: j[2] == "running", jobs))
+    review = list(filter(lambda j: j[2] == "review", jobs))
+    done = list(filter(lambda j: j[2] == "done", jobs))[:5]
+    summary = []
+    list(map(summary.extend, [[f"RUN {j[1]}" for j in running[:2]], [f"? {j[1]}" for j in review[:1]], [f"DONE {j[1]}" for j in done[:1]]]))
+    list(map(print, summary[:4]))
+elif cmd == "running":
+    list(map(print_running, filter(lambda j: j[2] == "running", jobs[:10])))
+elif cmd == "review":
+    list(map(print_review, filter(lambda j: j[2] == "review", jobs[:10])))
+elif cmd == "done":
+    list(map(print_done, filter(lambda j: j[2] == "done", jobs[:50])))
+elif cmd == "run_wiki":
+    aios_db.execute("jobs", "INSERT INTO jobs(name, status) VALUES ('wiki', 'running')")
+    new_id = aios_db.query("jobs", "SELECT MAX(id) FROM jobs")[0][0]
+    subprocess.Popen(["python3", "programs/wiki_fetcher/wiki_fetcher.py", str(new_id)])
+elif cmd == "accept" and job_id:
+    aios_db.execute("jobs", "UPDATE jobs SET status='done' WHERE id=?", (int(job_id),))
+elif cmd == "redo" and job_id:
+    aios_db.execute("jobs", "UPDATE jobs SET status='running' WHERE id=?", (int(job_id),))
+    subprocess.Popen(["python3", "programs/wiki_fetcher/wiki_fetcher.py", str(job_id)])
+else:
+    list(map(print_job, jobs[:20]))
 
 services/processes.py:
 #!/usr/bin/env python3
@@ -777,11 +815,29 @@ def get_all_processes():
 
     return {"scheduled": scheduled, "ongoing": ongoing, "core": core}
 
+def cmd_json():
+    print(json.dumps(get_all_processes()))
+
+def print_process(p):
+    print(f"{p['path']}: {p['status']}")
+
+def cmd_list():
+    all_procs = get_all_processes()
+    list(map(print_process, all_procs.get("scheduled", [])))
+    list(map(print_process, all_procs.get("ongoing", [])))
+    list(map(print_process, all_procs.get("core", [])))
+
+def cmd_start():
+    name and subprocess.Popen(['python3', name])
+
+def cmd_stop():
+    name and subprocess.run(['pkill', '-f', name])
+
 actions = {
-    "json": lambda: print(json.dumps(get_all_processes())),
-    "list": lambda: [print(f"{p['path']}: {p['status']}") for cat in get_all_processes().values() for p in cat],
-    "start": lambda: subprocess.Popen(['python3', name]) if name else None,
-    "stop": lambda: subprocess.run(['pkill', '-f', name]) if name else None
+    "json": cmd_json,
+    "list": cmd_list,
+    "start": cmd_start,
+    "stop": cmd_stop
 }
 
 actions.get(command, actions["json"])()
@@ -804,36 +860,25 @@ import aios_db
 
 subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/feed.db"], stdout=subprocess.PIPE, text=True, check=False)
 
-services/gdrive.py:
+services/poll_all.py:
 #!/usr/bin/env python3
 import sys
-sys.path.append("/home/seanpatten/projects/AIOS/core")
-sys.path.append('/home/seanpatten/projects/AIOS')
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import subprocess
 import aios_db
-from datetime import datetime
-from pathlib import Path
 
-config = aios_db.read("gdrive") or {"folder_id": "root"}
-creds = Credentials.from_authorized_user_info(aios_db.read("gdrive_creds") or {})
-service = build('drive', 'v3', credentials=creds)
+target = sys.argv[1] if len(sys.argv) > 1 else "all"
 
-command = sys.argv[1] if len(sys.argv) > 1 else "sync"
-source = Path(sys.argv[2]) if len(sys.argv) > 2 else Path.home()
-
-actions = {
-    "sync": lambda: [service.files().create(body={'name': f.name, 'parents': [config['folder_id']]},
-                                            media_body=MediaFileUpload(str(f))).execute()
-                     for f in source.glob('*') if f.is_file()],
-    "list": lambda: [print(f['name']) for f in service.files().list(q=f"'{config['folder_id']}' in parents").execute().get('files', [])],
-    "download": lambda: [open(f['name'], 'wb').write(service.files().get_media(fileId=f['id']).execute())
-                        for f in service.files().list(q=f"'{config['folder_id']}' in parents").execute().get('files', [])],
-    "status": lambda: print(f"Connected to folder: {config['folder_id']}")
+files = {
+    "tasks": f"{aios_db.db_path}/tasks.json",
+    "jobs": f"{aios_db.db_path}/jobs.db",
+    "feed": f"{aios_db.db_path}/feed.db",
+    "settings": f"{aios_db.db_path}/settings.json",
+    "schedule": f"{aios_db.db_path}/schedule.json"
 }
 
-actions.get(command, actions["status"])()
+target_file = files.get(target, " ".join(files.values()))
+subprocess.run(f"inotifywait -m -e modify {target_file}", shell=True, stdout=subprocess.PIPE, text=True)
 
 services/feed.py:
 #!/usr/bin/env python3
@@ -847,16 +892,39 @@ command = sys.argv[1] if len(sys.argv) > 1 else "list"
 
 aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
 
+def cmd_add():
+    aios_db.execute("feed", "INSERT INTO messages(content, timestamp, source) VALUES (?, ?, ?)",
+                   (" ".join(sys.argv[2:]), datetime.now().isoformat(), "manual"))
+
+def print_message(row):
+    is_today = datetime.fromisoformat(row[2]).date() == datetime.now().date()
+    time_part = row[2].split('T')[1][:5]
+    date_part = row[2].split('T')[0]
+    print(is_today and f"{time_part} {row[1]}" or f"{date_part} {time_part} {row[1]}")
+
+def cmd_list():
+    messages = aios_db.query("feed", "SELECT id, content, timestamp, source FROM messages ORDER BY timestamp DESC LIMIT 50")
+    list(map(print_message, messages))
+
+def cmd_view():
+    settings = aios_db.read('settings') or {}
+    time_fmt = settings.get('time_format', '12h') == '12h' and '%I:%M %p' or '%H:%M'
+    messages = aios_db.query("feed", "SELECT id, content, timestamp, source FROM messages ORDER BY timestamp DESC LIMIT 50")
+    def print_view_message(row):
+        is_today = datetime.fromisoformat(row[2]).date() == datetime.now().date()
+        time_str = datetime.fromisoformat(row[2]).strftime(time_fmt)
+        date_str = row[2].split('T')[0]
+        print(is_today and f"{time_str} {row[1]}" or f"{date_str} {time_str} {row[1]}")
+    list(map(print_view_message, messages))
+
+def cmd_clear():
+    aios_db.execute("feed", "DELETE FROM messages WHERE timestamp < datetime('now', '-7 days')")
+
 actions = {
-    "add": lambda: aios_db.execute("feed", "INSERT INTO messages(content, timestamp, source) VALUES (?, ?, ?)",
-                                   (" ".join(sys.argv[2:]), datetime.now().isoformat(), "manual")),
-    "list": lambda: [print(f"{row[3].split('T')[1][:5]} {row[1]}" if datetime.fromisoformat(row[2]).date() == datetime.now().date() else f"{row[2].split('T')[0]} {row[2].split('T')[1][:5]} {row[1]}")
-                    for row in aios_db.query("feed", "SELECT id, content, timestamp, source FROM messages ORDER BY timestamp DESC LIMIT 50")],
-    "view": lambda: [print(f"{datetime.fromisoformat(row[2]).strftime('%I:%M %p' if (aios_db.read('settings') or {}).get('time_format', '12h') == '12h' else '%H:%M')} {row[1]}"
-                          if datetime.fromisoformat(row[2]).date() == datetime.now().date() else
-                          f"{row[2].split('T')[0]} {datetime.fromisoformat(row[2]).strftime('%I:%M %p' if (aios_db.read('settings') or {}).get('time_format', '12h') == '12h' else '%H:%M')} {row[1]}")
-                    for row in aios_db.query("feed", "SELECT id, content, timestamp, source FROM messages ORDER BY timestamp DESC LIMIT 50")],
-    "clear": lambda: aios_db.execute("feed", "DELETE FROM messages WHERE timestamp < datetime('now', '-7 days')")
+    "add": cmd_add,
+    "list": cmd_list,
+    "view": cmd_view,
+    "clear": cmd_clear
 }
 
 actions.get(command, actions["list"])()

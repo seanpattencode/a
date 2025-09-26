@@ -202,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
     def handle_home(self):
         tr = subprocess.run("python3 programs/todo/todo.py list", shell=True, capture_output=True, text=True)
         m = aios_db.query("feed", "SELECT content, timestamp FROM messages ORDER BY timestamp DESC LIMIT 4")
-        j = subprocess.run("python3 programs/job_status.py summary", shell=True, capture_output=True, text=True)
+        j = subprocess.run("python3 services/jobs.py summary", shell=True, capture_output=True, text=True)
 
         todo_items = tr.stdout.strip().split('\n')[:4] or []
         def format_feed_item(x):
@@ -254,9 +254,9 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/settings'].format(**self.c, theme_dark_style=theme_dark_style, theme_light_style=theme_light_style, time_12h_style=time_12h_style, time_24h_style=time_24h_style), 'text/html'
 
     def handle_jobs(self):
-        running = subprocess.run("python3 programs/job_status.py running", shell=True, capture_output=True, text=True)
-        review = subprocess.run("python3 programs/job_status.py review", shell=True, capture_output=True, text=True)
-        done = subprocess.run("python3 programs/job_status.py done", shell=True, capture_output=True, text=True)
+        running = subprocess.run("python3 services/jobs.py running", shell=True, capture_output=True, text=True)
+        review = subprocess.run("python3 services/jobs.py review", shell=True, capture_output=True, text=True)
+        done = subprocess.run("python3 services/jobs.py done", shell=True, capture_output=True, text=True)
 
         running_html = running.stdout.strip() or '<div style="color:#888;padding:10px">No running jobs</div>'
         review_html = review.stdout.strip() or '<div style="color:#888;padding:10px">No jobs in review</div>'
@@ -265,13 +265,13 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/jobs'].format(**self.c, running_jobs=running_html, review_jobs=review_html, done_jobs=done_html), 'text/html'
 
     def post_job_run(self):
-        return subprocess.run("python3 programs/job_status.py run_wiki", shell=True)
+        return subprocess.run("python3 services/jobs.py run_wiki", shell=True)
 
     def post_job_accept(self):
-        return subprocess.run(f"python3 programs/job_status.py accept {self.data.get('id', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 services/jobs.py accept {self.data.get('id', [''])[0]}", shell=True)
 
     def post_job_redo(self):
-        return subprocess.run(f"python3 programs/job_status.py redo {self.data.get('id', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 services/jobs.py redo {self.data.get('id', [''])[0]}", shell=True)
 
     def post_run_cmd(self):
         return subprocess.run(self.data.get('cmd', [''])[0], shell=True, capture_output=True, text=True, timeout=5)

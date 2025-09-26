@@ -29,11 +29,29 @@ def get_all_processes():
 
     return {"scheduled": scheduled, "ongoing": ongoing, "core": core}
 
+def cmd_json():
+    print(json.dumps(get_all_processes()))
+
+def print_process(p):
+    print(f"{p['path']}: {p['status']}")
+
+def cmd_list():
+    all_procs = get_all_processes()
+    list(map(print_process, all_procs.get("scheduled", [])))
+    list(map(print_process, all_procs.get("ongoing", [])))
+    list(map(print_process, all_procs.get("core", [])))
+
+def cmd_start():
+    name and subprocess.Popen(['python3', name])
+
+def cmd_stop():
+    name and subprocess.run(['pkill', '-f', name])
+
 actions = {
-    "json": lambda: print(json.dumps(get_all_processes())),
-    "list": lambda: [print(f"{p['path']}: {p['status']}") for cat in get_all_processes().values() for p in cat],
-    "start": lambda: subprocess.Popen(['python3', name]) if name else None,
-    "stop": lambda: subprocess.run(['pkill', '-f', name]) if name else None
+    "json": cmd_json,
+    "list": cmd_list,
+    "start": cmd_start,
+    "stop": cmd_stop
 }
 
 actions.get(command, actions["json"])()
