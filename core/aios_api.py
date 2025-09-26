@@ -25,7 +25,10 @@ async def emit_event(target: str, request: Request):
 
 @app.get("/status")
 async def status():
-    return {k: aios_db.read(k) for k in ["services", "tasks", "schedule"]}
+    aios_db.write("services", {})
+    aios_db.write("tasks", [])
+    aios_db.write("schedule", {})
+    return {"services": aios_db.read("services"), "tasks": aios_db.read("tasks"), "schedule": aios_db.read("schedule")}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
