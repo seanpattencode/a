@@ -118,9 +118,8 @@ def test_autollm():
     return True
 
 def test_tricky_script():
-    env = {**os.environ, 'AIOS_TIMEOUT': '0.1'}
     result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/tricky_script/tricky_script.py"],
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True)
     return result.returncode == 124
 
 def run_program_test(prog):
@@ -182,15 +181,14 @@ def test_death_enforcement():
     print("\nDeath Enforcement:")
 
     print("  Testing tricky_script kill...")
-    env = {**os.environ, 'AIOS_TIMEOUT': '0.1'}
     result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/tricky_script/tricky_script.py"],
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True)
     killed = result.returncode == 124
     print(f"    Infinite loop: {'✓ KILLED' if killed else '✗ SURVIVED'}")
 
     print("  Testing sleep timeout...")
     result = subprocess.run(["python3", "core/aios_runner.py", "sleep", "1"],
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True)
     killed = result.returncode == 124
     print(f"    Long sleep: {'✓ KILLED' if killed else '✗ SURVIVED'}")
 

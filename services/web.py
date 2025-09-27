@@ -200,9 +200,9 @@ class Handler(BaseHTTPRequestHandler):
         return (HTML_TEMPLATES.get('/', HTML_TEMPLATES['/']).format(**self.c, vp="", tasks="", feed_content="", running_jobs="", review_jobs="", done_jobs=""), 'text/html')
 
     def handle_home(self):
-        tr = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True, env={**os.environ, 'AIOS_TIMEOUT': '1'})
+        tr = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True)
         m = aios_db.query("feed", "SELECT content, timestamp FROM messages ORDER BY timestamp DESC LIMIT 4")
-        j = subprocess.run(["python3", "core/aios_runner.py", "python3", "services/jobs.py", "summary"], capture_output=True, text=True, env={**os.environ, 'AIOS_TIMEOUT': '1'})
+        j = subprocess.run(["python3", "core/aios_runner.py", "python3", "services/jobs.py", "summary"], capture_output=True, text=True)
 
         todo_items = tr.stdout.strip().split('\n')[:4] or []
         def format_feed_item(x):
@@ -224,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/'].format(**self.c, vp=vp), 'text/html'
 
     def handle_todo(self):
-        result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True, env={**os.environ, 'AIOS_TIMEOUT': '1'})
+        result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True)
         tasks = result.stdout.strip().split('\n') or []
         def format_task(indexed_task):
             i, t = indexed_task
