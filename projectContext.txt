@@ -1,4 +1,4 @@
-Generated: 2025-09-27 13:06:03
+Generated: 2025-09-27 13:28:21
 
 test_accept.py:
 #!/usr/bin/env python3
@@ -557,6 +557,7 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:8px;margin:5px;
 <input name="task" placeholder="Task description" style="width:400px">
 <button type="submit">Launch Worktrees</button>
 </form>
+<div id="c">
 <div class="grid">
 <div>
 <h2>Running</h2>
@@ -571,9 +572,11 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:8px;margin:5px;
 <div>{done_worktrees}</div>
 </div>
 </div>
+</div>
 <form action="/autollm/clean" method="POST">
 <button>Clean Done Worktrees</button>
 </form>
+<script>new EventSource('http://localhost:3001/e').onmessage=e=>c.innerHTML=e.data</script>
 </body>
 </html>''',
 
@@ -928,7 +931,7 @@ import subprocess
 from pathlib import Path
 from core import aios_db
 
-class Handler(BaseHTTPRequestHandler):
+class H(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
@@ -937,38 +940,38 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
         page = self.headers.get('Referer', '').split('8080')[-1].split('?')[0]
-        job_id = self.path.split('job_id=')[-1] * ('job_id=' in self.path) or ''
+        job_id = self.path.split('job_id=')[-1].split('&')[0] * ('job_id=' in self.path) or ''
 
-        files = [str(aios_db.db_path / 'autollm.db'), str(aios_db.db_path / 'jobs.db')] * ('/autollm' in page) or \
-                [str(Path.home() / '.aios' / f'autollm_output_{job_id}.txt')] * ('/terminal' in page) or \
-                [str(aios_db.db_path / 'tasks.json')] * ('/todo' in page) or \
-                [str(aios_db.db_path / 'feed.db')] * ('/feed' in page) or \
-                [str(aios_db.db_path / 'jobs.db')]
+        def render_autollm():
+            worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status, task, model, output FROM worktrees")
+            running = list(filter(lambda w: w[3] == 'running', worktrees))
+            review = list(filter(lambda w: w[3] == 'review', worktrees))
+            done = list(filter(lambda w: w[3] == 'done', worktrees))
 
-        content = subprocess.run(['python3', 'services/render.py', page, job_id], capture_output=True, text=True).stdout
+            def fmt_run(w):
+                f = Path.home() / ".aios" / f"autollm_output_{w[2]}.txt"
+                preview = (f.exists() and f.read_text()[-200:]) or "Waiting..."
+                return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[5]}: {w[4][:30]}<br><pre style="background:#000;padding:5px;margin:5px 0;max-height:100px;overflow-y:auto;font-size:10px">{preview}</pre><a href="/terminal?job_id={w[2]}">Terminal</a></div>'
+
+            def fmt_rev(w):
+                return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[5]}: {w[4][:30]}<br>Output: {(w[6] or "")[:50]}<br><form action="/autollm/accept" method="POST"><input type="hidden" name="job_id" value="{w[2]}"><button>Accept</button></form></div>'
+
+            running_html = "".join(list(map(fmt_run, running))) or '<div style="color:#888">No running</div>'
+            review_html = "".join(list(map(fmt_rev, review))) or '<div style="color:#888">No review</div>'
+            done_html = str(len(done)) + " done" * bool(done) or '<div style="color:#888">No done</div>'
+
+            return f'<div class="grid"><div><h2>Running</h2><div>{running_html}</div></div><div><h2>Review</h2><div>{review_html}</div></div><div><h2>Done</h2><div>{done_html}</div></div></div>'
+
+        files = {'/terminal': [f'/home/seanpatten/.aios/autollm_output_{job_id}.txt'], '/autollm': [str(aios_db.db_path / 'autollm.db')]}.get(page, ['/tmp/dummy'])
+        content = render_autollm() * ('/autollm' in page) or ((Path(files[0]).read_text() * Path(files[0]).exists()) * ('/terminal' in page) or "Waiting...")
+
         self.wfile.write(f'data: {content}\n\n'.encode())
+        self.wfile.flush()
 
-        proc = subprocess.Popen(['inotifywait', '-m', '-e', 'modify'] + files, stdout=subprocess.PIPE, text=True)
-        list(map(lambda _: self.wfile.write(f'data: {subprocess.run(["python3", "services/render.py", page, job_id], capture_output=True, text=True).stdout}\n\n'.encode()), proc.stdout))
+        proc = subprocess.Popen(['inotifywait', '-q', '-m', '-e', 'modify'] + files, stdout=subprocess.PIPE, text=True)
+        list(map(lambda _: (self.wfile.write(f'data: {render_autollm() * ("/autollm" in page) or ((Path(files[0]).read_text() * Path(files[0]).exists()) * ("/terminal" in page) or "Waiting...")}\n\n'.encode()), self.wfile.flush()), proc.stdout))
 
-HTTPServer(('', 3001), Handler).serve_forever()
-
-services/stream_handler.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-from pathlib import Path
-
-job_id = sys.argv[1] * (len(sys.argv) > 1) or ""
-output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
-
-content = output_file.read_text() * output_file.exists() or ""
-print(f"data: {content}\n")
-
-subprocess.run(["inotifywait", "-e", "modify", str(output_file)], capture_output=True)
-content = output_file.read_text() * output_file.exists() or ""
-print(f"data: {content}\n")
+HTTPServer(('', 3001), H).serve_forever()
 
 services/service.py:
 #!/usr/bin/env python3
@@ -1036,51 +1039,6 @@ def generate():
 
     output.write_text(content)
     return str(output)
-
-services/poll_schedule.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-
-subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/schedule.json"], stdout=subprocess.PIPE, text=True, check=False)
-
-services/poll_tasks.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-
-subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/tasks.json"], stdout=subprocess.PIPE, text=True, check=False)
-
-services/render.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS')
-from pathlib import Path
-from core import aios_db
-import subprocess
-
-page = sys.argv[1]
-job_id = sys.argv[2] * (len(sys.argv) > 2) or ''
-
-s = aios_db.read('settings') or {}
-c = {'bg': '#fff', 'fg': '#000', 'bg2': '#f0f0f0'} * (s.get('theme') == 'light') or {'bg': '#000', 'fg': '#fff', 'bg2': '#1a1a1a'}
-
-output_file = Path.home() / '.aios' / f'autollm_output_{job_id}.txt'
-terminal_content = (output_file.exists() and output_file.read_text()) or 'Waiting...'
-
-renderers = {
-    '/': lambda: subprocess.run(['python3', 'services/render_home.py'], capture_output=True, text=True).stdout,
-    '/autollm': lambda: subprocess.run(['python3', 'services/render_autollm.py'], capture_output=True, text=True).stdout,
-    '/terminal': lambda: terminal_content,
-    '/todo': lambda: subprocess.run(['python3', 'programs/todo/todo.py', 'list'], capture_output=True, text=True).stdout,
-    '/feed': lambda: subprocess.run(['python3', 'services/feed.py', 'view'], capture_output=True, text=True).stdout
-}
-
-print(renderers.get(page, renderers['/'])())
 
 services/jobs.py:
 #!/usr/bin/env python3
@@ -1196,61 +1154,6 @@ actions = {
 
 actions.get(command, actions["json"])()
 
-services/poll_jobs.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-
-subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/jobs.db"], stdout=subprocess.PIPE, text=True, check=False)
-
-services/poll_feed.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-
-subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/feed.db"], stdout=subprocess.PIPE, text=True, check=False)
-
-services/poll_all.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-
-target = sys.argv[1] if len(sys.argv) > 1 else "all"
-
-files = {
-    "tasks": f"{aios_db.db_path}/tasks.json",
-    "jobs": f"{aios_db.db_path}/jobs.db",
-    "feed": f"{aios_db.db_path}/feed.db",
-    "settings": f"{aios_db.db_path}/settings.json",
-    "schedule": f"{aios_db.db_path}/schedule.json"
-}
-
-target_file = files.get(target, " ".join(files.values()))
-subprocess.run(f"inotifywait -m -e modify {target_file}", shell=True, stdout=subprocess.PIPE, text=True)
-
-services/sse_stream.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-from pathlib import Path
-
-target = sys.argv[1] * (len(sys.argv) > 1) or "autollm"
-job_id = sys.argv[2] * (len(sys.argv) > 2) or ""
-
-output_file = Path.home() / ".aios" / f"{target}_output_{job_id}.txt"
-db_file = aios_db.db_path / f"{target}.db"
-
-files = [str(output_file)] * output_file.exists() + [str(db_file)]
-subprocess.run(["inotifywait", "-m", "-e", "modify"] + files, stdout=subprocess.PIPE, text=True)
-
 services/feed.py:
 #!/usr/bin/env python3
 import sys
@@ -1299,24 +1202,6 @@ actions = {
 }
 
 actions.get(command, actions["list"])()
-
-services/poll_settings.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-
-subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/settings.json"], stdout=subprocess.PIPE, text=True, check=False)
-
-services/poll_autollm.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS/core')
-import subprocess
-import aios_db
-
-subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/autollm.db"], stdout=subprocess.PIPE, text=True, check=False)
 
 programs/job_status.py:
 #!/usr/bin/env python3
@@ -1812,16 +1697,12 @@ python services/gdrive.py list - show files
 python services/web.py start - web interface
 python services/web.py stop - stop server
 python services/web.py status - server info
+python services/sse.py - real-time updates server (port 3001)
 python programs/autollm/autollm.py - auto llm
 python services/feed.py add - add message
 python services/feed.py view - view feed
 python services/feed.py list - list messages
 python services/feed.py clear - clear old
-python services/poll_tasks.py - monitor tasks
-python services/poll_jobs.py - monitor jobs
-python services/poll_feed.py - monitor feed
-python services/poll_settings.py - monitor settings
-python services/poll_schedule.py - monitor schedule
 python programs/job_status.py summary - job summary
 python programs/job_status.py running - show running
 python programs/job_status.py review - show review

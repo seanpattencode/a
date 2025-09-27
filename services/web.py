@@ -158,6 +158,7 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:8px;margin:5px;
 <input name="task" placeholder="Task description" style="width:400px">
 <button type="submit">Launch Worktrees</button>
 </form>
+<div id="c">
 <div class="grid">
 <div>
 <h2>Running</h2>
@@ -172,9 +173,11 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:8px;margin:5px;
 <div>{done_worktrees}</div>
 </div>
 </div>
+</div>
 <form action="/autollm/clean" method="POST">
 <button>Clean Done Worktrees</button>
 </form>
+<script>new EventSource('http://localhost:3001/e').onmessage=e=>c.innerHTML=e.data</script>
 </body>
 </html>''',
 

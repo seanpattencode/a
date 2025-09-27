@@ -26,16 +26,12 @@ python services/gdrive.py list - show files
 python services/web.py start - web interface
 python services/web.py stop - stop server
 python services/web.py status - server info
+python services/sse.py - real-time updates server (port 3001)
 python programs/autollm/autollm.py - auto llm
 python services/feed.py add - add message
 python services/feed.py view - view feed
 python services/feed.py list - list messages
 python services/feed.py clear - clear old
-python services/poll_tasks.py - monitor tasks
-python services/poll_jobs.py - monitor jobs
-python services/poll_feed.py - monitor feed
-python services/poll_settings.py - monitor settings
-python services/poll_schedule.py - monitor schedule
 python programs/job_status.py summary - job summary
 python programs/job_status.py running - show running
 python programs/job_status.py review - show review
