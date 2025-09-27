@@ -119,6 +119,64 @@ button{{background:{fg};color:{bg};border:none;padding:5px 15px;cursor:pointer;m
 </body>
 </html>''',
 
+    '/autollm': '''<!DOCTYPE html>
+<html>
+<head>
+<title>AutoLLM</title>
+<style>
+body{{font-family:monospace;background:{bg};color:{fg};padding:20px;max-width:1200px;margin:0 auto}}
+.worktree{{background:{bg2};padding:15px;margin:10px 0;border-radius:5px}}
+.status{{font-weight:bold;color:#fa0}}
+.running{{color:#0f0}}
+.review{{color:#ff0}}
+.done{{color:#888}}
+button{{background:{fg};color:{bg};border:none;padding:8px 16px;cursor:pointer;border-radius:3px;margin:5px}}
+input{{background:{bg2};color:{fg};border:1px solid {fg};padding:8px;margin:5px;border-radius:3px}}
+.grid{{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin:20px 0}}
+</style>
+</head>
+<body>
+<div style="margin-bottom:20px"><a href="/" style="padding:10px;background:{fg};color:{bg};border-radius:5px;text-decoration:none">Back</a></div>
+<h1>AutoLLM Worktree Manager</h1>
+<form action="/autollm/run" method="POST">
+<input name="repo" placeholder="Repository path" value="/home/seanpatten/projects/testRepoPrivate">
+<input name="branches" placeholder="Number of branches" value="1" style="width:150px">
+<select name="model" style="padding:8px;margin:5px;border-radius:3px;background:{bg2};color:{fg};border:1px solid {fg}">
+<option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+<option value="gpt-4">GPT-4</option>
+<option value="gpt-5-codex">GPT-5 Codex</option>
+</select>
+<select name="preset" style="padding:8px;margin:5px;border-radius:3px;background:{bg2};color:{fg};border:1px solid {fg}" onchange="document.getElementsByName('task')[0].value=this.value">
+<option value="">Select preset...</option>
+<option value="Simplify and optimize this code">Simplify Code</option>
+<option value="Add comprehensive tests">Add Tests</option>
+<option value="Fix bugs and improve error handling">Fix Bugs</option>
+<option value="Add type hints and documentation">Add Docs</option>
+<option value="Refactor for better performance">Optimize Performance</option>
+</select>
+<input name="task" placeholder="Task description" style="width:400px">
+<button type="submit">Launch Worktrees</button>
+</form>
+<div class="grid">
+<div>
+<h2>Running</h2>
+<div>{running_worktrees}</div>
+</div>
+<div>
+<h2>Review</h2>
+<div>{review_worktrees}</div>
+</div>
+<div>
+<h2>Done</h2>
+<div>{done_worktrees}</div>
+</div>
+</div>
+<form action="/autollm/clean" method="POST">
+<button>Clean Done Worktrees</button>
+</form>
+</body>
+</html>''',
+
     '/settings': '''<!DOCTYPE html>
 <html>
 <head>
@@ -186,7 +244,8 @@ class Handler(BaseHTTPRequestHandler):
             '/todo': self.handle_todo,
             '/feed': self.handle_feed,
             '/settings': self.handle_settings,
-            '/jobs': self.handle_jobs
+            '/jobs': self.handle_jobs,
+            '/autollm': self.handle_autollm
         }
 
         content, ctype = handlers.get(path, self.handle_default)()
@@ -219,7 +278,13 @@ class Handler(BaseHTTPRequestHandler):
 <div class="box-title">{t}</div>
 <div class="box-content">{content}</div>
 </div>'''
-        vp = "".join(list(map(format_box, [('Todo', todo_items), ('Feed', feed_items), ('Jobs', jobs_summary)])))
+        boxes = [('Todo', todo_items), ('Feed', feed_items), ('Jobs', jobs_summary)]
+        try:
+            aios_db.query("autollm", "SELECT COUNT(*) FROM worktrees")
+            boxes.append(('AutoLLM', ['Manage worktrees']))
+        except:
+            pass
+        vp = "".join(list(map(format_box, boxes)))
 
         return HTML_TEMPLATES['/'].format(**self.c, vp=vp), 'text/html'
 
@@ -264,6 +329,40 @@ class Handler(BaseHTTPRequestHandler):
 
         return HTML_TEMPLATES['/jobs'].format(**self.c, running_jobs=running_html, review_jobs=review_html, done_jobs=done_html), 'text/html'
 
+    def handle_autollm(self):
+        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, branch TEXT, path TEXT, job_id INTEGER, status TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS models(id INTEGER PRIMARY KEY, name TEXT, params TEXT)")
+
+        worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status FROM worktrees")
+        jobs = aios_db.query("jobs", "SELECT id, name, status FROM jobs")
+        jobs_dict = {j[0]: j for j in jobs}
+
+        running = []
+        review = []
+        done = []
+
+        for w in worktrees:
+            job = jobs_dict.get(w[2])
+            if w[3] == 'running' and job:
+                running.append((w[0], w[1], job[1]))
+            elif job and job[2] == 'review':
+                review.append((w[0], w[1], job[1], w[2]))
+            elif w[3] == 'done':
+                done.append((w[0], w[1]))
+
+        def format_running(w):
+            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[2]}<br><form action="/autollm/terminal" method="POST" style="display:inline"><input type="hidden" name="branch" value="{w[0]}"><button>Terminal</button></form></div>'
+        def format_review(w):
+            return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[2]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[3]}"><input type="hidden" name="branch" value="{w[0]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
+        def format_done(w):
+            return f'<div class="worktree"><span class="status done">{w[0]}</span></div>'
+
+        running_html = "".join(list(map(format_running, running))) or '<div style="color:#888">No running worktrees</div>'
+        review_html = "".join(list(map(format_review, review))) or '<div style="color:#888">No worktrees in review</div>'
+        done_html = "".join(list(map(format_done, done))) or '<div style="color:#888">No completed worktrees</div>'
+
+        return HTML_TEMPLATES['/autollm'].format(**self.c, running_worktrees=running_html, review_worktrees=review_html, done_worktrees=done_html), 'text/html'
+
     def post_job_run(self):
         return subprocess.run("python3 services/jobs.py run_wiki", shell=True, timeout=5)
 
@@ -291,6 +390,30 @@ class Handler(BaseHTTPRequestHandler):
     def post_settings_time(self):
         return aios_db.write('settings', {**(aios_db.read('settings') or {}), 'time_format': self.data.get('format', ['12h'])[0]})
 
+    def post_autollm_run(self):
+        repo = self.data.get('repo', [''])[0]
+        branches = self.data.get('branches', ['1'])[0]
+        model = self.data.get('model', ['claude-3-5-sonnet-20241022'])[0]
+        task = self.data.get('task', [''])[0]
+        return subprocess.run(f"python3 programs/autollm/autollm.py run '{repo}' '{model}' {branches} {task}", shell=True, timeout=5)
+
+    def post_autollm_accept(self):
+        job_id = self.data.get('job_id', [''])[0]
+        branch = self.data.get('branch', [''])[0]
+        aios_db.execute("autollm", "UPDATE worktrees SET status='done' WHERE branch=?", (branch,))
+        return aios_db.execute("jobs", "UPDATE jobs SET status='done' WHERE id=?", (int(job_id),))
+
+    def post_autollm_vscode(self):
+        path = self.data.get('path', [''])[0]
+        return subprocess.run(["code", path])
+
+    def post_autollm_clean(self):
+        return subprocess.run("python3 programs/autollm/autollm.py clean", shell=True, timeout=5)
+
+    def post_autollm_terminal(self):
+        branch = self.data.get('branch', [''])[0]
+        return subprocess.run(f"gnome-terminal -- python3 programs/autollm/autollm.py terminal_branch '{branch}'", shell=True)
+
     def do_POST(self):
         path = urlparse(self.path).path
         length = int(self.headers.get('Content-Length', 0))
@@ -307,14 +430,19 @@ class Handler(BaseHTTPRequestHandler):
             '/todo/done': self.post_todo_done,
             '/todo/clear': self.post_todo_clear,
             '/settings/theme': self.post_settings_theme,
-            '/settings/time': self.post_settings_time
+            '/settings/time': self.post_settings_time,
+            '/autollm/run': self.post_autollm_run,
+            '/autollm/accept': self.post_autollm_accept,
+            '/autollm/vscode': self.post_autollm_vscode,
+            '/autollm/clean': self.post_autollm_clean,
+            '/autollm/terminal': self.post_autollm_terminal
         }
 
         handler = post_handlers.get(path, str)
         handler()
 
         self.send_response(303)
-        self.send_header('Location', {'settings': '/'}.get('settings' * ('settings' in path), path.replace('/add', '').replace('/done', '').replace('/clear', '').replace('/run', '').replace('/accept', '').replace('/redo', '')))
+        self.send_header('Location', {'settings': '/', 'autollm': '/autollm'}.get('settings' * ('settings' in path) or 'autollm' * ('autollm' in path), path.replace('/add', '').replace('/done', '').replace('/clear', '').replace('/run', '').replace('/accept', '').replace('/redo', '').replace('/vscode', '').replace('/terminal', '').replace('/clean', '')))
         self.end_headers()
 
 def cmd_start():
