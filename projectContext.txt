@@ -1,4 +1,4 @@
-Generated: 2025-09-27 13:56:54
+Generated: 2025-09-27 14:26:34
 
 test_accept.py:
 #!/usr/bin/env python3
@@ -79,34 +79,25 @@ sys.exit(result.returncode)
 
 core/aios_db.py:
 #!/usr/bin/env python3
-import json
+import json, sqlite3
 from pathlib import Path
-import sqlite3
-
+db_file = Path(__file__).parent.parent / "aios.db"
 db_path = Path.home() / ".aios"
-db_path.mkdir(exist_ok=True)
-
+_db = sqlite3.connect(db_file, check_same_thread=False, isolation_level=None)
+_db.execute("PRAGMA synchronous=OFF")
+_db.execute("PRAGMA journal_mode=MEMORY")
+_db.execute("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)")
 def read(name):
-    file = db_path / f"{name}.json"
-    assert file.exists(), f"Missing: {file}"
-    return json.loads(file.read_text())
-
+    r = _db.execute("SELECT v FROM kv WHERE k=?", (name,)).fetchone()
+    assert r, f"Missing: {name}"
+    return json.loads(r[0])
 def write(name, data):
-    (db_path / f"{name}.json").write_text(json.dumps(data, indent=2))
+    _db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", (name, json.dumps(data, indent=2)))
     return data
-
 def query(db, sql, params=()):
-    conn = sqlite3.connect(db_path / f"{db}.db")
-    result = conn.execute(sql, params).fetchall()
-    conn.commit()
-    conn.close()
-    return result
-
+    return _db.execute(sql, params).fetchall()
 def execute(db, sql, params=()):
-    conn = sqlite3.connect(db_path / f"{db}.db")
-    conn.execute(sql, params)
-    conn.commit()
-    conn.close()
+    _db.execute(sql, params)
 
 core/test_all.py:
 #!/usr/bin/env python3
@@ -855,7 +846,7 @@ class Handler(BaseHTTPRequestHandler):
         branches = self.data.get('branches', ['1'])[0]
         model = self.data.get('model', ['claude-3-5-sonnet-20241022'])[0]
         task = self.data.get('task', [''])[0]
-        return subprocess.run(f"python3 programs/autollm/autollm.py run '{repo}' {branches} '{model}' '{task}'", shell=True, timeout=5)
+        return subprocess.run(["python3", "programs/autollm/autollm.py", "run", repo, branches, model, task], timeout=5)
 
     def post_autollm_accept(self):
         job_id = self.data.get('job_id', [''])[0]
@@ -867,7 +858,7 @@ class Handler(BaseHTTPRequestHandler):
         return subprocess.run(["code", path])
 
     def post_autollm_clean(self):
-        return subprocess.run("python3 programs/autollm/autollm.py clean", shell=True, timeout=5)
+        return subprocess.run(["python3", "programs/autollm/autollm.py", "clean"], timeout=5)
 
     def do_POST(self):
         path = urlparse(self.path).path

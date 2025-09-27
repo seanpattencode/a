@@ -1,29 +1,20 @@
 #!/usr/bin/env python3
-import json
+import json, sqlite3
 from pathlib import Path
-import sqlite3
-
+db_file = Path(__file__).parent.parent / "aios.db"
 db_path = Path.home() / ".aios"
-db_path.mkdir(exist_ok=True)
-
+_db = sqlite3.connect(db_file, check_same_thread=False, isolation_level=None)
+_db.execute("PRAGMA synchronous=OFF")
+_db.execute("PRAGMA journal_mode=MEMORY")
+_db.execute("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)")
 def read(name):
-    file = db_path / f"{name}.json"
-    assert file.exists(), f"Missing: {file}"
-    return json.loads(file.read_text())
-
+    r = _db.execute("SELECT v FROM kv WHERE k=?", (name,)).fetchone()
+    assert r, f"Missing: {name}"
+    return json.loads(r[0])
 def write(name, data):
-    (db_path / f"{name}.json").write_text(json.dumps(data, indent=2))
+    _db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", (name, json.dumps(data, indent=2)))
     return data
-
 def query(db, sql, params=()):
-    conn = sqlite3.connect(db_path / f"{db}.db")
-    result = conn.execute(sql, params).fetchall()
-    conn.commit()
-    conn.close()
-    return result
-
+    return _db.execute(sql, params).fetchall()
 def execute(db, sql, params=()):
-    conn = sqlite3.connect(db_path / f"{db}.db")
-    conn.execute(sql, params)
-    conn.commit()
-    conn.close()
+    _db.execute(sql, params)
