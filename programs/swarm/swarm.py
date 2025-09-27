@@ -6,11 +6,11 @@ import aios_db
 import anthropic
 from datetime import datetime
 
-cache = aios_db.read("llm_cache")
+cache = aios_db.read("llm_cache") or {}
 command = (sys.argv + ["list"])[1]
 question = ' '.join(sys.argv[2:])
 
-client = anthropic.Anthropic(api_key=aios_db.read("api_keys").get("anthropic", ""))
+client = anthropic.Anthropic(api_key=(aios_db.read("api_keys") or {}).get("anthropic", ""))
 
 def ask():
     response = client.messages.create(

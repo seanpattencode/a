@@ -5,7 +5,7 @@ sys.path.append('/home/seanpatten/projects/AIOS')
 import aios_db
 from datetime import datetime
 
-ideas = aios_db.read("ideas")
+ideas = aios_db.read("ideas") or []
 command = (sys.argv + ["list"])[1]
 
 def score(idea):

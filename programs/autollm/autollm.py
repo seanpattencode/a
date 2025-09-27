@@ -8,9 +8,6 @@ import aios_db
 
 command = (sys.argv + ["run"])[1]
 
-aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, repo TEXT, branch TEXT, path TEXT, job_id INTEGER, model TEXT, task TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-
 def run():
     repo = (sys.argv + ["", "/home/seanpatten/projects/testRepoPrivate"])[2]
     branches = int((sys.argv + ["", "1"])[3])

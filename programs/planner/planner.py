@@ -5,9 +5,9 @@ sys.path.append('/home/seanpatten/projects/AIOS')
 import aios_db
 from datetime import datetime, timedelta
 
-tasks = aios_db.read("tasks")
+tasks = aios_db.read("tasks") or []
 today = datetime.now().date()
-plan = aios_db.read("daily_plan")
+plan = aios_db.read("daily_plan") or {}
 
 def is_pending(t):
     not_completed = not t.startswith("[x]")

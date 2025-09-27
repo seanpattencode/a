@@ -4,8 +4,6 @@ sys.path.append("/home/seanpatten/projects/AIOS/core")
 import aios_db
 import subprocess
 
-aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-
 cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
 job_id = sys.argv[2] if len(sys.argv) > 2 else None
 

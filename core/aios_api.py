@@ -17,8 +17,6 @@ async def post_data(name: str, request: Request):
 
 @app.post("/event/{target}")
 async def emit_event(target: str, request: Request):
-    aios_db.execute("events",
-                    "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, target TEXT, data TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
     aios_db.execute("events", "INSERT INTO events(target, data) VALUES (?, ?)",
                     (target, (await request.body()).decode()))
     return {"status": "ok"}

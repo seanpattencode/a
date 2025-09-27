@@ -7,8 +7,6 @@ from datetime import datetime
 
 command = sys.argv[1] if len(sys.argv) > 1 else "list"
 
-aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
-
 def cmd_add():
     aios_db.execute("feed", "INSERT INTO messages(content, timestamp, source) VALUES (?, ?, ?)",
                    (" ".join(sys.argv[2:]), datetime.now().isoformat(), "manual"))

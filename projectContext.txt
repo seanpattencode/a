@@ -1,4 +1,4 @@
-Generated: 2025-09-27 14:26:34
+Generated: 2025-09-27 14:45:41
 
 test_accept.py:
 #!/usr/bin/env python3
@@ -86,11 +86,10 @@ db_path = Path.home() / ".aios"
 _db = sqlite3.connect(db_file, check_same_thread=False, isolation_level=None)
 _db.execute("PRAGMA synchronous=OFF")
 _db.execute("PRAGMA journal_mode=MEMORY")
-_db.execute("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT)")
+_db.executescript("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0);CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, repo TEXT, branch TEXT, path TEXT, job_id INTEGER, model TEXT, task TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, target TEXT, data TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 def read(name):
     r = _db.execute("SELECT v FROM kv WHERE k=?", (name,)).fetchone()
-    assert r, f"Missing: {name}"
-    return json.loads(r[0])
+    return json.loads(r[0]) if r else None
 def write(name, data):
     _db.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", (name, json.dumps(data, indent=2)))
     return data
@@ -352,8 +351,6 @@ async def post_data(name: str, request: Request):
 
 @app.post("/event/{target}")
 async def emit_event(target: str, request: Request):
-    aios_db.execute("events",
-                    "CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY, target TEXT, data TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
     aios_db.execute("events", "INSERT INTO events(target, data) VALUES (?, ?)",
                     (target, (await request.body()).decode()))
     return {"status": "ok"}
@@ -649,9 +646,6 @@ from urllib.parse import parse_qs, urlparse
 from datetime import datetime
 from pathlib import Path
 
-aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
-
 def format_job(j):
     return {"id": j[0], "name": j[1], "status": j[2], "output": j[3]}
 
@@ -767,8 +761,6 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/jobs'].format(**self.c, running_jobs=running_html, review_jobs=review_html, done_jobs=done_html), 'text/html'
 
     def handle_autollm(self):
-        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, repo TEXT, branch TEXT, path TEXT, job_id INTEGER, model TEXT, task TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-
         worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status, task, model, output FROM worktrees")
 
         running = []
@@ -1033,8 +1025,6 @@ sys.path.append("/home/seanpatten/projects/AIOS/core")
 import aios_db
 import subprocess
 
-aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-
 cmd = sys.argv[1] if len(sys.argv) > 1 else "list"
 job_id = sys.argv[2] if len(sys.argv) > 2 else None
 
@@ -1150,8 +1140,6 @@ from datetime import datetime
 
 command = sys.argv[1] if len(sys.argv) > 1 else "list"
 
-aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
-
 def cmd_add():
     aios_db.execute("feed", "INSERT INTO messages(content, timestamp, source) VALUES (?, ?, ?)",
                    (" ".join(sys.argv[2:]), datetime.now().isoformat(), "manual"))
@@ -1253,7 +1241,7 @@ sys.path.append('/home/seanpatten/projects/AIOS')
 import aios_db
 from datetime import datetime
 
-ideas = aios_db.read("ideas")
+ideas = aios_db.read("ideas") or []
 command = (sys.argv + ["list"])[1]
 
 def score(idea):
@@ -1364,9 +1352,9 @@ sys.path.append('/home/seanpatten/projects/AIOS')
 import aios_db
 from datetime import datetime, timedelta
 
-tasks = aios_db.read("tasks")
+tasks = aios_db.read("tasks") or []
 today = datetime.now().date()
-plan = aios_db.read("daily_plan")
+plan = aios_db.read("daily_plan") or {}
 
 def is_pending(t):
     not_completed = not t.startswith("[x]")
@@ -1391,11 +1379,11 @@ import aios_db
 import anthropic
 from datetime import datetime
 
-cache = aios_db.read("llm_cache")
+cache = aios_db.read("llm_cache") or {}
 command = (sys.argv + ["list"])[1]
 question = ' '.join(sys.argv[2:])
 
-client = anthropic.Anthropic(api_key=aios_db.read("api_keys").get("anthropic", ""))
+client = anthropic.Anthropic(api_key=(aios_db.read("api_keys") or {}).get("anthropic", ""))
 
 def ask():
     response = client.messages.create(
@@ -1434,7 +1422,7 @@ sys.path.append('/home/seanpatten/projects/AIOS')
 import aios_db
 from datetime import datetime, timedelta
 
-tasks = aios_db.read("tasks")
+tasks = aios_db.read("tasks") or []
 command = (sys.argv + ["list"])[1]
 
 def add_task():
@@ -1473,7 +1461,6 @@ def is_not_done(t):
 def clear_done():
     return aios_db.write("tasks", list(filter(is_not_done, tasks)))
 
-aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
 {"list": list_tasks, "add": add_task, "done": done_task, "clear": clear_done}.get(command, list_tasks)()
 
 programs/autollm/view_output.py:
@@ -1567,9 +1554,6 @@ sys.path.append('/home/seanpatten/projects/AIOS/core')
 import aios_db
 
 command = (sys.argv + ["run"])[1]
-
-aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, repo TEXT, branch TEXT, path TEXT, job_id INTEGER, model TEXT, task TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 
 def run():
     repo = (sys.argv + ["", "/home/seanpatten/projects/testRepoPrivate"])[2]
