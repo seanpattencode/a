@@ -27,7 +27,7 @@ def create_and_launch(repo, branch, model, task):
     aios_db.execute("autollm", "INSERT INTO worktrees(repo, branch, path, job_id, model, task, status) VALUES (?, ?, ?, ?, ?, ?, 'running')",
                     (repo, branch, path, job_id, model, task))
 
-    cmd_type = "claude" * (model.startswith("claude")) or "codex"
+    cmd_type = "claude-dangerous" * (model == "claude-dangerous") or "claude" * (model.startswith("claude")) or "codex"
     subprocess.Popen(["python3", "/home/seanpatten/projects/AIOS/core/aios_runner.py", "python3", "/home/seanpatten/projects/AIOS/programs/autollm/capture_output.py", str(job_id), cmd_type, model, task], cwd=path, env={**subprocess.os.environ, "AIOS_TIMEOUT": "999999"})
 
 def status():

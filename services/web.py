@@ -143,6 +143,7 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:8px;margin:5px;
 <input name="branches" placeholder="Number of branches" value="1" style="width:150px">
 <select name="model" style="padding:8px;margin:5px;border-radius:3px;background:{bg2};color:{fg};border:1px solid {fg}">
 <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+<option value="claude-dangerous">Claude (--dangerously-skip-permissions)</option>
 <option value="gpt-4">GPT-4</option>
 <option value="gpt-5-codex">GPT-5 Codex</option>
 </select>
@@ -174,6 +175,25 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:8px;margin:5px;
 <form action="/autollm/clean" method="POST">
 <button>Clean Done Worktrees</button>
 </form>
+</body>
+</html>''',
+
+    '/autollm/output': '''<!DOCTYPE html>
+<html>
+<head>
+<title>AutoLLM Output</title>
+<style>
+body{{font-family:monospace;background:{bg};color:{fg};padding:20px}}
+.output-box{{background:{bg2};padding:20px;border-radius:5px;margin:20px 0}}
+pre{{white-space:pre-wrap;word-wrap:break-word}}
+</style>
+</head>
+<body>
+<div style="margin-bottom:20px"><a href="/autollm" style="padding:10px;background:{fg};color:{bg};border-radius:5px;text-decoration:none">Back</a></div>
+<h1>Job Output</h1>
+<div class="output-box">
+<pre>{output_content}</pre>
+</div>
 </body>
 </html>''',
 
@@ -216,6 +236,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import json, aios_db, subprocess, os, socket
 from urllib.parse import parse_qs, urlparse
 from datetime import datetime
+from pathlib import Path
 
 aios_db.execute("jobs", "CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY, name TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
@@ -231,12 +252,15 @@ def handle_default(c):
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        query = parse_qs(parsed.query)
         s = aios_db.read("settings") or {}
         c = {'bg': {'light': '#fff'}.get(s.get('theme'), '#000'), 'fg': {'light': '#000'}.get(s.get('theme'), '#fff'), 'bg2': {'light': '#f0f0f0'}.get(s.get('theme'), '#1a1a1a')}
 
         self.s = s
         self.c = c
+        self.query = query
 
         handlers = {
             '/api/jobs': handle_api_jobs,
@@ -245,7 +269,8 @@ class Handler(BaseHTTPRequestHandler):
             '/feed': self.handle_feed,
             '/settings': self.handle_settings,
             '/jobs': self.handle_jobs,
-            '/autollm': self.handle_autollm
+            '/autollm': self.handle_autollm,
+            '/autollm/output': self.handle_autollm_output
         }
 
         content, ctype = handlers.get(path, self.handle_default)()
@@ -347,7 +372,9 @@ class Handler(BaseHTTPRequestHandler):
                 done.append((w[0], w[1]))
 
         def format_running(w):
-            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><form action="/autollm/output" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Output</button></form></div>'
+            output_file = (Path.home() / ".aios" / f"autollm_output_{w[2]}.txt")
+            preview = (output_file.read_text()[-200:] if output_file.exists() else "Waiting for output...")
+            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><pre style="background:#000;padding:5px;margin:5px 0;max-height:100px;overflow-y:auto;font-size:10px">{preview}</pre><a href="/autollm/output?job_id={w[2]}" style="padding:5px 10px;background:{self.c["fg"]};color:{self.c["bg"]};text-decoration:none;border-radius:3px">Full Output</a></div>'
         def format_review(w):
             return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br>Output: {(w[5] or "")[:50]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
         def format_done(w):
@@ -358,6 +385,15 @@ class Handler(BaseHTTPRequestHandler):
         done_html = "".join(list(map(format_done, done))) or '<div style="color:#888">No completed worktrees</div>'
 
         return HTML_TEMPLATES['/autollm'].format(**self.c, running_worktrees=running_html, review_worktrees=review_html, done_worktrees=done_html), 'text/html'
+
+    def handle_autollm_output(self):
+        job_id = self.query.get('job_id', [''])[0]
+        output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
+        db_output = aios_db.query("autollm", "SELECT output FROM worktrees WHERE job_id=?", (job_id,))
+
+        output_content = output_file.read_text() * output_file.exists() or (db_output[0][0] or "No output yet") * bool(db_output) or "No output yet"
+
+        return HTML_TEMPLATES['/autollm/output'].format(**self.c, output_content=output_content), 'text/html'
 
     def post_job_run(self):
         return subprocess.run("python3 services/jobs.py run_wiki", shell=True, timeout=5)
@@ -395,8 +431,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_autollm_accept(self):
         job_id = self.data.get('job_id', [''])[0]
-        branch = self.data.get('branch', [''])[0]
-        aios_db.execute("autollm", "UPDATE worktrees SET status='done' WHERE branch=?", (branch,))
+        aios_db.execute("autollm", "UPDATE worktrees SET status='done' WHERE job_id=?", (int(job_id),))
         return aios_db.execute("jobs", "UPDATE jobs SET status='done' WHERE id=?", (int(job_id),))
 
     def post_autollm_vscode(self):
@@ -405,10 +440,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def post_autollm_clean(self):
         return subprocess.run("python3 programs/autollm/autollm.py clean", shell=True, timeout=5)
-
-    def post_autollm_output(self):
-        job_id = self.data.get('job_id', [''])[0]
-        return subprocess.run(f"python3 programs/autollm/view_output.py {job_id}", shell=True, timeout=5)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -430,15 +461,14 @@ class Handler(BaseHTTPRequestHandler):
             '/autollm/run': self.post_autollm_run,
             '/autollm/accept': self.post_autollm_accept,
             '/autollm/vscode': self.post_autollm_vscode,
-            '/autollm/clean': self.post_autollm_clean,
-            '/autollm/output': self.post_autollm_output
+            '/autollm/clean': self.post_autollm_clean
         }
 
         handler = post_handlers.get(path, str)
         handler()
 
         self.send_response(303)
-        self.send_header('Location', {'settings': '/', 'autollm': '/autollm'}.get('settings' * ('settings' in path) or 'autollm' * ('autollm' in path), path.replace('/add', '').replace('/done', '').replace('/clear', '').replace('/run', '').replace('/accept', '').replace('/redo', '').replace('/vscode', '').replace('/terminal', '').replace('/clean', '')))
+        self.send_header('Location', '/autollm' * ('autollm' in path) or '/settings' * ('settings' in path) or path.replace('/add', '').replace('/done', '').replace('/clear', ''))
         self.end_headers()
 
 def cmd_start():

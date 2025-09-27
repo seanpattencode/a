@@ -14,7 +14,8 @@ model = sys.argv[3]
 task = " ".join(sys.argv[4:])
 
 commands = {
-    "claude": ["claude", "--dangerously-skip-permissions", task],
+    "claude": ["claude", task],
+    "claude-dangerous": ["claude", "--dangerously-skip-permissions", task],
     "codex": ["codex", "-c", "model_reasoning_effort=high", "--model", model, "--dangerously-bypass-approvals-and-sandbox", task]
 }
 
