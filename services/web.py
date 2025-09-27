@@ -330,30 +330,26 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/jobs'].format(**self.c, running_jobs=running_html, review_jobs=review_html, done_jobs=done_html), 'text/html'
 
     def handle_autollm(self):
-        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, branch TEXT, path TEXT, job_id INTEGER, status TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS models(id INTEGER PRIMARY KEY, name TEXT, params TEXT)")
+        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, repo TEXT, branch TEXT, path TEXT, job_id INTEGER, model TEXT, task TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 
-        worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status FROM worktrees")
-        jobs = aios_db.query("jobs", "SELECT id, name, status FROM jobs")
-        jobs_dict = {j[0]: j for j in jobs}
+        worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status, task, model, output FROM worktrees")
 
         running = []
         review = []
         done = []
 
         for w in worktrees:
-            job = jobs_dict.get(w[2])
-            if w[3] == 'running' and job:
-                running.append((w[0], w[1], job[1]))
-            elif job and job[2] == 'review':
-                review.append((w[0], w[1], job[1], w[2]))
+            if w[3] == 'running':
+                running.append((w[0], w[1], w[2], w[4], w[5]))
+            elif w[3] == 'review':
+                review.append((w[0], w[1], w[2], w[4], w[5], w[6]))
             elif w[3] == 'done':
                 done.append((w[0], w[1]))
 
         def format_running(w):
-            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[2]}<br><form action="/autollm/terminal" method="POST" style="display:inline"><input type="hidden" name="branch" value="{w[0]}"><button>Terminal</button></form></div>'
+            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><form action="/autollm/output" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Output</button></form></div>'
         def format_review(w):
-            return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[2]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[3]}"><input type="hidden" name="branch" value="{w[0]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
+            return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br>Output: {(w[5] or "")[:50]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
         def format_done(w):
             return f'<div class="worktree"><span class="status done">{w[0]}</span></div>'
 
@@ -410,9 +406,9 @@ class Handler(BaseHTTPRequestHandler):
     def post_autollm_clean(self):
         return subprocess.run("python3 programs/autollm/autollm.py clean", shell=True, timeout=5)
 
-    def post_autollm_terminal(self):
-        branch = self.data.get('branch', [''])[0]
-        return subprocess.run(f"gnome-terminal -- python3 programs/autollm/autollm.py terminal_branch '{branch}'", shell=True)
+    def post_autollm_output(self):
+        job_id = self.data.get('job_id', [''])[0]
+        return subprocess.run(f"python3 programs/autollm/view_output.py {job_id}", shell=True, timeout=5)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -435,7 +431,7 @@ class Handler(BaseHTTPRequestHandler):
             '/autollm/accept': self.post_autollm_accept,
             '/autollm/vscode': self.post_autollm_vscode,
             '/autollm/clean': self.post_autollm_clean,
-            '/autollm/terminal': self.post_autollm_terminal
+            '/autollm/output': self.post_autollm_output
         }
 
         handler = post_handlers.get(path, str)

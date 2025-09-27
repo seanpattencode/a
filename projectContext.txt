@@ -1,4 +1,4 @@
-Generated: 2025-09-27 00:34:40
+Generated: 2025-09-27 00:39:52
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -720,30 +720,26 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/jobs'].format(**self.c, running_jobs=running_html, review_jobs=review_html, done_jobs=done_html), 'text/html'
 
     def handle_autollm(self):
-        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, branch TEXT, path TEXT, job_id INTEGER, status TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS models(id INTEGER PRIMARY KEY, name TEXT, params TEXT)")
+        aios_db.execute("autollm", "CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY, repo TEXT, branch TEXT, path TEXT, job_id INTEGER, model TEXT, task TEXT, status TEXT, output TEXT, created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
 
-        worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status FROM worktrees")
-        jobs = aios_db.query("jobs", "SELECT id, name, status FROM jobs")
-        jobs_dict = {j[0]: j for j in jobs}
+        worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status, task, model, output FROM worktrees")
 
         running = []
         review = []
         done = []
 
         for w in worktrees:
-            job = jobs_dict.get(w[2])
-            if w[3] == 'running' and job:
-                running.append((w[0], w[1], job[1]))
-            elif job and job[2] == 'review':
-                review.append((w[0], w[1], job[1], w[2]))
+            if w[3] == 'running':
+                running.append((w[0], w[1], w[2], w[4], w[5]))
+            elif w[3] == 'review':
+                review.append((w[0], w[1], w[2], w[4], w[5], w[6]))
             elif w[3] == 'done':
                 done.append((w[0], w[1]))
 
         def format_running(w):
-            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[2]}<br><form action="/autollm/terminal" method="POST" style="display:inline"><input type="hidden" name="branch" value="{w[0]}"><button>Terminal</button></form></div>'
+            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><form action="/autollm/output" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Output</button></form></div>'
         def format_review(w):
-            return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[2]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[3]}"><input type="hidden" name="branch" value="{w[0]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
+            return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br>Output: {(w[5] or "")[:50]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
         def format_done(w):
             return f'<div class="worktree"><span class="status done">{w[0]}</span></div>'
 
@@ -800,9 +796,9 @@ class Handler(BaseHTTPRequestHandler):
     def post_autollm_clean(self):
         return subprocess.run("python3 programs/autollm/autollm.py clean", shell=True, timeout=5)
 
-    def post_autollm_terminal(self):
-        branch = self.data.get('branch', [''])[0]
-        return subprocess.run(f"gnome-terminal -- python3 programs/autollm/autollm.py terminal_branch '{branch}'", shell=True)
+    def post_autollm_output(self):
+        job_id = self.data.get('job_id', [''])[0]
+        return subprocess.run(f"python3 programs/autollm/view_output.py {job_id}", shell=True, timeout=5)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -825,7 +821,7 @@ class Handler(BaseHTTPRequestHandler):
             '/autollm/accept': self.post_autollm_accept,
             '/autollm/vscode': self.post_autollm_vscode,
             '/autollm/clean': self.post_autollm_clean,
-            '/autollm/terminal': self.post_autollm_terminal
+            '/autollm/output': self.post_autollm_output
         }
 
         handler = post_handlers.get(path, str)
@@ -1457,6 +1453,65 @@ actions = {
 aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
 actions.get(command, actions["list"])()
 
+programs/autollm/view_output.py:
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import aios_db
+
+job_id = (sys.argv + [""])[1]
+output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
+db_output = aios_db.query("autollm", "SELECT output FROM worktrees WHERE job_id=?", (job_id,))
+
+print(output_file.read_text() * output_file.exists() or (db_output[0][0] or "No output yet") * bool(db_output) or "No output yet")
+
+programs/autollm/capture_output.py:
+#!/usr/bin/env python3
+import subprocess
+import sys
+from pathlib import Path
+sys.path.append('/home/seanpatten/projects/AIOS')
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import aios_db
+
+job_id = sys.argv[1]
+output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
+
+cmd_type = sys.argv[2]
+model = sys.argv[3]
+task = " ".join(sys.argv[4:])
+
+commands = {
+    "claude": ["claude", "--dangerously-skip-permissions", task],
+    "codex": ["codex", "-c", "model_reasoning_effort=high", "--model", model, "--dangerously-bypass-approvals-and-sandbox", task]
+}
+
+result = subprocess.run(commands.get(cmd_type, ["echo", "Invalid command"]), capture_output=True, text=True, timeout=999999)
+output_file.write_text(result.stdout + result.stderr)
+aios_db.execute("autollm", "UPDATE worktrees SET output=?, status='review' WHERE job_id=?", (result.stdout + result.stderr, job_id))
+aios_db.execute("jobs", "UPDATE jobs SET output=?, status='review' WHERE id=?", (result.stdout + result.stderr, job_id))
+
+programs/autollm/output_page.py:
+#!/usr/bin/env python3
+import sys
+from pathlib import Path
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import aios_db
+
+job_id = (sys.argv + [""])[1]
+output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
+worktree = aios_db.query("autollm", "SELECT branch, task, model, status, output FROM worktrees WHERE job_id=?", (job_id,))
+
+info = worktree[0] * bool(worktree) or ["unknown", "unknown", "unknown", "unknown", ""]
+file_output = output_file.read_text() * output_file.exists() or (info[4] or "No output yet") * bool(worktree) or "No output yet"
+
+print(f"Branch: {info[0]}")
+print(f"Task: {info[1]}")
+print(f"Model: {info[2]}")
+print(f"Status: {info[3]}")
+print(f"Output:\n{file_output}")
+
 programs/autollm/llm.py:
 #!/usr/bin/env python3
 import subprocess
@@ -1509,7 +1564,7 @@ def create_and_launch(repo, branch, model, task):
                     (repo, branch, path, job_id, model, task))
 
     cmd_type = "claude" * (model.startswith("claude")) or "codex"
-    subprocess.Popen(["python3", "/home/seanpatten/projects/AIOS/core/aios_runner.py", "python3", "/home/seanpatten/projects/AIOS/programs/autollm/llm.py", cmd_type, model, task], cwd=path, env={**subprocess.os.environ, "AIOS_TIMEOUT": "999999"}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["python3", "/home/seanpatten/projects/AIOS/core/aios_runner.py", "python3", "/home/seanpatten/projects/AIOS/programs/autollm/capture_output.py", str(job_id), cmd_type, model, task], cwd=path, env={**subprocess.os.environ, "AIOS_TIMEOUT": "999999"})
 
 def status():
     worktrees = aios_db.query("autollm", "SELECT branch, status FROM worktrees")
