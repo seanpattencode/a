@@ -40,5 +40,4 @@ def stop():
 def status():
     print(f"PIDs: {aios_db.read('aios_pids')}")
 
-actions = {"start": start, "stop": stop, "status": status}
-actions.get(command, start)()
+{"start": start, "stop": stop, "status": status}.get(command, start)()

@@ -168,14 +168,16 @@ def test_runner_performance():
     ]
 
     print("\nComponent Performance:")
-    for name, cmd, timeout in tests:
+    def run_perf_test(test):
+        name, cmd, timeout = test
         env = {**os.environ, 'AIOS_TIMEOUT': timeout}
         start = time.time()
         result = subprocess.run(["python3", "core/aios_runner.py"] + cmd,
                               capture_output=True, text=True, env=env)
         elapsed = time.time() - start
-        status = "✓" if result.returncode != 124 else "✗ TIMEOUT"
+        status = "✓" * (result.returncode != 124) or "✗ TIMEOUT"
         print(f"  {name:20} {elapsed:.3f}s / {timeout}s  [{status}]")
+    list(map(run_perf_test, tests))
 
 def test_death_enforcement():
     print("\nDeath Enforcement:")
@@ -184,13 +186,13 @@ def test_death_enforcement():
     result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/tricky_script/tricky_script.py"],
                           capture_output=True, text=True)
     killed = result.returncode == 124
-    print(f"    Infinite loop: {'✓ KILLED' if killed else '✗ SURVIVED'}")
+    print(f"    Infinite loop: {('✓ KILLED' * killed) or '✗ SURVIVED'}")
 
     print("  Testing sleep timeout...")
     result = subprocess.run(["python3", "core/aios_runner.py", "sleep", "1"],
                           capture_output=True, text=True)
     killed = result.returncode == 124
-    print(f"    Long sleep: {'✓ KILLED' if killed else '✗ SURVIVED'}")
+    print(f"    Long sleep: {('✓ KILLED' * killed) or '✗ SURVIVED'}")
 
 def test_runner_measurement():
     print("\nRunner Time Measurement:")
@@ -200,14 +202,14 @@ def test_runner_measurement():
                            "import time; time.sleep(0.08); print('done')"],
                           capture_output=True, text=True, env=env)
     warned = "WARNING" in result.stderr
-    print(f"  Slow process warning: {'✓ WARNED' if warned else '✗ NO WARNING'}")
+    print(f"  Slow process warning: {('✓ WARNED' * warned) or '✗ NO WARNING'}")
 
     start = time.time()
-    results = []
-    for i in range(10):
+    def run_rapid_test(i):
         r = subprocess.run(["python3", "core/aios_runner.py", "echo", str(i)],
                          capture_output=True, text=True, env=env)
-        results.append(r.returncode == 0)
+        return r.returncode == 0
+    results = list(map(run_rapid_test, range(10)))
     elapsed = time.time() - start
     print(f"  Rapid execution: 10 commands in {elapsed:.3f}s ({elapsed/10:.3f}s avg)")
 
@@ -220,7 +222,7 @@ subprocess.run(["pkill", "-f", "tricky_script"], stderr=subprocess.DEVNULL)
 print("\n" + "="*60)
 print("FINAL STATUS")
 print("="*60)
-program_status = "✓" if not failed else "✗"
+program_status = ("✓" * (not bool(failed))) or "✗"
 print(f"{program_status} Program Tests: {len(detected) - len(failed)}/{len(detected)} passed")
 print("✓ Performance: All operations < 0.5s")
 print("✓ Death Enforcement: Processes killed at timeout")

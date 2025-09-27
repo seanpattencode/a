@@ -44,12 +44,5 @@ def is_not_done(t):
 def clear_done():
     return aios_db.write("tasks", list(filter(is_not_done, tasks)))
 
-actions = {
-    "list": list_tasks,
-    "add": add_task,
-    "done": done_task,
-    "clear": clear_done
-}
-
 aios_db.execute("feed", "CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY, content TEXT, timestamp TEXT, source TEXT, priority INTEGER DEFAULT 0)")
-actions.get(command, actions["list"])()
+{"list": list_tasks, "add": add_task, "done": done_task, "clear": clear_done}.get(command, list_tasks)()

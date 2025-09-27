@@ -6,8 +6,8 @@ import subprocess
 import aios_db
 
 services = aios_db.read("services") or {}
-command = sys.argv[1] if len(sys.argv) > 1 else "list"
-name = sys.argv[2] if len(sys.argv) > 2 else None
+command = (sys.argv + ["list"])[1]
+name = (sys.argv + ["", None])[2]
 
 def cmd_list():
     list(map(print, [f"{k}: {v.get('status', 'unknown')}" for k, v in services.items()]))

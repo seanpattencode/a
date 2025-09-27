@@ -455,7 +455,7 @@ class Handler(BaseHTTPRequestHandler):
         branches = self.data.get('branches', ['1'])[0]
         model = self.data.get('model', ['claude-3-5-sonnet-20241022'])[0]
         task = self.data.get('task', [''])[0]
-        return subprocess.run(f"python3 programs/autollm/autollm.py run '{repo}' {branches} '{model}' '{task}'", shell=True, timeout=5)
+        return subprocess.run(["python3", "programs/autollm/autollm.py", "run", repo, branches, model, task], timeout=5)
 
     def post_autollm_accept(self):
         job_id = self.data.get('job_id', [''])[0]
@@ -467,7 +467,7 @@ class Handler(BaseHTTPRequestHandler):
         return subprocess.run(["code", path])
 
     def post_autollm_clean(self):
-        return subprocess.run("python3 programs/autollm/autollm.py clean", shell=True, timeout=5)
+        return subprocess.run(["python3", "programs/autollm/autollm.py", "clean"], timeout=5)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -515,10 +515,4 @@ def cmd_status():
 
 command = (sys.argv + ["start"])[1]
 
-cmd_handlers = {
-    'start': cmd_start,
-    'stop': cmd_stop,
-    'status': cmd_status
-}
-
-cmd_handlers.get(command, cmd_handlers['start'])()
+{'start': cmd_start, 'stop': cmd_stop, 'status': cmd_status}.get(command, cmd_start)()
