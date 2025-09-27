@@ -197,6 +197,23 @@ pre{{white-space:pre-wrap;word-wrap:break-word}}
 </body>
 </html>''',
 
+    '/terminal': '''<!DOCTYPE html>
+<html>
+<head>
+<title>Terminal</title>
+<style>
+body{{font-family:monospace;background:{bg};color:{fg};padding:20px}}
+#c{{background:#000;color:#0f0;padding:20px;border-radius:5px;height:500px;overflow-y:auto;white-space:pre-wrap}}
+</style>
+</head>
+<body>
+<div style="margin-bottom:20px"><a href="/autollm" style="padding:10px;background:{fg};color:{bg};border-radius:5px;text-decoration:none">Back</a></div>
+<h1>Terminal Output</h1>
+<div id="c">{terminal_content}</div>
+<script>new EventSource('http://localhost:3001/e?job_id={job_id}').onmessage=e=>c.innerHTML=e.data</script>
+</body>
+</html>''',
+
     '/settings': '''<!DOCTYPE html>
 <html>
 <head>
@@ -270,7 +287,8 @@ class Handler(BaseHTTPRequestHandler):
             '/settings': self.handle_settings,
             '/jobs': self.handle_jobs,
             '/autollm': self.handle_autollm,
-            '/autollm/output': self.handle_autollm_output
+            '/autollm/output': self.handle_autollm_output,
+            '/terminal': self.handle_terminal
         }
 
         content, ctype = handlers.get(path, self.handle_default)()
@@ -374,7 +392,7 @@ class Handler(BaseHTTPRequestHandler):
         def format_running(w):
             output_file = (Path.home() / ".aios" / f"autollm_output_{w[2]}.txt")
             preview = (output_file.read_text()[-200:] if output_file.exists() else "Waiting for output...")
-            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><pre style="background:#000;padding:5px;margin:5px 0;max-height:100px;overflow-y:auto;font-size:10px">{preview}</pre><a href="/autollm/output?job_id={w[2]}" style="padding:5px 10px;background:{self.c["fg"]};color:{self.c["bg"]};text-decoration:none;border-radius:3px">Full Output</a></div>'
+            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><pre style="background:#000;padding:5px;margin:5px 0;max-height:100px;overflow-y:auto;font-size:10px">{preview}</pre><a href="/autollm/output?job_id={w[2]}" style="padding:5px 10px;background:{self.c["fg"]};color:{self.c["bg"]};text-decoration:none;border-radius:3px">Full Output</a><a href="/terminal?job_id={w[2]}" style="padding:5px 10px;background:{self.c["fg"]};color:{self.c["bg"]};text-decoration:none;border-radius:3px;margin-left:5px">Terminal</a></div>'
         def format_review(w):
             return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br>Output: {(w[5] or "")[:50]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
         def format_done(w):
@@ -394,6 +412,13 @@ class Handler(BaseHTTPRequestHandler):
         output_content = output_file.read_text() * output_file.exists() or (db_output[0][0] or "No output yet") * bool(db_output) or "No output yet"
 
         return HTML_TEMPLATES['/autollm/output'].format(**self.c, output_content=output_content), 'text/html'
+
+    def handle_terminal(self):
+        job_id = self.query.get('job_id', [''])[0]
+        output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
+        terminal_content = (output_file.exists() and output_file.read_text()) or "Waiting for output..."
+        return HTML_TEMPLATES['/terminal'].format(**self.c, terminal_content=terminal_content, job_id=job_id), 'text/html'
+
 
     def post_job_run(self):
         return subprocess.run("python3 services/jobs.py run_wiki", shell=True, timeout=5)

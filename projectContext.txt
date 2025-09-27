@@ -1,4 +1,4 @@
-Generated: 2025-09-27 00:58:14
+Generated: 2025-09-27 13:06:03
 
 test_accept.py:
 #!/usr/bin/env python3
@@ -596,6 +596,23 @@ pre{{white-space:pre-wrap;word-wrap:break-word}}
 </body>
 </html>''',
 
+    '/terminal': '''<!DOCTYPE html>
+<html>
+<head>
+<title>Terminal</title>
+<style>
+body{{font-family:monospace;background:{bg};color:{fg};padding:20px}}
+#c{{background:#000;color:#0f0;padding:20px;border-radius:5px;height:500px;overflow-y:auto;white-space:pre-wrap}}
+</style>
+</head>
+<body>
+<div style="margin-bottom:20px"><a href="/autollm" style="padding:10px;background:{fg};color:{bg};border-radius:5px;text-decoration:none">Back</a></div>
+<h1>Terminal Output</h1>
+<div id="c">{terminal_content}</div>
+<script>new EventSource('http://localhost:3001/e?job_id={job_id}').onmessage=e=>c.innerHTML=e.data</script>
+</body>
+</html>''',
+
     '/settings': '''<!DOCTYPE html>
 <html>
 <head>
@@ -669,7 +686,8 @@ class Handler(BaseHTTPRequestHandler):
             '/settings': self.handle_settings,
             '/jobs': self.handle_jobs,
             '/autollm': self.handle_autollm,
-            '/autollm/output': self.handle_autollm_output
+            '/autollm/output': self.handle_autollm_output,
+            '/terminal': self.handle_terminal
         }
 
         content, ctype = handlers.get(path, self.handle_default)()
@@ -773,7 +791,7 @@ class Handler(BaseHTTPRequestHandler):
         def format_running(w):
             output_file = (Path.home() / ".aios" / f"autollm_output_{w[2]}.txt")
             preview = (output_file.read_text()[-200:] if output_file.exists() else "Waiting for output...")
-            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><pre style="background:#000;padding:5px;margin:5px 0;max-height:100px;overflow-y:auto;font-size:10px">{preview}</pre><a href="/autollm/output?job_id={w[2]}" style="padding:5px 10px;background:{self.c["fg"]};color:{self.c["bg"]};text-decoration:none;border-radius:3px">Full Output</a></div>'
+            return f'<div class="worktree"><span class="status running">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br><pre style="background:#000;padding:5px;margin:5px 0;max-height:100px;overflow-y:auto;font-size:10px">{preview}</pre><a href="/autollm/output?job_id={w[2]}" style="padding:5px 10px;background:{self.c["fg"]};color:{self.c["bg"]};text-decoration:none;border-radius:3px">Full Output</a><a href="/terminal?job_id={w[2]}" style="padding:5px 10px;background:{self.c["fg"]};color:{self.c["bg"]};text-decoration:none;border-radius:3px;margin-left:5px">Terminal</a></div>'
         def format_review(w):
             return f'<div class="worktree"><span class="status review">{w[0]}</span><br>{w[4]}: {w[3][:30]}<br>Output: {(w[5] or "")[:50]}<br><form action="/autollm/accept" method="POST" style="display:inline"><input type="hidden" name="job_id" value="{w[2]}"><button>Accept</button></form><form action="/autollm/vscode" method="POST" style="display:inline"><input type="hidden" name="path" value="{w[1]}"><button>VSCode</button></form></div>'
         def format_done(w):
@@ -793,6 +811,13 @@ class Handler(BaseHTTPRequestHandler):
         output_content = output_file.read_text() * output_file.exists() or (db_output[0][0] or "No output yet") * bool(db_output) or "No output yet"
 
         return HTML_TEMPLATES['/autollm/output'].format(**self.c, output_content=output_content), 'text/html'
+
+    def handle_terminal(self):
+        job_id = self.query.get('job_id', [''])[0]
+        output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
+        terminal_content = (output_file.exists() and output_file.read_text()) or "Waiting for output..."
+        return HTML_TEMPLATES['/terminal'].format(**self.c, terminal_content=terminal_content, job_id=job_id), 'text/html'
+
 
     def post_job_run(self):
         return subprocess.run("python3 services/jobs.py run_wiki", shell=True, timeout=5)
@@ -894,6 +919,57 @@ cmd_handlers = {
 
 cmd_handlers.get(command, cmd_handlers['start'])()
 
+services/sse.py:
+#!/usr/bin/env python3
+import sys
+sys.path.append('/home/seanpatten/projects/AIOS')
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import subprocess
+from pathlib import Path
+from core import aios_db
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+
+        page = self.headers.get('Referer', '').split('8080')[-1].split('?')[0]
+        job_id = self.path.split('job_id=')[-1] * ('job_id=' in self.path) or ''
+
+        files = [str(aios_db.db_path / 'autollm.db'), str(aios_db.db_path / 'jobs.db')] * ('/autollm' in page) or \
+                [str(Path.home() / '.aios' / f'autollm_output_{job_id}.txt')] * ('/terminal' in page) or \
+                [str(aios_db.db_path / 'tasks.json')] * ('/todo' in page) or \
+                [str(aios_db.db_path / 'feed.db')] * ('/feed' in page) or \
+                [str(aios_db.db_path / 'jobs.db')]
+
+        content = subprocess.run(['python3', 'services/render.py', page, job_id], capture_output=True, text=True).stdout
+        self.wfile.write(f'data: {content}\n\n'.encode())
+
+        proc = subprocess.Popen(['inotifywait', '-m', '-e', 'modify'] + files, stdout=subprocess.PIPE, text=True)
+        list(map(lambda _: self.wfile.write(f'data: {subprocess.run(["python3", "services/render.py", page, job_id], capture_output=True, text=True).stdout}\n\n'.encode()), proc.stdout))
+
+HTTPServer(('', 3001), Handler).serve_forever()
+
+services/stream_handler.py:
+#!/usr/bin/env python3
+import sys
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import subprocess
+from pathlib import Path
+
+job_id = sys.argv[1] * (len(sys.argv) > 1) or ""
+output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
+
+content = output_file.read_text() * output_file.exists() or ""
+print(f"data: {content}\n")
+
+subprocess.run(["inotifywait", "-e", "modify", str(output_file)], capture_output=True)
+content = output_file.read_text() * output_file.exists() or ""
+print(f"data: {content}\n")
+
 services/service.py:
 #!/usr/bin/env python3
 import sys
@@ -978,6 +1054,33 @@ import subprocess
 import aios_db
 
 subprocess.run(["inotifywait", "-m", "-e", "modify", f"{aios_db.db_path}/tasks.json"], stdout=subprocess.PIPE, text=True, check=False)
+
+services/render.py:
+#!/usr/bin/env python3
+import sys
+sys.path.append('/home/seanpatten/projects/AIOS')
+from pathlib import Path
+from core import aios_db
+import subprocess
+
+page = sys.argv[1]
+job_id = sys.argv[2] * (len(sys.argv) > 2) or ''
+
+s = aios_db.read('settings') or {}
+c = {'bg': '#fff', 'fg': '#000', 'bg2': '#f0f0f0'} * (s.get('theme') == 'light') or {'bg': '#000', 'fg': '#fff', 'bg2': '#1a1a1a'}
+
+output_file = Path.home() / '.aios' / f'autollm_output_{job_id}.txt'
+terminal_content = (output_file.exists() and output_file.read_text()) or 'Waiting...'
+
+renderers = {
+    '/': lambda: subprocess.run(['python3', 'services/render_home.py'], capture_output=True, text=True).stdout,
+    '/autollm': lambda: subprocess.run(['python3', 'services/render_autollm.py'], capture_output=True, text=True).stdout,
+    '/terminal': lambda: terminal_content,
+    '/todo': lambda: subprocess.run(['python3', 'programs/todo/todo.py', 'list'], capture_output=True, text=True).stdout,
+    '/feed': lambda: subprocess.run(['python3', 'services/feed.py', 'view'], capture_output=True, text=True).stdout
+}
+
+print(renderers.get(page, renderers['/'])())
 
 services/jobs.py:
 #!/usr/bin/env python3
@@ -1130,6 +1233,23 @@ files = {
 
 target_file = files.get(target, " ".join(files.values()))
 subprocess.run(f"inotifywait -m -e modify {target_file}", shell=True, stdout=subprocess.PIPE, text=True)
+
+services/sse_stream.py:
+#!/usr/bin/env python3
+import sys
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import subprocess
+import aios_db
+from pathlib import Path
+
+target = sys.argv[1] * (len(sys.argv) > 1) or "autollm"
+job_id = sys.argv[2] * (len(sys.argv) > 2) or ""
+
+output_file = Path.home() / ".aios" / f"{target}_output_{job_id}.txt"
+db_file = aios_db.db_path / f"{target}.db"
+
+files = [str(output_file)] * output_file.exists() + [str(db_file)]
+subprocess.run(["inotifywait", "-m", "-e", "modify"] + files, stdout=subprocess.PIPE, text=True)
 
 services/feed.py:
 #!/usr/bin/env python3
