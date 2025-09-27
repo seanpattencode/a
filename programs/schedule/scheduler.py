@@ -9,7 +9,7 @@ import aios_db
 schedules = aios_db.read("schedule")
 
 def run_cmd(cmd):
-    return subprocess.run(cmd, shell=True)
+    return subprocess.run(cmd, shell=True, timeout=300)
 
 def schedule_daily(item):
     t, cmd = item

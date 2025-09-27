@@ -45,7 +45,7 @@ def cmd_start():
     name and subprocess.Popen(['python3', name])
 
 def cmd_stop():
-    name and subprocess.run(['pkill', '-f', name])
+    name and subprocess.run(['pkill', '-f', name], timeout=5)
 
 actions = {
     "json": cmd_json,

@@ -200,9 +200,9 @@ class Handler(BaseHTTPRequestHandler):
         return (HTML_TEMPLATES.get('/', HTML_TEMPLATES['/']).format(**self.c, vp="", tasks="", feed_content="", running_jobs="", review_jobs="", done_jobs=""), 'text/html')
 
     def handle_home(self):
-        tr = subprocess.run("python3 programs/todo/todo.py list", shell=True, capture_output=True, text=True)
+        tr = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True, env={**os.environ, 'AIOS_TIMEOUT': '1'})
         m = aios_db.query("feed", "SELECT content, timestamp FROM messages ORDER BY timestamp DESC LIMIT 4")
-        j = subprocess.run("python3 services/jobs.py summary", shell=True, capture_output=True, text=True)
+        j = subprocess.run(["python3", "core/aios_runner.py", "python3", "services/jobs.py", "summary"], capture_output=True, text=True, env={**os.environ, 'AIOS_TIMEOUT': '1'})
 
         todo_items = tr.stdout.strip().split('\n')[:4] or []
         def format_feed_item(x):
@@ -224,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/'].format(**self.c, vp=vp), 'text/html'
 
     def handle_todo(self):
-        result = subprocess.run("python3 programs/todo/todo.py list", shell=True, capture_output=True, text=True)
+        result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True, env={**os.environ, 'AIOS_TIMEOUT': '1'})
         tasks = result.stdout.strip().split('\n') or []
         def format_task(indexed_task):
             i, t = indexed_task
@@ -254,9 +254,9 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/settings'].format(**self.c, theme_dark_style=theme_dark_style, theme_light_style=theme_light_style, time_12h_style=time_12h_style, time_24h_style=time_24h_style), 'text/html'
 
     def handle_jobs(self):
-        running = subprocess.run("python3 services/jobs.py running", shell=True, capture_output=True, text=True)
-        review = subprocess.run("python3 services/jobs.py review", shell=True, capture_output=True, text=True)
-        done = subprocess.run("python3 services/jobs.py done", shell=True, capture_output=True, text=True)
+        running = subprocess.run("python3 services/jobs.py running", shell=True, capture_output=True, text=True, timeout=5)
+        review = subprocess.run("python3 services/jobs.py review", shell=True, capture_output=True, text=True, timeout=5)
+        done = subprocess.run("python3 services/jobs.py done", shell=True, capture_output=True, text=True, timeout=5)
 
         running_html = running.stdout.strip() or '<div style="color:#888;padding:10px">No running jobs</div>'
         review_html = review.stdout.strip() or '<div style="color:#888;padding:10px">No jobs in review</div>'
@@ -265,25 +265,25 @@ class Handler(BaseHTTPRequestHandler):
         return HTML_TEMPLATES['/jobs'].format(**self.c, running_jobs=running_html, review_jobs=review_html, done_jobs=done_html), 'text/html'
 
     def post_job_run(self):
-        return subprocess.run("python3 services/jobs.py run_wiki", shell=True)
+        return subprocess.run("python3 services/jobs.py run_wiki", shell=True, timeout=5)
 
     def post_job_accept(self):
-        return subprocess.run(f"python3 services/jobs.py accept {self.data.get('id', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 services/jobs.py accept {self.data.get('id', [''])[0]}", shell=True, timeout=5)
 
     def post_job_redo(self):
-        return subprocess.run(f"python3 services/jobs.py redo {self.data.get('id', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 services/jobs.py redo {self.data.get('id', [''])[0]}", shell=True, timeout=5)
 
     def post_run_cmd(self):
         return subprocess.run(self.data.get('cmd', [''])[0], shell=True, capture_output=True, text=True, timeout=5)
 
     def post_todo_add(self):
-        return subprocess.run(f"python3 programs/todo/todo.py add {self.data.get('task', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 programs/todo/todo.py add {self.data.get('task', [''])[0]}", shell=True, timeout=5)
 
     def post_todo_done(self):
-        return subprocess.run(f"python3 programs/todo/todo.py done {self.data.get('id', [''])[0]}", shell=True)
+        return subprocess.run(f"python3 programs/todo/todo.py done {self.data.get('id', [''])[0]}", shell=True, timeout=5)
 
     def post_todo_clear(self):
-        return subprocess.run("python3 programs/todo/todo.py clear", shell=True)
+        return subprocess.run("python3 programs/todo/todo.py clear", shell=True, timeout=5)
 
     def post_settings_theme(self):
         return aios_db.write('settings', {**(aios_db.read('settings') or {}), 'theme': self.data.get('theme', ['dark'])[0]})

@@ -13,7 +13,7 @@ build_dir = Path.home() / ".aios" / "builds"
 build_dir.mkdir(parents=True, exist_ok=True)
 
 def build_component(name):
-    result = subprocess.run(['echo', f'Building {name}'], capture_output=True, text=True)
+    result = subprocess.run(['echo', f'Building {name}'], capture_output=True, text=True, timeout=10)
     (build_dir / f"{name}.build").write_text(f"Built at {datetime.now()}")
     status_map = {0: "success"}
     return {"name": name, "status": status_map.get(result.returncode, "failed"), "time": datetime.now().isoformat()}

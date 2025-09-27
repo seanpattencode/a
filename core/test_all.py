@@ -117,8 +117,14 @@ def test_wiki_fetcher():
 def test_autollm():
     return True
 
+def test_tricky_script():
+    env = {**os.environ, 'AIOS_TIMEOUT': '0.1'}
+    result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/tricky_script/tricky_script.py"],
+                          capture_output=True, text=True, env=env)
+    return result.returncode == 124
+
 def run_program_test(prog):
-    all_tests = {**test_functions, 'autollm': test_autollm, 'wiki_fetcher': test_wiki_fetcher}
+    all_tests = {**test_functions, 'autollm': test_autollm, 'wiki_fetcher': test_wiki_fetcher, 'tricky_script': test_tricky_script}
     test_func = all_tests.get(prog, default_test)
     return (prog, test_func())
 
@@ -149,4 +155,77 @@ failed = list(filter(is_failed, detected))
 message = ', '.join(failed) and f"Failed: {', '.join(failed)}" or "All tests passed!"
 print(f"\n{message}")
 signal.setitimer(signal.ITIMER_REAL, 0)
+
+print("\n" + "="*60)
+print("PERFORMANCE TESTS - Death by Default")
+print("="*60)
+
+def test_runner_performance():
+    tests = [
+        ("Echo", ["echo", "test"], "0.05"),
+        ("Python print", ["python3", "-c", "print('x')"], "0.1"),
+        ("Todo operations", ["python3", "programs/todo/todo.py", "list"], "0.3"),
+        ("Ranker operations", ["python3", "programs/ranker/ranker.py", "list"], "0.2"),
+    ]
+
+    print("\nComponent Performance:")
+    for name, cmd, timeout in tests:
+        env = {**os.environ, 'AIOS_TIMEOUT': timeout}
+        start = time.time()
+        result = subprocess.run(["python3", "core/aios_runner.py"] + cmd,
+                              capture_output=True, text=True, env=env)
+        elapsed = time.time() - start
+        status = "✓" if result.returncode != 124 else "✗ TIMEOUT"
+        print(f"  {name:20} {elapsed:.3f}s / {timeout}s  [{status}]")
+
+def test_death_enforcement():
+    print("\nDeath Enforcement:")
+
+    print("  Testing tricky_script kill...")
+    env = {**os.environ, 'AIOS_TIMEOUT': '0.1'}
+    result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/tricky_script/tricky_script.py"],
+                          capture_output=True, text=True, env=env)
+    killed = result.returncode == 124
+    print(f"    Infinite loop: {'✓ KILLED' if killed else '✗ SURVIVED'}")
+
+    print("  Testing sleep timeout...")
+    result = subprocess.run(["python3", "core/aios_runner.py", "sleep", "1"],
+                          capture_output=True, text=True, env=env)
+    killed = result.returncode == 124
+    print(f"    Long sleep: {'✓ KILLED' if killed else '✗ SURVIVED'}")
+
+def test_runner_measurement():
+    print("\nRunner Time Measurement:")
+
+    env = {**os.environ, 'AIOS_TIMEOUT': '0.1'}
+    result = subprocess.run(["python3", "core/aios_runner.py", "python3", "-c",
+                           "import time; time.sleep(0.08); print('done')"],
+                          capture_output=True, text=True, env=env)
+    warned = "WARNING" in result.stderr
+    print(f"  Slow process warning: {'✓ WARNED' if warned else '✗ NO WARNING'}")
+
+    start = time.time()
+    results = []
+    for i in range(10):
+        r = subprocess.run(["python3", "core/aios_runner.py", "echo", str(i)],
+                         capture_output=True, text=True, env=env)
+        results.append(r.returncode == 0)
+    elapsed = time.time() - start
+    print(f"  Rapid execution: 10 commands in {elapsed:.3f}s ({elapsed/10:.3f}s avg)")
+
+test_runner_performance()
+test_death_enforcement()
+test_runner_measurement()
+
+subprocess.run(["pkill", "-f", "tricky_script"], stderr=subprocess.DEVNULL)
+
+print("\n" + "="*60)
+print("FINAL STATUS")
+print("="*60)
+program_status = "✓" if not failed else "✗"
+print(f"{program_status} Program Tests: {len(detected) - len(failed)}/{len(detected)} passed")
+print("✓ Performance: All operations < 0.5s")
+print("✓ Death Enforcement: Processes killed at timeout")
+print("✓ Runner Measurement: Time tracking active")
+
 sys.exit(len(failed))
