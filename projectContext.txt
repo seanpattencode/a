@@ -1,13 +1,4 @@
-Generated: 2025-09-27 14:54:47
-
-test_accept.py:
-#!/usr/bin/env python3
-import requests
-
-response = requests.post('http://localhost:8080/autollm/accept', data={'job_id': '61'})
-print(f"Status: {response.status_code}")
-print(f"Headers: {response.headers}")
-print(f"Redirected to: {response.headers.get('Location', 'No redirect')}")
+Generated: 2025-09-30 22:56:04
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -78,9 +69,9 @@ sys.stderr.write(str(result.stderr))
 sys.exit(result.returncode)
 
 core/aios_db.py:
-import json, sqlite3
+import json, sqlite3, pathlib
 db_path = __file__[:-24] + ".aios"
-d = sqlite3.connect(__file__[:-14] + "aios.db", isolation_level=None, check_same_thread=False)
+d = sqlite3.connect(str(pathlib.Path(__file__).parent.parent / "data/aios.db"), isolation_level=None, check_same_thread=False)
 d.execute("PRAGMA synchronous=0")
 d.execute("PRAGMA journal_mode=MEMORY")
 d.executescript("CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY,v TEXT);CREATE TABLE IF NOT EXISTS jobs(id INTEGER PRIMARY KEY,name TEXT,status TEXT,output TEXT,created TIMESTAMP DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY,content TEXT,timestamp TEXT,source TEXT,priority INTEGER DEFAULT 0);CREATE TABLE IF NOT EXISTS worktrees(id INTEGER PRIMARY KEY,repo TEXT,branch TEXT,path TEXT,job_id INTEGER,model TEXT,task TEXT,status TEXT,output TEXT,created TIMESTAMP DEFAULT CURRENT_TIMESTAMP);CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,target TEXT,data TEXT,created TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
@@ -931,7 +922,7 @@ class H(BaseHTTPRequestHandler):
 
             return f'<div class="grid"><div><h2>Running</h2><div>{running_html}</div></div><div><h2>Review</h2><div>{review_html}</div></div><div><h2>Done</h2><div>{done_html}</div></div></div>'
 
-        files = {'/terminal': [f'/home/seanpatten/.aios/autollm_output_{job_id}.txt'], '/autollm': [str(aios_db.db_path / 'autollm.db')]}.get(page, ['/tmp/dummy'])
+        files = {'/terminal': [f'/home/seanpatten/.aios/autollm_output_{job_id}.txt'], '/autollm': [__file__[:-20] + 'data/aios.db']}.get(page, ['/tmp/dummy'])
         content = render_autollm() * ('/autollm' in page) or ((Path(files[0]).read_text() * Path(files[0]).exists()) * ('/terminal' in page) or "Waiting...")
 
         self.wfile.write(f'data: {content}\n\n'.encode())
@@ -1223,6 +1214,57 @@ elif command == "accept" and job_id:
 elif command == "redo" and job_id:
     aios_db.execute("jobs", "UPDATE jobs SET status='running' WHERE id=?", (int(job_id),))
     subprocess.Popen(["python3", "programs/wiki_fetcher/wiki_fetcher.py", str(job_id)])
+
+moving/terminal-server.py:
+#!/usr/bin/env python3
+import asyncio, websockets, json, pty, os, struct, fcntl, termios
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from threading import Thread
+
+class HTTPHandler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=os.getcwd(), **kwargs)
+    def log_message(self, *args): pass
+
+async def client_handler(ws):
+    master, slave = pty.openpty()
+    winsize = struct.pack('HHHH', 24, 80, 0, 0)
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, winsize)
+    proc = await asyncio.create_subprocess_exec('bash', stdin=slave, stdout=slave, stderr=slave, preexec_fn=os.setsid)
+    os.close(slave)
+    os.set_blocking(master, False)
+    loop = asyncio.get_event_loop()
+    def read_output():
+        try:
+            data = os.read(master, 65536)
+            if data: asyncio.create_task(ws.send(data))
+        except (OSError, BlockingIOError): pass
+    loop.add_reader(master, read_output)
+    try:
+        async for msg in ws:
+            if isinstance(msg, bytes):
+                try:
+                    data = json.loads(msg.decode('utf-8'))
+                    if 'resize' in data:
+                        size = data['resize']
+                        winsize = struct.pack('HHHH', size['rows'], size['cols'], 0, 0)
+                        fcntl.ioctl(master, termios.TIOCSWINSZ, winsize)
+                        if 'term' in data: os.environ['TERM'] = data['term']
+                except: os.write(master, msg)
+    finally:
+        loop.remove_reader(master)
+        proc.terminate()
+        await proc.wait()
+        os.close(master)
+
+async def main():
+    Thread(target=lambda: HTTPServer(('', 8700), HTTPHandler).serve_forever(), daemon=True).start()
+    print("Terminal Server\nHTTP: http://localhost:8700\nWebSocket: ws://localhost:8766")
+    async with websockets.serve(client_handler, 'localhost', 8766):
+        await asyncio.Future()
+
+if __name__ == '__main__': asyncio.run(main())
+
 
 programs/ranker/ranker.py:
 #!/usr/bin/env python3

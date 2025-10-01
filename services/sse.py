@@ -37,7 +37,7 @@ class H(BaseHTTPRequestHandler):
 
             return f'<div class="grid"><div><h2>Running</h2><div>{running_html}</div></div><div><h2>Review</h2><div>{review_html}</div></div><div><h2>Done</h2><div>{done_html}</div></div></div>'
 
-        files = {'/terminal': [f'/home/seanpatten/.aios/autollm_output_{job_id}.txt'], '/autollm': [str(aios_db.db_path / 'autollm.db')]}.get(page, ['/tmp/dummy'])
+        files = {'/terminal': [f'/home/seanpatten/.aios/autollm_output_{job_id}.txt'], '/autollm': [__file__[:-20] + 'data/aios.db']}.get(page, ['/tmp/dummy'])
         content = render_autollm() * ('/autollm' in page) or ((Path(files[0]).read_text() * Path(files[0]).exists()) * ('/terminal' in page) or "Waiting...")
 
         self.wfile.write(f'data: {content}\n\n'.encode())
