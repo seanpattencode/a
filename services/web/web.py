@@ -20,7 +20,6 @@ TEMPLATE_TERMINAL = (TEMPLATE_DIR / 'terminal.html').read_text()
 TEMPLATE_TERMINAL_EMULATOR = (TEMPLATE_DIR / 'terminal-emulator.html').read_text()
 TEMPLATE_TERMINAL_XTERM = (TEMPLATE_DIR / 'terminal-xterm.html').read_text()
 TEMPLATE_SETTINGS = (TEMPLATE_DIR / 'settings.html').read_text()
-TEMPLATE_WORKTREE = (TEMPLATE_DIR / 'worktree_manager.html').read_text()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -32,7 +31,7 @@ class Handler(BaseHTTPRequestHandler):
         self.s = s
         self.c = c
         self.query = query
-        handlers = {'/api/jobs': self.handle_api_jobs, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm, '/worktree': self.handle_worktree}
+        handlers = {'/api/jobs': self.handle_api_jobs, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm}
         content, ctype = handlers.get(path, self.handle_default)()
         self.send_response(200)
         self.send_header('Content-type', ctype)
@@ -115,25 +114,17 @@ class Handler(BaseHTTPRequestHandler):
     def handle_terminal_xterm(self):
         return (TEMPLATE_TERMINAL_XTERM, 'text/html')
 
-    def handle_worktree(self):
-        return (TEMPLATE_WORKTREE.replace('{bg}', self.c['bg']).replace('{fg}', self.c['fg']).replace('{bg2}', self.c['bg2']), 'text/html')
-
     def do_POST(self):
         path = urlparse(self.path).path
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length) or b''
         data = parse_qs(body.decode()) or {}
-        commands = {'/job/run': "python3 services/jobs.py run_wiki", '/job/accept': f"python3 services/jobs.py accept {data.get('id', [''])[0]}", '/job/redo': f"python3 services/jobs.py redo {data.get('id', [''])[0]}", '/run': data.get('cmd', [''])[0], '/todo/add': f"python3 programs/todo/todo.py add {data.get('task', [''])[0]}", '/todo/done': f"python3 programs/todo/todo.py done {data.get('id', [''])[0]}", '/todo/clear': "python3 programs/todo/todo.py clear", '/settings/theme': f"python3 programs/settings/settings.py set theme {data.get('theme', ['dark'])[0]}", '/settings/time': f"python3 programs/settings/settings.py set time_format {data.get('format', ['12h'])[0]}", '/autollm/run': f"python3 programs/autollm/autollm.py run {data.get('repo', [''])[0]} {data.get('branches', ['1'])[0]} {data.get('model', ['claude-3-5-sonnet-20241022'])[0]} {data.get('task', [''])[0]}", '/autollm/accept': f"python3 programs/autollm/autollm.py accept {data.get('job_id', [''])[0]}", '/autollm/vscode': f"code {data.get('path', [''])[0]}", '/autollm/clean': "python3 programs/autollm/autollm.py clean", '/worktree/run': data.get('cmd', [''])[0]}
+        commands = {'/job/run': "python3 services/jobs.py run_wiki", '/job/accept': f"python3 services/jobs.py accept {data.get('id', [''])[0]}", '/job/redo': f"python3 services/jobs.py redo {data.get('id', [''])[0]}", '/run': data.get('cmd', [''])[0], '/todo/add': f"python3 programs/todo/todo.py add {data.get('task', [''])[0]}", '/todo/done': f"python3 programs/todo/todo.py done {data.get('id', [''])[0]}", '/todo/clear': "python3 programs/todo/todo.py clear", '/settings/theme': f"python3 programs/settings/settings.py set theme {data.get('theme', ['dark'])[0]}", '/settings/time': f"python3 programs/settings/settings.py set time_format {data.get('format', ['12h'])[0]}", '/autollm/run': f"python3 programs/autollm/autollm.py run {data.get('repo', [''])[0]} {data.get('branches', ['1'])[0]} {data.get('model', ['claude-3-5-sonnet-20241022'])[0]} {data.get('task', [''])[0]}", '/autollm/accept': f"python3 programs/autollm/autollm.py accept {data.get('job_id', [''])[0]}", '/autollm/vscode': f"code {data.get('path', [''])[0]}", '/autollm/clean': "python3 programs/autollm/autollm.py clean"}
         cmd = commands.get(path, "")
-        {True: self.handle_worktree_post(cmd), False: (subprocess.run(cmd, shell=True, timeout=5, capture_output=True), self.send_response(303), self.send_header('Location', {True: '/autollm', False: {True: '/settings', False: path.replace('/add', '').replace('/done', '').replace('/clear', '')}['settings' in path]}['autollm' in path]), self.end_headers())}[path == '/worktree/run']
-
-    def handle_worktree_post(self, cmd):
-        result = subprocess.run(cmd, shell=True, timeout=999999, capture_output=True, text=True)
-        output = result.stdout + result.stderr
-        self.send_response(200)
-        self.send_header('Content-type', 'text/plain')
+        subprocess.run(cmd, shell=True, timeout=5, capture_output=True)
+        self.send_response(303)
+        self.send_header('Location', {True: '/autollm', False: {True: '/settings', False: path.replace('/add', '').replace('/done', '').replace('/clear', '')}['settings' in path]}['autollm' in path])
         self.end_headers()
-        self.wfile.write(output.encode())
 
     def log_message(self, *args): pass
 

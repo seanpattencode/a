@@ -24,7 +24,7 @@ python services/web/web.py - web interface
 python programs/autollm/autollm.py run - auto llm
 python programs/autollm/autollm.py status - show status
 python programs/autollm/autollm.py accept - accept changes
-python programs/autollm/autollm.py clean - cleanup worktrees
+python programs/autollm/autollm.py clean - cleanup
 python services/feed.py add - add message
 python services/feed.py view - view feed
 python services/feed.py list - list messages
