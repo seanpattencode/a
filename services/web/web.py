@@ -10,7 +10,6 @@ from pathlib import Path
 from threading import Thread
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
-# Ram cache, no disk
 TEMPLATE_INDEX = (TEMPLATE_DIR / 'index.html').read_text()
 TEMPLATE_TODO = (TEMPLATE_DIR / 'todo.html').read_text()
 TEMPLATE_JOBS = (TEMPLATE_DIR / 'jobs.html').read_text()
@@ -18,6 +17,8 @@ TEMPLATE_FEED = (TEMPLATE_DIR / 'feed.html').read_text()
 TEMPLATE_AUTOLLM = (TEMPLATE_DIR / 'autollm.html').read_text()
 TEMPLATE_AUTOLLM_OUTPUT = (TEMPLATE_DIR / 'autollm_output.html').read_text()
 TEMPLATE_TERMINAL = (TEMPLATE_DIR / 'terminal.html').read_text()
+TEMPLATE_TERMINAL_EMULATOR = (TEMPLATE_DIR / 'terminal-emulator.html').read_text()
+TEMPLATE_TERMINAL_XTERM = (TEMPLATE_DIR / 'terminal-xterm.html').read_text()
 TEMPLATE_SETTINGS = (TEMPLATE_DIR / 'settings.html').read_text()
 
 class Handler(BaseHTTPRequestHandler):
@@ -30,7 +31,7 @@ class Handler(BaseHTTPRequestHandler):
         self.s = s
         self.c = c
         self.query = query
-        handlers = {'/api/jobs': self.handle_api_jobs, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal}
+        handlers = {'/api/jobs': self.handle_api_jobs, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm}
         content, ctype = handlers.get(path, self.handle_default)()
         self.send_response(200)
         self.send_header('Content-type', ctype)
@@ -44,19 +45,7 @@ class Handler(BaseHTTPRequestHandler):
         return (json.dumps(list(map(lambda j: {"id": j[0], "name": j[1], "status": j[2], "output": j[3]}, aios_db.query("jobs", "SELECT id, name, status, output FROM jobs ORDER BY created DESC")))), 'application/json')
 
     def handle_home(self):
-        tr = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True)
-        m = aios_db.query("feed", "SELECT content, timestamp FROM messages ORDER BY timestamp DESC LIMIT 4")
-        j = subprocess.run(["python3", "core/aios_runner.py", "python3", "services/jobs.py", "summary"], capture_output=True, text=True)
-        todo_items = tr.stdout.strip().split('\n')[:4] or []
-        feed_items = list(map(lambda x: f"{datetime.fromisoformat(x[1]).strftime({'12h': '%I:%M %p'}.get(self.s.get('time_format', '12h'), '%H:%M'))} - {x[0]}", m)) or []
-        jobs_summary = j.stdout.strip().split('\n')[:4] or ["No jobs"]
-        boxes = [('Todo', todo_items), ('Feed', feed_items), ('Jobs', jobs_summary)]
-        try:
-            aios_db.query("autollm", "SELECT COUNT(*) FROM worktrees")
-            boxes.append(('AutoLLM', ['Manage worktrees']))
-        except: pass
-        vp = "".join(list(map(lambda entry: f'''<div class="box" onclick="location.href='/{entry[0].lower()}'"><div class="box-title">{entry[0]}</div><div class="box-content">{"".join(list(map(lambda i: f'<div class="box-item">{i}</div>', entry[1]))) or f'<div style="color:#888">No {entry[0].lower()}</div>'}</div></div>''', boxes)))
-        return TEMPLATE_INDEX.format(**self.c, vp=vp), 'text/html'
+        return (TEMPLATE_INDEX.format(**self.c), 'text/html')
 
     def handle_todo(self):
         result = subprocess.run(["python3", "core/aios_runner.py", "python3", "programs/todo/todo.py", "list"], capture_output=True, text=True)
@@ -118,6 +107,12 @@ class Handler(BaseHTTPRequestHandler):
         output_file = Path.home() / ".aios" / f"autollm_output_{job_id}.txt"
         terminal_content = (output_file.exists() and output_file.read_text()) or "Waiting for output..."
         return TEMPLATE_TERMINAL.format(**self.c, terminal_content=terminal_content, job_id=job_id), 'text/html'
+
+    def handle_terminal_emulator(self):
+        return (TEMPLATE_TERMINAL_EMULATOR, 'text/html')
+
+    def handle_terminal_xterm(self):
+        return (TEMPLATE_TERMINAL_XTERM, 'text/html')
 
     def do_POST(self):
         path = urlparse(self.path).path

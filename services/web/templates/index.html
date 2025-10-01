@@ -5,12 +5,6 @@
 <style>
 body{{font-family:monospace;background:{bg};color:{fg};padding:20px}}
 .container{{max-width:1200px;margin:0 auto}}
-.viewport{{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:20px 0}}
-.box{{background:{bg2};border-radius:10px;padding:15px;cursor:pointer;position:relative}}
-.box:hover{{opacity:0.9}}
-.box-title{{font-weight:bold;margin-bottom:10px;font-size:18px}}
-.box-content{{max-height:200px;overflow-y:auto}}
-.box-item{{padding:5px 0;border-bottom:1px solid {fg}33}}
 button{{background:{fg};color:{bg};border:none;padding:5px 15px;cursor:pointer;margin:5px;border-radius:5px}}
 input{{background:{bg2};color:{fg};border:1px solid {fg};padding:12px;width:70%;margin:10px 0;border-radius:5px}}
 .run-box{{background:{bg2};border-radius:10px;padding:20px;margin:20px 0}}
@@ -22,13 +16,24 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:12px;width:70%;
 <div class="settings-btn" onclick="location.href='/settings'">Settings</div>
 <div class="container">
 <h1>AIOS Control Center</h1>
-<div class="viewport">{vp}</div>
 <div class="run-box">
 <h2 style="margin-top:0">Run Command</h2>
 <form action="/run" method="POST">
 <input name="cmd" placeholder="python3 programs/todo/todo.py list">
 <button type="submit" class="run-button">Run</button>
 </form>
+</div>
+<div class="run-box">
+<h2 style="margin-top:0">Terminal</h2>
+<button onclick="location.href='/terminal-emulator'" class="run-button">Terminal Emulator</button>
+<button onclick="location.href='/terminal-xterm'" class="run-button">Terminal XTerm</button>
+</div>
+<div class="run-box">
+<h2 style="margin-top:0">Pages</h2>
+<button onclick="location.href='/todo'" class="run-button">Todo</button>
+<button onclick="location.href='/jobs'" class="run-button">Jobs</button>
+<button onclick="location.href='/feed'" class="run-button">Feed</button>
+<button onclick="location.href='/autollm'" class="run-button">AutoLLM</button>
 </div>
 </div>
 </body>
