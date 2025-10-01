@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Worktree Manager</title>
+<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css"/>
+<style>
+body{font-family:monospace;background:{bg};color:{fg};padding:20px;margin:0}
+.container{display:flex;gap:10px;height:calc(100vh - 100px);overflow:hidden}
+.column{flex:1;background:{bg2};border-radius:5px;padding:10px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+.column-title{font-weight:bold;font-size:14px;margin-bottom:10px;padding:5px;background:{bg};border-radius:3px}
+.node{background:{bg};padding:8px;border-radius:3px;cursor:pointer;font-size:12px;border:1px solid {fg}}
+.node:hover{opacity:0.8}
+.btn{background:{fg};color:{bg};border:none;padding:5px 10px;cursor:pointer;border-radius:3px;font-size:11px;margin:2px}
+.btn:hover{opacity:0.8}
+input,textarea{background:{bg};color:{fg};border:1px solid {fg};padding:5px;border-radius:3px;width:100%;box-sizing:border-box;font-family:monospace;font-size:11px}
+.toolbar{margin-bottom:10px;display:flex;gap:5px;flex-wrap:wrap}
+.edge{position:absolute;pointer-events:none;stroke:{fg};stroke-width:1;fill:none;opacity:0.3}
+svg{position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.container{position:relative;z-index:1}
+.terminal-container{background:#000;padding:5px;border:1px solid {fg};border-radius:3px;margin:5px 0;height:250px}
+.file-list{background:{bg};border:1px solid {fg};padding:5px;margin:5px 0;border-radius:3px;font-size:10px;max-height:150px;overflow-y:auto;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<div style="margin-bottom:10px"><a href="/" style="padding:10px;background:{fg};color:{bg};border-radius:5px;text-decoration:none">Back</a></div>
+<div class="toolbar">
+<button class="btn" onclick="addColumn()">Add Column</button>
+<button class="btn" onclick="saveWorkflow()">Save Workflow</button>
+<input id="workflowName" placeholder="Workflow name" style="width:150px">
+<button class="btn" onclick="loadWorkflow()">Load Workflow</button>
+<button class="btn" onclick="gitPushAll()">Git Push All</button>
+<input id="repoPath" placeholder="/path/to/repo" value="/home/seanpatten/projects/testRepoPrivate" style="width:250px">
+</div>
+<svg id="edges"></svg>
+<div id="cols" class="container"></div>
+<script>
+let d=document,cols=[],nextId=0,edges=[],terminals={};
+function run(cmd){let f=new FormData();f.append('cmd',cmd);fetch('/worktree/run',{method:'POST',body:f}).then(r=>r.text()).then(alert)}
+function addColumn(){let c=d.createElement('div');c.className='column';c.id='col'+cols.length;c.innerHTML='<div class="column-title">Layer '+cols.length+' <button class="btn" onclick="deleteColumn('+cols.length+')" style="float:right;padding:2px 6px">X</button></div><button class="btn" onclick="addNode('+cols.length+')">Add Task</button>';d.getElementById('cols').appendChild(c);cols.push([]);drawEdges()}
+function deleteColumn(idx){d.getElementById('col'+idx).remove();cols[idx]=[];drawEdges()}
+function addNode(colIdx){let n=d.createElement('div');n.className='node';n.id='n'+nextId;n.innerHTML='<textarea placeholder="Task/prompt" rows="2"></textarea><input placeholder="Working dir" value="'+d.getElementById('repoPath').value+'"><select class="tool-select" style="width:100%;margin:2px 0;padding:5px;background:{bg};color:{fg};border:1px solid {fg};border-radius:3px;font-family:monospace;font-size:11px"><option value="claude">Claude Dangerous</option><option value="codex">GPT Codex</option></select><div style="margin-top:5px"><button class="btn" onclick="translate('+nextId+','+colIdx+')">Translate</button><button class="btn" onclick="execute('+nextId+')">Execute</button><button class="btn" onclick="openTerminal('+nextId+')">Terminal</button><button class="btn" onclick="openVSCode('+nextId+')">VSCode</button><button class="btn" onclick="branch('+nextId+')">Branch</button><button class="btn" onclick="deleteNode('+nextId+')">X</button></div>';d.getElementById('col'+colIdx).appendChild(n);cols[colIdx].push({id:nextId,parent:null});nextId++}
+function translate(id,colIdx){let n=d.getElementById('n'+id),t=n.querySelector('textarea').value,p=n.querySelector('input').value,tool=n.querySelector('select').value;let nextCol=colIdx+1;if(!d.getElementById('col'+nextCol))addColumn();let termId='term'+nextId;let resultNode=d.createElement('div');resultNode.className='node';resultNode.id='n'+nextId;resultNode.innerHTML='<div style="font-weight:bold;margin-bottom:5px">'+tool+': '+t.substring(0,30)+'...</div><div class="terminal-container" id="'+termId+'"></div><div class="file-list" id="files'+nextId+'">Running...</div>';d.getElementById('col'+nextCol).appendChild(resultNode);cols[nextCol].push({id:nextId,parent:id});nextId++;let term=new Terminal({rows:15,cols:80});let fit=new FitAddon.FitAddon();term.loadAddon(fit);term.open(d.getElementById(termId));fit.fit();let ws=new WebSocket('ws://localhost:8766');ws.binaryType='arraybuffer';ws.onopen=()=>{let cmd=tool==='claude'?'claude --dangerously-skip-permissions "'+t+'"':'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox "'+t+'"';ws.send(new TextEncoder().encode('cd '+p+' && '+cmd+' && echo "\\n---DONE---" && ls -la\\n'))};ws.onmessage=e=>term.write(new Uint8Array(e.data));term.onData(d=>ws.send(new TextEncoder().encode(d)));setTimeout(()=>{fetch('/worktree/run',{method:'POST',body:new URLSearchParams({cmd:'python3 services/worktree.py execute "ls -la" "'+p+'"'})}).then(r=>r.text()).then(files=>d.getElementById('files'+(nextId-1)).textContent=files)},3000)}
+function execute(id){let n=d.getElementById('n'+id),t=n.querySelector('textarea').value,p=n.querySelector('input').value;run('python3 services/worktree.py execute "'+t+'" "'+p+'"')}
+function openTerminal(id){let n=d.getElementById('n'+id),p=n.querySelector('input').value;run('python3 services/worktree.py terminal "'+p+'"')}
+function openVSCode(id){let n=d.getElementById('n'+id),p=n.querySelector('input').value;run('python3 services/worktree.py vscode "'+p+'"')}
+function branch(id){let n=d.getElementById('n'+id),t=n.querySelector('textarea').value,p=n.querySelector('input').value;run('python3 services/worktree.py branch "'+t+'" "'+p+'"')}
+function deleteNode(id){d.getElementById('n'+id).remove();cols=cols.map(c=>c.filter(n=>n.id!=id));drawEdges()}
+function saveWorkflow(){let name=d.getElementById('workflowName').value||'default';run('python3 services/worktree.py save "'+name+'" "'+JSON.stringify({cols,edges})+'"')}
+function loadWorkflow(){let name=d.getElementById('workflowName').value||'default';run('python3 services/worktree.py load "'+name+'"')}
+function gitPushAll(){run('python3 services/worktree.py gitpush "'+d.getElementById('repoPath').value+'"')}
+function drawEdges(){d.getElementById('edges').innerHTML=edges.map(e=>'<line class="edge" x1="'+e.x1+'" y1="'+e.y1+'" x2="'+e.x2+'" y2="'+e.y2+'"/>').join('')}
+addColumn();addColumn();
+</script>
+</body>
+</html>
