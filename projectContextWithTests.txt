@@ -1409,3 +1409,146 @@ aios start - launch web
 aios stop - shutdown system
 aios status - show processes
 aios <cmd> - run any command
+testing/playwright/test_all.py:
+#!/usr/bin/env python3
+import asyncio
+from playwright.async_api import async_playwright
+from pathlib import Path
+from datetime import datetime
+import sys
+sys.path.append('/home/seanpatten/projects/AIOS')
+from core import aios_db
+
+screenshot_dir = Path(__file__).parent / "screenshots"
+screenshot_dir.mkdir(exist_ok=True)
+
+async def test_all():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+
+        port = aios_db.read('ports')['web']
+        base = f"http://localhost:{port}"
+        timestamp = datetime.now().strftime("%H%M%S")
+
+        pages = [
+            "index", "todo", "feed", "jobs", "settings",
+            "autollm", "workflow", "workflow-manager",
+            "terminal-emulator", "terminal-xterm"
+        ]
+
+        results = []
+        for name in pages:
+            url = f"{base}/" + ("" if name == "index" else name)
+            await page.goto(url)
+            await page.wait_for_timeout(500)
+            path = screenshot_dir / f"{name}_{timestamp}.png"
+            await page.screenshot(path=str(path))
+            results.append(path.exists())
+            print(f"✓ {name}")
+
+        await browser.close()
+        print(f"\nSaved {sum(results)}/{len(pages)} screenshots to {screenshot_dir}")
+
+asyncio.run(test_all())
+
+testing/playwright/test_js.py:
+#!/usr/bin/env python3
+import asyncio
+from playwright.async_api import async_playwright
+from pathlib import Path
+from datetime import datetime
+
+screenshot_dir = Path(__file__).parent / "screenshots"
+screenshot_dir.mkdir(exist_ok=True)
+
+async def test_page(page, name, url, actions=None):
+    await page.goto(url)
+    await page.wait_for_load_state("networkidle")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    await page.screenshot(path=str(screenshot_dir / f"{name}_{timestamp}.png"))
+    actions and await actions(page)
+
+async def run_tests():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(viewport={'width': 1280, 'height': 720})
+        page = await context.new_page()
+
+        import sys
+        sys.path.append('/home/seanpatten/projects/AIOS')
+        from core import aios_db
+        port = aios_db.read('ports')['web']
+        base_url = f"http://localhost:{port}"
+
+        tests = [
+            ("index", f"{base_url}/"),
+            ("todo", f"{base_url}/todo"),
+            ("feed", f"{base_url}/feed"),
+            ("jobs", f"{base_url}/jobs"),
+            ("settings", f"{base_url}/settings"),
+            ("autollm", f"{base_url}/autollm"),
+            ("workflow", f"{base_url}/workflow"),
+            ("workflow_manager", f"{base_url}/workflow-manager"),
+            ("terminal_emulator", f"{base_url}/terminal-emulator"),
+            ("terminal_xterm", f"{base_url}/terminal-xterm")
+        ]
+
+        [await test_page(page, name, url) for name, url in tests]
+
+        await browser.close()
+        print(f"Screenshots saved to {screenshot_dir}")
+
+asyncio.run(run_tests())
+
+testing/playwright/test_interactions.py:
+#!/usr/bin/env python3
+import asyncio
+from playwright.async_api import async_playwright
+from pathlib import Path
+from datetime import datetime
+
+screenshot_dir = Path(__file__).parent / "screenshots"
+screenshot_dir.mkdir(exist_ok=True)
+
+async def screenshot(page, name):
+    timestamp = datetime.now().strftime("%H%M%S")
+    await page.screenshot(path=str(screenshot_dir / f"{name}_{timestamp}.png"))
+
+async def test_interactions():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page(viewport={'width': 1280, 'height': 720})
+
+        import sys
+        sys.path.append('/home/seanpatten/projects/AIOS')
+        from core import aios_db
+        port = aios_db.read('ports')['web']
+        base = f"http://localhost:{port}"
+
+        await page.goto(f"{base}/")
+        await screenshot(page, "home")
+
+        await page.goto(f"{base}/todo")
+        await screenshot(page, "todo_page")
+        await page.fill('input[name="task"]', "Test Task")
+        await page.press('input[name="task"]', "Enter")
+        await page.wait_for_timeout(500)
+        await screenshot(page, "todo_added")
+
+        await page.goto(f"{base}/settings")
+        await screenshot(page, "settings_page")
+        (await page.click('button:has-text("Light")', timeout=2000)) or None
+        await page.wait_for_timeout(500)
+        await screenshot(page, "settings_light")
+
+        await page.goto(f"{base}/workflow")
+        await screenshot(page, "workflow_page")
+
+        await page.goto(f"{base}/workflow-manager")
+        await screenshot(page, "workflow_manager")
+
+        await browser.close()
+        print(f"Done: {len(list(screenshot_dir.glob('*.png')))} screenshots")
+
+asyncio.run(test_interactions())
