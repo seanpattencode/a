@@ -14,13 +14,17 @@ body{{background:#000;font:14px monospace;color:#dfdbd2;padding:20px;margin:0;ov
 #prompt-line:before{{content:'$ ';position:absolute;left:0;top:0}}
 #input{{background:transparent;border:none;color:#dfdbd2;font:14px monospace;outline:none;width:100%;padding:0}}
 </style></head><body>
-<button id="add-terminal" onclick="addTerminal()">+ Add Terminal</button>
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+  <input type="text" id="terminal-dir" placeholder="Directory path (optional)" value="." style="width:300px;padding:10px;background:#222;border:1px solid #444;color:#dfdbd2;border-radius:5px"/>
+  <button id="add-terminal" onclick="addTerminalWithDir()">+ Add Terminal</button>
+</div>
 <div id="terminals-container">
 <div class="terminal-box">
   <div id="term">
     <div id="prompt-line"><input id="input" type="text" autocomplete="off" spellcheck="false"/></div>
   </div>
   <div class="cmd-bar">
+    <button onclick="removeStaticTerminal('term')" style="padding:5px 10px;background:#d32;border:1px solid #a21;color:#fff;cursor:pointer;margin-right:10px;font-weight:bold">✕</button>
     <select id="term-preset" style="padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-right:5px">
       <option value="">Quick Commands</option>
       <option value="claude --dangerously-skip-permissions">Claude</option>
@@ -36,6 +40,7 @@ body{{background:#000;font:14px monospace;color:#dfdbd2;padding:20px;margin:0;ov
     <div id="xterm" style="width:100%;height:100%"></div>
   </div>
   <div class="cmd-bar">
+    <button onclick="removeStaticTerminal('xterm')" style="padding:5px 10px;background:#d32;border:1px solid #a21;color:#fff;cursor:pointer;margin-right:10px;font-weight:bold">✕</button>
     <select id="xterm-preset" style="padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-right:5px">
       <option value="">Quick Commands</option>
       <option value="claude --dangerously-skip-permissions">Claude</option>
@@ -164,6 +169,24 @@ term.onclick = e => {{
 let terminalCount = 2;
 const terminals = [];
 
+// Add terminal with directory
+function addTerminalWithDir() {{
+  const dirPath = document.getElementById('terminal-dir').value || '.';
+  addTerminal(dirPath);
+}}
+
+// Handle Enter key in directory input
+document.addEventListener('DOMContentLoaded', () => {{
+  const dirInput = document.getElementById('terminal-dir');
+  if(dirInput) {{
+    dirInput.addEventListener('keydown', (e) => {{
+      if(e.key === 'Enter') {{
+        addTerminalWithDir();
+      }}
+    }});
+  }}
+}});
+
 function updateTerminalSizes() {{
   const container = document.getElementById('terminals-container');
   const boxes = document.querySelectorAll('.terminal-box');
@@ -184,18 +207,60 @@ function updateTerminalSizes() {{
   }}
 }}
 
-function addTerminal() {{
+function removeStaticTerminal(termType) {{
+  if(termType === 'xterm') {{
+    if(xtermWs) xtermWs.close();
+    if(mainXterm) mainXterm.dispose();
+  }} else if(termType === 'term') {{
+    if(ws) ws.close();
+  }}
+
+  const termElement = document.getElementById(termType);
+  if(termElement && termElement.parentElement) {{
+    let parent = termElement.parentElement;
+    while(parent && !parent.classList.contains('terminal-box')) {{
+      parent = parent.parentElement;
+    }}
+    if(parent) parent.remove();
+  }}
+
+  updateTerminalSizes();
+}}
+
+function removeTerminal(termId) {{
+  const termIndex = terminals.findIndex(t => t.id === termId);
+  if(termIndex !== -1) {{
+    terminals[termIndex].ws.close();
+    terminals.splice(termIndex, 1);
+  }}
+
+  const termDiv = document.getElementById(termId);
+  if(termDiv && termDiv.parentElement && termDiv.parentElement.parentElement) {{
+    termDiv.parentElement.parentElement.remove();
+  }}
+
+  updateTerminalSizes();
+}}
+
+function addTerminal(startDir) {{
   terminalCount++;
   const container = document.getElementById('terminals-container');
   const termId = 'xterm-' + terminalCount;
   const cmdId = 'cmd-' + terminalCount;
   const presetId = 'preset-' + terminalCount;
+  const directory = startDir || '.';
 
   const termBox = document.createElement('div');
   termBox.className = 'terminal-box';
 
   const wrapper = document.createElement('div');
-  wrapper.style.cssText = 'flex:1;min-height:0;overflow:hidden';
+  wrapper.style.cssText = 'flex:1;min-height:0;overflow:hidden;position:relative';
+
+  const dirLabel = document.createElement('div');
+  dirLabel.style.cssText = 'position:absolute;top:5px;right:5px;background:rgba(0,0,0,0.7);color:#888;padding:2px 8px;font-size:12px;border-radius:3px;z-index:10';
+  dirLabel.textContent = 'Dir: ' + directory;
+  wrapper.appendChild(dirLabel);
+
   const termDiv = document.createElement('div');
   termDiv.id = termId;
   termDiv.style.cssText = 'width:100%;height:100%';
@@ -203,6 +268,11 @@ function addTerminal() {{
 
   const cmdBar = document.createElement('div');
   cmdBar.className = 'cmd-bar';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.textContent = '✕';
+  removeBtn.style.cssText = 'padding:5px 10px;background:#d32;border:1px solid #a21;color:#fff;cursor:pointer;margin-right:10px;font-weight:bold';
+  removeBtn.onclick = () => removeTerminal(termId);
 
   const select = document.createElement('select');
   select.id = presetId;
@@ -226,6 +296,7 @@ function addTerminal() {{
   sendBtn.style.cssText = 'padding:5px 15px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer;margin-left:5px';
   sendBtn.onclick = () => sendDynamicCmd(termId, cmdId);
 
+  cmdBar.appendChild(removeBtn);
   cmdBar.appendChild(select);
   cmdBar.appendChild(useBtn);
   cmdBar.appendChild(input);
@@ -250,6 +321,13 @@ function addTerminal() {{
 
     updateTerminalSizes();
     xtermFit.fit();
+
+    // Send cd command to change to specified directory
+    if(directory && directory !== '.') {{
+      setTimeout(() => {{
+        xtermWs.send(new TextEncoder().encode('cd ' + directory + '\r'));
+      }}, 200);
+    }}
   }}, 100);
 }}
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Thread
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
-DEV_MODE = os.getenv('DEV_MODE', '').lower() in ('1', 'true', 'yes')
+DEV_MODE = os.getenv('DEV_MODE', 'true').lower() in ('1', 'true', 'yes')
 
 def get_template(name):
     return (TEMPLATE_DIR / name).read_text() if DEV_MODE else globals().get(f'TEMPLATE_{name.replace(".html", "").replace("-", "_").upper()}', '')
