@@ -31,6 +31,7 @@ TEMPLATE_TERMINAL_EMULATOR = (TEMPLATE_DIR / 'terminal-emulator.html').read_text
 TEMPLATE_TERMINAL_XTERM = (TEMPLATE_DIR / 'terminal-xterm.html').read_text()
 TEMPLATE_SETTINGS = (TEMPLATE_DIR / 'settings.html').read_text()
 TEMPLATE_WORKFLOW = (TEMPLATE_DIR / 'workflow.html').read_text()
+TEMPLATE_WORKFLOW_MANAGER = (TEMPLATE_DIR / 'workflow_manager.html').read_text() if (TEMPLATE_DIR / 'workflow_manager.html').exists() else ''
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -42,7 +43,7 @@ class Handler(BaseHTTPRequestHandler):
         self.s = s
         self.c = c
         self.query = query
-        handlers = {'/api/jobs': self.handle_api_jobs, '/api/workflow/nodes': self.handle_api_workflow_nodes, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm, '/workflow': self.handle_workflow}
+        handlers = {'/api/jobs': self.handle_api_jobs, '/api/workflow/nodes': self.handle_api_workflow_nodes, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm, '/workflow': self.handle_workflow, '/workflow-manager': self.handle_workflow_manager, '/workflow/list_worktrees': self.handle_list_worktrees}
         content, ctype = handlers.get(path, self.handle_default)()
         self.send_response(200)
         self.send_header('Content-type', ctype)
@@ -129,6 +130,23 @@ class Handler(BaseHTTPRequestHandler):
         template = get_template('workflow.html') if DEV_MODE else TEMPLATE_WORKFLOW
         return (template.format(**self.c), 'text/html')
 
+    def handle_workflow_manager(self):
+        template = get_template('workflow_manager.html') if DEV_MODE else TEMPLATE_WORKFLOW_MANAGER
+        return (template.format(**self.c), 'text/html')
+
+    def handle_list_worktrees(self):
+        # Get list of worktrees from git
+        result = subprocess.run(["git", "worktree", "list"], capture_output=True, text=True, timeout=5)
+        worktrees = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    path = parts[0]
+                    branch = parts[2].strip('[]')
+                    worktrees.append({"path": path, "branch": branch})
+        return (json.dumps(worktrees), 'application/json')
+
     def handle_api_workflow_nodes(self):
         try:
             nodes = aios_db.read("workflow_nodes")
@@ -142,6 +160,42 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) or b''
         if path.startswith('/workflow/'):
             jdata = json.loads(body.decode() or '{}')
+
+            # Handle worktree creation with terminal
+            if path == '/workflow/worktree_terminal':
+                repo = jdata.get('repo', '/home/seanpatten/projects/AIOS')
+                branch = jdata.get('branch', '')
+                result = subprocess.run(
+                    ["python3", "programs/workflow/workflow.py", "worktree_terminal", repo, branch],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                try:
+                    output = json.loads(result.stdout) if result.stdout else {"error": "No output from command"}
+                except:
+                    output = {"error": result.stderr or "Unknown error"}
+                self.wfile.write(json.dumps(output).encode())
+                return
+
+            # Handle worktree removal
+            if path == '/workflow/remove_worktree':
+                worktree_path = jdata.get('path', '')
+                try:
+                    subprocess.run(["git", "worktree", "remove", worktree_path], check=True, timeout=5)
+                    response = {"success": True}
+                except Exception as e:
+                    response = {"success": False, "error": str(e)}
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response).encode())
+                return
+
+            # Existing workflow commands
             wf_cmds = {'/workflow/add': f"python3 programs/workflow/workflow.py add {jdata.get('col', 0)} {jdata.get('text', '')}", '/workflow/expand': f"python3 programs/workflow/workflow.py expand {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/branch': f"python3 programs/workflow/workflow.py branch {jdata.get('id', 0)}", '/workflow/exec': f"python3 programs/workflow/workflow.py exec {jdata.get('id', 0)}", '/workflow/push': f"python3 programs/workflow/workflow.py push {jdata.get('id', 0)}", '/workflow/term': f"python3 programs/workflow/workflow.py term {jdata.get('id', 0)}", '/workflow/comment': f"python3 programs/workflow/workflow.py comment {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/save': f"python3 programs/workflow/workflow.py save {jdata.get('name', 'default')}", '/workflow/load': f"python3 programs/workflow/workflow.py load {jdata.get('name', 'default')}"}
             subprocess.run(wf_cmds.get(path, ""), shell=True, timeout=5, capture_output=True)
             self.send_response(200)
@@ -183,6 +237,24 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 os._exit(0)
             Thread(target=delayed_shutdown, daemon=True).start()
+            return
+
+        # Handle worktree creation
+        if path == '/worktree/create':
+            data = parse_qs(body.decode()) or {}
+            repo = data.get('repo', [''])[0]
+            branch = data.get('branch', [''])[0]
+            result = subprocess.run(
+                ["python3", "/home/seanpatten/projects/AIOS/programs/worktree/worktree_manager.py", "create", repo, branch],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
+            self.wfile.write(f'<html><body><h2>Worktree Created</h2><pre>{output}</pre><br><a href="/">Back to Control Center</a></body></html>'.encode())
             return
 
         data = parse_qs(body.decode()) or {}

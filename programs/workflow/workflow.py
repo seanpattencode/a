@@ -75,6 +75,55 @@ def branch():
     aios_db.write("workflow_nodes", nodes)
     print(nodes[nid]["branch"]["path"])
 
+def worktree_with_terminal():
+    """Create a worktree and return terminal session info for PTY"""
+    repo = (sys.argv + ["", "/home/seanpatten/projects/AIOS"])[2]
+    branch_name = (sys.argv + ["", ""])[3]
+
+    # Generate branch name if empty or not provided
+    if not branch_name or branch_name.strip() == "":
+        branch_name = f"worktree_{datetime.now():%Y%m%d_%H%M%S}"
+
+    # Create worktree path
+    parent = Path(repo).parent
+    worktree_path = parent / f"{Path(repo).name}_{branch_name}"
+
+    # Create the worktree
+    result = subprocess.run(
+        ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=10
+    )
+
+    if result.returncode != 0:
+        print(json.dumps({"error": f"Failed to create worktree: {result.stderr}"}))
+        return
+
+    # Store worktree info
+    try:
+        worktrees = aios_db.read("worktrees_list")
+    except:
+        worktrees = []
+
+    worktree_info = {
+        "repo": str(repo),
+        "branch": branch_name,
+        "path": str(worktree_path),
+        "created": datetime.now().isoformat()
+    }
+    worktrees.append(worktree_info)
+    aios_db.write("worktrees_list", worktrees)
+
+    # Return info for terminal creation
+    print(json.dumps({
+        "success": True,
+        "branch": branch_name,
+        "path": str(worktree_path),
+        "message": f"Worktree created at {worktree_path}"
+    }))
+
 def execute():
     nid = int((sys.argv + ["", "0"])[2])
     nodes = get_nodes()
@@ -138,4 +187,4 @@ def comment():
     aios_db.write("workflow_nodes", nodes)
     print(f"Comment added to {nid}")
 
-{"add": add_node, "list": list_nodes, "expand": expand, "branch": branch, "exec": execute, "save": save_workflow, "load": load_workflow, "push": git_push, "term": terminal, "comment": comment}.get(cmd, list_nodes)()
+{"add": add_node, "list": list_nodes, "expand": expand, "branch": branch, "exec": execute, "save": save_workflow, "load": load_workflow, "push": git_push, "term": terminal, "comment": comment, "worktree_terminal": worktree_with_terminal}.get(cmd, list_nodes)()

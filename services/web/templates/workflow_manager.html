@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Workflow Manager</title>
+<style>
+body{{font-family:monospace;background:{bg};color:{fg};padding:20px}}
+.container{{max-width:1400px;margin:0 auto}}
+h1{{color:{fg};margin-bottom:20px}}
+.worktree-section{{background:{bg2};border-radius:10px;padding:20px;margin:20px 0}}
+.terminal-section{{background:#000;border:1px solid #333;border-radius:10px;padding:10px;margin:20px 0;height:400px;overflow:hidden}}
+button{{background:{fg};color:{bg};border:none;padding:10px 20px;cursor:pointer;margin:5px;border-radius:5px;font-weight:bold}}
+button:hover{{opacity:0.8}}
+.create-btn{{background:#28a745;color:white;padding:12px 30px;font-size:16px}}
+input{{background:{bg2};color:{fg};border:1px solid {fg};padding:10px;width:300px;margin:10px;border-radius:5px}}
+.worktree-list{{margin-top:20px}}
+.worktree-item{{background:{bg2};padding:10px;margin:5px 0;border-radius:5px;display:flex;justify-content:space-between;align-items:center}}
+.terminal-container{{width:100%;height:100%;position:relative}}
+#terminal{{width:100%;height:100%;background:#000}}
+.status{{padding:5px 10px;border-radius:3px;font-size:12px}}
+.status.active{{background:#28a745;color:white}}
+.status.inactive{{background:#6c757d;color:white}}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Workflow Manager</h1>
+
+<div class="worktree-section">
+<h2>Create New Worktree</h2>
+<div>
+<input id="repo-path" placeholder="Repository path (default: /home/seanpatten/projects/AIOS)" value="/home/seanpatten/projects/AIOS">
+<input id="branch-name" placeholder="Branch name (auto-generated if empty)">
+<button class="create-btn" onclick="createWorktreeWithTerminal()">🌳 Create Worktree + Terminal</button>
+</div>
+<div id="status-message" style="margin-top:10px;color:#888"></div>
+</div>
+
+<div class="worktree-section">
+<h2>Active Worktrees</h2>
+<div id="worktree-list" class="worktree-list">
+<div style="color:#888">Loading worktrees...</div>
+</div>
+</div>
+
+<div class="terminal-section">
+<h2 style="color:{fg};margin-bottom:10px">Terminal</h2>
+<div id="terminal-container" class="terminal-container">
+<div id="terminal"></div>
+</div>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css"/>
+
+<script>
+let currentTerminal = null;
+let currentWs = null;
+let fitAddon = null;
+
+function initTerminal(path) {{
+    // Clean up existing terminal
+    if (currentTerminal) {{
+        currentTerminal.dispose();
+    }}
+    if (currentWs) {{
+        currentWs.close();
+    }}
+
+    // Create new terminal
+    currentTerminal = new Terminal({{
+        cursorBlink: true,
+        fontSize: 14,
+        fontFamily: 'monospace'
+    }});
+
+    fitAddon = new FitAddon.FitAddon();
+    currentTerminal.loadAddon(fitAddon);
+
+    const container = document.getElementById('terminal');
+    container.innerHTML = '';
+    currentTerminal.open(container);
+    fitAddon.fit();
+
+    // Connect to websocket
+    currentWs = new WebSocket('ws://localhost:' + (parseInt(window.location.port) + 1000));
+    currentWs.binaryType = 'arraybuffer';
+
+    currentWs.onopen = () => {{
+        // Send initial directory change command
+        if (path) {{
+            setTimeout(() => {{
+                const cmd = 'cd ' + path + '\r';
+                currentWs.send(new TextEncoder().encode(cmd));
+                // Also send a clear command to clean the terminal
+                setTimeout(() => {{
+                    currentWs.send(new TextEncoder().encode('clear\r'));
+                }}, 200);
+            }}, 500);
+        }}
+    }};
+
+    currentWs.onmessage = (e) => {{
+        currentTerminal.write(new Uint8Array(e.data));
+    }};
+
+    currentTerminal.onData((data) => {{
+        if (currentWs.readyState === WebSocket.OPEN) {{
+            currentWs.send(new TextEncoder().encode(data));
+        }}
+    }});
+}}
+
+async function createWorktreeWithTerminal() {{
+    const repo = document.getElementById('repo-path').value || '/home/seanpatten/projects/AIOS';
+    const branch = document.getElementById('branch-name').value || '';
+    const statusDiv = document.getElementById('status-message');
+
+    statusDiv.innerHTML = 'Creating worktree...';
+
+    try {{
+        // Call workflow manager to create worktree
+        const response = await fetch('/workflow/worktree_terminal', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{repo: repo, branch: branch}})
+        }});
+
+        const result = await response.json();
+
+        if (result.success) {{
+            statusDiv.innerHTML = `✅ Created worktree: ${{result.branch}} at ${{result.path}}`;
+            document.getElementById('branch-name').value = '';
+
+            // Initialize terminal with the new worktree path
+            initTerminal(result.path);
+
+            // Refresh worktree list
+            loadWorktrees();
+        }} else {{
+            statusDiv.innerHTML = `❌ Error: ${{result.error}}`;
+        }}
+    }} catch (error) {{
+        statusDiv.innerHTML = `❌ Error: ${{error.message}}`;
+    }}
+}}
+
+async function loadWorktrees() {{
+    try {{
+        // Get worktree list from git
+        const response = await fetch('/workflow/list_worktrees');
+        const worktrees = await response.json();
+
+        const listDiv = document.getElementById('worktree-list');
+        if (worktrees.length === 0) {{
+            listDiv.innerHTML = '<div style="color:#888">No active worktrees</div>';
+        }} else {{
+            listDiv.innerHTML = worktrees.map(wt => `
+                <div class="worktree-item">
+                    <div>
+                        <strong>${{wt.branch}}</strong>
+                        <span style="color:#888;margin-left:10px">${{wt.path}}</span>
+                    </div>
+                    <div>
+                        <button onclick="openTerminalIn('${{wt.path}}')">Open Terminal</button>
+                        <button onclick="removeWorktree('${{wt.path}}')" style="background:#dc3545">Remove</button>
+                    </div>
+                </div>
+            `).join('');
+        }}
+    }} catch (error) {{
+        document.getElementById('worktree-list').innerHTML = `<div style="color:#dc3545">Error loading worktrees: ${{error.message}}</div>`;
+    }}
+}}
+
+function openTerminalIn(path) {{
+    initTerminal(path);
+    document.getElementById('status-message').innerHTML = `Terminal opened in: ${{path}}`;
+}}
+
+async function removeWorktree(path) {{
+    if (!confirm('Are you sure you want to remove this worktree?')) return;
+
+    try {{
+        const response = await fetch('/workflow/remove_worktree', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{path: path}})
+        }});
+
+        const result = await response.json();
+        if (result.success) {{
+            loadWorktrees();
+            document.getElementById('status-message').innerHTML = `✅ Removed worktree: ${{path}}`;
+        }} else {{
+            document.getElementById('status-message').innerHTML = `❌ Error: ${{result.error}}`;
+        }}
+    }} catch (error) {{
+        document.getElementById('status-message').innerHTML = `❌ Error: ${{error.message}}`;
+    }}
+}}
+
+// Initialize on load
+window.addEventListener('load', () => {{
+    loadWorktrees();
+    // Initialize terminal with default directory
+    initTerminal('/home/seanpatten/projects/AIOS');
+}});
+
+// Handle window resize
+window.addEventListener('resize', () => {{
+    if (fitAddon) {{
+        fitAddon.fit();
+    }}
+}});
+</script>
+</body>
+</html>

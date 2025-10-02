@@ -1,4 +1,4 @@
-Generated: 2025-10-02 00:52:20
+Generated: 2025-10-02 01:08:33
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -869,6 +869,51 @@ def branch():
     aios_db.write("workflow_nodes", nodes)
     print(nodes[nid]["branch"]["path"])
 
+def worktree_with_terminal():
+    """Create a worktree and return terminal session info for PTY"""
+    repo = (sys.argv + ["", "/home/seanpatten/projects/AIOS"])[2]
+    branch_name = (sys.argv + ["", f"worktree_{datetime.now():%Y%m%d_%H%M%S}"])[3]
+
+    # Create worktree path
+    parent = Path(repo).parent
+    worktree_path = parent / f"{Path(repo).name}_{branch_name}"
+
+    # Create the worktree
+    result = subprocess.run(
+        ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        timeout=10
+    )
+
+    if result.returncode != 0:
+        print(json.dumps({"error": f"Failed to create worktree: {result.stderr}"}))
+        return
+
+    # Store worktree info
+    try:
+        worktrees = aios_db.read("worktrees_list")
+    except:
+        worktrees = []
+
+    worktree_info = {
+        "repo": str(repo),
+        "branch": branch_name,
+        "path": str(worktree_path),
+        "created": datetime.now().isoformat()
+    }
+    worktrees.append(worktree_info)
+    aios_db.write("worktrees_list", worktrees)
+
+    # Return info for terminal creation
+    print(json.dumps({
+        "success": True,
+        "branch": branch_name,
+        "path": str(worktree_path),
+        "message": f"Worktree created at {worktree_path}"
+    }))
+
 def execute():
     nid = int((sys.argv + ["", "0"])[2])
     nodes = get_nodes()
@@ -932,8 +977,139 @@ def comment():
     aios_db.write("workflow_nodes", nodes)
     print(f"Comment added to {nid}")
 
-{"add": add_node, "list": list_nodes, "expand": expand, "branch": branch, "exec": execute, "save": save_workflow, "load": load_workflow, "push": git_push, "term": terminal, "comment": comment}.get(cmd, list_nodes)()
+{"add": add_node, "list": list_nodes, "expand": expand, "branch": branch, "exec": execute, "save": save_workflow, "load": load_workflow, "push": git_push, "term": terminal, "comment": comment, "worktree_terminal": worktree_with_terminal}.get(cmd, list_nodes)()
 
+
+programs/worktree/worktree_manager.py:
+#!/usr/bin/env python3
+import sys
+import subprocess
+import os
+from pathlib import Path
+from datetime import datetime
+sys.path.append('/home/seanpatten/projects/AIOS')
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import aios_db
+
+def create_worktree_with_terminal(repo_path=None, branch_name=None):
+    """Create a new git worktree and open a terminal in it"""
+
+    # Default to AIOS project if no repo specified
+    if not repo_path or repo_path == '':
+        repo_path = '/home/seanpatten/projects/AIOS'
+
+    # Check if it's a git repository
+    try:
+        subprocess.run(["git", "status"], cwd=repo_path, capture_output=True, check=True)
+    except:
+        return {"error": "Not a git repository", "path": repo_path}
+
+    # Generate branch name if not provided
+    if not branch_name:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        branch_name = f"worktree_{timestamp}"
+
+    # Create worktree path
+    parent = Path(repo_path).parent
+    worktree_path = parent / f"{Path(repo_path).name}_{branch_name}"
+
+    # Create the worktree
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode != 0:
+            return {"error": f"Failed to create worktree: {result.stderr}", "branch": branch_name}
+
+        # Store worktree info in database
+        try:
+            worktrees = aios_db.read("worktrees_list")
+        except:
+            worktrees = []
+        worktrees.append({
+            "repo": str(repo_path),
+            "branch": branch_name,
+            "path": str(worktree_path),
+            "created": datetime.now().isoformat()
+        })
+        aios_db.write("worktrees_list", worktrees)
+
+        # Try to open terminal (different commands for different environments)
+        terminal_opened = False
+        terminal_commands = [
+            ["gnome-terminal", "--working-directory", str(worktree_path)],
+            ["xterm", "-e", f"cd {worktree_path} && bash"],
+            ["konsole", "--workdir", str(worktree_path)],
+            ["xfce4-terminal", "--working-directory", str(worktree_path)]
+        ]
+
+        for cmd in terminal_commands:
+            try:
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                terminal_opened = True
+                break
+            except:
+                continue
+
+        return {
+            "success": True,
+            "branch": branch_name,
+            "path": str(worktree_path),
+            "terminal": terminal_opened
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+def list_worktrees():
+    """List all worktrees"""
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list"],
+            capture_output=True,
+            text=True
+        )
+        return result.stdout
+    except:
+        return "Not a git repository"
+
+def remove_worktree(path):
+    """Remove a worktree"""
+    try:
+        subprocess.run(["git", "worktree", "remove", path], check=True)
+        return f"Removed worktree: {path}"
+    except Exception as e:
+        return f"Error removing worktree: {e}"
+
+if __name__ == "__main__":
+    command = sys.argv[1] if len(sys.argv) > 1 else "create"
+
+    if command == "create":
+        repo = sys.argv[2] if len(sys.argv) > 2 else None
+        branch = sys.argv[3] if len(sys.argv) > 3 else None
+        result = create_worktree_with_terminal(repo, branch)
+        if "success" in result and result["success"]:
+            print(f"Created worktree: {result['path']}")
+            print(f"Branch: {result['branch']}")
+            if result["terminal"]:
+                print("Terminal opened in worktree")
+        else:
+            print(f"Error: {result.get('error', 'Unknown error')}")
+
+    elif command == "list":
+        print(list_worktrees())
+
+    elif command == "remove":
+        path = sys.argv[2] if len(sys.argv) > 2 else None
+        if path:
+            print(remove_worktree(path))
+        else:
+            print("Please specify path to remove")
 
 services/web/web.py:
 #!/usr/bin/env python3
@@ -969,6 +1145,7 @@ TEMPLATE_TERMINAL_EMULATOR = (TEMPLATE_DIR / 'terminal-emulator.html').read_text
 TEMPLATE_TERMINAL_XTERM = (TEMPLATE_DIR / 'terminal-xterm.html').read_text()
 TEMPLATE_SETTINGS = (TEMPLATE_DIR / 'settings.html').read_text()
 TEMPLATE_WORKFLOW = (TEMPLATE_DIR / 'workflow.html').read_text()
+TEMPLATE_WORKFLOW_MANAGER = (TEMPLATE_DIR / 'workflow_manager.html').read_text() if (TEMPLATE_DIR / 'workflow_manager.html').exists() else ''
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -980,7 +1157,7 @@ class Handler(BaseHTTPRequestHandler):
         self.s = s
         self.c = c
         self.query = query
-        handlers = {'/api/jobs': self.handle_api_jobs, '/api/workflow/nodes': self.handle_api_workflow_nodes, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm, '/workflow': self.handle_workflow}
+        handlers = {'/api/jobs': self.handle_api_jobs, '/api/workflow/nodes': self.handle_api_workflow_nodes, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm, '/workflow': self.handle_workflow, '/workflow-manager': self.handle_workflow_manager, '/workflow/list_worktrees': self.handle_list_worktrees}
         content, ctype = handlers.get(path, self.handle_default)()
         self.send_response(200)
         self.send_header('Content-type', ctype)
@@ -1067,6 +1244,23 @@ class Handler(BaseHTTPRequestHandler):
         template = get_template('workflow.html') if DEV_MODE else TEMPLATE_WORKFLOW
         return (template.format(**self.c), 'text/html')
 
+    def handle_workflow_manager(self):
+        template = get_template('workflow_manager.html') if DEV_MODE else TEMPLATE_WORKFLOW_MANAGER
+        return (template.format(**self.c), 'text/html')
+
+    def handle_list_worktrees(self):
+        # Get list of worktrees from git
+        result = subprocess.run(["git", "worktree", "list"], capture_output=True, text=True, timeout=5)
+        worktrees = []
+        for line in result.stdout.strip().split('\n'):
+            if line:
+                parts = line.split()
+                if len(parts) >= 3:
+                    path = parts[0]
+                    branch = parts[2].strip('[]')
+                    worktrees.append({"path": path, "branch": branch})
+        return (json.dumps(worktrees), 'application/json')
+
     def handle_api_workflow_nodes(self):
         try:
             nodes = aios_db.read("workflow_nodes")
@@ -1080,6 +1274,42 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length) or b''
         if path.startswith('/workflow/'):
             jdata = json.loads(body.decode() or '{}')
+
+            # Handle worktree creation with terminal
+            if path == '/workflow/worktree_terminal':
+                repo = jdata.get('repo', '/home/seanpatten/projects/AIOS')
+                branch = jdata.get('branch', '')
+                result = subprocess.run(
+                    ["python3", "programs/workflow/workflow.py", "worktree_terminal", repo, branch],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                try:
+                    output = json.loads(result.stdout) if result.stdout else {"error": "No output from command"}
+                except:
+                    output = {"error": result.stderr or "Unknown error"}
+                self.wfile.write(json.dumps(output).encode())
+                return
+
+            # Handle worktree removal
+            if path == '/workflow/remove_worktree':
+                worktree_path = jdata.get('path', '')
+                try:
+                    subprocess.run(["git", "worktree", "remove", worktree_path], check=True, timeout=5)
+                    response = {"success": True}
+                except Exception as e:
+                    response = {"success": False, "error": str(e)}
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps(response).encode())
+                return
+
+            # Existing workflow commands
             wf_cmds = {'/workflow/add': f"python3 programs/workflow/workflow.py add {jdata.get('col', 0)} {jdata.get('text', '')}", '/workflow/expand': f"python3 programs/workflow/workflow.py expand {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/branch': f"python3 programs/workflow/workflow.py branch {jdata.get('id', 0)}", '/workflow/exec': f"python3 programs/workflow/workflow.py exec {jdata.get('id', 0)}", '/workflow/push': f"python3 programs/workflow/workflow.py push {jdata.get('id', 0)}", '/workflow/term': f"python3 programs/workflow/workflow.py term {jdata.get('id', 0)}", '/workflow/comment': f"python3 programs/workflow/workflow.py comment {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/save': f"python3 programs/workflow/workflow.py save {jdata.get('name', 'default')}", '/workflow/load': f"python3 programs/workflow/workflow.py load {jdata.get('name', 'default')}"}
             subprocess.run(wf_cmds.get(path, ""), shell=True, timeout=5, capture_output=True)
             self.send_response(200)
@@ -1121,6 +1351,24 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 os._exit(0)
             Thread(target=delayed_shutdown, daemon=True).start()
+            return
+
+        # Handle worktree creation
+        if path == '/worktree/create':
+            data = parse_qs(body.decode()) or {}
+            repo = data.get('repo', [''])[0]
+            branch = data.get('branch', [''])[0]
+            result = subprocess.run(
+                ["python3", "/home/seanpatten/projects/AIOS/programs/worktree/worktree_manager.py", "create", repo, branch],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            output = result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
+            self.wfile.write(f'<html><body><h2>Worktree Created</h2><pre>{output}</pre><br><a href="/">Back to Control Center</a></body></html>'.encode())
             return
 
         data = parse_qs(body.decode()) or {}
