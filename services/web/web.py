@@ -8,9 +8,14 @@ from urllib.parse import parse_qs, urlparse
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
+import signal
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
 DEV_MODE = os.getenv('DEV_MODE', 'true').lower() in ('1', 'true', 'yes')
+
+# Get ports from arguments
+WEB_PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+API_PORT = int(sys.argv[3]) if len(sys.argv) > 3 else 8000
 
 def get_template(name):
     return (TEMPLATE_DIR / name).read_text() if DEV_MODE else globals().get(f'TEMPLATE_{name.replace(".html", "").replace("-", "_").upper()}', '')
@@ -144,6 +149,42 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
             return
+        # Handle shutdown and restart
+        if path == '/shutdown':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(b'<html><body><h1>Shutting down AIOS...</h1><script>setTimeout(function(){window.close();}, 2000);</script></body></html>')
+            # Kill API and web processes
+            pids = aios_db.read("aios_pids")
+            for pid in pids.values():
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except:
+                    pass
+            os._exit(0)
+            return
+        elif path == '/restart':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(b'<html><body><h1>Restarting AIOS...</h1><script>setTimeout(function(){location.reload();}, 3000);</script></body></html>')
+            # Start new instance and shutdown current
+            subprocess.Popen(["python3", "/home/seanpatten/projects/AIOS/core/aios_start.py"])
+            # Kill current processes after delay
+            def delayed_shutdown():
+                import time
+                time.sleep(1)
+                pids = aios_db.read("aios_pids")
+                for pid in pids.values():
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except:
+                        pass
+                os._exit(0)
+            Thread(target=delayed_shutdown, daemon=True).start()
+            return
+
         data = parse_qs(body.decode()) or {}
         commands = {'/job/run': "python3 services/jobs.py run_wiki", '/job/accept': f"python3 services/jobs.py accept {data.get('id', [''])[0]}", '/job/redo': f"python3 services/jobs.py redo {data.get('id', [''])[0]}", '/run': data.get('cmd', [''])[0], '/todo/add': f"python3 programs/todo/todo.py add {data.get('task', [''])[0]}", '/todo/done': f"python3 programs/todo/todo.py done {data.get('id', [''])[0]}", '/todo/clear': "python3 programs/todo/todo.py clear", '/settings/theme': f"python3 programs/settings/settings.py set theme {data.get('theme', ['dark'])[0]}", '/settings/time': f"python3 programs/settings/settings.py set time_format {data.get('format', ['12h'])[0]}", '/autollm/run': f"python3 programs/autollm/autollm.py run {data.get('repo', [''])[0]} {data.get('branches', ['1'])[0]} {data.get('model', ['claude-3-5-sonnet-20241022'])[0]} {data.get('task', [''])[0]}", '/autollm/accept': f"python3 programs/autollm/autollm.py accept {data.get('job_id', [''])[0]}", '/autollm/vscode': f"code {data.get('path', [''])[0]}", '/autollm/clean': "python3 programs/autollm/autollm.py clean"}
         cmd = commands.get(path, "")
@@ -194,7 +235,15 @@ async def main():
     import socket
     sock = socket.fromfd(int(sys.argv[1]), socket.AF_INET, socket.SOCK_STREAM) if len(sys.argv) > 1 else None
     Thread(target=serve_http, args=(sock,), daemon=True).start()
-    async with websockets.serve(client_handler, 'localhost', 8766):
-        await asyncio.Future()
+    # Use dynamic websocket port based on web port
+    ws_port = WEB_PORT + 1000  # e.g., 8080 -> 9080
+    try:
+        async with websockets.serve(client_handler, 'localhost', ws_port):
+            await asyncio.Future()
+    except OSError:
+        # Try alternative port if first one is taken
+        ws_port = WEB_PORT + 2000
+        async with websockets.serve(client_handler, 'localhost', ws_port):
+            await asyncio.Future()
 
 asyncio.run(main())

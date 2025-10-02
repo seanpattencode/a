@@ -20,4 +20,7 @@ async def status():
     aios_db.write("tasks", [])
     aios_db.write("schedule", {})
     return {"services": aios_db.read("services"), "tasks": aios_db.read("tasks"), "schedule": aios_db.read("schedule")}
-uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# Get port from command line argument or default to 8000
+api_port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+uvicorn.run(app, host="0.0.0.0", port=api_port)
