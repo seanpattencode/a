@@ -3,8 +3,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
-body{{background:#000;font:14px monospace;color:#dfdbd2;padding:20px}}
-.terminal-box{{background:#111;border:1px solid #333;border-radius:10px;padding:10px;margin-bottom:20px;height:calc(50vh - 30px);overflow:hidden;display:flex;flex-direction:column}}
+body{{background:#000;font:14px monospace;color:#dfdbd2;padding:20px;margin:0;overflow:hidden;height:100vh;box-sizing:border-box}}
+#add-terminal{{padding:10px 20px;background:#333;border:1px solid #555;color:#dfdbd2;cursor:pointer;margin-bottom:10px;border-radius:5px;display:block;width:fit-content}}
+#terminals-container{{height:calc(100vh - 70px);overflow-y:auto}}
+.terminal-box{{background:#111;border:1px solid #333;border-radius:10px;padding:10px;margin-bottom:10px;overflow:hidden;display:flex;flex-direction:column}}
 #term{{flex:1;overflow-x:auto;overflow-y:auto;min-height:0}}
 #xterm{{flex:1;width:100%;min-height:0}}
 .cmd-bar{{padding:10px;border-top:1px solid #333;flex-shrink:0;background:#111}}
@@ -13,21 +15,36 @@ body{{background:#000;font:14px monospace;color:#dfdbd2;padding:20px}}
 #prompt-line:before{{content:'$ ';position:absolute;left:0;top:0}}
 #input{{background:transparent;border:none;color:#dfdbd2;font:14px monospace;outline:none;width:100%;padding:0}}
 </style></head><body>
+<button id="add-terminal" onclick="addTerminal()">+ Add Terminal</button>
+<div id="terminals-container">
 <div class="terminal-box">
   <div id="term">
     <div id="prompt-line"><input id="input" type="text" autocomplete="off" spellcheck="false"/></div>
   </div>
   <div class="cmd-bar">
-    <input id="term-cmd" type="text" style="width:calc(100% - 120px);padding:5px;background:#222;border:1px solid #444;color:#dfdbd2" placeholder="Enter command..." onkeydown="if(event.key==='Enter')sendTermCmd()"/>
+    <select id="term-preset" style="padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-right:5px">
+      <option value="">Quick Commands</option>
+      <option value="claude --dangerously-skip-permissions">Claude</option>
+      <option value='codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox'>Codex</option>
+    </select>
+    <button onclick="usePreset('term')" style="padding:5px 10px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer">Use</button>
+    <input id="term-cmd" type="text" style="width:calc(100% - 420px);padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-left:5px" placeholder="Enter command..." onkeydown="if(event.key==='Enter')sendTermCmd()"/>
     <button onclick="sendTermCmd()" style="padding:5px 15px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer;margin-left:5px">Send</button>
   </div>
 </div>
 <div class="terminal-box">
   <div id="xterm"></div>
   <div class="cmd-bar">
-    <input id="xterm-cmd" type="text" style="width:calc(100% - 120px);padding:5px;background:#222;border:1px solid #444;color:#dfdbd2" placeholder="Enter command..." onkeydown="if(event.key==='Enter')sendXtermCmd()"/>
+    <select id="xterm-preset" style="padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-right:5px">
+      <option value="">Quick Commands</option>
+      <option value="claude --dangerously-skip-permissions">Claude</option>
+      <option value='codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox'>Codex</option>
+    </select>
+    <button onclick="usePreset('xterm')" style="padding:5px 10px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer">Use</button>
+    <input id="xterm-cmd" type="text" style="width:calc(100% - 420px);padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-left:5px" placeholder="Enter command..." onkeydown="if(event.key==='Enter')sendXtermCmd()"/>
     <button onclick="sendXtermCmd()" style="padding:5px 15px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer;margin-left:5px">Send</button>
   </div>
+</div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
@@ -98,6 +115,9 @@ input.onkeydown = e => {{
   const k = e.key;
   let data = null;
 
+  // Only handle if input is focused
+  if(document.activeElement !== input) return;
+
   if(e.ctrlKey){{
     const key = k.toLowerCase();
     if(key==='c'){{data='\x03';input.value='';e.preventDefault();}}
@@ -139,14 +159,107 @@ term.onclick = e => {{
   if(e.target !== input) input.blur();
 }};
 
-document.onkeydown = e => {{
-  const active = document.activeElement;
-  if(active !== input && active.id !== 'term-cmd' && active.id !== 'xterm-cmd') input.focus();
-}};
+// Terminal management
+let terminalCount = 2;
+const terminals = [];
 
-input.focus();
+function updateTerminalSizes() {{
+  const container = document.getElementById('terminals-container');
+  const boxes = document.querySelectorAll('.terminal-box');
+  const count = boxes.length;
+
+  const minHeight = 200;
+  const buttonHeight = 50;
+  const containerPadding = 40;
+  const boxMargin = 10;
+  const totalMargins = (count - 1) * boxMargin;
+  const availableHeight = window.innerHeight - buttonHeight - containerPadding;
+  const calculatedHeight = Math.max(minHeight, Math.floor((availableHeight - totalMargins) / count));
+
+  let i = 0;
+  while(i < boxes.length) {{
+    boxes[i].style.height = calculatedHeight + 'px';
+    i++;
+  }}
+}}
+
+function addTerminal() {{
+  terminalCount++;
+  const container = document.getElementById('terminals-container');
+  const termId = 'xterm-' + terminalCount;
+  const cmdId = 'cmd-' + terminalCount;
+  const presetId = 'preset-' + terminalCount;
+
+  const termBox = document.createElement('div');
+  termBox.className = 'terminal-box';
+  termBox.innerHTML = `
+    <div id="${{termId}}"></div>
+    <div class="cmd-bar">
+      <select id="${{presetId}}" style="padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-right:5px">
+        <option value="">Quick Commands</option>
+        <option value="claude --dangerously-skip-permissions">Claude</option>
+        <option value='codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox'>Codex</option>
+      </select>
+      <button onclick="usePresetDynamic('${{termId}}', '${{presetId}}', '${{cmdId}}')" style="padding:5px 10px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer">Use</button>
+      <input id="${{cmdId}}" type="text" style="width:calc(100% - 420px);padding:5px;background:#222;border:1px solid #444;color:#dfdbd2;margin-left:5px" placeholder="Enter command..." onkeydown="if(event.key==='Enter')sendDynamicCmd('${{termId}}', '${{cmdId}}')"/>
+      <button onclick="sendDynamicCmd('${{termId}}', '${{cmdId}}')" style="padding:5px 15px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer;margin-left:5px">Send</button>
+    </div>
+  `;
+
+  container.appendChild(termBox);
+
+  setTimeout(() => {{
+    const xterm = new Terminal();
+    const xtermFit = new FitAddon.FitAddon();
+    xterm.loadAddon(xtermFit);
+    xterm.open(document.getElementById(termId));
+    xtermFit.fit();
+    const xtermWs = new WebSocket('ws://localhost:8766');
+    xtermWs.binaryType = 'arraybuffer';
+    xtermWs.onmessage = e => xterm.write(new Uint8Array(e.data));
+    xterm.onData(d => xtermWs.send(new TextEncoder().encode(d)));
+
+    terminals.push({{ id: termId, term: xterm, fit: xtermFit, ws: xtermWs }});
+
+    updateTerminalSizes();
+    window.onresize = () => {{
+      updateTerminalSizes();
+      terminals.forEach(t => t.fit.fit());
+      xtermFit.fit();
+    }};
+  }}, 100);
+}}
+
+function usePresetDynamic(termId, presetId, cmdId) {{
+  const select = document.getElementById(presetId);
+  const cmd = select.value;
+  if(cmd) {{
+    document.getElementById(cmdId).value = cmd;
+    select.selectedIndex = 0;
+  }}
+}}
+
+function sendDynamicCmd(termId, cmdId) {{
+  const cmd = document.getElementById(cmdId).value;
+  if(cmd) {{
+    const terminal = terminals.find(t => t.id === termId);
+    if(terminal) {{
+      terminal.ws.send(new TextEncoder().encode(cmd + '\r'));
+      document.getElementById(cmdId).value = '';
+    }}
+  }}
+}}
 
 // Command send functions
+function usePreset(termType) {{
+  const select = document.getElementById(termType + '-preset');
+  const cmd = select.value;
+  if(cmd) {{
+    document.getElementById(termType + '-cmd').value = cmd;
+    select.selectedIndex = 0;
+  }}
+}}
+
 function sendTermCmd() {{
   const cmd = document.getElementById('term-cmd').value;
   if(cmd) {{
