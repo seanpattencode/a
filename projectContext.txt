@@ -1,12 +1,46 @@
-Generated: 2025-10-02 16:35:36
+Generated: 2025-10-02 16:50:29
 
 aios_start.py:
 #!/usr/bin/env python3
-import subprocess, sys
+import subprocess, sys, socket, webbrowser
+from pathlib import Path
 sys.path.append('/home/seanpatten/projects/AIOS')
-command = (sys.argv + ["start"])[1]
-subprocess.run(["python3", f"/home/seanpatten/projects/AIOS/core/aios_{command}.py"] + sys.argv[2:])
-
+from core import aios_db
+commands = {
+    "start": lambda: (
+        Path.home().joinpath(".aios").mkdir(exist_ok=True),
+        (lambda ports: (
+            aios_db.write("ports", {"web": ports[0], "api": ports[1]}),
+            aios_db.write("aios_pids", {}),
+            (lambda sock: (
+                [sock.setsockopt(socket.SOL_SOCKET, opt, 1) for opt in [socket.SO_REUSEADDR, socket.SO_REUSEPORT]],
+                sock.bind(('', ports[0])),
+                sock.listen(5),
+                (lambda procs: (
+                    sock.close(),
+                    aios_db.write("aios_pids", {"api": procs[0].pid, "web": procs[1].pid}),
+                    print(f"AIOS started: http://localhost:{ports[0]}"),
+                    webbrowser.open(f"http://localhost:{ports[0]}"),
+                    subprocess.Popen(["python3", "-c", "from services import context_generator; context_generator.generate()"], cwd="/home/seanpatten/projects/AIOS")
+                ))([
+                    subprocess.Popen(["python3", "core/aios_api.py", str(ports[1])], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
+                    subprocess.Popen(["python3", "services/web/web.py", str(sock.fileno()), str(ports[0]), str(ports[1])], pass_fds=[sock.fileno()])
+                ])
+            ))(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+        ))([
+            (lambda sk: (sk.bind(('', 0)), sk.getsockname()[1], sk.close())[1])(socket.socket()),
+            (lambda sk: (sk.bind(('', 0)), sk.getsockname()[1], sk.close())[1])(socket.socket())
+        ])
+    )[-1],
+    "stop": lambda: (
+        subprocess.run(["pkill", "-9", "-f", "core/aios_api.py"], stderr=subprocess.DEVNULL),
+        subprocess.run(["pkill", "-9", "-f", "services/web/web.py"], stderr=subprocess.DEVNULL),
+        aios_db.write("aios_pids", {}),
+        print("AIOS stopped")
+    )[-1],
+    "status": lambda: print(f"PIDs: {aios_db.read('aios_pids')}")
+}
+commands.get((sys.argv + ["start"])[1], commands["start"])()
 
 core/aios_runner.py:
 #!/usr/bin/env python3
@@ -20,25 +54,6 @@ signal.alarm(0)
 sys.stdout.write(result.stdout), sys.stderr.write(result.stderr), sys.exit(result.returncode)
 
 
-core/aios_status.py:
-#!/usr/bin/env python3
-import sys
-sys.path.append('/home/seanpatten/projects/AIOS')
-from core import aios_db
-print(f"PIDs: {aios_db.read('aios_pids')}")
-
-
-core/aios_stop.py:
-#!/usr/bin/env python3
-import subprocess, sys
-sys.path.append('/home/seanpatten/projects/AIOS')
-from core import aios_db
-subprocess.run(["pkill", "-9", "-f", "core/aios_api.py"], stderr=subprocess.DEVNULL)
-subprocess.run(["pkill", "-9", "-f", "services/web/web.py"], stderr=subprocess.DEVNULL)
-aios_db.write("aios_pids", {})
-print("AIOS stopped")
-
-
 core/aios_db.py:
 import json, sqlite3, pathlib
 d = sqlite3.connect(str(pathlib.Path(__file__).parent.parent / "data/aios.db"), isolation_level=None, check_same_thread=False)
@@ -49,27 +64,6 @@ write = lambda n, x: (d.execute("INSERT OR REPLACE INTO kv VALUES(?,?)", (n, jso
 query = lambda _, s, p=(): d.execute(s, p).fetchall()
 execute = lambda _, s, p=(): d.execute(s, p)
 
-
-core/aios_start.py:
-#!/usr/bin/env python3
-import subprocess, time, sys, socket, webbrowser
-from pathlib import Path
-sys.path.append('/home/seanpatten/projects/AIOS')
-from core import aios_db
-find_free_port = lambda: (lambda sk: (sk.bind(('', 0)), sk.getsockname()[1], sk.close())[1])(socket.socket())
-aios_path, start_time = Path.home() / ".aios", time.time()
-aios_path.mkdir(exist_ok=True)
-web_port, api_port = find_free_port(), find_free_port()
-aios_db.write("ports", {"web": web_port, "api": api_port}), aios_db.write("aios_pids", {})
-web_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-[web_sock.setsockopt(socket.SOL_SOCKET, opt, 1) for opt in [socket.SO_REUSEADDR, socket.SO_REUSEPORT]]
-web_sock.bind(('', web_port)), web_sock.listen(5)
-api_proc = subprocess.Popen(["python3", "core/aios_api.py", str(api_port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-web_proc = subprocess.Popen(["python3", "services/web/web.py", str(web_sock.fileno()), str(web_port), str(api_port)], pass_fds=[web_sock.fileno()])
-web_sock.close()
-aios_db.write("aios_pids", {"api": api_proc.pid, "web": web_proc.pid})
-print(f"AIOS started in {time.time()-start_time:.3f}s: http://localhost:{web_port}"), webbrowser.open(f"http://localhost:{web_port}")
-subprocess.Popen(["python3", "-c", "from services import context_generator; context_generator.generate()"], cwd="/home/seanpatten/projects/AIOS")
 
 core/aios_api.py:
 #!/usr/bin/env python3
