@@ -1,4 +1,4 @@
-Generated: 2025-10-01 16:41:36
+Generated: 2025-10-01 23:41:39
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -746,6 +746,150 @@ import aios_db
 worktrees = aios_db.query("autollm", "SELECT branch, path, job_id, status, model, task FROM worktrees")
 list(map(lambda w: print(f"{w[0]}: {w[3]} | {w[4]} | {w[5][:30]}"), worktrees))
 
+programs/workflow/workflow.py:
+#!/usr/bin/env python3
+import sys, json, subprocess
+sys.path.append('/home/seanpatten/projects/AIOS/core')
+import aios_db
+from pathlib import Path
+from datetime import datetime
+
+cmd = (sys.argv + ["list"])[1]
+
+def get_workflows():
+    try:
+        return aios_db.read("workflows")
+    except:
+        aios_db.write("workflows", {})
+        return {}
+
+def get_nodes():
+    try:
+        return aios_db.read("workflow_nodes")
+    except:
+        aios_db.write("workflow_nodes", [])
+        return []
+
+def add_node():
+    nodes = get_nodes()
+    col = int((sys.argv + ["", "0"])[2])
+    args = sys.argv[3:]
+    folder = str(Path.cwd())
+    text = " ".join(args)
+    for i, arg in enumerate(args):
+        if arg.startswith("/") and Path(arg).exists():
+            folder = arg
+            text = " ".join(args[:i] + args[i+1:])
+            break
+    node = {"id": len(nodes), "col": col, "text": text, "folder": folder, "parent": None, "children": [], "branch": None, "created": datetime.now().isoformat()}
+    aios_db.write("workflow_nodes", nodes + [node])
+    print(f"{node['id']}")
+
+def list_nodes():
+    cols = {}
+    for n in get_nodes():
+        cols.setdefault(n["col"], []).append(n)
+    for c in sorted(cols.keys()):
+        print(f"Column {c}:")
+        list(map(lambda n: print(f"  {n['id']}: {n['text'][:50]}"), cols[c]))
+
+def expand():
+    nid = int((sys.argv + ["", "0"])[2])
+    instruction = " ".join(sys.argv[3:])
+    nodes = get_nodes()
+    parent = nodes[nid]
+    new_text = f"{parent['text']}\n{instruction}" if instruction else parent['text']
+    child = {"id": len(nodes), "col": parent["col"] + 1, "text": new_text, "folder": parent["folder"], "parent": nid, "children": [], "branch": None, "created": datetime.now().isoformat()}
+    nodes[nid]["children"].append(child["id"])
+    aios_db.write("workflow_nodes", nodes + [child])
+    print(f"{child['id']}")
+
+def branch():
+    nid = int((sys.argv + ["", "0"])[2])
+    btype = (sys.argv + ["", "", "folder"])[3]
+    nodes = get_nodes()
+    node = nodes[nid]
+    folder = node["folder"]
+    if btype == "worktree":
+        branch_name = f"workflow-{nid}-{datetime.now():%Y%m%d%H%M%S}"
+        path = f"{folder}-{branch_name}"
+        subprocess.run(["git", "worktree", "add", "-b", branch_name, path], cwd=folder, capture_output=True, timeout=5)
+        nodes[nid]["branch"] = {"type": "worktree", "path": path, "branch": branch_name}
+    elif btype == "subfolder":
+        path = f"{folder}/workflow-{nid}"
+        Path(path).mkdir(parents=True, exist_ok=True)
+        nodes[nid]["branch"] = {"type": "subfolder", "path": path}
+    else:
+        nodes[nid]["branch"] = {"type": "main", "path": folder}
+    aios_db.write("workflow_nodes", nodes)
+    print(nodes[nid]["branch"]["path"])
+
+def execute():
+    nid = int((sys.argv + ["", "0"])[2])
+    nodes = get_nodes()
+    node = nodes[nid]
+    branch = node.get("branch") or {}
+    path = branch.get("path") if branch else node["folder"]
+    full_prompt = node["text"]
+    parent_id = node.get("parent")
+    while parent_id is not None:
+        parent = nodes[parent_id]
+        full_prompt = f"{parent['text']}\n{full_prompt}"
+        parent_id = parent.get("parent")
+    aios_db.execute("jobs", "INSERT INTO jobs(name, status, output) VALUES (?, 'running', ?)", (f"workflow-{nid}", node["text"]))
+    job_id = aios_db.query("jobs", "SELECT MAX(id) FROM jobs")[0][0]
+    subprocess.Popen(["claude", "--dangerously-skip-permissions", full_prompt], cwd=path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    print(f"{job_id}")
+
+def save_workflow():
+    name = (sys.argv + ["", "default"])[2]
+    workflows = get_workflows()
+    workflows[name] = {"nodes": get_nodes(), "saved": datetime.now().isoformat()}
+    aios_db.write("workflows", workflows)
+    print(f"Saved: {name}")
+
+def load_workflow():
+    name = (sys.argv + ["", "default"])[2]
+    workflows = get_workflows()
+    aios_db.write("workflow_nodes", workflows.get(name, {}).get("nodes", []))
+    print(f"Loaded: {name}")
+
+def git_push():
+    nid = int((sys.argv + ["", "0"])[2])
+    msg = " ".join(sys.argv[3:]) or "workflow update"
+    nodes = get_nodes()
+    node = nodes[nid]
+    branch = node.get("branch") or {}
+    path = branch.get("path") if branch else node["folder"]
+    subprocess.run(["git", "add", "."], cwd=path, timeout=5)
+    subprocess.run(["git", "commit", "-m", msg], cwd=path, timeout=5, capture_output=True)
+    result = subprocess.run(["git", "push"], cwd=path, timeout=5, capture_output=True, text=True)
+    if "no upstream branch" in result.stderr:
+        branch_name = subprocess.run(["git", "branch", "--show-current"], cwd=path, capture_output=True, text=True, timeout=5).stdout.strip()
+        subprocess.run(["git", "push", "--set-upstream", "origin", branch_name], cwd=path, timeout=5)
+    print(f"Pushed: {path}")
+
+def terminal():
+    nid = int((sys.argv + ["", "0"])[2])
+    term = (sys.argv + ["", "", "gnome-terminal"])[3]
+    nodes = get_nodes()
+    node = nodes[nid]
+    branch = node.get("branch") or {}
+    path = branch.get("path") if branch else node["folder"]
+    subprocess.Popen([term, "--working-directory", path])
+    print(f"Terminal: {path}")
+
+def comment():
+    nid = int((sys.argv + ["", "0"])[2])
+    text = " ".join(sys.argv[3:])
+    nodes = get_nodes()
+    nodes[nid].setdefault("comments", []).append({"text": text, "time": datetime.now().isoformat(), "author": "human"})
+    aios_db.write("workflow_nodes", nodes)
+    print(f"Comment added to {nid}")
+
+{"add": add_node, "list": list_nodes, "expand": expand, "branch": branch, "exec": execute, "save": save_workflow, "load": load_workflow, "push": git_push, "term": terminal, "comment": comment}.get(cmd, list_nodes)()
+
+
 services/web/web.py:
 #!/usr/bin/env python3
 import sys
@@ -759,6 +903,11 @@ from pathlib import Path
 from threading import Thread
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
+DEV_MODE = os.getenv('DEV_MODE', '').lower() in ('1', 'true', 'yes')
+
+def get_template(name):
+    return (TEMPLATE_DIR / name).read_text() if DEV_MODE else globals().get(f'TEMPLATE_{name.replace(".html", "").replace("-", "_").upper()}', '')
+
 TEMPLATE_INDEX = (TEMPLATE_DIR / 'index.html').read_text()
 TEMPLATE_TODO = (TEMPLATE_DIR / 'todo.html').read_text()
 TEMPLATE_JOBS = (TEMPLATE_DIR / 'jobs.html').read_text()
@@ -769,6 +918,7 @@ TEMPLATE_TERMINAL = (TEMPLATE_DIR / 'terminal.html').read_text()
 TEMPLATE_TERMINAL_EMULATOR = (TEMPLATE_DIR / 'terminal-emulator.html').read_text()
 TEMPLATE_TERMINAL_XTERM = (TEMPLATE_DIR / 'terminal-xterm.html').read_text()
 TEMPLATE_SETTINGS = (TEMPLATE_DIR / 'settings.html').read_text()
+TEMPLATE_WORKFLOW = (TEMPLATE_DIR / 'workflow.html').read_text()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -780,7 +930,7 @@ class Handler(BaseHTTPRequestHandler):
         self.s = s
         self.c = c
         self.query = query
-        handlers = {'/api/jobs': self.handle_api_jobs, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm}
+        handlers = {'/api/jobs': self.handle_api_jobs, '/api/workflow/nodes': self.handle_api_workflow_nodes, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm, '/workflow': self.handle_workflow}
         content, ctype = handlers.get(path, self.handle_default)()
         self.send_response(200)
         self.send_header('Content-type', ctype)
@@ -863,10 +1013,30 @@ class Handler(BaseHTTPRequestHandler):
     def handle_terminal_xterm(self):
         return (TEMPLATE_TERMINAL_XTERM, 'text/html')
 
+    def handle_workflow(self):
+        template = get_template('workflow.html') if DEV_MODE else TEMPLATE_WORKFLOW
+        return (template.format(**self.c), 'text/html')
+
+    def handle_api_workflow_nodes(self):
+        try:
+            nodes = aios_db.read("workflow_nodes")
+        except:
+            nodes = []
+        return (json.dumps(nodes), 'application/json')
+
     def do_POST(self):
         path = urlparse(self.path).path
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length) or b''
+        if path.startswith('/workflow/'):
+            jdata = json.loads(body.decode() or '{}')
+            wf_cmds = {'/workflow/add': f"python3 programs/workflow/workflow.py add {jdata.get('col', 0)} {jdata.get('text', '')}", '/workflow/expand': f"python3 programs/workflow/workflow.py expand {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/branch': f"python3 programs/workflow/workflow.py branch {jdata.get('id', 0)}", '/workflow/exec': f"python3 programs/workflow/workflow.py exec {jdata.get('id', 0)}", '/workflow/push': f"python3 programs/workflow/workflow.py push {jdata.get('id', 0)}", '/workflow/term': f"python3 programs/workflow/workflow.py term {jdata.get('id', 0)}", '/workflow/comment': f"python3 programs/workflow/workflow.py comment {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/save': f"python3 programs/workflow/workflow.py save {jdata.get('name', 'default')}", '/workflow/load': f"python3 programs/workflow/workflow.py load {jdata.get('name', 'default')}"}
+            subprocess.run(wf_cmds.get(path, ""), shell=True, timeout=5, capture_output=True)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+            return
         data = parse_qs(body.decode()) or {}
         commands = {'/job/run': "python3 services/jobs.py run_wiki", '/job/accept': f"python3 services/jobs.py accept {data.get('id', [''])[0]}", '/job/redo': f"python3 services/jobs.py redo {data.get('id', [''])[0]}", '/run': data.get('cmd', [''])[0], '/todo/add': f"python3 programs/todo/todo.py add {data.get('task', [''])[0]}", '/todo/done': f"python3 programs/todo/todo.py done {data.get('id', [''])[0]}", '/todo/clear': "python3 programs/todo/todo.py clear", '/settings/theme': f"python3 programs/settings/settings.py set theme {data.get('theme', ['dark'])[0]}", '/settings/time': f"python3 programs/settings/settings.py set time_format {data.get('format', ['12h'])[0]}", '/autollm/run': f"python3 programs/autollm/autollm.py run {data.get('repo', [''])[0]} {data.get('branches', ['1'])[0]} {data.get('model', ['claude-3-5-sonnet-20241022'])[0]} {data.get('task', [''])[0]}", '/autollm/accept': f"python3 programs/autollm/autollm.py accept {data.get('job_id', [''])[0]}", '/autollm/vscode': f"code {data.get('path', [''])[0]}", '/autollm/clean': "python3 programs/autollm/autollm.py clean"}
         cmd = commands.get(path, "")

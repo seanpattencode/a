@@ -10,6 +10,11 @@ from pathlib import Path
 from threading import Thread
 
 TEMPLATE_DIR = Path(__file__).parent / 'templates'
+DEV_MODE = os.getenv('DEV_MODE', '').lower() in ('1', 'true', 'yes')
+
+def get_template(name):
+    return (TEMPLATE_DIR / name).read_text() if DEV_MODE else globals().get(f'TEMPLATE_{name.replace(".html", "").replace("-", "_").upper()}', '')
+
 TEMPLATE_INDEX = (TEMPLATE_DIR / 'index.html').read_text()
 TEMPLATE_TODO = (TEMPLATE_DIR / 'todo.html').read_text()
 TEMPLATE_JOBS = (TEMPLATE_DIR / 'jobs.html').read_text()
@@ -20,6 +25,7 @@ TEMPLATE_TERMINAL = (TEMPLATE_DIR / 'terminal.html').read_text()
 TEMPLATE_TERMINAL_EMULATOR = (TEMPLATE_DIR / 'terminal-emulator.html').read_text()
 TEMPLATE_TERMINAL_XTERM = (TEMPLATE_DIR / 'terminal-xterm.html').read_text()
 TEMPLATE_SETTINGS = (TEMPLATE_DIR / 'settings.html').read_text()
+TEMPLATE_WORKFLOW = (TEMPLATE_DIR / 'workflow.html').read_text()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -31,7 +37,7 @@ class Handler(BaseHTTPRequestHandler):
         self.s = s
         self.c = c
         self.query = query
-        handlers = {'/api/jobs': self.handle_api_jobs, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm}
+        handlers = {'/api/jobs': self.handle_api_jobs, '/api/workflow/nodes': self.handle_api_workflow_nodes, '/': self.handle_home, '/todo': self.handle_todo, '/feed': self.handle_feed, '/settings': self.handle_settings, '/jobs': self.handle_jobs, '/autollm': self.handle_autollm, '/autollm/output': self.handle_autollm_output, '/terminal': self.handle_terminal, '/terminal-emulator': self.handle_terminal_emulator, '/terminal-xterm': self.handle_terminal_xterm, '/workflow': self.handle_workflow}
         content, ctype = handlers.get(path, self.handle_default)()
         self.send_response(200)
         self.send_header('Content-type', ctype)
@@ -114,10 +120,30 @@ class Handler(BaseHTTPRequestHandler):
     def handle_terminal_xterm(self):
         return (TEMPLATE_TERMINAL_XTERM, 'text/html')
 
+    def handle_workflow(self):
+        template = get_template('workflow.html') if DEV_MODE else TEMPLATE_WORKFLOW
+        return (template.format(**self.c), 'text/html')
+
+    def handle_api_workflow_nodes(self):
+        try:
+            nodes = aios_db.read("workflow_nodes")
+        except:
+            nodes = []
+        return (json.dumps(nodes), 'application/json')
+
     def do_POST(self):
         path = urlparse(self.path).path
         length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(length) or b''
+        if path.startswith('/workflow/'):
+            jdata = json.loads(body.decode() or '{}')
+            wf_cmds = {'/workflow/add': f"python3 programs/workflow/workflow.py add {jdata.get('col', 0)} {jdata.get('text', '')}", '/workflow/expand': f"python3 programs/workflow/workflow.py expand {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/branch': f"python3 programs/workflow/workflow.py branch {jdata.get('id', 0)}", '/workflow/exec': f"python3 programs/workflow/workflow.py exec {jdata.get('id', 0)}", '/workflow/push': f"python3 programs/workflow/workflow.py push {jdata.get('id', 0)}", '/workflow/term': f"python3 programs/workflow/workflow.py term {jdata.get('id', 0)}", '/workflow/comment': f"python3 programs/workflow/workflow.py comment {jdata.get('id', 0)} {jdata.get('text', '')}", '/workflow/save': f"python3 programs/workflow/workflow.py save {jdata.get('name', 'default')}", '/workflow/load': f"python3 programs/workflow/workflow.py load {jdata.get('name', 'default')}"}
+            subprocess.run(wf_cmds.get(path, ""), shell=True, timeout=5, capture_output=True)
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+            return
         data = parse_qs(body.decode()) or {}
         commands = {'/job/run': "python3 services/jobs.py run_wiki", '/job/accept': f"python3 services/jobs.py accept {data.get('id', [''])[0]}", '/job/redo': f"python3 services/jobs.py redo {data.get('id', [''])[0]}", '/run': data.get('cmd', [''])[0], '/todo/add': f"python3 programs/todo/todo.py add {data.get('task', [''])[0]}", '/todo/done': f"python3 programs/todo/todo.py done {data.get('id', [''])[0]}", '/todo/clear': "python3 programs/todo/todo.py clear", '/settings/theme': f"python3 programs/settings/settings.py set theme {data.get('theme', ['dark'])[0]}", '/settings/time': f"python3 programs/settings/settings.py set time_format {data.get('format', ['12h'])[0]}", '/autollm/run': f"python3 programs/autollm/autollm.py run {data.get('repo', [''])[0]} {data.get('branches', ['1'])[0]} {data.get('model', ['claude-3-5-sonnet-20241022'])[0]} {data.get('task', [''])[0]}", '/autollm/accept': f"python3 programs/autollm/autollm.py accept {data.get('job_id', [''])[0]}", '/autollm/vscode': f"code {data.get('path', [''])[0]}", '/autollm/clean': "python3 programs/autollm/autollm.py clean"}
         cmd = commands.get(path, "")

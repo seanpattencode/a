@@ -41,3 +41,13 @@ python services/jobs.py review - review jobs
 python services/jobs.py done - done jobs
 python programs/wiki_fetcher/wiki_fetcher.py - fetch wiki
 python services/context_generator.py - generate context
+python programs/workflow/workflow.py add - add workflow node
+python programs/workflow/workflow.py list - show workflow
+python programs/workflow/workflow.py expand - expand node
+python programs/workflow/workflow.py branch - create branch
+python programs/workflow/workflow.py exec - execute node
+python programs/workflow/workflow.py save - save workflow
+python programs/workflow/workflow.py load - load workflow
+python programs/workflow/workflow.py push - git push
+python programs/workflow/workflow.py term - open terminal
+python programs/workflow/workflow.py comment - add comment
