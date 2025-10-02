@@ -4,9 +4,10 @@
 <style>
 *{{margin:0;padding:0;box-sizing:border-box}}
 body{{background:#000;font:14px monospace;color:#dfdbd2;padding:20px}}
-.terminal-box{{background:#111;border:1px solid #333;border-radius:10px;padding:10px;margin-bottom:20px;height:calc(50vh - 30px);overflow:hidden}}
-#term{{height:100%;overflow-x:auto;overflow-y:auto}}
-#xterm{{height:100%;width:100%}}
+.terminal-box{{background:#111;border:1px solid #333;border-radius:10px;padding:10px;margin-bottom:20px;height:calc(50vh - 30px);overflow:hidden;display:flex;flex-direction:column}}
+#term{{flex:1;overflow-x:auto;overflow-y:auto;min-height:0}}
+#xterm{{flex:1;width:100%;min-height:0}}
+.cmd-bar{{padding:10px;border-top:1px solid #333;flex-shrink:0;background:#111}}
 .line{{white-space:pre-wrap;word-wrap:break-word;user-select:text}}
 #prompt-line{{white-space:pre;padding-left:12px;position:relative}}
 #prompt-line:before{{content:'$ ';position:absolute;left:0;top:0}}
@@ -16,9 +17,17 @@ body{{background:#000;font:14px monospace;color:#dfdbd2;padding:20px}}
   <div id="term">
     <div id="prompt-line"><input id="input" type="text" autocomplete="off" spellcheck="false"/></div>
   </div>
+  <div class="cmd-bar">
+    <input id="term-cmd" type="text" style="width:calc(100% - 120px);padding:5px;background:#222;border:1px solid #444;color:#dfdbd2" placeholder="Enter command..." onkeydown="if(event.key==='Enter')sendTermCmd()"/>
+    <button onclick="sendTermCmd()" style="padding:5px 15px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer;margin-left:5px">Send</button>
+  </div>
 </div>
 <div class="terminal-box">
   <div id="xterm"></div>
+  <div class="cmd-bar">
+    <input id="xterm-cmd" type="text" style="width:calc(100% - 120px);padding:5px;background:#222;border:1px solid #444;color:#dfdbd2" placeholder="Enter command..." onkeydown="if(event.key==='Enter')sendXtermCmd()"/>
+    <button onclick="sendXtermCmd()" style="padding:5px 15px;background:#333;border:1px solid #444;color:#dfdbd2;cursor:pointer;margin-left:5px">Send</button>
+  </div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
@@ -131,21 +140,45 @@ term.onclick = e => {{
 }};
 
 document.onkeydown = e => {{
-  if(document.activeElement !== input) input.focus();
+  const active = document.activeElement;
+  if(active !== input && active.id !== 'term-cmd' && active.id !== 'xterm-cmd') input.focus();
 }};
 
 input.focus();
 
+// Command send functions
+function sendTermCmd() {{
+  const cmd = document.getElementById('term-cmd').value;
+  if(cmd) {{
+    const data = cmd + '\r';
+    const bytes = new Uint8Array(data.length);
+    for(let i=0;i<data.length;i++)bytes[i]=data.charCodeAt(i);
+    ws.send(bytes);
+    document.getElementById('term-cmd').value = '';
+  }}
+}}
+
+function sendXtermCmd() {{
+  const cmd = document.getElementById('xterm-cmd').value;
+  if(cmd) {{
+    xtermWs.send(new TextEncoder().encode(cmd + '\r'));
+    document.getElementById('xterm-cmd').value = '';
+  }}
+}}
+
 // XTerm setup
-const xterm = new Terminal();
-const xtermFit = new FitAddon.FitAddon();
-xterm.loadAddon(xtermFit);
-xterm.open(document.getElementById('xterm'));
-xtermFit.fit();
-const xtermWs = new WebSocket('ws://localhost:8766');
-xtermWs.binaryType = 'arraybuffer';
-xtermWs.onmessage = e => xterm.write(new Uint8Array(e.data));
-xterm.onData(d => xtermWs.send(new TextEncoder().encode(d)));
-window.onresize = () => xtermFit.fit();
+let xtermWs;
+setTimeout(() => {{
+  const xterm = new Terminal();
+  const xtermFit = new FitAddon.FitAddon();
+  xterm.loadAddon(xtermFit);
+  xterm.open(document.getElementById('xterm'));
+  xtermFit.fit();
+  xtermWs = new WebSocket('ws://localhost:8766');
+  xtermWs.binaryType = 'arraybuffer';
+  xtermWs.onmessage = e => xterm.write(new Uint8Array(e.data));
+  xterm.onData(d => xtermWs.send(new TextEncoder().encode(d)));
+  window.onresize = () => xtermFit.fit();
+}}, 100);
 </script>
 </body></html>
