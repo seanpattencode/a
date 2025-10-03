@@ -1,0 +1,3 @@
+=== Comparison Test ===
+factor output: [2, 2, 3, 7]
+factor2 output: [2, 2, 3, 7]
