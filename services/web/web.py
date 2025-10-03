@@ -277,6 +277,26 @@ class Handler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get('Content-Length', 0))
         b = self.rfile.read(content_length) if content_length else b''
 
+        # Handle API routes first
+        if p.startswith('/api/'):
+            d = json.loads(b.decode() or '{}')
+            if p == '/api/workflow/save':
+                workflow_path = d.get('path', '')
+                workflow_content = d.get('content', '')
+                try:
+                    full_path = Path('/home/seanpatten/projects/AIOS') / workflow_path
+                    # Create workflows directory if it doesn't exist
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    full_path.write_text(workflow_content)
+                    output = json.dumps({"success": True, "path": workflow_path})
+                except Exception as e:
+                    output = json.dumps({"success": False, "error": str(e)})
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(output.encode())
+                return
+
         # Handle workflow routes
         if p.startswith('/workflow/'):
             d = json.loads(b.decode() or '{}')

@@ -53,12 +53,25 @@ input{{background:{bg2};color:{fg};border:1px solid {fg};padding:10px;width:300p
 <div class="worktree-section">
 <h2>Workflows</h2>
 <div>
-<select id="workflow-select" style="background:{bg2};color:{fg};border:1px solid {fg};padding:10px;margin:10px;border-radius:5px;width:400px">
+<select id="workflow-select" style="background:{bg2};color:{fg};border:1px solid {fg};padding:10px;margin:10px;border-radius:5px;width:400px" onchange="loadWorkflowToEditor()">
 <option value="">Select a workflow...</option>
 </select>
 <button class="create-btn" onclick="executeWorkflow()">Execute Workflow</button>
+<button onclick="loadWorkflowToEditor()">Edit</button>
+<button onclick="createNewWorkflow()">New</button>
 </div>
 <div id="workflow-status" style="margin-top:10px;color:#888"></div>
+
+<div id="workflow-editor" style="margin-top:20px;display:none">
+<h3>Workflow Editor</h3>
+<input id="workflow-name" placeholder="Workflow name (e.g., my_workflow.md)" style="background:{bg2};color:{fg};border:1px solid {fg};padding:10px;width:400px;margin-bottom:10px;border-radius:5px">
+<textarea id="workflow-content" style="background:{bg2};color:{fg};border:1px solid {fg};padding:10px;width:100%;height:400px;font-family:monospace;font-size:14px;border-radius:5px"></textarea>
+<div style="margin-top:10px">
+<button class="create-btn" onclick="saveWorkflow()">Save Workflow</button>
+<button onclick="closeEditor()">Close Editor</button>
+</div>
+<div id="editor-status" style="margin-top:10px;color:#888"></div>
+</div>
 </div>
 
 <div class="terminal-section">
@@ -285,6 +298,95 @@ async function executeWorkflow() {{
     }} catch (error) {{
         document.getElementById('workflow-status').innerHTML = `Error: ${{error.message}}`;
     }}
+}}
+
+async function loadWorkflowToEditor() {{
+    const workflowPath = document.getElementById('workflow-select').value;
+    if (!workflowPath) {{
+        document.getElementById('editor-status').innerHTML = 'Please select a workflow first';
+        return;
+    }}
+
+    try {{
+        const response = await fetch(`/api/workflow/content?path=${{encodeURIComponent(workflowPath)}}`);
+        const data = await response.json();
+
+        if (data.content) {{
+            document.getElementById('workflow-name').value = workflowPath;
+            document.getElementById('workflow-content').value = data.content;
+            document.getElementById('workflow-editor').style.display = 'block';
+            document.getElementById('editor-status').innerHTML = `Loaded: ${{workflowPath}}`;
+        }} else {{
+            document.getElementById('editor-status').innerHTML = 'Error: Could not load workflow';
+        }}
+    }} catch (error) {{
+        document.getElementById('editor-status').innerHTML = `Error: ${{error.message}}`;
+    }}
+}}
+
+function createNewWorkflow() {{
+    const template = `# New Workflow
+
+Description of what this workflow does.
+
+## Step 1: First step
+
+\`\`\`bash
+echo "Hello from workflow"
+\`\`\`
+
+## Step 2: Second step
+
+\`\`\`bash
+echo "Add more steps as needed"
+\`\`\`
+`;
+    document.getElementById('workflow-name').value = 'workflows/new_workflow.md';
+    document.getElementById('workflow-content').value = template;
+    document.getElementById('workflow-editor').style.display = 'block';
+    document.getElementById('editor-status').innerHTML = 'New workflow - edit and save';
+}}
+
+async function saveWorkflow() {{
+    const workflowName = document.getElementById('workflow-name').value;
+    const workflowContent = document.getElementById('workflow-content').value;
+
+    if (!workflowName) {{
+        document.getElementById('editor-status').innerHTML = 'Error: Please enter a workflow name';
+        return;
+    }}
+
+    if (!workflowContent.trim()) {{
+        document.getElementById('editor-status').innerHTML = 'Error: Workflow content cannot be empty';
+        return;
+    }}
+
+    try {{
+        const response = await fetch('/api/workflow/save', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{
+                path: workflowName,
+                content: workflowContent
+            }})
+        }});
+
+        const result = await response.json();
+
+        if (result.success) {{
+            document.getElementById('editor-status').innerHTML = `Saved: ${{workflowName}}`;
+            loadWorkflows(); // Refresh workflow list
+        }} else {{
+            document.getElementById('editor-status').innerHTML = `Error: ${{result.error}}`;
+        }}
+    }} catch (error) {{
+        document.getElementById('editor-status').innerHTML = `Error: ${{error.message}}`;
+    }}
+}}
+
+function closeEditor() {{
+    document.getElementById('workflow-editor').style.display = 'none';
+    document.getElementById('editor-status').innerHTML = '';
 }}
 
 async function removeWorktree(path) {{
