@@ -1,4 +1,4 @@
-Generated: 2025-10-02 23:30:53
+Generated: 2025-10-02 23:34:42
 
 aios_start.py:
 #!/usr/bin/env python3
@@ -1277,6 +1277,10 @@ class Handler(BaseHTTPRequestHandler):
             ),
             '/api/workflow/list': lambda: (
                 json.dumps([str(f.relative_to('/home/seanpatten/projects/AIOS')) for f in Path('/home/seanpatten/projects/AIOS/workflows').glob('*.md')] if Path('/home/seanpatten/projects/AIOS/workflows').exists() else []),
+                'application/json'
+            ),
+            '/api/workflow/content': lambda: (
+                json.dumps({"content": (Path('/home/seanpatten/projects/AIOS') / parse_qs(urlparse(self.path).query).get('path', [''])[0]).read_text() if (Path('/home/seanpatten/projects/AIOS') / parse_qs(urlparse(self.path).query).get('path', [''])[0]).exists() else ""}),
                 'application/json'
             ),
             '/api/terminal/sessions': lambda: (

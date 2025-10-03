@@ -205,6 +205,29 @@ async function loadWorkflows() {{
     }}
 }}
 
+function parseWorkflowSteps(markdown) {{
+    const steps = [];
+    const lines = markdown.split('\n');
+    let inCodeBlock = false;
+    let currentBlock = [];
+
+    for (let line of lines) {{
+        if (line.trim().startsWith('```bash') || line.trim().startsWith('```sh')) {{
+            inCodeBlock = true;
+            currentBlock = [];
+        }} else if (inCodeBlock && line.trim().startsWith('```')) {{
+            if (currentBlock.length > 0) {{
+                steps.push(currentBlock.join('\n'));
+            }}
+            inCodeBlock = false;
+        }} else if (inCodeBlock) {{
+            currentBlock.push(line);
+        }}
+    }}
+
+    return steps;
+}}
+
 async function executeWorkflow() {{
     const workflowPath = document.getElementById('workflow-select').value;
     if (!workflowPath) {{
@@ -212,23 +235,53 @@ async function executeWorkflow() {{
         return;
     }}
 
-    try {{
-        document.getElementById('workflow-status').innerHTML = 'Executing workflow...';
-        const response = await fetch('/workflow/execute', {{
-            method: 'POST',
-            headers: {{'Content-Type': 'application/json'}},
-            body: JSON.stringify({{
-                worktree_id: currentWorktreeId,
-                workflow_path: '/home/seanpatten/projects/AIOS/' + workflowPath
-            }})
-        }});
+    if (!currentWs || currentWs.readyState !== WebSocket.OPEN) {{
+        document.getElementById('workflow-status').innerHTML = 'Error: Terminal not connected';
+        return;
+    }}
 
-        const result = await response.json();
-        if (result.status === 'completed') {{
-            document.getElementById('workflow-status').innerHTML = `Workflow completed with ${{result.results.length}} steps`;
-        }} else {{
-            document.getElementById('workflow-status').innerHTML = `Workflow error: ${{result.error}}`;
+    try {{
+        // Fetch workflow content
+        const response = await fetch(`/api/workflow/content?path=${{encodeURIComponent(workflowPath)}}`);
+        const data = await response.json();
+
+        if (!data.content) {{
+            document.getElementById('workflow-status').innerHTML = 'Error: Workflow file not found';
+            return;
         }}
+
+        // Parse workflow steps
+        const steps = parseWorkflowSteps(data.content);
+
+        if (steps.length === 0) {{
+            document.getElementById('workflow-status').innerHTML = 'Error: No executable steps found in workflow';
+            return;
+        }}
+
+        document.getElementById('workflow-status').innerHTML = `Executing ${{steps.length}} steps in terminal...`;
+
+        // Send each step to terminal with delays
+        for (let i = 0; i < steps.length; i++) {{
+            const step = steps[i];
+
+            // Show step header in terminal
+            const header = `\\r\\n# --- Step ${{i + 1}} of ${{steps.length}} ---\\r\\n`;
+            currentWs.send(new TextEncoder().encode(header));
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Send the command
+            currentWs.send(new TextEncoder().encode(step + '\\r'));
+
+            // Update status
+            document.getElementById('workflow-status').innerHTML = `Executing step ${{i + 1}} of ${{steps.length}}...`;
+
+            // Wait before next step (longer delay to see output)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }}
+
+        document.getElementById('workflow-status').innerHTML = `Workflow completed - executed ${{steps.length}} steps`;
+
     }} catch (error) {{
         document.getElementById('workflow-status').innerHTML = `Error: ${{error.message}}`;
     }}

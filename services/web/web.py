@@ -252,6 +252,10 @@ class Handler(BaseHTTPRequestHandler):
                 json.dumps([str(f.relative_to('/home/seanpatten/projects/AIOS')) for f in Path('/home/seanpatten/projects/AIOS/workflows').glob('*.md')] if Path('/home/seanpatten/projects/AIOS/workflows').exists() else []),
                 'application/json'
             ),
+            '/api/workflow/content': lambda: (
+                json.dumps({"content": (Path('/home/seanpatten/projects/AIOS') / parse_qs(urlparse(self.path).query).get('path', [''])[0]).read_text() if (Path('/home/seanpatten/projects/AIOS') / parse_qs(urlparse(self.path).query).get('path', [''])[0]).exists() else ""}),
+                'application/json'
+            ),
             '/api/terminal/sessions': lambda: (
                 json.dumps(aios_db.read("terminal_sessions") or {}),
                 'application/json'
