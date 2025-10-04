@@ -27,7 +27,30 @@ pip install prompt_toolkit libtmux
 python python.py
 ```
 
-You'll see a full-screen terminal UI:
+**Task Menu** appears first, showing all tasks in `tasks/` folder:
+
+```
+================================================================================
+AVAILABLE TASKS
+================================================================================
+  1. [✓] basic-worktree                 (basic-worktree.json)
+  2. [✓] codex-worktree                 (codex-worktree.json)
+  3. [ ] factor-demo                    (example_task.json)
+  4. [ ] sorting-algo                   (parallel_task.json)
+  5. [ ] simple-test                    (test_task.json)
+================================================================================
+Select tasks to run:
+  - Enter numbers (e.g., '1 3 5' or '1,3,5')
+  - Enter 'all' to run all tasks
+  - Press Enter to skip and use interactive mode
+================================================================================
+Selection:
+```
+
+**[✓]** = Has git worktree support
+**[ ]** = Regular task
+
+After selection (or pressing Enter), you'll see the full-screen terminal UI:
 
 ```
 ================================================================================
@@ -180,6 +203,48 @@ python python.py deploy-staging.json deploy-prod.json deploy-eu.json
 ```
 
 All will queue and run in parallel!
+
+## Tasks Folder
+
+Place your task JSON files in the `tasks/` directory. AIOS automatically scans this folder at startup and displays them in an interactive menu.
+
+### Task Organization
+
+```
+tasks/
+├── basic-worktree.json     # ✓ With worktree
+├── codex-worktree.json     # ✓ With worktree
+├── example_task.json       # Regular task
+├── parallel_task.json      # Regular task
+└── test_task.json          # Regular task
+```
+
+### Interactive Menu
+
+When you run `python python.py` without arguments, you'll see a numbered menu of all tasks:
+
+```bash
+# Run specific tasks
+python python.py
+# Select "1 3" to run tasks 1 and 3
+
+# Run all tasks
+python python.py
+# Select "all"
+
+# Skip menu and use interactive mode
+python python.py
+# Press Enter
+```
+
+### Using run.py (Simple Runner)
+
+For a simpler, non-UI experience:
+
+```bash
+echo "1 2" | python run.py   # Run tasks 1 and 2
+echo "all" | python run.py   # Run all tasks
+```
 
 ## Git Worktree Support
 

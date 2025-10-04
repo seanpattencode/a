@@ -12,6 +12,31 @@ pip install prompt_toolkit libtmux
 python python.py
 ```
 
+You'll see a task menu at startup:
+
+```
+================================================================================
+AVAILABLE TASKS
+================================================================================
+  1. [✓] basic-worktree                 (basic-worktree.json)
+  2. [✓] codex-worktree                 (codex-worktree.json)
+  3. [ ] factor-demo                    (example_task.json)
+  4. [ ] sorting-algo                   (parallel_task.json)
+  5. [ ] simple-test                    (test_task.json)
+================================================================================
+Select tasks to run:
+  - Enter numbers (e.g., '1 3 5' or '1,3,5')
+  - Enter 'all' to run all tasks
+  - Press Enter to skip and use interactive mode
+================================================================================
+Selection:
+```
+
+Enter task numbers to run them, or press Enter for interactive mode.
+
+**[✓]** = Has git worktree support
+**[ ]** = Regular task
+
 ## Try It
 
 Once the UI loads, type these commands:

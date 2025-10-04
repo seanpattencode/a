@@ -312,10 +312,71 @@ def process_command(cmd):
     else:
         return "✗ Unknown command"
 
+def show_task_menu():
+    """Scan tasks/ folder and show interactive menu"""
+    tasks_dir = Path("tasks")
+    if not tasks_dir.exists():
+        return []
+
+    task_files = sorted(tasks_dir.glob("*.json"))
+    if not task_files:
+        return []
+
+    print("\n" + "="*80)
+    print("AVAILABLE TASKS")
+    print("="*80)
+
+    tasks = []
+    for i, filepath in enumerate(task_files, 1):
+        try:
+            with open(filepath) as f:
+                task = json.load(f)
+                tasks.append((filepath, task))
+                task_name = task.get('name', filepath.stem)
+                has_worktree = '✓' if task.get('repo') else ' '
+                print(f"  {i}. [{has_worktree}] {task_name:30} ({filepath.name})")
+        except:
+            pass
+
+    print("="*80)
+    print("Select tasks to run:")
+    print("  - Enter numbers (e.g., '1 3 5' or '1,3,5')")
+    print("  - Enter 'all' to run all tasks")
+    print("  - Press Enter to skip and use interactive mode")
+    print("="*80)
+
+    selection = input("Selection: ").strip()
+
+    if not selection:
+        return []
+
+    if selection.lower() == 'all':
+        return [task for _, task in tasks]
+
+    # Parse selection
+    selected = []
+    parts = selection.replace(',', ' ').split()
+    for part in parts:
+        try:
+            idx = int(part) - 1
+            if 0 <= idx < len(tasks):
+                selected.append(tasks[idx][1])
+        except:
+            pass
+
+    return selected
+
 def main():
     global running
 
     print("Loading AIOS Task Manager...")
+
+    # Show task menu if no command line args
+    if len(sys.argv) == 1:
+        selected_tasks = show_task_menu()
+        for task in selected_tasks:
+            task_queue.put(task)
+            print(f"✓ Queued: {task['name']}")
 
     # Load tasks from command line args
     if len(sys.argv) > 1:

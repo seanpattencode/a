@@ -1,0 +1,11 @@
+{
+  "name": "basic-worktree",
+  "repo": "/home/seanpatten/projects/testRepoPrivate",
+  "branch": "main",
+  "steps": [
+    {"desc": "Show directory", "cmd": "pwd"},
+    {"desc": "Show git status", "cmd": "git status --short"},
+    {"desc": "Create test file", "cmd": "echo 'worktree test' > test.txt"},
+    {"desc": "Show file", "cmd": "cat test.txt"}
+  ]
+}

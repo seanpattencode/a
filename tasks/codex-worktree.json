@@ -1,0 +1,10 @@
+{
+  "name": "codex-worktree",
+  "repo": "/home/seanpatten/projects/testRepoPrivate",
+  "branch": "main",
+  "steps": [
+    {"desc": "Create python.py via codex", "cmd": "codex exec --sandbox workspace-write -- \"create python.py that prints 'python ultrathink'\""},
+    {"desc": "Show file", "cmd": "cat python.py"},
+    {"desc": "Run python.py", "cmd": "python python.py"}
+  ]
+}
