@@ -134,12 +134,15 @@ def execute_task(task):
     """Execute a task with its steps in separate tmux session"""
     name = task["name"]
     steps = task["steps"]
+    repo = task.get("repo")
+    branch = task.get("branch", "main")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_name = f"aios-{name}-{ts}"
 
     # Create jobs directory
     JOBS_DIR.mkdir(exist_ok=True)
     job_dir = JOBS_DIR / f"{name}-{ts}"
+    worktree_dir = job_dir / "worktree" if repo else None
 
     try:
         with jobs_lock:
@@ -157,12 +160,36 @@ def execute_task(task):
             return
 
         pane = session.windows[0].panes[0]
-        pane.send_keys(f"mkdir -p {job_dir} && cd {job_dir}")
-        sleep(2)
+
+        # Create job directory
+        pane.send_keys(f"mkdir -p {job_dir}")
+        sleep(1)
+
+        # Create worktree if repo specified
+        if repo:
+            worktree_dir_abs = worktree_dir.absolute()
+            with jobs_lock:
+                jobs[name] = {"step": f"Creating worktree at {worktree_dir_abs}", "status": "⟳ Running"}
+            # Use --detach to avoid branch conflicts
+            pane.send_keys(f"cd {repo} && git worktree add --detach {worktree_dir_abs} {branch}")
+            if not wait_ready(session_name, timeout=30):
+                with jobs_lock:
+                    jobs[name] = {"step": "Failed to create worktree", "status": "✗ Error"}
+                return
+            pane.send_keys(f"cd {worktree_dir_abs}")
+            sleep(1)
+        else:
+            pane.send_keys(f"cd {job_dir}")
+            sleep(1)
+
+        # Log working directory
+        work_dir = str(worktree_dir) if worktree_dir else str(job_dir)
+        pane.send_keys(f"echo 'Working in: {work_dir}'")
+        sleep(1)
 
         for i, step in enumerate(steps, 1):
             with jobs_lock:
-                jobs[name] = {"step": f"{i}/{len(steps)}: {step['desc']}", "status": "⟳ Running"}
+                jobs[name] = {"step": f"{i}/{len(steps)}: {step['desc']} @ {work_dir}", "status": "⟳ Running"}
 
             pane.send_keys(step["cmd"])
 
@@ -171,8 +198,16 @@ def execute_task(task):
                     jobs[name] = {"step": f"Timeout on step {i}", "status": "✗ Timeout"}
                 return
 
+        # Cleanup worktree if created
+        if repo and worktree_dir:
+            worktree_dir_abs = worktree_dir.absolute()
+            with jobs_lock:
+                jobs[name] = {"step": f"Cleaning up worktree", "status": "⟳ Running"}
+            pane.send_keys(f"cd {repo} && git worktree remove {worktree_dir_abs} --force")
+            sleep(2)
+
         with jobs_lock:
-            jobs[name] = {"step": f"Completed {len(steps)} steps", "status": "✓ Done"}
+            jobs[name] = {"step": f"Completed @ {work_dir}", "status": "✓ Done"}
 
         # Cleanup old job directories
         cleanup_old_jobs()

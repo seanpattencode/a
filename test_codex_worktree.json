@@ -1,0 +1,13 @@
+{
+  "name": "codex-worktree",
+  "repo": "/home/seanpatten/projects/testRepoPrivate",
+  "branch": "main",
+  "steps": [
+    {"desc": "Show working directory", "cmd": "pwd"},
+    {"desc": "Show git status", "cmd": "git status"},
+    {"desc": "Create python.py via codex", "cmd": "codex exec --model claude-sonnet-4.5 -- \"create a file named python.py that prints 'python ultrathink'\""},
+    {"desc": "Show created file", "cmd": "cat python.py"},
+    {"desc": "Run python.py", "cmd": "python python.py"},
+    {"desc": "List all files", "cmd": "ls -la"}
+  ]
+}

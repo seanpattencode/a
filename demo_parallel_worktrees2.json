@@ -1,0 +1,12 @@
+{
+  "name": "parallel-test-2",
+  "repo": "/home/seanpatten/projects/testRepoPrivate",
+  "branch": "main",
+  "steps": [
+    {"desc": "Show directory", "cmd": "pwd"},
+    {"desc": "Show branch", "cmd": "git rev-parse --abbrev-ref HEAD || echo 'detached'"},
+    {"desc": "Show commit", "cmd": "git log -1 --oneline"},
+    {"desc": "Create test result", "cmd": "echo 'Test 2 passed' > test2_result.txt"},
+    {"desc": "Show result", "cmd": "cat test2_result.txt"}
+  ]
+}
