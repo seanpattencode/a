@@ -1,3 +1,0 @@
-=== Comparison Test ===
-factor.py output: 2 2 3 7
-factor2.py output: 2 2 3 7

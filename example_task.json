@@ -1,0 +1,17 @@
+{
+  "name": "factor-demo",
+  "steps": [
+    {
+      "desc": "Create factor.py",
+      "cmd": "codex exec -c model_reasoning_effort=\"high\" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox -- \"create a python program that factors prime numbers in 10 lines or less, save it to factor.py\""
+    },
+    {
+      "desc": "Test with input 84",
+      "cmd": "echo 'Input: 84' > output.txt && python factor.py 84 >> output.txt"
+    },
+    {
+      "desc": "Create refactored version",
+      "cmd": "codex exec -c model_reasoning_effort=\"high\" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox -- \"refactor factor.py to use only direct library calls, save to factor2.py\""
+    }
+  ]
+}

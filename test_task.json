@@ -1,0 +1,13 @@
+{
+  "name": "simple-test",
+  "steps": [
+    {
+      "desc": "Echo test",
+      "cmd": "echo 'Hello from step 1'"
+    },
+    {
+      "desc": "List files",
+      "cmd": "ls -la"
+    }
+  ]
+}
