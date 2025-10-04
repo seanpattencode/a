@@ -8,6 +8,7 @@ A professional terminal UI for running multi-step jobs in parallel with live sta
 ✅ **Live Status** - Real-time job progress updates every 0.5 seconds
 ✅ **Interactive Builder** - Build multi-step jobs on the fly
 ✅ **Parallel Execution** - Run up to 4 jobs simultaneously
+✅ **Git Worktree Support** - Run jobs in isolated git worktrees (parallel codex workflows!)
 ✅ **Isolated Sessions** - Each job runs in its own tmux session
 ✅ **Auto Cleanup** - Keeps last 20 job directories, removes older ones
 ✅ **Organized Output** - All job output in `jobs/` directory
@@ -179,6 +180,106 @@ python python.py deploy-staging.json deploy-prod.json deploy-eu.json
 ```
 
 All will queue and run in parallel!
+
+## Git Worktree Support
+
+Run tasks in isolated git worktrees for parallel workflows. Perfect for running multiple codex instances on the same repo simultaneously!
+
+### What are Git Worktrees?
+
+Git worktrees let you check out multiple branches/commits from the same repository in different directories. AIOS automatically creates, uses, and cleans up worktrees for your tasks.
+
+### Worktree JSON Format
+
+Add `repo` and optional `branch` fields to your task JSON:
+
+```json
+{
+  "name": "codex-task",
+  "repo": "/path/to/your/repo",
+  "branch": "main",
+  "steps": [
+    {"desc": "Show directory", "cmd": "pwd"},
+    {"desc": "Run codex", "cmd": "codex exec --sandbox workspace-write -- \"create hello.py\""},
+    {"desc": "Show result", "cmd": "cat hello.py"}
+  ]
+}
+```
+
+### Worktree Location
+
+Each task creates a worktree at:
+```
+jobs/<task-name-timestamp>/worktree/
+```
+
+Example:
+```
+jobs/codex-task-20251003_214513/worktree/
+```
+
+### Parallel Worktrees
+
+Run multiple codex instances on the same repo simultaneously:
+
+```bash
+# Create two tasks
+cat > task1.json <<EOF
+{
+  "name": "feature-1",
+  "repo": "/home/user/myrepo",
+  "branch": "main",
+  "steps": [
+    {"desc": "Generate code", "cmd": "codex exec -- \"implement feature 1\""}
+  ]
+}
+EOF
+
+cat > task2.json <<EOF
+{
+  "name": "feature-2",
+  "repo": "/home/user/myrepo",
+  "branch": "main",
+  "steps": [
+    {"desc": "Generate code", "cmd": "codex exec -- \"implement feature 2\""}
+  ]
+}
+EOF
+
+# Run both in parallel
+python python.py task1.json task2.json
+```
+
+Both tasks run in separate worktrees simultaneously - no conflicts!
+
+### Worktree Cleanup
+
+By default, worktrees are **NOT** automatically removed (disabled at `python.py:201-207`). This allows inspection after execution.
+
+To manually clean up worktrees:
+```bash
+cd /path/to/your/repo
+git worktree list
+git worktree remove /path/to/worktree
+```
+
+### Testing Worktrees
+
+Use the consolidated test script:
+
+```bash
+# List available tests
+python test.py list
+
+# Run worktree tests
+python test.py run basic          # Basic worktree test
+python test.py run codex          # Codex in worktree
+python test.py run parallel       # Parallel worktrees
+python test.py run parallel-codex # Parallel codex in worktrees
+
+# Run all tests
+python test.py all
+```
 
 ## Job Output
 

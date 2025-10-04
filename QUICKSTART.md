@@ -46,4 +46,51 @@ Or press `Ctrl+C`
 python python.py test_task.json
 ```
 
+## Git Worktree Support
+
+Run tasks in isolated git worktrees:
+
+```bash
+# Create a worktree task
+cat > worktree_test.json <<EOF
+{
+  "name": "worktree-demo",
+  "repo": "/path/to/your/repo",
+  "branch": "main",
+  "steps": [
+    {"desc": "Show directory", "cmd": "pwd"},
+    {"desc": "Show git status", "cmd": "git status"},
+    {"desc": "Create file", "cmd": "echo 'test' > test.txt"}
+  ]
+}
+EOF
+
+# Run it
+python python.py worktree_test.json
+
+# Or use the test script
+python test.py run basic
+```
+
+### Parallel Codex in Worktrees
+
+```bash
+python test.py run parallel-codex
+```
+
+This runs two codex instances simultaneously in separate worktrees!
+
+## Testing
+
+```bash
+# List all tests
+python test.py list
+
+# Run specific test
+python test.py run codex
+
+# Run all tests
+python test.py all
+```
+
 See `README.md` for complete documentation.
