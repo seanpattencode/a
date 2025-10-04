@@ -1,13 +1,12 @@
 {
-  "name": "codex-worktree",
+  "name": "codex-parallel-1",
   "repo": "/home/seanpatten/projects/testRepoPrivate",
   "branch": "main",
   "steps": [
     {"desc": "Show working directory", "cmd": "pwd"},
-    {"desc": "Show git status", "cmd": "git status"},
     {"desc": "Create python.py via codex", "cmd": "codex exec --sandbox workspace-write -- \"create a file named python.py that prints 'python ultrathink'\""},
     {"desc": "Show created file", "cmd": "cat python.py"},
     {"desc": "Run python.py", "cmd": "python python.py"},
-    {"desc": "List all files", "cmd": "ls -la"}
+    {"desc": "Verify output", "cmd": "python python.py | grep -q 'python ultrathink' && echo 'SUCCESS: Output verified'"}
   ]
 }

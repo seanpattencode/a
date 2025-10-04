@@ -198,13 +198,13 @@ def execute_task(task):
                     jobs[name] = {"step": f"Timeout on step {i}", "status": "✗ Timeout"}
                 return
 
-        # Cleanup worktree if created
-        if repo and worktree_dir:
-            worktree_dir_abs = worktree_dir.absolute()
-            with jobs_lock:
-                jobs[name] = {"step": f"Cleaning up worktree", "status": "⟳ Running"}
-            pane.send_keys(f"cd {repo} && git worktree remove {worktree_dir_abs} --force")
-            sleep(2)
+        # Cleanup worktree if created - DISABLED (keeping worktrees for inspection)
+        # if repo and worktree_dir:
+        #     worktree_dir_abs = worktree_dir.absolute()
+        #     with jobs_lock:
+        #         jobs[name] = {"step": f"Cleaning up worktree", "status": "⟳ Running"}
+        #     pane.send_keys(f"cd {repo} && git worktree remove {worktree_dir_abs} --force")
+        #     sleep(2)
 
         with jobs_lock:
             jobs[name] = {"step": f"Completed @ {work_dir}", "status": "✓ Done"}
