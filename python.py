@@ -69,10 +69,13 @@ def prompt_for_variables(task):
 
     defaults = task.get('variables', {})
 
+    preview_task = {**task, 'variable_defaults': defaults}
+    preview_task.pop('variables', None)
+
     print("\n" + "="*80)
     print("TEMPLATE PREVIEW")
     print("="*80)
-    print(json.dumps(task, indent=2))
+    print(json.dumps(preview_task, indent=2))
     print("="*80)
 
     print("\n" + "="*80)
