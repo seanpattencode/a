@@ -50,7 +50,8 @@ JOBS_DIR, MAX_JOB_DIRS = Path("jobs"), 20
 _terminal_sessions = {}  # Persistent PTY terminals
 TIMINGS_FILE, profile_mode = Path(".aios_timings.json"), "--profile" in sys.argv
 
-# Performance enforcement system - STRICT 50ms absolute tolerance
+# Performance enforcement: AIOS overhead ONLY (not user commands)
+# TARGET: ≤0.5ms (500μs) - strict enforcement accounting for Python timing variance
 def load_timings():
     return json.loads(TIMINGS_FILE.read_text()) if TIMINGS_FILE.exists() else {}
 
@@ -61,7 +62,7 @@ timings_baseline = {} if profile_mode else load_timings()
 timings_current = {}
 
 def timed(func):
-    """Decorator: profile on first run, SIGKILL on regression > 50ms"""
+    """Decorator: Time AIOS overhead only. SIGKILL if > baseline + 0.5ms"""
     @wraps(func)
     def wrapper(*args, **kwargs):
         start = time()
@@ -72,8 +73,11 @@ def timed(func):
         if profile_mode:
             timings_current[fname] = elapsed
         elif fname in timings_baseline:
-            if elapsed > timings_baseline[fname] + 0.05:
-                print(f"\n✗ PERF REGRESSION: {fname} {elapsed:.3f}s (baseline {timings_baseline[fname]:.3f}s)")
+            if elapsed > timings_baseline[fname] + 0.0005:  # 0.5ms tolerance
+                baseline_ms = timings_baseline[fname] * 1000
+                elapsed_ms = elapsed * 1000
+                over_ms = (elapsed - timings_baseline[fname]) * 1000
+                print(f"\n✗ PERF REGRESSION: {fname} {elapsed_ms:.2f}ms (baseline {baseline_ms:.2f}ms, +{over_ms:.2f}ms over)")
                 os.kill(os.getpid(), signal.SIGKILL)
         return result
     return wrapper
@@ -93,8 +97,8 @@ def substitute_variables(obj, values):
     if isinstance(obj, list): return [substitute_variables(i, values) for i in obj]
     return obj
 
-@timed
 def prompt_for_variables(task):
+    """NOTE: Not timed - includes user input time"""
     if not (variables := extract_variables(task)): return task
     defaults, sep = task.get('variables', {}), "="*80
 
@@ -104,7 +108,17 @@ def prompt_for_variables(task):
         print(f"  {var}: {str(d)[:60]+'...' if len(str(d))>60 else d}")
     print(f"{sep}\n{sep}\nVARIABLES\n{sep}")
 
-    values = {var: ((u := input(f"{var} [{str(d:=defaults.get(var,''))[:30]+'...' if len(str(d))>30 else d}]: " if d else f"{var}: ").strip()) or d) for var in sorted(variables)}
+    # Collect variable values
+    values = {}
+    for var in sorted(variables):
+        default = defaults.get(var, '')
+        if default:
+            short_default = str(default)[:30] + '...' if len(str(default)) > 30 else str(default)
+            prompt_text = f"{var} [{short_default}]: "
+        else:
+            prompt_text = f"{var}: "
+        user_input = input(prompt_text).strip()
+        values[var] = user_input if user_input else default
 
     sub = substitute_variables(task, values)
     print(f"{sep}\n{sep}\nFINAL\n{sep}\n{json.dumps(sub, indent=2)}\n{sep}")
@@ -122,9 +136,9 @@ def get_session(name): return next((s for s in server.sessions if s.name == name
 def kill_session(name):
     if (sess := get_session(name)): sess.kill()
 
-@timed
 def execute_task(task):
-    """Event-driven execution - subprocess.run() blocks on completion, zero polling"""
+    """Event-driven execution - subprocess.run() blocks on completion, zero polling
+    NOTE: Not timed - includes arbitrary user command execution time"""
     name, steps = task["name"], task["steps"]
     repo, branch = task.get("repo"), task.get("branch", "main")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -140,16 +154,16 @@ def execute_task(task):
         # Create tmux session for display only
         session = server.new_session(session_name, window_command="bash --norc --noprofile", attach=False)
 
-        # Build full command script
-        cmds = [f"set -e", f"mkdir -p {job_dir}"]
+        # Build full command script (use job_dir.name since cwd will be parent)
+        cmds = [f"set -e", f"mkdir -p {job_dir.name}"]
 
         if repo:
             work_dir = str(worktree_dir.absolute())
             with jobs_lock: jobs[name] = {"step": f"Worktree: {work_dir}", "status": "⟳ Running"}
             cmds.extend([f"cd {repo}", f"git worktree add --detach {work_dir} {branch}", f"cd {work_dir}"])
         else:
-            work_dir = str(job_dir)
-            cmds.append(f"cd {job_dir}")
+            work_dir = str(job_dir.absolute())
+            cmds.append(f"cd {job_dir.name}")
 
         # Add all task steps
         for i, step in enumerate(steps, 1):
@@ -158,7 +172,7 @@ def execute_task(task):
 
         # Execute via subprocess - blocks until complete (event-driven)
         script = "\n".join(cmds)
-        result = subprocess.run(["bash", "-c", script], cwd=str(job_dir.parent), capture_output=True, text=True, timeout=120)
+        result = subprocess.run(["bash", "-c", script], cwd=str(job_dir.parent.absolute()), capture_output=True, text=True, timeout=120)
 
         # Send output to tmux for display
         if session:
@@ -167,18 +181,22 @@ def execute_task(task):
                 pane.send_keys(line, literal=True)
 
         if result.returncode == 0:
-            with jobs_lock: jobs[name] = {"step": f"Completed @ {work_dir}", "status": "✓ Done"}
+            job_name = job_dir.name
+            with jobs_lock: jobs[name] = {"step": f"✓ {job_name}", "status": "✓ Done"}
             cleanup_old_jobs()
         else:
-            with jobs_lock: jobs[name] = {"step": f"Exit {result.returncode}", "status": "✗ Error"}
+            # Show first error line from stderr for context
+            error_lines = result.stderr.strip().split('\n') if result.stderr else []
+            error_msg = error_lines[-1][:60] if error_lines else f"Exit {result.returncode}"
+            with jobs_lock: jobs[name] = {"step": f"✗ {error_msg}", "status": "✗ Error"}
 
     except subprocess.TimeoutExpired:
         with jobs_lock: jobs[name] = {"step": "Timeout", "status": "✗ Timeout"}
     except Exception as e:
         with jobs_lock: jobs[name] = {"step": str(e)[:50], "status": "✗ Error"}
 
-@timed
 def show_task_menu():
+    """NOTE: Not timed - includes user input time"""
     tasks_dir = Path("tasks")
     if not tasks_dir.exists() or not (task_files := sorted(tasks_dir.glob("*.json"))): return []
 
@@ -210,7 +228,12 @@ def show_task_menu():
 
     if not (sel := input(">> ").strip()): return []
 
-    selected = [t for _, t in tasks] if sel.lower() == 'all' else [tasks[int(p)-1][1] for p in sel.replace(',', ' ').split() if p.isdigit() and 0 <= int(p)-1 < len(tasks)]
+    # Parse selection
+    if sel.lower() == 'all':
+        selected = [t for _, t in tasks]
+    else:
+        indices = [int(p)-1 for p in sel.replace(',', ' ').split() if p.isdigit()]
+        selected = [tasks[i][1] for i in indices if 0 <= i < len(tasks)]
 
     return [pt for task in selected if (pt := prompt_for_variables(task))]
 
@@ -381,7 +404,9 @@ window.onresize = () => fit.fit();
         return f"✓ Terminal available at {url} (open manually)"
 
 # TUI mode (porcelain - inspired by git's interactive commands)
+@timed
 def get_status_text():
+    """AIOS overhead: UI rendering only"""
     sep = "=" * 80
     lines = [("class:header", f"{sep}\nAIOS - Running Tasks\n{sep}\n"),
              ("class:label", "\nJobs:\n"), ("class:separator", "-" * 80 + "\n")]
@@ -415,42 +440,58 @@ def get_status_text():
     return FormattedText(lines)
 
 @timed
-def process_command(cmd):
+def parse_and_route_command(cmd):
+    """AIOS overhead: Command parsing and routing logic only"""
     global running
-    if not (cmd := cmd.strip()): return None
+    if not cmd: return None
     if cmd in ["q", "quit"]:
         running = False
-        return "Shutting down..."
+        return ("quit", None)
     if cmd in ["m", "menu"]:
-        if tasks := show_task_menu():
-            for t in tasks: task_queue.put(t)
-            return f"✓ Queued {len(tasks)} task(s)"
-        return "No tasks selected"
+        return ("menu", None)
+
     parts = cmd.split(None, 1)
     if len(parts) == 2:
         action, arg = parts
-        if action in ["r", "run"]:
-            with builder_lock:
-                if arg in task_builder:
-                    task_queue.put({"name": arg, "steps": task_builder[arg].copy()})
-                    del task_builder[arg]
-                    return f"✓ Queued: {arg}"
-                return f"✗ Not found: {arg}"
-        if action in ["a", "attach"]:
-            return open_terminal(arg)
-        if action in ["c", "clear"]:
-            with builder_lock:
-                if arg in task_builder:
-                    del task_builder[arg]
-                    return f"✓ Cleared: {arg}"
-                return f"✗ Not found: {arg}"
+        if action in ["r", "run"]: return ("run", arg)
+        if action in ["a", "attach"]: return ("attach", arg)
+        if action in ["c", "clear"]: return ("clear", arg)
+
     if " | " in cmd and ":" in (left := cmd.split(" | ", 1)[0]):
         jn, desc = left.split(":", 1)
-        jn, desc, command = jn.strip(), desc.strip(), cmd.split(" | ", 1)[1].strip()
+        return ("build", {"job": jn.strip(), "desc": desc.strip(), "cmd": cmd.split(" | ", 1)[1].strip()})
+
+    return ("unknown", None)
+
+def process_command(cmd):
+    """Execute command (may include user interactions)"""
+    if not (cmd := cmd.strip()): return None
+
+    action, data = parse_and_route_command(cmd)
+
+    if action == "quit": return "Shutting down..."
+    if action == "menu":
+        # Signal TUI to exit temporarily for menu
+        return "__SHOW_MENU__"
+    if action == "run":
         with builder_lock:
-            if jn not in task_builder: task_builder[jn] = []
-            task_builder[jn].append({"desc": desc, "cmd": command})
-        return f"✓ Added to {jn}"
+            if data in task_builder:
+                task_queue.put({"name": data, "steps": task_builder[data].copy()})
+                del task_builder[data]
+                return f"✓ Queued: {data}"
+            return f"✗ Not found: {data}"
+    if action == "attach": return open_terminal(data)
+    if action == "clear":
+        with builder_lock:
+            if data in task_builder:
+                del task_builder[data]
+                return f"✓ Cleared: {data}"
+            return f"✗ Not found: {data}"
+    if action == "build":
+        with builder_lock:
+            if data["job"] not in task_builder: task_builder[data["job"]] = []
+            task_builder[data["job"]].append({"desc": data["desc"], "cmd": data["cmd"]})
+        return f"✓ Added to {data['job']}"
     return "✗ Unknown command"
 
 def worker():
@@ -462,6 +503,7 @@ def worker():
         except: continue
 
 def watch_folder():
+    """Watch for new task files - only auto-execute tasks without template variables"""
     tasks_dir = Path("tasks")
     tasks_dir.mkdir(exist_ok=True)
     while running:
@@ -471,13 +513,17 @@ def watch_folder():
                     if json_file in processed_files: continue
                     processed_files.add(json_file)
                 try:
-                    with open(json_file) as f: task_queue.put(json.load(f))
+                    task = json.loads(json_file.read_text())
+                    # Skip tasks with template variables - they need user input via menu
+                    if extract_variables(task):
+                        continue
+                    task_queue.put(task)
                 except: pass
             sleep(1)
         except: pass
 
-@timed
 def run_tui_mode(selected_tasks):
+    """NOTE: Not timed - includes user interaction time"""
     global running
     for t in selected_tasks:
         task_queue.put(t)
@@ -486,56 +532,79 @@ def run_tui_mode(selected_tasks):
     [Thread(target=worker, daemon=True).start() for _ in range(4)]
     Thread(target=watch_folder, daemon=True).start()
 
-    status_control = FormattedTextControl(text=get_status_text, focusable=False)
-    status_window = Window(content=status_control, dont_extend_height=True)
-    input_field = TextArea(height=1, prompt="❯ ", multiline=False, wrap_lines=False)
-    output_field = TextArea(height=3, focusable=False, scrollbar=False, read_only=True, text="")
-    container = HSplit([status_window, output_field, input_field])
+    show_menu_flag = False
 
-    kb = KeyBindings()
-    @kb.add('enter')
-    def _(event):
-        global running
-        text, input_field.text = input_field.text, ""
+    while running:
+        status_control = FormattedTextControl(text=get_status_text, focusable=False)
+        status_window = Window(content=status_control, dont_extend_height=True)
+        input_field = TextArea(height=1, prompt="❯ ", multiline=False, wrap_lines=False)
+        output_field = TextArea(height=3, focusable=False, scrollbar=False, read_only=True, text="")
+        container = HSplit([status_window, output_field, input_field])
 
-        lines = text.split('\n') if '\n' in text else [text]
-        results = []
-        for line in lines:
-            if (cmd := line.strip()) and (r := process_command(cmd)):
-                results.append(r)
+        kb = KeyBindings()
+        @kb.add('enter')
+        def _(event):
+            nonlocal show_menu_flag
+            global running
+            text, input_field.text = input_field.text, ""
 
-        if results: output_field.text = '\n'.join(results) if len(results) > 1 else results[0]
-        if not running: event.app.exit()
+            lines = text.split('\n') if '\n' in text else [text]
+            results = []
+            for line in lines:
+                if (cmd := line.strip()) and (r := process_command(cmd)):
+                    if r == "__SHOW_MENU__":
+                        show_menu_flag = True
+                        event.app.exit()
+                        return
+                    results.append(r)
 
-    @kb.add('c-c')
-    def _(event):
-        global running
-        running = False
-        event.app.exit()
+            if results: output_field.text = '\n'.join(results) if len(results) > 1 else results[0]
+            if not running: event.app.exit()
 
-    style = Style.from_dict({
-        'header': '#ff00ff bold', 'label': '#00ffff bold', 'separator': '#888888',
-        'text': '#ffffff', 'dim': '#666666', 'success': '#00ff00 bold',
-        'error': '#ff0000 bold', 'running': '#ffff00 bold', 'help': '#888888', 'command': '#00ffff'
-    })
+        @kb.add('c-c')
+        def _(event):
+            global running
+            running = False
+            event.app.exit()
 
-    app = Application(layout=Layout(container), key_bindings=kb, full_screen=True, style=style, mouse_support=False)
+        style = Style.from_dict({
+            'header': '#ff00ff bold', 'label': '#00ffff bold', 'separator': '#888888',
+            'text': '#ffffff', 'dim': '#666666', 'success': '#00ff00 bold',
+            'error': '#ff0000 bold', 'running': '#ffff00 bold', 'help': '#888888', 'command': '#00ffff'
+        })
 
-    def update_status():
-        while running:
-            sleep(0.5)
-            try: app.invalidate()
-            except: break
+        app = Application(layout=Layout(container), key_bindings=kb, full_screen=True, style=style, mouse_support=False)
 
-    Thread(target=update_status, daemon=True).start()
-    try: app.run()
-    except KeyboardInterrupt: pass
-    running = False
+        def update_status():
+            while running:
+                sleep(0.5)
+                try: app.invalidate()
+                except: break
+
+        Thread(target=update_status, daemon=True).start()
+        try: app.run()
+        except KeyboardInterrupt:
+            running = False
+            break
+
+        if show_menu_flag:
+            show_menu_flag = False
+            if tasks := show_task_menu():
+                for t in tasks: task_queue.put(t)
+                print(f"\n✓ Queued {len(tasks)} task(s). Returning to TUI...\n")
+                sleep(1)
+            else:
+                print("\nNo tasks selected. Returning to TUI...\n")
+                sleep(1)
+            if not running: break
+        else:
+            break
+
     print("\nShutdown complete.")
 
 # Simple mode (like git batch operations)
-@timed
 def run_simple_mode(selected_tasks):
+    """NOTE: Not timed - waits for user commands to complete"""
     if not selected_tasks: return print("No tasks selected")
 
     print(f"\nStarting {len(selected_tasks)} task(s)...")
@@ -562,6 +631,43 @@ def run_tests():
     print()
 
     failed = []
+
+    # Test 0: AIOS overhead functions (UI responsiveness)
+    print("0. Testing AIOS overhead functions...")
+    try:
+        # Test variable functions
+        task = {"name": "test", "steps": [{"desc": "{{action}}", "cmd": "echo {{message}}"}]}
+        vars = extract_variables(task)
+        if "action" not in vars or "message" not in vars:
+            raise Exception("Variable extraction failed")
+
+        sub = substitute_variables(task, {"action": "run", "message": "world"})
+        if "run" not in str(sub) or "world" not in str(sub):
+            raise Exception("Variable substitution failed")
+
+        # Test cleanup
+        cleanup_old_jobs()
+
+        # Test UI rendering
+        status = get_status_text()
+        if len(status) < 5:
+            raise Exception("Status rendering failed")
+
+        # Test command parsing
+        for cmd in ["q", "m", "r test", "a job", "c job"]:
+            if not parse_and_route_command(cmd):
+                raise Exception(f"Command parsing failed: {cmd}")
+
+        print("   ✓ All overhead functions working")
+        print(f"   ✓ Overhead timings: extract={timings_current.get('extract_variables',0)*1000:.2f}ms, " +
+              f"substitute={timings_current.get('substitute_variables',0)*1000:.2f}ms, " +
+              f"parse={timings_current.get('parse_and_route_command',0)*1000:.2f}ms")
+
+    except Exception as e:
+        print(f"   ✗ Failed: {e}")
+        failed.append("AIOS overhead")
+
+    print()
 
     # Test 1: PTY terminal creation
     print("1. Testing PTY terminal creation...")
@@ -683,8 +789,8 @@ def run_tests():
         print("="*80)
         return 1
 
-@timed
 def main():
+    """NOTE: Not timed - orchestrates entire program including I/O and user interaction"""
     # Test mode (like git fsck)
     if "--test" in sys.argv:
         sys.exit(run_tests())
@@ -700,8 +806,10 @@ def main():
     for fp in args:
         try:
             task = json.loads(Path(fp).read_text())
-            selected_tasks.append(task)
-            print(f"✓ Loaded: {task['name']}")
+            # Prompt for variables if task has templates
+            if task := prompt_for_variables(task):
+                selected_tasks.append(task)
+                print(f"✓ Loaded: {task['name']}")
         except Exception as e:
             print(f"✗ Error loading {fp}: {e}")
 
