@@ -2,23 +2,32 @@
 """AIOS Task Manager - git-inspired design
 
 Usage:
-    aios.py [--simple|-s] [--test] [task.json ...]
+    aios.py [--profile] [--simple|-s] [--test] [task.json ...]
 
 Modes:
-    Default: Interactive TUI with task builder
+    Default: Interactive TUI (running tasks view)
+    --profile: Profile functions and save baseline timings
     --simple: Batch execution with simple monitoring
     --test: Run built-in tests
 
 Examples:
-    ./aios.py                    # Interactive menu + TUI
+    ./aios.py                    # TUI mode (running tasks default)
+    ./aios.py --profile          # Profile and save timings
     ./aios.py task.json          # Load task, run in TUI
     ./aios.py --simple task.json # Batch mode
     ./aios.py --test             # Run tests
+
+Commands in TUI:
+    m        - Show workflow menu
+    r <job>  - Run job from builder
+    a <job>  - Attach terminal to job
+    c <job>  - Clear job from builder
+    q        - Quit
 """
 
-import libtmux, json, sys, re, shutil, asyncio, websockets, webbrowser, subprocess, pty, fcntl, termios, struct, os
+import libtmux, json, sys, re, shutil, asyncio, websockets, webbrowser, subprocess, pty, fcntl, termios, struct, os, signal
 from datetime import datetime
-from time import sleep
+from time import sleep, time
 from threading import Thread, Lock
 from queue import Queue, Empty
 from pathlib import Path
@@ -30,6 +39,7 @@ from prompt_toolkit.widgets import TextArea
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.styles import Style
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from functools import wraps
 
 # Global state
 server, jobs, jobs_lock = libtmux.Server(), {}, Lock()
@@ -38,162 +48,171 @@ running, processed_files, processed_files_lock = True, set(), Lock()
 ws_port, ws_server_running = 7681, False
 JOBS_DIR, MAX_JOB_DIRS = Path("jobs"), 20
 _terminal_sessions = {}  # Persistent PTY terminals
+TIMINGS_FILE, profile_mode = Path(".aios_timings.json"), "--profile" in sys.argv
+
+# Performance enforcement system - STRICT 50ms absolute tolerance
+def load_timings():
+    return json.loads(TIMINGS_FILE.read_text()) if TIMINGS_FILE.exists() else {}
+
+def save_timings(timings):
+    TIMINGS_FILE.write_text(json.dumps(timings, indent=2))
+
+timings_baseline = {} if profile_mode else load_timings()
+timings_current = {}
+
+def timed(func):
+    """Decorator: profile on first run, SIGKILL on regression > 50ms"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time()
+        result = func(*args, **kwargs)
+        elapsed = time() - start
+        fname = func.__name__
+
+        if profile_mode:
+            timings_current[fname] = elapsed
+        elif fname in timings_baseline:
+            if elapsed > timings_baseline[fname] + 0.05:
+                print(f"\n✗ PERF REGRESSION: {fname} {elapsed:.3f}s (baseline {timings_baseline[fname]:.3f}s)")
+                os.kill(os.getpid(), signal.SIGKILL)
+        return result
+    return wrapper
 
 # Core functions (plumbing - inspired by git's core)
+@timed
 def extract_variables(obj):
     if isinstance(obj, str): return set(re.findall(r'\{\{(\w+)\}\}', obj))
     if isinstance(obj, dict): return set().union(*(extract_variables(v) for v in obj.values()))
     if isinstance(obj, list): return set().union(*(extract_variables(i) for i in obj))
     return set()
 
+@timed
 def substitute_variables(obj, values):
-    if isinstance(obj, str):
-        for var, val in values.items(): obj = obj.replace(f'{{{{{var}}}}}', str(val))
-        return obj
+    if isinstance(obj, str): return re.sub(r'\{\{(\w+)\}\}', lambda m: str(values.get(m.group(1), m.group(0))), obj)
     if isinstance(obj, dict): return {k: substitute_variables(v, values) for k, v in obj.items()}
     if isinstance(obj, list): return [substitute_variables(i, values) for i in obj]
     return obj
 
+@timed
 def prompt_for_variables(task):
-    variables = extract_variables(task)
-    if not variables: return task
-    defaults = task.get('variables', {})
+    if not (variables := extract_variables(task)): return task
+    defaults, sep = task.get('variables', {}), "="*80
 
-    print("\n" + "="*80 + "\nTEMPLATE PREVIEW\n" + "="*80)
-    print(json.dumps(task, indent=2) + "\n" + "="*80)
-    print("\n" + "="*80 + "\nDEFAULT VARIABLE VALUES\n" + "="*80)
+    print(f"\n{sep}\nTEMPLATE PREVIEW\n{sep}\n{json.dumps(task, indent=2)}\n{sep}\n{sep}\nDEFAULTS\n{sep}")
     for var in sorted(variables):
-        default = defaults.get(var, '(no default)')
-        print(f"  {var}: {str(default)[:60] + '...' if len(str(default)) > 60 else default}")
-    print("="*80 + "\n" + "="*80 + "\nTASK VARIABLES\n" + "="*80)
+        d = defaults.get(var, '(no default)')
+        print(f"  {var}: {str(d)[:60]+'...' if len(str(d))>60 else d}")
+    print(f"{sep}\n{sep}\nVARIABLES\n{sep}")
 
-    values = {}
-    for var in sorted(variables):
-        default = defaults.get(var, '')
-        prompt_text = f"{var} [{str(default)[:30] + '...' if len(str(default)) > 30 else default}]: " if default else f"{var}: "
-        values[var] = (user_input := input(prompt_text).strip()) if user_input else default
+    values = {var: ((u := input(f"{var} [{str(d:=defaults.get(var,''))[:30]+'...' if len(str(d))>30 else d}]: " if d else f"{var}: ").strip()) or d) for var in sorted(variables)}
 
-    print("="*80)
-    substituted = substitute_variables(task, values)
-    print("\n" + "="*80 + "\nFINAL PREVIEW\n" + "="*80)
-    print(json.dumps(substituted, indent=2) + "\n" + "="*80)
+    sub = substitute_variables(task, values)
+    print(f"{sep}\n{sep}\nFINAL\n{sep}\n{json.dumps(sub, indent=2)}\n{sep}")
 
-    if (conf := input("Launch this task? [Y/n]: ").strip().lower()) and conf not in ['y', 'yes']:
-        print("Task cancelled")
-        return None
-    return substituted
+    return None if (c := input("Launch? [Y/n]: ").strip().lower()) and c not in ['y', 'yes'] else sub
 
+@timed
 def cleanup_old_jobs():
-    if not JOBS_DIR.exists(): return
-    for old in sorted(JOBS_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)[MAX_JOB_DIRS:]:
-        try: shutil.rmtree(old)
-        except: pass
+    if JOBS_DIR.exists():
+        for d in sorted(JOBS_DIR.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)[MAX_JOB_DIRS:]:
+            try: shutil.rmtree(d)
+            except: pass
 
 def get_session(name): return next((s for s in server.sessions if s.name == name), None)
 def kill_session(name):
-    if sess := get_session(name): sess.kill()
+    if (sess := get_session(name)): sess.kill()
 
-def wait_ready(name, timeout=300):
-    last_output, checks = "", 0
-    while checks < timeout:
-        sleep(2)
-        if not (sess := get_session(name)): return False
-        try:
-            current = "\n".join(sess.windows[0].panes[0].capture_pane())
-            if current == last_output and len(current) > 0: return True
-            last_output = current
-        except: return False
-        checks += 2
-    return False
-
+@timed
 def execute_task(task):
+    """Event-driven execution - subprocess.run() blocks on completion, zero polling"""
     name, steps = task["name"], task["steps"]
     repo, branch = task.get("repo"), task.get("branch", "main")
-    ts, session_name = datetime.now().strftime("%Y%m%d_%H%M%S"), f"aios-{task['name']}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_name = f"aios-{name}-{ts}"
     JOBS_DIR.mkdir(exist_ok=True)
-    job_dir, worktree_dir = JOBS_DIR / f"{name}-{ts}", (JOBS_DIR / f"{name}-{ts}" / "worktree") if repo else None
+    job_dir = JOBS_DIR / f"{name}-{ts}"
+    worktree_dir = job_dir / "worktree" if repo else None
 
     try:
-        with jobs_lock: jobs[name] = {"step": "Initializing...", "status": "⟳ Running"}
+        with jobs_lock: jobs[name] = {"step": "Initializing", "status": "⟳ Running"}
         kill_session(session_name)
-        sleep(0.5)
 
-        if not (session := server.new_session(session_name, window_command="bash --norc --noprofile", attach=False)):
-            with jobs_lock: jobs[name] = {"step": "Failed to create session", "status": "✗ Error"}
-            return
+        # Create tmux session for display only
+        session = server.new_session(session_name, window_command="bash --norc --noprofile", attach=False)
 
-        sleep(1)
-        pane = session.windows[0].panes[0]
-        pane.send_keys(f"mkdir -p {job_dir}")
-        sleep(1)
+        # Build full command script
+        cmds = [f"set -e", f"mkdir -p {job_dir}"]
 
         if repo:
-            worktree_abs = worktree_dir.absolute()
-            with jobs_lock: jobs[name] = {"step": f"Creating worktree at {worktree_abs}", "status": "⟳ Running"}
-            pane.send_keys(f"cd {repo} && git worktree add --detach {worktree_abs} {branch}")
-            if not wait_ready(session_name, timeout=30):
-                with jobs_lock: jobs[name] = {"step": "Failed to create worktree", "status": "✗ Error"}
-                return
-            pane.send_keys(f"cd {worktree_abs}")
-            sleep(1)
+            work_dir = str(worktree_dir.absolute())
+            with jobs_lock: jobs[name] = {"step": f"Worktree: {work_dir}", "status": "⟳ Running"}
+            cmds.extend([f"cd {repo}", f"git worktree add --detach {work_dir} {branch}", f"cd {work_dir}"])
         else:
-            pane.send_keys(f"cd {job_dir}")
-            sleep(1)
+            work_dir = str(job_dir)
+            cmds.append(f"cd {job_dir}")
 
-        work_dir = str(worktree_dir) if worktree_dir else str(job_dir)
-        pane.send_keys(f"echo 'Working in: {work_dir}'")
-        sleep(1)
-
+        # Add all task steps
         for i, step in enumerate(steps, 1):
-            with jobs_lock: jobs[name] = {"step": f"{i}/{len(steps)}: {step['desc']} @ {work_dir}", "status": "⟳ Running"}
-            pane.send_keys(step["cmd"])
-            if not wait_ready(session_name, timeout=120):
-                with jobs_lock: jobs[name] = {"step": f"Timeout on step {i}", "status": "✗ Timeout"}
-                return
+            with jobs_lock: jobs[name] = {"step": f"{i}/{len(steps)}: {step['desc']}", "status": "⟳ Running"}
+            cmds.append(step["cmd"])
 
-        with jobs_lock: jobs[name] = {"step": f"Completed @ {work_dir}", "status": "✓ Done"}
-        cleanup_old_jobs()
+        # Execute via subprocess - blocks until complete (event-driven)
+        script = "\n".join(cmds)
+        result = subprocess.run(["bash", "-c", script], cwd=str(job_dir.parent), capture_output=True, text=True, timeout=120)
+
+        # Send output to tmux for display
+        if session:
+            pane = session.windows[0].panes[0]
+            for line in (result.stdout + result.stderr).split('\n')[:50]:  # Last 50 lines
+                pane.send_keys(line, literal=True)
+
+        if result.returncode == 0:
+            with jobs_lock: jobs[name] = {"step": f"Completed @ {work_dir}", "status": "✓ Done"}
+            cleanup_old_jobs()
+        else:
+            with jobs_lock: jobs[name] = {"step": f"Exit {result.returncode}", "status": "✗ Error"}
+
+    except subprocess.TimeoutExpired:
+        with jobs_lock: jobs[name] = {"step": "Timeout", "status": "✗ Timeout"}
     except Exception as e:
         with jobs_lock: jobs[name] = {"step": str(e)[:50], "status": "✗ Error"}
 
+@timed
 def show_task_menu():
     tasks_dir = Path("tasks")
-    if not tasks_dir.exists(): return []
-    if not (task_files := sorted(tasks_dir.glob("*.json"))): return []
+    if not tasks_dir.exists() or not (task_files := sorted(tasks_dir.glob("*.json"))): return []
 
-    print("\n" + "="*80 + "\nAVAILABLE TASKS\n" + "="*80)
+    sep = "="*80
+    print(f"\n{sep}\nWORKFLOWS\n{sep}")
     tasks = []
-    for i, filepath in enumerate(task_files, 1):
+    for i, fp in enumerate(task_files, 1):
         try:
-            with open(filepath) as f: task = json.load(f)
-            tasks.append((filepath, task))
-            has_wt, has_vars = '✓' if task.get('repo') else ' ', '⚙' if extract_variables(task) else ' '
-            print(f"\n  {i}. [{has_wt}] [{has_vars}] {task.get('name', filepath.stem)}")
+            task = json.loads(fp.read_text())
+            tasks.append((fp, task))
+            wt, var = '✓' if task.get('repo') else ' ', '⚙' if extract_variables(task) else ' '
+            print(f"\n  {i}. [{wt}] [{var}] {task.get('name', fp.stem)}")
 
             for j, step in enumerate((steps := task.get('steps', []))[:5], 1):
                 print(f"      {j}. {step.get('desc', 'No description')[:50]}")
-            if len(steps) > 5: print(f"      ... and {len(steps) - 5} more steps")
+            if len(steps) > 5: print(f"      ... +{len(steps)-5} more")
 
-            if variables := extract_variables(task):
-                defaults = task.get('variables', {})
-                print(f"      Variables: {', '.join(sorted(variables))}")
-                if defaults: print(f"      Defaults: {len(defaults)} provided")
+            if vars := extract_variables(task):
+                defs = task.get('variables', {})
+                print(f"      Vars: {', '.join(sorted(vars))}")
+                if defs: print(f"      Defaults: {len(defs)}")
         except: pass
 
     with processed_files_lock:
-        for filepath, _ in tasks: processed_files.add(filepath)
+        for fp, _ in tasks: processed_files.add(fp)
 
-    print("\n" + "="*80 + "\nLegend: [✓]=Worktree [⚙]=Variables\n" + "="*80)
-    print("Select tasks:\n  - Numbers (e.g., '1 3 5' or '1,3,5')\n  - 'all' for all tasks\n  - Enter to skip\n" + "="*80)
+    print(f"\n{sep}\n[✓]=Worktree [⚙]=Variables\n{sep}")
+    print("Select: '1 3 5' or 'all' or Enter to skip\n" + sep)
 
-    if not (sel := input("Selection: ").strip()): return []
+    if not (sel := input(">> ").strip()): return []
 
-    selected = [task for _, task in tasks] if sel.lower() == 'all' else [
-        tasks[int(p) - 1][1] for p in sel.replace(',', ' ').split()
-        if p.isdigit() and 0 <= int(p) - 1 < len(tasks)
-    ]
+    selected = [t for _, t in tasks] if sel.lower() == 'all' else [tasks[int(p)-1][1] for p in sel.replace(',', ' ').split() if p.isdigit() and 0 <= int(p)-1 < len(tasks)]
 
-    return [pt for task in selected if (pt := prompt_for_variables(task)) is not None]
+    return [pt for task in selected if (pt := prompt_for_variables(task))]
 
 # Websocket PTY server (inspired by git daemon) - event-driven with binary messages
 def get_or_create_terminal(session_name):
@@ -363,69 +382,75 @@ window.onresize = () => fit.fit();
 
 # TUI mode (porcelain - inspired by git's interactive commands)
 def get_status_text():
-    lines = [("class:header", "=" * 80 + "\nAIOS Task Manager - Live Status\n" + "=" * 80 + "\n"),
-             ("class:label", "\nRunning Jobs:\n"), ("class:separator", "-" * 80 + "\n")]
+    sep = "=" * 80
+    lines = [("class:header", f"{sep}\nAIOS - Running Tasks\n{sep}\n"),
+             ("class:label", "\nJobs:\n"), ("class:separator", "-" * 80 + "\n")]
 
     with jobs_lock:
         if jobs:
-            for job_name, info in sorted(jobs.items()):
-                status, step = info["status"], info["step"][:50]
-                style = "class:success" if "✓" in status else "class:error" if "✗" in status else "class:running"
-                lines.extend([("class:text", f"  {job_name:15} | {step:50} | "), (style, f"{status}\n")])
+            for jn, info in sorted(jobs.items()):
+                st, step = info["status"], info["step"][:50]
+                style = "class:success" if "✓" in st else "class:error" if "✗" in st else "class:running"
+                lines.extend([("class:text", f"  {jn:15} | {step:50} | "), (style, f"{st}\n")])
         else:
-            lines.append(("class:dim", "  (no running jobs)\n"))
+            lines.append(("class:dim", "  (none)\n"))
 
-    lines.extend([("class:label", "\nTask Builder:\n"), ("class:separator", "-" * 80 + "\n")])
+    lines.extend([("class:label", "\nBuilder:\n"), ("class:separator", "-" * 80 + "\n")])
     with builder_lock:
         if task_builder:
-            for job_name, steps in sorted(task_builder.items()):
-                lines.append(("class:text", f"  {job_name}:\n"))
-                for i, step in enumerate(steps, 1): lines.append(("class:text", f"    {i}. {step['desc'][:70]}\n"))
+            for jn, steps in sorted(task_builder.items()):
+                lines.append(("class:text", f"  {jn}:\n"))
+                for i, s in enumerate(steps, 1): lines.append(("class:text", f"    {i}. {s['desc'][:70]}\n"))
         else:
-            lines.append(("class:dim", "  (no tasks being built)\n"))
+            lines.append(("class:dim", "  (none)\n"))
 
-    lines.extend([("class:separator", "\n" + "=" * 80 + "\n"), ("class:help", "Commands: "),
-                  ("class:command", "<job>: <desc> | <cmd>"), ("class:help", "  |  "),
-                  ("class:command", "run <job>"), ("class:help", "  |  "),
-                  ("class:command", "attach <job>"), ("class:help", "  |  "),
-                  ("class:command", "clear <job>"), ("class:help", "  |  "),
-                  ("class:command", "quit"), ("class:separator", "\n" + "=" * 80 + "\n\n")])
+    lines.extend([("class:separator", f"\n{sep}\n"), ("class:help", "Commands: "),
+                  ("class:command", "m"), ("class:help", " (menu)  "),
+                  ("class:command", "r <job>"), ("class:help", " (run)  "),
+                  ("class:command", "a <job>"), ("class:help", " (attach)  "),
+                  ("class:command", "c <job>"), ("class:help", " (clear)  "),
+                  ("class:command", "q"), ("class:help", " (quit)  "),
+                  ("class:command", "<job>:<desc>|<cmd>"), ("class:help", " (build)"),
+                  ("class:separator", f"\n{sep}\n\n")])
     return FormattedText(lines)
 
+@timed
 def process_command(cmd):
     global running
     if not (cmd := cmd.strip()): return None
-    if cmd == "quit":
+    if cmd in ["q", "quit"]:
         running = False
         return "Shutting down..."
-    if cmd.startswith("run "):
-        job_name = cmd[4:].strip()
-        with builder_lock:
-            if job_name in task_builder:
-                task_queue.put({"name": job_name, "steps": task_builder[job_name].copy()})
-                del task_builder[job_name]
-                return f"✓ Queued job: {job_name}"
-            return f"✗ Job '{job_name}' not found in builder"
-    if cmd.startswith("attach "):
-        job_name = cmd[7:].strip()
-        return open_terminal(job_name)
-    if cmd.startswith("clear "):
-        job_name = cmd[6:].strip()
-        with builder_lock:
-            if job_name in task_builder:
-                del task_builder[job_name]
-                return f"✓ Cleared job: {job_name}"
-            return f"✗ Job '{job_name}' not found"
-    if " | " in cmd and (parts := cmd.split(" | ", 1)) and len(parts) == 2:
-        left, command = parts
-        if ":" in left:
-            job_name, desc = left.split(":", 1)
-            job_name, desc, command = job_name.strip(), desc.strip(), command.strip()
+    if cmd in ["m", "menu"]:
+        if tasks := show_task_menu():
+            for t in tasks: task_queue.put(t)
+            return f"✓ Queued {len(tasks)} task(s)"
+        return "No tasks selected"
+    parts = cmd.split(None, 1)
+    if len(parts) == 2:
+        action, arg = parts
+        if action in ["r", "run"]:
             with builder_lock:
-                if job_name not in task_builder: task_builder[job_name] = []
-                task_builder[job_name].append({"desc": desc, "cmd": command})
-            return f"✓ Added step to {job_name}"
-        return "✗ Invalid format (missing ':' between job and description)"
+                if arg in task_builder:
+                    task_queue.put({"name": arg, "steps": task_builder[arg].copy()})
+                    del task_builder[arg]
+                    return f"✓ Queued: {arg}"
+                return f"✗ Not found: {arg}"
+        if action in ["a", "attach"]:
+            return open_terminal(arg)
+        if action in ["c", "clear"]:
+            with builder_lock:
+                if arg in task_builder:
+                    del task_builder[arg]
+                    return f"✓ Cleared: {arg}"
+                return f"✗ Not found: {arg}"
+    if " | " in cmd and ":" in (left := cmd.split(" | ", 1)[0]):
+        jn, desc = left.split(":", 1)
+        jn, desc, command = jn.strip(), desc.strip(), cmd.split(" | ", 1)[1].strip()
+        with builder_lock:
+            if jn not in task_builder: task_builder[jn] = []
+            task_builder[jn].append({"desc": desc, "cmd": command})
+        return f"✓ Added to {jn}"
     return "✗ Unknown command"
 
 def worker():
@@ -451,13 +476,14 @@ def watch_folder():
             sleep(1)
         except: pass
 
+@timed
 def run_tui_mode(selected_tasks):
     global running
-    for task in selected_tasks:
-        task_queue.put(task)
-        print(f"✓ Queued: {task['name']}")
+    for t in selected_tasks:
+        task_queue.put(t)
+        print(f"✓ Queued: {t['name']}")
 
-    for w in [Thread(target=worker, daemon=True) for _ in range(4)]: w.start()
+    [Thread(target=worker, daemon=True).start() for _ in range(4)]
     Thread(target=watch_folder, daemon=True).start()
 
     status_control = FormattedTextControl(text=get_status_text, focusable=False)
@@ -472,18 +498,13 @@ def run_tui_mode(selected_tasks):
         global running
         text, input_field.text = input_field.text, ""
 
-        # Handle multi-line paste - process each line as separate command (git-style)
         lines = text.split('\n') if '\n' in text else [text]
         results = []
-        for cmd in lines:
-            cmd = cmd.strip()
-            if cmd:  # Skip empty lines
-                if result := process_command(cmd):
-                    results.append(result)
+        for line in lines:
+            if (cmd := line.strip()) and (r := process_command(cmd)):
+                results.append(r)
 
-        if results:
-            output_field.text = '\n'.join(results) if len(results) > 1 else results[0]
-
+        if results: output_field.text = '\n'.join(results) if len(results) > 1 else results[0]
         if not running: event.app.exit()
 
     @kb.add('c-c')
@@ -507,40 +528,29 @@ def run_tui_mode(selected_tasks):
             except: break
 
     Thread(target=update_status, daemon=True).start()
-    sleep(0.5)
     try: app.run()
     except KeyboardInterrupt: pass
     running = False
     print("\nShutdown complete.")
 
 # Simple mode (like git batch operations)
+@timed
 def run_simple_mode(selected_tasks):
-    if not selected_tasks:
-        print("No tasks selected")
-        return
+    if not selected_tasks: return print("No tasks selected")
 
     print(f"\nStarting {len(selected_tasks)} task(s)...")
-    threads = [Thread(target=execute_task, args=(task,)) for task in selected_tasks]
-    for t in threads:
-        t.start()
-        sleep(0.5)
+    threads = [Thread(target=execute_task, args=(t,)) for t in selected_tasks]
+    [t.start() for t in threads]
 
-    # Monitor
-    for i in range(60):
-        sleep(1)
-        with jobs_lock:
-            if not jobs: continue
-            if i % 2 == 0:
-                print(f"[{i}s] {' | '.join(f'{n}: {info['status']}' for n, info in jobs.items())}")
-            if all("Done" in j['status'] or "Error" in j['status'] for j in jobs.values()):
-                break
+    # Wait for completion - threads block internally (event-driven)
+    [t.join() for t in threads]
 
-    print("\n" + "="*80)
+    sep = "="*80
     with jobs_lock:
-        for name, info in jobs.items(): print(f"{name}: {info['status']} | {info['step']}")
-    print("="*80)
+        print(f"\n{sep}")
+        [print(f"{n}: {info['status']} | {info['step']}") for n, info in jobs.items()]
+        print(sep)
 
-    for t in threads: t.join()
     print("\n✓ All tasks complete!")
 
 # Test mode (like git fsck) - integrated testing
@@ -673,36 +683,38 @@ def run_tests():
         print("="*80)
         return 1
 
+@timed
 def main():
     # Test mode (like git fsck)
     if "--test" in sys.argv:
         sys.exit(run_tests())
 
-    print("Loading AIOS Task Manager...")
+    print("Loading AIOS...")
 
     # Mode detection inspired by git (--simple flag or default to TUI)
     simple_mode = "--simple" in sys.argv or "-s" in sys.argv
-    args = [a for a in sys.argv[1:] if a not in ["--simple", "-s"]]
+    args = [a for a in sys.argv[1:] if a not in ["--simple", "-s", "--profile"]]
 
-    # Load tasks from menu or command line
-    if not args:
-        selected_tasks = show_task_menu()
-    else:
-        selected_tasks = []
-        for filepath in args:
-            try:
-                with open(filepath) as f:
-                    task = json.load(f)
-                    selected_tasks.append(task)
-                    print(f"✓ Loaded: {task['name']}")
-            except Exception as e:
-                print(f"✗ Error loading {filepath}: {e}")
+    # Load tasks from command line only (menu moved to TUI 'm' command)
+    selected_tasks = []
+    for fp in args:
+        try:
+            task = json.loads(Path(fp).read_text())
+            selected_tasks.append(task)
+            print(f"✓ Loaded: {task['name']}")
+        except Exception as e:
+            print(f"✗ Error loading {fp}: {e}")
 
     # Run in appropriate mode
     if simple_mode:
         run_simple_mode(selected_tasks)
     else:
         run_tui_mode(selected_tasks)
+
+    # Save profiling data
+    if profile_mode and timings_current:
+        save_timings(timings_current)
+        print(f"\n✓ Saved {len(timings_current)} function timings to {TIMINGS_FILE}")
 
 if __name__ == "__main__":
     main()

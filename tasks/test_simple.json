@@ -1,0 +1,13 @@
+{
+  "name": "test_simple",
+  "steps": [
+    {
+      "desc": "Echo test",
+      "cmd": "echo 'Test workflow OK'"
+    },
+    {
+      "desc": "List directory",
+      "cmd": "ls -la | head -5"
+    }
+  ]
+}
