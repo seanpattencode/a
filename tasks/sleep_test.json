@@ -1,0 +1,8 @@
+{
+  "name": "sleep-test",
+  "steps": [
+    {"desc": "Start", "cmd": "echo 'Starting long task...'"},
+    {"desc": "Sleep 20 seconds", "cmd": "sleep 20"},
+    {"desc": "Done", "cmd": "echo 'Finished!'"}
+  ]
+}

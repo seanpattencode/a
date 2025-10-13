@@ -14,7 +14,7 @@ Examples:
     ./aios.py --simple task.json # Batch mode
 """
 
-import libtmux, json, sys, re, shutil
+import libtmux, json, sys, re, shutil, asyncio, websockets, webbrowser, subprocess, pty, fcntl, termios, struct, os
 from datetime import datetime
 from time import sleep
 from threading import Thread, Lock
@@ -27,12 +27,15 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.widgets import TextArea
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.styles import Style
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Global state
 server, jobs, jobs_lock = libtmux.Server(), {}, Lock()
 task_queue, task_builder, builder_lock = Queue(), {}, Lock()
 running, processed_files, processed_files_lock = True, set(), Lock()
+ws_port, ws_server_running = 7681, False
 JOBS_DIR, MAX_JOB_DIRS = Path("jobs"), 20
+_terminal_sessions = {}  # Persistent PTY terminals
 
 # Core functions (plumbing - inspired by git's core)
 def extract_variables(obj):
@@ -190,6 +193,172 @@ def show_task_menu():
 
     return [pt for task in selected if (pt := prompt_for_variables(task)) is not None]
 
+# Websocket PTY server (inspired by git daemon) - event-driven with binary messages
+def get_or_create_terminal(session_name):
+    """Get or create persistent PTY terminal for session"""
+    if session_name not in _terminal_sessions:
+        master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 80, 0, 0))
+
+        if (pid := os.fork()) == 0:  # Child process
+            os.setsid()
+            os.dup2(slave, 0)
+            os.dup2(slave, 1)
+            os.dup2(slave, 2)
+            os.close(master)
+            os.close(slave)
+
+            # Get working directory from session name
+            sess = get_session(session_name)
+            if sess:
+                try:
+                    cwd = sess.windows[0].panes[0].current_path
+                    os.chdir(cwd)
+                except: pass
+
+            os.execv('/bin/bash', ['bash'])
+
+        os.close(slave)
+        os.set_blocking(master, False)
+        _terminal_sessions[session_name] = {"master": master, "pid": pid}
+
+    return _terminal_sessions[session_name]["master"]
+
+async def ws_pty_bridge(websocket, session_name):
+    """Event-driven bridge: websocket<->PTY"""
+    master = get_or_create_terminal(session_name)
+    loop = asyncio.get_event_loop()
+
+    def read_and_send():
+        try:
+            if data := os.read(master, 65536):
+                asyncio.create_task(websocket.send(data))
+        except: pass
+
+    try:
+        loop.add_reader(master, read_and_send)
+
+        async for msg in websocket:
+            if isinstance(msg, bytes):
+                # Handle resize events
+                if msg[0:1] == b'{':
+                    try:
+                        d = json.loads(msg.decode())
+                        if 'resize' in d:
+                            rows, cols = d['resize']['rows'], d['resize']['cols']
+                            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', rows, cols, 0, 0))
+                            continue
+                    except: pass
+                os.write(master, msg)
+    finally:
+        try: loop.remove_reader(master)
+        except: pass
+
+# HTTP server for serving terminal.html (git daemon style - separate servers)
+class TerminalHTTPHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Strip query string for path matching
+        path = self.path.split('?')[0]
+        if path == "/terminal.html":
+            html_file = Path("terminal.html")
+            if html_file.exists():
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(html_file.read_bytes())
+                return
+        self.send_response(404)
+        self.end_headers()
+    def log_message(self, *args): pass
+
+class ReuseHTTPServer(HTTPServer):
+    allow_reuse_address = True
+
+def http_server_thread():
+    """HTTP server thread"""
+    try:
+        httpd = ReuseHTTPServer(('localhost', ws_port), TerminalHTTPHandler)
+        httpd.serve_forever()
+    except: pass
+
+async def ws_handler(websocket):
+    """Binary websocket handler for xterm.js"""
+    path = websocket.request.path
+    if path.startswith("/attach/"):
+        await ws_pty_bridge(websocket, path[8:])
+
+def ws_server_thread():
+    """WebSocket server thread (separate port)"""
+    global ws_server_running
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def serve():
+        global ws_server_running
+        async with websockets.serve(ws_handler, "localhost", ws_port + 1):
+            ws_server_running = True
+            await asyncio.Future()
+
+    try: loop.run_until_complete(serve())
+    except: ws_server_running = False
+
+def start_ws_server():
+    """Start HTTP and WebSocket servers if not already running"""
+    global ws_server_running
+    if not ws_server_running:
+        Thread(target=http_server_thread, daemon=True).start()
+        Thread(target=ws_server_thread, daemon=True).start()
+        sleep(1)  # Let servers start
+
+def get_job_session_name(job_name):
+    """Find tmux session name for a job"""
+    # Search all tmux sessions (don't rely on jobs dict for cross-process)
+    for sess in server.sessions:
+        if sess.name.startswith(f"aios-{job_name}-"):
+            return sess.name
+    return None
+
+def open_terminal(job_name):
+    """Open web terminal for job"""
+    session_name = get_job_session_name(job_name)
+    if not session_name:
+        return f"✗ No session found for job '{job_name}'"
+
+    start_ws_server()
+    url = f"http://localhost:{ws_port}/terminal.html?session={session_name}"
+
+    # Create HTML terminal client with xterm.js (always regenerate to ensure latest)
+    html_file = Path("terminal.html")
+    html_file.write_text(f'''<!DOCTYPE html>
+<html><head><title>AIOS Terminal</title>
+<script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css"/>
+<style>body{{margin:0;background:#000}}#terminal{{height:100vh}}</style>
+</head><body>
+<div id="terminal"></div>
+<script>
+const term = new Terminal();
+const fit = new FitAddon.FitAddon();
+term.loadAddon(fit);
+term.open(document.getElementById('terminal'));
+fit.fit();
+const params = new URLSearchParams(window.location.search);
+const session = params.get('session');
+const ws = new WebSocket('ws://localhost:{ws_port + 1}/attach/' + session);
+ws.binaryType = 'arraybuffer';
+ws.onmessage = e => term.write(new Uint8Array(e.data));
+term.onData(d => ws.send(new TextEncoder().encode(d)));
+window.onresize = () => fit.fit();
+</script>
+</body></html>''')
+
+    try:
+        webbrowser.open(url)
+        return f"✓ Opening terminal for '{job_name}' at {url}"
+    except:
+        return f"✓ Terminal available at {url} (open manually)"
+
 # TUI mode (porcelain - inspired by git's interactive commands)
 def get_status_text():
     lines = [("class:header", "=" * 80 + "\nAIOS Task Manager - Live Status\n" + "=" * 80 + "\n"),
@@ -216,6 +385,7 @@ def get_status_text():
     lines.extend([("class:separator", "\n" + "=" * 80 + "\n"), ("class:help", "Commands: "),
                   ("class:command", "<job>: <desc> | <cmd>"), ("class:help", "  |  "),
                   ("class:command", "run <job>"), ("class:help", "  |  "),
+                  ("class:command", "attach <job>"), ("class:help", "  |  "),
                   ("class:command", "clear <job>"), ("class:help", "  |  "),
                   ("class:command", "quit"), ("class:separator", "\n" + "=" * 80 + "\n\n")])
     return FormattedText(lines)
@@ -234,6 +404,9 @@ def process_command(cmd):
                 del task_builder[job_name]
                 return f"✓ Queued job: {job_name}"
             return f"✗ Job '{job_name}' not found in builder"
+    if cmd.startswith("attach "):
+        job_name = cmd[7:].strip()
+        return open_terminal(job_name)
     if cmd.startswith("clear "):
         job_name = cmd[6:].strip()
         with builder_lock:
@@ -295,8 +468,20 @@ def run_tui_mode(selected_tasks):
     @kb.add('enter')
     def _(event):
         global running
-        cmd, input_field.text = input_field.text, ""
-        if result := process_command(cmd): output_field.text = result
+        text, input_field.text = input_field.text, ""
+
+        # Handle multi-line paste - process each line as separate command (git-style)
+        lines = text.split('\n') if '\n' in text else [text]
+        results = []
+        for cmd in lines:
+            cmd = cmd.strip()
+            if cmd:  # Skip empty lines
+                if result := process_command(cmd):
+                    results.append(result)
+
+        if results:
+            output_field.text = '\n'.join(results) if len(results) > 1 else results[0]
+
         if not running: event.app.exit()
 
     @kb.add('c-c')

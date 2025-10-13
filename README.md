@@ -74,18 +74,20 @@ Commands: <job>: <desc> | <cmd>  |  run <job>  |  clear <job>  |  quit
 
 ### Build and Run a Job
 
-**Add steps to a job:**
+**Add steps to a job** (type these commands in the AIOS prompt, WITHOUT the ❯):
 ```
-❯ demo: Create file | echo 'Hello World' > test.txt
-❯ demo: Show content | cat test.txt
-❯ demo: List files | ls -la
+demo: Create file | echo 'Hello World' > test.txt
+demo: Show content | cat test.txt
+demo: List files | ls -la
 ```
+
+**Note:** The `❯` character shown here is just the prompt indicator. Don't type it! Only type the command text.
 
 The Task Builder section updates to show your job being constructed.
 
 **Run the job:**
 ```
-❯ run demo
+run demo
 ```
 
 Watch it progress through steps in real-time! The status changes from:
@@ -93,7 +95,7 @@ Watch it progress through steps in real-time! The status changes from:
 
 **Exit when done:**
 ```
-❯ quit
+quit
 ```
 
 Or press `Ctrl+C`
@@ -102,6 +104,7 @@ Or press `Ctrl+C`
 
 ### Build Jobs
 
+Syntax (don't include the ❯ prompt):
 ```
 <job-name>: <description> | <command>
 ```
@@ -115,17 +118,19 @@ build: Deploy | make deploy
 
 ### Execute Jobs
 
+Syntax:
 ```
 run <job-name>
 ```
 
 Example:
 ```
-❯ run build
+run build
 ```
 
 ### Clear Jobs
 
+Syntax:
 ```
 clear <job-name>
 ```
@@ -144,32 +149,33 @@ Or press `Ctrl+C`
 
 ### Example 1: Codex Workflow
 
+Type these in the AIOS prompt (without ❯):
 ```
-❯ factor: Create program | codex exec --model gpt-5-codex -- "create factor.py that factors numbers"
-❯ factor: Test with 84 | python factor.py 84
-❯ factor: Test with 100 | python factor.py 100
-❯ run factor
+factor: Create program | codex exec --model gpt-5-codex -- "create factor.py that factors numbers"
+factor: Test with 84 | python factor.py 84
+factor: Test with 100 | python factor.py 100
+run factor
 ```
 
 ### Example 2: Build Pipeline
 
 ```
-❯ deploy: Run tests | pytest tests/
-❯ deploy: Build Docker | docker build -t myapp:latest .
-❯ deploy: Push image | docker push myapp:latest
-❯ deploy: Update k8s | kubectl apply -f k8s/
-❯ run deploy
+deploy: Run tests | pytest tests/
+deploy: Build Docker | docker build -t myapp:latest .
+deploy: Push image | docker push myapp:latest
+deploy: Update k8s | kubectl apply -f k8s/
+run deploy
 ```
 
 ### Example 3: Parallel Jobs
 
 ```
-❯ job1: Task A | sleep 5 && echo 'Job 1 done'
-❯ job2: Task B | sleep 3 && echo 'Job 2 done'
-❯ job3: Task C | sleep 4 && echo 'Job 3 done'
-❯ run job1
-❯ run job2
-❯ run job3
+job1: Task A | sleep 5 && echo 'Job 1 done'
+job2: Task B | sleep 3 && echo 'Job 2 done'
+job3: Task C | sleep 4 && echo 'Job 3 done'
+run job1
+run job2
+run job3
 ```
 
 All three run simultaneously!
