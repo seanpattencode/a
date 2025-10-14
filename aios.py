@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """AIOS Task Manager - git-inspired design
 
-Usage: aios [--profile] [--simple|-s] [--test] [--update] [--auto-update-on|--auto-update-off] [task.json ...]
+Usage: aios [--profile] [--simple|-s] [--test] [--update] [--auto-update-on|--auto-update-off] [task.json|prompt ...]
 
 Modes:
     Default: Interactive TUI (running tasks view)
+    Immediate Prompt: Start typing your prompt directly (workflow selection with codex default)
     --profile: Profile functions and save baseline timings
     --simple: Batch execution with simple monitoring
     --test: Run built-in tests
@@ -13,13 +14,14 @@ Modes:
     --auto-update-off: Disable automatic background updates
 
 Examples:
-    aios                    # TUI mode (running tasks default)
-    aios --profile          # Profile and save timings
-    aios task.json          # Load task, run in TUI
-    aios --simple task.json # Batch mode
-    aios --test             # Run tests
-    aios --update           # Self-update
-    aios --auto-update-on   # Enable auto-updates
+    aios                              # TUI mode (running tasks default)
+    aios create a fibonacci function  # Immediate prompt mode (select workflow, auto-fill vars)
+    aios task.json                    # Load task, run in TUI
+    aios --simple task.json           # Batch mode
+    echo "fix bug X" | aios           # Paste/pipe prompt
+    aios --test                       # Run tests
+    aios --update                     # Self-update
+    aios --auto-update-on             # Enable auto-updates
 
 Commands in TUI:
     m                       - Show workflow menu
@@ -75,6 +77,15 @@ def save_config(config):
     except: pass
 
 config = load_config()
+
+# Coding standards template
+CODING_STANDARDS = """Write the following as short as possible while following the below.
+
+Make line count minimal as possible while doing exactly the same things, use direct library calls as often as possible, keep it readable and follow all program readability conventions, for technical issues think about what exactly does the most popular app or program of all in the world that is similar to this does, and manually run debug and inspect output and fix issues for each function or changed section one by one then together before finishing.
+The specific inspiration for any technical decision that is complex and interface is what git, claudecode, codex, top, does.
+If rewriting existing sections of code with no features added, each change must be readable and follow all program readability conventions, run as fast or faster than previous code, lower in line count or equal to original, use the same or greater number of direct library calls, reduce the number of states the program could be in or keep it equal, make it simpler or the same complexity than before.
+Specific practices:
+No polling whatsoever, only event based."""
 
 # Performance enforcement
 load_timings = lambda: json.loads(TIMINGS_FILE.read_text()) if TIMINGS_FILE.exists() else {}
@@ -836,6 +847,109 @@ def run_tests():
         print("="*80)
         return 1
 
+def get_git_info():
+    """Get current git repo path and branch"""
+    try:
+        result = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True, timeout=2)
+        repo_path = result.stdout.strip() if result.returncode == 0 else str(Path.cwd())
+        result = subprocess.run(['git', 'branch', '--show-current'], capture_output=True, text=True, timeout=2)
+        branch_name = result.stdout.strip() if result.returncode == 0 else 'main'
+        return repo_path, branch_name
+    except:
+        return str(Path.cwd()), 'main'
+
+def list_workflows():
+    """List available workflows"""
+    tasks_dir = Path("tasks")
+    if not tasks_dir.exists(): return []
+    workflows = []
+    for fp in sorted(tasks_dir.glob("*.json")):
+        try:
+            workflows.append((fp, json.loads(fp.read_text())))
+        except: pass
+    return workflows
+
+def select_workflow_interactive(prompt_text):
+    """Interactive workflow selector with codex as default"""
+    workflows = list_workflows()
+    if not workflows:
+        print("✗ No workflows found in tasks/")
+        return None
+    sep = "="*80
+    print(f"\n{sep}\nSELECT WORKFLOW\n{sep}")
+    default_idx = None
+    for i, (fp, task) in enumerate(workflows, 1):
+        is_codex = 'codex' in fp.stem.lower()
+        marker = ' [DEFAULT]' if is_codex else ''
+        if is_codex and default_idx is None: default_idx = i
+        wt, var = '✓' if task.get('repo') else ' ', '⚙' if extract_variables(task) else ' '
+        print(f"  {i}. [{wt}] [{var}] {task.get('name', fp.stem)}{marker}")
+    print(f"{sep}")
+    selection = input(f"Select workflow [1-{len(workflows)}] (default={default_idx or 1}): ").strip()
+    if not selection: selection = str(default_idx or 1)
+    try:
+        idx = int(selection) - 1
+        if 0 <= idx < len(workflows): return workflows[idx]
+    except: pass
+    return None
+
+def create_prompt_task(workflow_fp, workflow_task, user_prompt):
+    """Create task from workflow with auto-filled variables"""
+    repo_path, branch_name = get_git_info()
+    full_prompt = f"{user_prompt}\n\n{CODING_STANDARDS}"
+    auto_vars = {
+        'task_description': full_prompt,
+        'dynamic_prompt': full_prompt,
+        'repo_path': repo_path,
+        'branch_name': branch_name
+    }
+    defaults = workflow_task.get('variables', {})
+    defaults.update(auto_vars)
+    task_copy = json.loads(json.dumps(workflow_task))
+    task_copy['variables'] = defaults
+    sep = "="*80
+    print(f"\n{sep}\nPROMPT PREVIEW\n{sep}")
+    print(f"Workflow: {workflow_task.get('name', workflow_fp.stem)}")
+    print(f"Repo: {repo_path}")
+    print(f"Branch: {branch_name}")
+    print(f"\nYour prompt:\n{user_prompt}")
+    print(f"\n{sep}\nVARIABLES AUTO-FILLED\n{sep}")
+    for k, v in sorted(auto_vars.items()):
+        val_preview = str(v)[:60] + '...' if len(str(v)) > 60 else str(v)
+        print(f"  {k}: {val_preview}")
+    print(f"{sep}\nSTEPS\n{sep}")
+    for i, step in enumerate(workflow_task.get('steps', []), 1):
+        print(f"  {i}. {step.get('desc', 'No description')}")
+    print(f"{sep}")
+    confirm = input("Execute? [Y/n]: ").strip().lower()
+    return substitute_variables(task_copy, defaults) if confirm in ['', 'y', 'yes'] else None
+
+def get_immediate_prompt():
+    """Get prompt from args or stdin (for paste support)"""
+    args = [a for a in sys.argv[1:] if not a.startswith('-') and not a.endswith('.json')]
+    if args: return ' '.join(args)
+    if not sys.stdin.isatty():
+        prompt = sys.stdin.read().strip()
+        sys.stdin = open('/dev/tty', 'r')  # Reopen stdin for subsequent input() calls
+        return prompt
+    print("Enter your prompt (paste or type, then Ctrl+D):")
+    return sys.stdin.read().strip()
+
+def run_immediate_prompt_mode():
+    """New mode: immediate prompt entry with workflow selection"""
+    prompt_text = get_immediate_prompt()
+    if not prompt_text:
+        print("✗ No prompt provided")
+        return []
+    workflow = select_workflow_interactive(prompt_text)
+    if not workflow:
+        print("✗ No workflow selected")
+        return []
+    workflow_fp, workflow_task = workflow
+    if task := create_prompt_task(workflow_fp, workflow_task, prompt_text):
+        return [task]
+    return []
+
 def install():
     """Install AIOS globally"""
     pyproject = '''[build-system]
@@ -935,18 +1049,28 @@ def main():
         sys.exit(run_tests())
     # Background auto-update check (non-blocking)
     auto_update_check()
-    print("Loading AIOS...")
     simple_mode = "--simple" in sys.argv or "-s" in sys.argv
-    args = [a for a in sys.argv[1:] if a not in ["--simple", "-s", "--profile", "--update", "--auto-update-on", "--auto-update-off"]]
-    selected_tasks = []
-    for fp in args:
-        try:
-            task = json.loads(Path(fp).read_text())
-            if task := prompt_for_variables(task):
-                selected_tasks.append(task)
-                print(f"✓ Loaded: {task['name']}")
-        except Exception as e:
-            print(f"✗ Error loading {fp}: {e}")
+    args = [a for a in sys.argv[1:] if a not in ["--simple", "-s", "--profile", "--update", "--auto-update-on", "--auto-update-off", "--test"]]
+
+    # Separate .json files from prompt text
+    json_args = [a for a in args if a.endswith('.json')]
+
+    if json_args:
+        # Traditional mode: load .json files
+        print("Loading AIOS...")
+        selected_tasks = []
+        for fp in json_args:
+            try:
+                task = json.loads(Path(fp).read_text())
+                if task := prompt_for_variables(task):
+                    selected_tasks.append(task)
+                    print(f"✓ Loaded: {task['name']}")
+            except Exception as e:
+                print(f"✗ Error loading {fp}: {e}")
+    else:
+        # Immediate prompt mode (default)
+        selected_tasks = run_immediate_prompt_mode()
+
     if simple_mode:
         run_simple_mode(selected_tasks)
     else:
