@@ -26,6 +26,7 @@ Examples:
 Commands in TUI:
     m                       - Show workflow menu
     a <#|name>              - Attach terminal to job
+    o <#|name>              - Open job in editor (VS Code by default)
     r <job>                 - Run job from builder
     c <job>                 - Clear job from builder
     t +<title> <dl> [vd]    - Add todo
@@ -68,9 +69,12 @@ CONFIG_FILE = DATA_DIR / "config.json"
 # Config management (auto-update settings)
 def load_config():
     if CONFIG_FILE.exists():
-        try: return json.loads(CONFIG_FILE.read_text())
+        try:
+            cfg = json.loads(CONFIG_FILE.read_text())
+            cfg.setdefault("editor_command", "code .")
+            return cfg
         except: pass
-    return {"auto_update": False, "last_update_check": 0, "check_interval": 86400}
+    return {"auto_update": False, "last_update_check": 0, "check_interval": 86400, "editor_command": "code ."}
 
 def save_config(config):
     try: CONFIG_FILE.write_text(json.dumps(config, indent=2))
@@ -215,34 +219,34 @@ def execute_task(task):
     ts, session_name = datetime.now().strftime("%Y%m%d_%H%M%S"), f"aios-{name}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     JOBS_DIR.mkdir(exist_ok=True)
     job_dir, worktree_dir = JOBS_DIR / f"{name}-{ts}", (JOBS_DIR / f"{name}-{ts}" / "worktree") if repo else None
+    work_path = str(worktree_dir.absolute()) if repo else str(job_dir.absolute())
     try:
-        with jobs_lock: jobs[name] = {"step": "Initializing", "status": "⟳ Running"}
+        with jobs_lock: jobs[name] = {"step": "Initializing", "status": "⟳ Running", "path": work_path}
         kill_session(session_name)
         session = server.new_session(session_name, window_command="bash --norc --noprofile", attach=False)
         cmds = ["set -e", f"mkdir -p {job_dir.name}"]
         if repo:
-            work_dir = str(worktree_dir.absolute())
-            with jobs_lock: jobs[name] = {"step": f"Worktree: {work_dir}", "status": "⟳ Running"}
-            cmds.extend([f"cd {repo}", f"git worktree add --detach {work_dir} {branch}", f"cd {work_dir}"])
+            with jobs_lock: jobs[name] = {"step": f"Worktree: {work_path}", "status": "⟳ Running", "path": work_path}
+            cmds.extend([f"cd {repo}", f"git worktree add --detach {work_path} {branch}", f"cd {work_path}"])
         else:
             cmds.append(f"cd {job_dir.name}")
         for i, step in enumerate(steps, 1):
-            with jobs_lock: jobs[name] = {"step": f"{i}/{len(steps)}: {step['desc']}", "status": "⟳ Running"}
+            with jobs_lock: jobs[name] = {"step": f"{i}/{len(steps)}: {step['desc']}", "status": "⟳ Running", "path": work_path}
             cmds.append(step["cmd"])
         result = subprocess.run(["bash", "-c", "\n".join(cmds)], cwd=str(job_dir.parent.absolute()), capture_output=True, text=True, timeout=120)
         if session:
             pane = session.windows[0].panes[0]
             [pane.send_keys(line, literal=True) for line in (result.stdout + result.stderr).split('\n')[:50]]
         if result.returncode == 0:
-            with jobs_lock: jobs[name] = {"step": f"✓ {job_dir.name}", "status": "✓ Done"}
+            with jobs_lock: jobs[name] = {"step": f"✓ {job_dir.name}", "status": "✓ Done", "path": work_path}
             cleanup_old_jobs()
         else:
             error_lines = result.stderr.strip().split('\n') if result.stderr else []
-            with jobs_lock: jobs[name] = {"step": f"✗ {error_lines[-1][:60] if error_lines else f'Exit {result.returncode}'}", "status": "✗ Error"}
+            with jobs_lock: jobs[name] = {"step": f"✗ {error_lines[-1][:60] if error_lines else f'Exit {result.returncode}'}", "status": "✗ Error", "path": work_path}
     except subprocess.TimeoutExpired:
-        with jobs_lock: jobs[name] = {"step": "Timeout", "status": "✗ Timeout"}
+        with jobs_lock: jobs[name] = {"step": "Timeout", "status": "✗ Timeout", "path": work_path}
     except Exception as e:
-        with jobs_lock: jobs[name] = {"step": str(e)[:50], "status": "✗ Error"}
+        with jobs_lock: jobs[name] = {"step": str(e)[:50], "status": "✗ Error", "path": work_path}
 
 def show_task_menu():
     tasks_dir = Path("tasks")
@@ -356,6 +360,21 @@ def start_ws_server():
 
 get_job_session_name = lambda job_name: next((sess.name for sess in server.sessions if sess.name.startswith(f"aios-{job_name}-")), None)
 
+def open_in_editor(job_name):
+    """Open job directory in configured editor"""
+    with jobs_lock:
+        if job_name not in jobs:
+            return f"✗ No job found: '{job_name}'"
+        job_path = jobs[job_name].get("path")
+        if not job_path:
+            return f"✗ No path found for job '{job_name}'"
+    editor_cmd = config.get("editor_command", "code .")
+    try:
+        subprocess.Popen(editor_cmd.split() + [job_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return f"✓ Opening '{job_name}' in editor: {job_path}"
+    except Exception as e:
+        return f"✗ Failed to open editor: {e}"
+
 def open_terminal(job_name):
     if not (session_name := get_job_session_name(job_name)):
         return f"✗ No session found for job '{job_name}'"
@@ -401,6 +420,8 @@ def get_status_text():
                 st, step = info["status"], info["step"][:45]
                 style = "class:success" if "✓" in st else "class:error" if "✗" in st else "class:running"
                 lines.extend([("class:text", f"  {i}. {jn:13} | {step:45} | "), (style, f"{st}\n")])
+                if "path" in info:
+                    lines.append(("class:dim", f"     → {info['path']}\n"))
         else:
             lines.append(("class:dim", "  (none)\n"))
     lines.extend([("class:label", "\nTodos:\n"), ("class:separator", "-" * 80 + "\n")])
@@ -420,7 +441,7 @@ def get_status_text():
                 [lines.append(("class:text", f"    {i}. {s['desc'][:70]}\n")) for i, s in enumerate(steps, 1)]
         else:
             lines.append(("class:dim", "  (none)\n"))
-    lines.extend([("class:separator", f"\n{sep}\n"), ("class:help", "Commands: "), ("class:command", "m"), ("class:help", " (menu)  "), ("class:command", "a <#|name>"), ("class:help", " (attach)  "), ("class:command", "r <job>"), ("class:help", " (run)  "), ("class:command", "c <job>"), ("class:help", " (clear)  "), ("class:command", "t +<title> <deadline> [virtual]"), ("class:help", " (add todo)  "), ("class:command", "t ✓<id>"), ("class:help", " (complete)  "), ("class:command", "t ✗<id>"), ("class:help", " (delete)  "), ("class:command", "q"), ("class:help", " (quit)"), ("class:separator", f"\n{sep}\n\n")])
+    lines.extend([("class:separator", f"\n{sep}\n"), ("class:help", "Commands: "), ("class:command", "m"), ("class:help", " (menu)  "), ("class:command", "a <#|name>"), ("class:help", " (attach)  "), ("class:command", "o <#|name>"), ("class:help", " (open)  "), ("class:command", "r <job>"), ("class:help", " (run)  "), ("class:command", "c <job>"), ("class:help", " (clear)  "), ("class:command", "t +<title> <deadline> [virtual]"), ("class:help", " (add todo)  "), ("class:command", "t ✓<id>"), ("class:help", " (complete)  "), ("class:command", "t ✗<id>"), ("class:help", " (delete)  "), ("class:command", "q"), ("class:help", " (quit)"), ("class:separator", f"\n{sep}\n\n")])
     return FormattedText(lines)
 
 def get_job_by_number(num):
@@ -445,6 +466,10 @@ def parse_and_route_command(cmd):
             if arg.isdigit():
                 return ("attach", job_name) if (job_name := get_job_by_number(int(arg))) else ("attach_error", f"No job #{arg}")
             return ("attach", arg)
+        if action in ["o", "open"]:
+            if arg.isdigit():
+                return ("open", job_name) if (job_name := get_job_by_number(int(arg))) else ("open_error", f"No job #{arg}")
+            return ("open", arg)
         if action in ["c", "clear"]: return ("clear", arg)
         if action == "t":
             if arg[0] == '+':
@@ -474,6 +499,8 @@ def process_command(cmd):
             return f"✗ Not found: {data}"
     if action == "attach": return open_terminal(data)
     if action == "attach_error": return data
+    if action == "open": return open_in_editor(data)
+    if action == "open_error": return data
     if action == "clear":
         with builder_lock:
             if data in task_builder:
@@ -877,15 +904,23 @@ def select_workflow_interactive(prompt_text):
         return None
     sep = "="*80
     print(f"\n{sep}\nSELECT WORKFLOW\n{sep}")
+    # Prefer workflows with variables (dynamic prompts), then 'codex' in name, then first
     default_idx = None
     for i, (fp, task) in enumerate(workflows, 1):
-        is_codex = 'codex' in fp.stem.lower()
-        marker = ' [DEFAULT]' if is_codex else ''
-        if is_codex and default_idx is None: default_idx = i
+        if extract_variables(task) and default_idx is None:
+            default_idx = i
+    if default_idx is None:
+        for i, (fp, task) in enumerate(workflows, 1):
+            if 'codex' in fp.stem.lower() and default_idx is None: default_idx = i
+    for i, (fp, task) in enumerate(workflows, 1):
+        marker = ' [DEFAULT]' if i == default_idx else ''
         wt, var = '✓' if task.get('repo') else ' ', '⚙' if extract_variables(task) else ' '
         print(f"  {i}. [{wt}] [{var}] {task.get('name', fp.stem)}{marker}")
     print(f"{sep}")
-    selection = input(f"Select workflow [1-{len(workflows)}] (default={default_idx or 1}): ").strip()
+    try:
+        selection = input(f"Select workflow [1-{len(workflows)}] (default={default_idx or 1}): ").strip()
+    except EOFError:
+        selection = ""  # Use default when stdin is not available
     if not selection: selection = str(default_idx or 1)
     try:
         idx = int(selection) - 1
@@ -905,24 +940,48 @@ def create_prompt_task(workflow_fp, workflow_task, user_prompt):
     }
     defaults = workflow_task.get('variables', {})
     defaults.update(auto_vars)
-    task_copy = json.loads(json.dumps(workflow_task))
-    task_copy['variables'] = defaults
-    sep = "="*80
-    print(f"\n{sep}\nPROMPT PREVIEW\n{sep}")
-    print(f"Workflow: {workflow_task.get('name', workflow_fp.stem)}")
-    print(f"Repo: {repo_path}")
-    print(f"Branch: {branch_name}")
-    print(f"\nYour prompt:\n{user_prompt}")
-    print(f"\n{sep}\nVARIABLES AUTO-FILLED\n{sep}")
-    for k, v in sorted(auto_vars.items()):
-        val_preview = str(v)[:60] + '...' if len(str(v)) > 60 else str(v)
-        print(f"  {k}: {val_preview}")
-    print(f"{sep}\nSTEPS\n{sep}")
-    for i, step in enumerate(workflow_task.get('steps', []), 1):
-        print(f"  {i}. {step.get('desc', 'No description')}")
-    print(f"{sep}")
-    confirm = input("Execute? [Y/n]: ").strip().lower()
-    return substitute_variables(task_copy, defaults) if confirm in ['', 'y', 'yes'] else None
+
+    while True:
+        task_copy = json.loads(json.dumps(workflow_task))
+        task_copy['variables'] = defaults
+        # Substitute variables to show exact commands
+        task_substituted = substitute_variables(task_copy, defaults)
+        sep = "="*80
+        print(f"\n{sep}\nPROMPT PREVIEW\n{sep}")
+        print(f"Workflow: {workflow_task.get('name', workflow_fp.stem)}")
+        print(f"Repo: {repo_path}")
+        print(f"Branch: {branch_name}")
+        # Only show user prompt if workflow uses it
+        workflow_vars = extract_variables(workflow_task)
+        if 'task_description' in workflow_vars or 'dynamic_prompt' in workflow_vars:
+            print(f"\nYour prompt:\n{user_prompt}")
+        print(f"\n{sep}\nCOMMANDS (with variables substituted)\n{sep}")
+        for i, step in enumerate(task_substituted.get('steps', []), 1):
+            desc = step.get('desc', 'No description')
+            cmd = step.get('cmd', '')
+            print(f"  {i}. {desc}")
+            print(f"     $ {cmd}")
+        print(f"{sep}")
+        try:
+            confirm = input("Execute? [Y/n/e=edit]: ").strip().lower()
+        except EOFError:
+            confirm = ""  # Use default (yes) when stdin is not available
+
+        if confirm in ['', 'y', 'yes']:
+            return substitute_variables(task_copy, defaults)
+        elif confirm in ['e', 'edit']:
+            print(f"\n{sep}\nEDIT VARIABLES\n{sep}")
+            print("Leave blank to keep current value")
+            for k in sorted(auto_vars.keys()):
+                current = str(defaults[k])
+                preview = current[:40] + '...' if len(current) > 40 else current
+                try:
+                    new_val = input(f"{k} [{preview}]: ").strip()
+                except EOFError:
+                    new_val = ""  # Keep current value when stdin is not available
+                if new_val: defaults[k] = new_val
+        else:
+            return None
 
 def get_immediate_prompt():
     """Get prompt from args or stdin (for paste support)"""
@@ -930,7 +989,10 @@ def get_immediate_prompt():
     if args: return ' '.join(args)
     if not sys.stdin.isatty():
         prompt = sys.stdin.read().strip()
-        sys.stdin = open('/dev/tty', 'r')  # Reopen stdin for subsequent input() calls
+        try:
+            sys.stdin = open('/dev/tty', 'r')  # Reopen stdin for subsequent input() calls
+        except OSError:
+            pass  # No controlling terminal available
         return prompt
     print("Enter your prompt (paste or type, then Ctrl+D):")
     return sys.stdin.read().strip()

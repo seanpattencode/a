@@ -1,5 +1,5 @@
 {
-  "name": "template-codex",
+  "name": "codex",
   "repo": "{{repo_path}}",
   "branch": "{{branch_name}}",
   "variables": {
