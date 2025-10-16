@@ -113,7 +113,7 @@ def timed(func):
         return result
     return wrapper
 
-# Todo DB
+# AIOS DB
 def init_db():
     with sqlite3.connect(DB_FILE) as db:
         db.execute('CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, real_deadline INTEGER NOT NULL, virtual_deadline INTEGER, created_at INTEGER NOT NULL, completed_at INTEGER)')
