@@ -55,7 +55,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # Global state
-DATA_DIR = Path("data")
+DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
 server, jobs, jobs_lock = libtmux.Server(), {}, Lock()
 task_queue, task_builder, builder_lock = Queue(), {}, Lock()
@@ -117,6 +117,7 @@ def timed(func):
 def init_db():
     with sqlite3.connect(DB_FILE) as db:
         db.execute('CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, real_deadline INTEGER NOT NULL, virtual_deadline INTEGER, created_at INTEGER NOT NULL, completed_at INTEGER)')
+        db.execute('CREATE TABLE IF NOT EXISTS jobs (name TEXT PRIMARY KEY, step TEXT NOT NULL, status TEXT NOT NULL, path TEXT, session TEXT, updated_at INTEGER NOT NULL)')
 
 @timed
 def get_todos():
@@ -146,6 +147,22 @@ def load_todos():
         todos.clear()
         for id, title, rd, vd, ca in get_todos():
             todos[id] = {'title': title, 'real_deadline': rd, 'virtual_deadline': vd, 'created_at': ca}
+
+@timed
+def get_jobs():
+    with sqlite3.connect(DB_FILE) as db:
+        return db.execute('SELECT name,step,status,path,session FROM jobs ORDER BY updated_at DESC').fetchall()
+
+def update_job(name, step, status, path=None, session=None):
+    with sqlite3.connect(DB_FILE) as db:
+        db.execute('INSERT OR REPLACE INTO jobs (name,step,status,path,session,updated_at) VALUES (?,?,?,?,?,?)', (name, step, status, path, session, int(time())))
+
+@timed
+def load_jobs():
+    with jobs_lock:
+        jobs.clear()
+        for name, step, status, path, session in get_jobs():
+            jobs[name] = {'step': step, 'status': status, 'path': path, 'session': session}
 
 @timed
 def get_urgency_style(deadline):
@@ -222,14 +239,14 @@ def execute_task(task):
     job_dir, worktree_dir = JOBS_DIR / f"{name}-{ts}", (JOBS_DIR / f"{name}-{ts}" / "worktree") if repo else None
     work_path = str(worktree_dir.absolute()) if repo else str(job_dir.absolute())
     try:
-        with jobs_lock: jobs[name] = {"step": "Initializing", "status": "⟳ Running", "path": work_path, "session": session_name}
+        update_job(name, "Initializing", "⟳ Running", work_path, session_name)
         kill_session(session_name)
         session = server.new_session(session_name, window_command="bash", attach=False, start_directory=str(job_dir.parent.absolute()))
         pane = session.windows[0].panes[0]
         # Setup commands
         setup_cmds = ["set -e", f"mkdir -p {job_dir.name}"]
         if repo:
-            with jobs_lock: jobs[name] = {"step": f"Worktree: {work_path}", "status": "⟳ Running", "path": work_path, "session": session_name}
+            update_job(name, f"Worktree: {work_path}", "⟳ Running", work_path, session_name)
             setup_cmds.extend([f"cd {repo}", f"git worktree add --detach {work_path} {branch}", f"cd {work_path}"])
         else:
             setup_cmds.append(f"cd {job_dir.name}")
@@ -239,7 +256,7 @@ def execute_task(task):
             sleep(0.1)
         # Execute each step in the tmux session
         for i, step in enumerate(steps, 1):
-            with jobs_lock: jobs[name] = {"step": f"{i}/{len(steps)}: {step['desc']}", "status": "⟳ Running", "path": work_path, "session": session_name}
+            update_job(name, f"{i}/{len(steps)}: {step['desc']}", "⟳ Running", work_path, session_name)
             pane.send_keys(step["cmd"])
             sleep(0.2)  # Brief delay to ensure command is registered
         # Send marker command to detect completion
@@ -257,17 +274,17 @@ def execute_task(task):
                         exit_code = int(exit_file.read_text().strip())
                         exit_file.unlink()
                         if exit_code == 0:
-                            with jobs_lock: jobs[name] = {"step": f"✓ {job_dir.name}", "status": "✓ Done", "path": work_path, "session": session_name}
+                            update_job(name, f"✓ {job_dir.name}", "✓ Done", work_path, session_name)
                             cleanup_old_jobs()
                         else:
-                            with jobs_lock: jobs[name] = {"step": f"✗ Exit {exit_code}", "status": "✗ Error", "path": work_path, "session": session_name}
+                            update_job(name, f"✗ Exit {exit_code}", "✗ Error", work_path, session_name)
                         return
             except: pass
             sleep(interval)
         # Timeout
-        with jobs_lock: jobs[name] = {"step": "Monitoring timeout", "status": "⟳ Running", "path": work_path, "session": session_name}
+        update_job(name, "Monitoring timeout", "⟳ Running", work_path, session_name)
     except Exception as e:
-        with jobs_lock: jobs[name] = {"step": str(e)[:50], "status": "✗ Error", "path": work_path, "session": session_name if 'session_name' in locals() else None}
+        update_job(name, str(e)[:50], "✗ Error", work_path, session_name if 'session_name' in locals() else None)
 
 def show_task_menu():
     tasks_dir = Path("tasks")
@@ -526,6 +543,7 @@ def attach_local_terminal(job_name):
 # TUI mode
 @timed
 def get_status_text():
+    load_jobs()
     sep = "=" * 80
     lines = [("class:header", f"{sep}\nAIOS - Running Tasks\n{sep}\n"), ("class:label", "\nJobs:"), ("class:help", " (Press # to watch job live)\n"), ("class:separator", "-" * 80 + "\n")]
     with jobs_lock:
@@ -694,6 +712,7 @@ def run_tui_mode(selected_tasks):
     global running
     init_db()
     load_todos()
+    load_jobs()
     for t in selected_tasks:
         task_queue.put(t)
         print(f"✓ Queued: {t['name']}")
@@ -781,11 +800,13 @@ def run_tui_mode(selected_tasks):
 def run_simple_mode(selected_tasks):
     init_db()
     load_todos()
+    load_jobs()
     if not selected_tasks: return print("No tasks selected")
     print(f"\nStarting {len(selected_tasks)} task(s)...")
     threads = [Thread(target=execute_task, args=(t,)) for t in selected_tasks]
     [t.start() for t in threads]
     [t.join() for t in threads]
+    load_jobs()
     sep = "="*80
     with jobs_lock:
         print(f"\n{sep}")
