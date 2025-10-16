@@ -1,0 +1,8 @@
+{
+  "name": "test-event",
+  "steps": [
+    {"desc": "Echo test 1", "cmd": "echo 'Event test 1'"},
+    {"desc": "Echo test 2", "cmd": "echo 'Event test 2'"},
+    {"desc": "Sleep and echo", "cmd": "sleep 1 && echo 'Completion test'"}
+  ]
+}

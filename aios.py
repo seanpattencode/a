@@ -39,7 +39,7 @@ Commands in TUI:
 import libtmux, json, sys, re, shutil, asyncio, websockets, webbrowser, subprocess, pty, fcntl, termios, struct, os, signal, sqlite3, urllib.request
 from datetime import datetime
 from time import sleep, time
-from threading import Thread, Lock
+from threading import Thread, Lock, Event
 from queue import Queue, Empty
 from pathlib import Path
 from prompt_toolkit import Application
@@ -67,6 +67,8 @@ TIMINGS_FILE, profile_mode = DATA_DIR / "timings.json", "--profile" in sys.argv
 DB_FILE, todos, todos_lock, notification_queue = DATA_DIR / "aios.db", {}, Lock(), Queue()
 CONFIG_FILE = DATA_DIR / "config.json"
 last_timed_op, last_timed_lock = {"name": None, "elapsed": 0, "baseline": 0, "threshold": 0}, Lock()
+ui_refresh_event, shutdown_event = Event(), Event()
+exit_file_events, exit_file_events_lock = {}, Lock()
 
 # Config management (auto-update settings)
 def load_config():
@@ -137,17 +139,20 @@ def add_todo(title, real_deadline, virtual_deadline=None):
     if virtual_deadline: notification_queue.put(('virtual', todo_id, virtual_deadline))
     notification_queue.put(('real', todo_id, real_deadline))
     load_todos()
+    ui_refresh_event.set()
     return todo_id
 
 @timed
 def complete_todo(todo_id):
     with sqlite3.connect(DB_FILE, timeout=0.1) as db: db.execute('UPDATE todos SET completed_at=? WHERE id=?', (int(time()), todo_id))
     load_todos()
+    ui_refresh_event.set()
 
 @timed
 def delete_todo(todo_id):
     with sqlite3.connect(DB_FILE, timeout=0.1) as db: db.execute('DELETE FROM todos WHERE id=?', (todo_id,))
     load_todos()
+    ui_refresh_event.set()
 
 @timed
 def load_todos():
@@ -165,6 +170,7 @@ def get_jobs():
 def update_job(name, step, status, path=None, session=None):
     with sqlite3.connect(DB_FILE, timeout=0.1) as db:
         db.execute('INSERT OR REPLACE INTO jobs (name,step,status,path,session,updated_at) VALUES (?,?,?,?,?,?)', (name, step, status, path, session, int(time())))
+    ui_refresh_event.set()
 
 @timed
 def load_jobs():
@@ -186,15 +192,18 @@ parse_deadline = lambda s: int(time()) + int(s[:-1]) * {'m': 60, 'h': 3600, 'd':
 is_deadline = lambda s: (s[-1] in 'mhd' and s[:-1].isdigit()) or '-' in s or s.isdigit()
 
 def notification_worker():
-    """Event-driven notification system"""
+    """Event-driven notification system using Queue.get(timeout)"""
     scheduled = {}
     while running:
         try:
-            try:
-                while True:
+            # Drain pending queue items
+            while True:
+                try:
                     typ, todo_id, timestamp = notification_queue.get_nowait()
                     scheduled[(typ, todo_id)] = timestamp
-            except Empty: pass
+                except Empty:
+                    break
+            # Fire due notifications
             now, due = time(), [(k, v) for k, v in scheduled.items() if v <= now]
             for (typ, todo_id), ts in due:
                 with todos_lock:
@@ -202,8 +211,17 @@ def notification_worker():
                         title = todos[todo_id]['title']
                         print(f"\n{'🔔 TODO ALERT' if typ == 'virtual' else '🚨 TODO URGENT'}: {title}")
                 del scheduled[(typ, todo_id)]
-            sleep(max(0.1, min(60, min(scheduled.values()) - time())) if scheduled else 60)
-        except: continue
+            # Wait for next event: new queue item or next scheduled notification
+            if scheduled:
+                typ, todo_id, timestamp = notification_queue.get(timeout=max(0, min(scheduled.values()) - time()))
+                scheduled[(typ, todo_id)] = timestamp
+            else:
+                typ, todo_id, timestamp = notification_queue.get()
+                scheduled[(typ, todo_id)] = timestamp
+        except Empty:
+            continue
+        except:
+            continue
 
 # Core functions
 @timed
@@ -240,6 +258,13 @@ cleanup_old_jobs = lambda: [shutil.rmtree(d) for d in sorted(JOBS_DIR.glob("*"),
 get_session = lambda name: next((s for s in server.sessions if s.name == name), None)
 kill_session = lambda name: get_session(name).kill() if get_session(name) else None
 
+class ExitFileHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        if not event.is_directory and 'aios-exit-' in event.src_path:
+            with exit_file_events_lock:
+                if event.src_path in exit_file_events:
+                    exit_file_events[event.src_path].set()
+
 def execute_task(task):
     """Event-driven execution in real tmux session"""
     name, steps, repo, branch = task["name"], task["steps"], task.get("repo"), task.get("branch", "main")
@@ -268,30 +293,27 @@ def execute_task(task):
             update_job(name, f"{i}/{len(steps)}: {step['desc']}", "⟳ Running", work_path, session_name)
             pane.send_keys(step["cmd"])
             sleep(0.2)  # Brief delay to ensure command is registered
-        # Send marker command to detect completion
-        marker = f"echo '__AIOS_COMPLETE_{name}_{ts}__'; echo $? > /tmp/aios-exit-{name}-{ts}"
-        pane.send_keys(marker)
-        # Monitor for completion (non-blocking)
-        max_wait, interval = 300, 0.5  # 5 minute timeout
-        for _ in range(int(max_wait / interval)):
-            try:
-                pane_content = pane.cmd('capture-pane', '-p').stdout
-                if f'__AIOS_COMPLETE_{name}_{ts}__' in pane_content:
-                    # Check exit status
-                    exit_file = Path(f"/tmp/aios-exit-{name}-{ts}")
-                    if exit_file.exists():
-                        exit_code = int(exit_file.read_text().strip())
-                        exit_file.unlink()
-                        if exit_code == 0:
-                            update_job(name, f"✓ {job_dir.name}", "✓ Done", work_path, session_name)
-                            cleanup_old_jobs()
-                        else:
-                            update_job(name, f"✗ Exit {exit_code}", "✗ Error", work_path, session_name)
-                        return
-            except: pass
-            sleep(interval)
-        # Timeout
-        update_job(name, "Monitoring timeout", "⟳ Running", work_path, session_name)
+        # Event-driven completion detection via exit file monitoring
+        exit_file = Path(f"/tmp/aios-exit-{name}-{ts}")
+        exit_event = Event()
+        with exit_file_events_lock:
+            exit_file_events[str(exit_file)] = exit_event
+        pane.send_keys(f"echo '__AIOS_COMPLETE_{name}_{ts}__'; echo $? > {exit_file}")
+        # Wait for completion (event-driven, no polling)
+        try:
+            if exit_event.wait(timeout=300):
+                exit_code = int(exit_file.read_text().strip())
+                exit_file.unlink()
+                if exit_code == 0:
+                    update_job(name, f"✓ {job_dir.name}", "✓ Done", work_path, session_name)
+                    cleanup_old_jobs()
+                else:
+                    update_job(name, f"✗ Exit {exit_code}", "✗ Error", work_path, session_name)
+            else:
+                update_job(name, "Monitoring timeout", "⟳ Running", work_path, session_name)
+        finally:
+            with exit_file_events_lock:
+                exit_file_events.pop(str(exit_file), None)
     except Exception as e:
         update_job(name, str(e)[:50], "✗ Error", work_path, session_name if 'session_name' in locals() else None)
 
@@ -590,7 +612,7 @@ def get_status_text():
                 [lines.append(("class:text", f"    {i}. {s['desc'][:70]}\n")) for i, s in enumerate(steps, 1)]
         else:
             lines.append(("class:dim", "  (none)\n"))
-    lines.extend([("class:separator", f"\n{sep}\n"), ("class:help", "# "), ("class:help", "(watch)  "), ("class:command", "m"), ("class:help", " (menu)  "), ("class:command", "o #"), ("class:help", " (editor)  "), ("class:command", "a #"), ("class:help", " (browser)  "), ("class:command", "r <job>"), ("class:help", " (run)  "), ("class:command", "c <job>"), ("class:help", " (clear)  "), ("class:command", "q"), ("class:help", " (quit)"), ("class:separator", f"\n{sep}\n\n")])
+    lines.extend([("class:separator", f"\n{sep}\n"), ("class:help", "# "), ("class:help", "(watch)  "), ("class:command", "m"), ("class:help", " (menu)  "), ("class:command", "o #"), ("class:help", " (editor)  "), ("class:command", "a #"), ("class:help", " (browser)  "), ("class:command", "r <job>"), ("class:help", " (run)  "), ("class:command", "c <job>"), ("class:help", " (clear)  "), ("class:command", "t +<title> <dl>"), ("class:help", " (add todo)  "), ("class:command", "t ✓<id>"), ("class:help", " (complete)  "), ("class:command", "t ✗<id>"), ("class:help", " (delete)  "), ("class:command", "q"), ("class:help", " (quit)"), ("class:separator", f"\n{sep}\n\n")])
     return FormattedText(lines)
 
 @timed
@@ -721,7 +743,7 @@ def watch_folder():
     observer.schedule(TaskFileHandler(), str(tasks_dir), recursive=False)
     observer.start()
     try:
-        while running: sleep(1)
+        shutdown_event.wait()
     finally:
         observer.stop()
         observer.join()
@@ -731,6 +753,10 @@ def run_tui_mode(selected_tasks):
     init_db()
     load_todos()
     load_jobs()
+    # Start exit file observer
+    exit_obs = Observer()
+    exit_obs.schedule(ExitFileHandler(), '/tmp', recursive=False)
+    exit_obs.start()
     for t in selected_tasks:
         task_queue.put(t)
         print(f"✓ Queued: {t['name']}")
@@ -775,7 +801,8 @@ def run_tui_mode(selected_tasks):
         app = Application(layout=Layout(container), key_bindings=kb, full_screen=True, style=style, mouse_support=False)
         def update_status():
             while running:
-                sleep(0.5)
+                ui_refresh_event.wait(timeout=1.0)  # Timeout for countdown updates
+                ui_refresh_event.clear()
                 try: app.invalidate()
                 except: break
         Thread(target=update_status, daemon=True).start()
@@ -812,6 +839,9 @@ def run_tui_mode(selected_tasks):
             if not running: break
         else:
             break
+    shutdown_event.set()
+    exit_obs.stop()
+    exit_obs.join()
     print("\nShutdown complete.")
 
 # Simple mode
@@ -820,10 +850,16 @@ def run_simple_mode(selected_tasks):
     load_todos()
     load_jobs()
     if not selected_tasks: return print("No tasks selected")
+    # Start exit file observer
+    exit_obs = Observer()
+    exit_obs.schedule(ExitFileHandler(), '/tmp', recursive=False)
+    exit_obs.start()
     print(f"\nStarting {len(selected_tasks)} task(s)...")
     threads = [Thread(target=execute_task, args=(t,)) for t in selected_tasks]
     [t.start() for t in threads]
     [t.join() for t in threads]
+    exit_obs.stop()
+    exit_obs.join()
     load_jobs()
     sep = "="*80
     with jobs_lock:
