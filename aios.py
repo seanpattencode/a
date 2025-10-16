@@ -1049,8 +1049,7 @@ def select_workflow_interactive(prompt_text):
     """Interactive workflow selector with codex as default"""
     workflows = list_workflows()
     if not workflows:
-        print("✗ No workflows found in tasks/")
-        return None
+        return (Path("default"), {"name": "codex", "repo": "{{repo_path}}", "branch": "{{branch_name}}", "steps": [{"desc": "Execute via codex", "cmd": "codex exec --sandbox workspace-write -- '{{task_description}}'"}]})
     sep = "="*80
     print(f"\n{sep}\nSELECT WORKFLOW\n{sep}")
     # Prefer workflows with variables (dynamic prompts), then 'codex' in name, then first
