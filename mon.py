@@ -446,7 +446,60 @@ def watch_tmux_session(session_name, expectations, duration=None):
 
     return True
 
-def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None):
+def wait_for_agent_ready(session_name, timeout=5):
+    """Wait for AI agent to be ready to receive input.
+
+    Uses pattern matching (like pexpect) to detect agent prompt patterns.
+
+    Args:
+        session_name: Name of tmux session
+        timeout: Max seconds to wait
+
+    Returns:
+        True if agent is ready, False if timeout
+    """
+    import time
+    import re
+
+    # Agent-specific ready patterns (regex)
+    # These patterns ensure the agent is fully initialized and waiting for input
+    ready_patterns = [
+        r'›.*\n\n\s+\d+%\s+context left',      # Codex prompt with context indicator
+        r'>\s+Type your message',              # Gemini input prompt
+        r'gemini-2\.5-pro.*\(\d+%\)',          # Gemini status line
+        r'──+\s*\n>\s+\w+',                    # Claude prompt (separator + prompt with text)
+    ]
+
+    compiled_patterns = [re.compile(p, re.MULTILINE) for p in ready_patterns]
+
+    start_time = time.time()
+    last_content = ""
+
+    while (time.time() - start_time) < timeout:
+        # Capture pane content
+        result = sp.run(['tmux', 'capture-pane', '-t', session_name, '-p'],
+                       capture_output=True, text=True)
+
+        if result.returncode != 0:
+            return False
+
+        current_content = result.stdout
+
+        # Check if content changed (agent is loading)
+        if current_content != last_content:
+            # Check for ready patterns
+            for pattern in compiled_patterns:
+                if pattern.search(current_content):
+                    return True
+
+            last_content = current_content
+
+        time.sleep(0.2)
+
+    # Timeout - try sending anyway
+    return True
+
+def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None, wait_for_ready=True):
     """Send a prompt to a tmux session.
 
     Args:
@@ -454,6 +507,7 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
         prompt: Text to send to the session
         wait_for_completion: If True, wait for activity to stop before returning
         timeout: Max seconds to wait for completion (only used if wait_for_completion=True)
+        wait_for_ready: If True, wait for agent to be ready before sending
 
     Returns:
         True if successful, False otherwise
@@ -470,8 +524,18 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
         print(f"✗ Session {session_name} not found")
         return False
 
-    # Send the prompt
-    sp.run(['tmux', 'send-keys', '-t', session_name, prompt, 'Enter'])
+    # Wait for agent to be ready
+    if wait_for_ready:
+        print(f"⏳ Waiting for agent to be ready...", end='', flush=True)
+        if wait_for_agent_ready(session_name):
+            print(" ✓")
+        else:
+            print(" (timeout, sending anyway)")
+
+    # Send the prompt and Enter separately for reliability
+    sp.run(['tmux', 'send-keys', '-t', session_name, prompt])
+    time.sleep(0.1)  # Brief delay before Enter for terminal processing
+    sp.run(['tmux', 'send-keys', '-t', session_name, 'Enter'])
     print(f"✓ Sent prompt to session '{session_name}'")
 
     if wait_for_completion:
@@ -820,11 +884,21 @@ if is_directory_only:
     arg = None
 
 # Resolve work_dir: digit -> PROJECTS[n], path -> path, None -> WORK_DIR
+# Also determine if work_dir_arg is actually a prompt (for later)
+is_work_dir_a_prompt = False
+
 if work_dir_arg and work_dir_arg.isdigit():
     idx = int(work_dir_arg)
     work_dir = PROJECTS[idx] if 0 <= idx < len(PROJECTS) else WORK_DIR
+elif work_dir_arg and os.path.isdir(os.path.expanduser(work_dir_arg)):
+    # It's a valid directory path
+    work_dir = work_dir_arg
+elif work_dir_arg:
+    # Not a digit, not a directory - likely a prompt
+    is_work_dir_a_prompt = True
+    work_dir = WORK_DIR
 else:
-    work_dir = work_dir_arg if work_dir_arg else WORK_DIR
+    work_dir = WORK_DIR
 
 def create_worktree(project_path, session_name):
     """Create git worktree in central ~/projects/aiosWorktrees/"""
@@ -1245,22 +1319,27 @@ else:
                   capture_output=True)
 
     # Check if there's a prompt to send (remaining args after session key and work_dir)
-    # Look for args starting from index 2 or 3 depending on if work_dir_arg was provided
-    prompt_start_idx = 3 if work_dir_arg else 2
-    prompt_parts = []
+    # Determine where prompts start based on whether work_dir_arg was a directory or prompt
+    if is_work_dir_a_prompt:
+        # work_dir_arg itself is the start of the prompt
+        prompt_start_idx = 2
+    elif work_dir_arg:
+        # work_dir_arg was a real directory/project, prompts start after it
+        prompt_start_idx = 3
+    else:
+        # No work_dir_arg, prompts start at index 2
+        prompt_start_idx = 2
 
+    prompt_parts = []
     for i in range(prompt_start_idx, len(sys.argv)):
         if sys.argv[i] not in ['-w', '--new-window', '--yes', '-y']:
             prompt_parts.append(sys.argv[i])
 
     if prompt_parts:
-        # Wait a moment for session to initialize
-        import time
-        time.sleep(1)
-
         prompt = ' '.join(prompt_parts)
         print(f"📤 Sending prompt to session...")
-        send_prompt_to_session(session_name, prompt, wait_for_completion=False)
+        # send_prompt_to_session will wait for agent to be ready
+        send_prompt_to_session(session_name, prompt, wait_for_completion=False, wait_for_ready=True)
 
     if new_window:
         launch_in_new_window(session_name)
