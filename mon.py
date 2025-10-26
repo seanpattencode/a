@@ -348,8 +348,12 @@ Worktrees:
   ./mon.py w<#/name>       Open worktree in current terminal
   ./mon.py w<#/name> -w    Open worktree in NEW window
   ./mon.py w- <#/name>     Remove worktree (git + delete)
-  ./mon.py w-- <#/name>    Remove worktree and push
-  ./mon.py w-- <#/name> "msg"  Remove, push with custom message
+  ./mon.py w-- <#/name>    Remove worktree, commit, and push (default msg)
+  ./mon.py w-- <#/name> "Custom message"  Same but with custom commit message
+
+Git Operations (works in ANY directory):
+  ./mon.py push            Commit all changes and push (default message)
+  ./mon.py push "msg"      Commit all changes and push with custom message
 
 Flags:
   -w, --new-window         Launch in new terminal window
@@ -375,9 +379,15 @@ Examples:
   ./mon.py w0              Open worktree #0
   ./mon.py w0 -w           Open worktree #0 in new window
   ./mon.py w- codex-123    Remove worktree matching 'codex-123'
-  ./mon.py w-- 0           Remove worktree #0 and push
+  ./mon.py w-- 0           Remove worktree #0 and push (default message)
+  ./mon.py w-- 0 "Cleanup experimental feature"  Remove and push with custom message
+  ./mon.py push            Quick commit+push in current directory
+  ./mon.py push "Fix bug in authentication"  Commit+push with custom message
 
-Worktrees Location: {WORKTREES_DIR}""")
+Worktrees Location: {WORKTREES_DIR}
+
+Note: The 'push' command works in ANY git repository, not just worktrees.
+      Run from any directory to quickly commit and push your changes.""")
 elif arg == 'p':
     print("Saved Projects:")
     for i, proj in enumerate(PROJECTS):
@@ -388,6 +398,51 @@ elif arg == 'ls':
 elif arg == 'x':
     sp.run(['tmux', 'kill-server'])
     print("✓ All sessions killed")
+elif arg == 'push':
+    # Quick commit and push in current directory
+    cwd = os.getcwd()
+
+    # Check if git repo
+    result = sp.run(['git', '-C', cwd, 'rev-parse', '--git-dir'], capture_output=True)
+    if result.returncode != 0:
+        print("✗ Not a git repository")
+        sys.exit(1)
+
+    # Get commit message
+    commit_msg = work_dir_arg if work_dir_arg else f"Update {os.path.basename(cwd)}"
+
+    # Show status
+    print(f"Repository: {cwd}")
+    print(f"Commit message: {commit_msg}\n")
+    sp.run(['git', '-C', cwd, 'status', '--short'])
+
+    # Confirmation
+    response = input("\nCommit and push? (y/n): ").strip().lower()
+    if response not in ['y', 'yes']:
+        print("✗ Cancelled")
+        sys.exit(0)
+
+    # Add all changes
+    sp.run(['git', '-C', cwd, 'add', '-A'])
+
+    # Commit
+    result = sp.run(['git', '-C', cwd, 'commit', '-m', commit_msg],
+                    capture_output=True, text=True)
+    if result.returncode == 0:
+        print(f"✓ Committed: {commit_msg}")
+    elif 'nothing to commit' in result.stdout:
+        print("ℹ Nothing to commit")
+    else:
+        print(f"✗ Commit failed: {result.stderr.strip()}")
+        sys.exit(1)
+
+    # Push
+    result = sp.run(['git', '-C', cwd, 'push'], capture_output=True, text=True)
+    if result.returncode == 0:
+        print("✓ Pushed to remote")
+    else:
+        print(f"✗ Push failed: {result.stderr.strip()}")
+        sys.exit(1)
 elif arg.startswith('++'):
     key = arg[2:]
     if key in sessions and work_dir_arg and work_dir_arg.isdigit():
