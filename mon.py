@@ -6,6 +6,7 @@ CLAUDE_PROMPT = "tell me a joke"
 CODEX_PROMPT = "tell me a joke"
 GEMINI_PROMPT = "tell me a joke"
 WORK_DIR = os.getcwd()
+WORKTREES_DIR = os.path.expanduser("~/projects/aiosWorktrees")
 
 PROJECTS = [
     os.path.expanduser("~/projects/aios"),
@@ -25,8 +26,48 @@ sessions = {
     'lp': ('claude-p', f'claude --dangerously-skip-permissions "{CLAUDE_PROMPT}"')
 }
 
+def detect_terminal():
+    """Detect available terminal emulator"""
+    for term in ['gnome-terminal', 'alacritty']:
+        try:
+            sp.run(['which', term], capture_output=True, check=True)
+            return term
+        except:
+            pass
+    return None
+
+def launch_in_new_window(session_name, terminal=None):
+    """Launch tmux session in new terminal window"""
+    if not terminal:
+        terminal = detect_terminal()
+
+    if not terminal:
+        print("✗ No supported terminal found (gnome-terminal, alacritty)")
+        return False
+
+    if terminal == 'gnome-terminal':
+        cmd = ['gnome-terminal', '--', 'tmux', 'attach', '-t', session_name]
+    elif terminal == 'alacritty':
+        cmd = ['alacritty', '-e', 'tmux', 'attach', '-t', session_name]
+
+    try:
+        sp.Popen(cmd)
+        print(f"✓ Launched {terminal} for session: {session_name}")
+        return True
+    except Exception as e:
+        print(f"✗ Failed to launch terminal: {e}")
+        return False
+
+# Parse args
 arg = sys.argv[1] if len(sys.argv) > 1 else None
 work_dir_arg = sys.argv[2] if len(sys.argv) > 2 else None
+new_window = '--new-window' in sys.argv or '-w' in sys.argv
+
+# Clean args
+if new_window:
+    sys.argv = [a for a in sys.argv if a not in ['--new-window', '-w']]
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    work_dir_arg = sys.argv[2] if len(sys.argv) > 2 else None
 
 # Resolve work_dir: digit -> PROJECTS[n], path -> path, None -> WORK_DIR
 if work_dir_arg and work_dir_arg.isdigit():
@@ -36,18 +77,17 @@ else:
     work_dir = work_dir_arg if work_dir_arg else WORK_DIR
 
 def create_worktree(project_path, session_name):
-    """Create git worktree in project/aiosWorktrees/session_name"""
-    worktrees_dir = os.path.join(project_path, "aiosWorktrees")
-    os.makedirs(worktrees_dir, exist_ok=True)
-    worktree_path = os.path.join(worktrees_dir, session_name)
+    """Create git worktree in central ~/projects/aiosWorktrees/"""
+    os.makedirs(WORKTREES_DIR, exist_ok=True)
+    project_name = os.path.basename(project_path)
+    worktree_name = f"{project_name}-{session_name}"
+    worktree_path = os.path.join(WORKTREES_DIR, worktree_name)
 
-    # Get current branch
     result = sp.run(['git', '-C', project_path, 'branch', '--show-current'],
                     capture_output=True, text=True)
     branch = result.stdout.strip() or 'main'
 
-    # Create worktree with new branch (detached from current branch)
-    result = sp.run(['git', '-C', project_path, 'worktree', 'add', '-b', f"wt-{session_name}", worktree_path, branch],
+    result = sp.run(['git', '-C', project_path, 'worktree', 'add', '-b', f"wt-{worktree_name}", worktree_path, branch],
                     capture_output=True, text=True)
 
     if result.returncode == 0:
@@ -64,6 +104,7 @@ Prompts:   gp=gemini+prompt  cp=codex+prompt  lp=claude+prompt
 
 Usage:
   ./mon.py <key>           Attach to session (create if needed)
+  ./mon.py <key> -w        Attach in NEW terminal window
   ./mon.py +<key>          Create NEW instance with timestamp
   ./mon.py ++<key>         Create NEW instance with git worktree
   ./mon.py <key> <dir>     Start session in custom directory
@@ -72,25 +113,32 @@ Usage:
   ./mon.py ls              List all sessions
   ./mon.py x               Kill all sessions
 
+Flags:
+  -w, --new-window         Launch in new terminal window
+
+Terminals:
+  Supported: gnome-terminal, alacritty
+  Auto-detects available terminal
+
 Working Directory:
   Default: {WORK_DIR}
 
-Saved Projects (edit at line 10):""")
+Saved Projects (edit at line 11):""")
     for i, proj in enumerate(PROJECTS):
         exists = "✓" if os.path.exists(proj) else "✗"
         print(f"  {i}. {exists} {proj}")
     print(f"""
 Examples:
-  ./mon.py c 0             Launch codex in project 0 (aios)
+  ./mon.py c 0             Launch codex in project 0
+  ./mon.py c 0 -w          Launch codex in NEW window
   ./mon.py +c 0            New codex instance in project 0
-  ./mon.py ++c 0           New codex with worktree in project 0
-  ./mon.py l 2             Launch claude in project 2 (Workcycle)
-  ./mon.py c /tmp          Launch codex in /tmp
+  ./mon.py ++c 0           New codex with worktree
+  ./mon.py l 2 -w          Launch claude in new window
 
 Git Worktrees:
-  ++ prefix creates worktree in <project>/aiosWorktrees/<session>/
-  Creates new branch: wt-<session>
-  Example: ~/projects/aios/aiosWorktrees/codex-223045/""")
+  ++ prefix creates worktree in {WORKTREES_DIR}/<project>-<session>/
+  Creates new branch: wt-<project>-<session>
+  Example: ~/projects/aiosWorktrees/aios-codex-223045/""")
 elif arg == 'p':
     print("Saved Projects:")
     for i, proj in enumerate(PROJECTS):
@@ -102,7 +150,6 @@ elif arg == 'x':
     sp.run(['tmux', 'kill-server'])
     print("✓ All sessions killed")
 elif arg.startswith('++'):
-    # Create with worktree
     key = arg[2:]
     if key in sessions and work_dir_arg and work_dir_arg.isdigit():
         idx = int(work_dir_arg)
@@ -112,11 +159,14 @@ elif arg.startswith('++'):
             ts = datetime.now().strftime('%H%M%S')
             name = f"{base_name}-{ts}"
 
-            # Create worktree
             if worktree_path := create_worktree(project_path, name):
                 print(f"✓ Created worktree: {worktree_path}")
                 sp.run(['tmux', 'new', '-d', '-s', name, '-c', worktree_path, cmd])
-                os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
+
+                if new_window:
+                    launch_in_new_window(name)
+                else:
+                    os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
         else:
             print(f"✗ Invalid project index: {work_dir_arg}")
     else:
@@ -128,8 +178,16 @@ elif arg.startswith('+'):
         ts = datetime.now().strftime('%H%M%S')
         name = f"{base_name}-{ts}"
         sp.run(['tmux', 'new', '-d', '-s', name, '-c', work_dir, cmd])
-        os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
+
+        if new_window:
+            launch_in_new_window(name)
+        else:
+            os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
 else:
     name, cmd = sessions.get(arg, (arg, None))
     sp.run(['tmux', 'new', '-d', '-s', name, '-c', work_dir, cmd or arg], capture_output=True)
-    os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
+
+    if new_window:
+        launch_in_new_window(name)
+    else:
+        os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
