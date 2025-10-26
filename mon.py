@@ -247,45 +247,79 @@ def get_session_for_worktree(worktree_path):
     return None
 
 def list_jobs():
-    """List all jobs (worktrees) with their status."""
-    if not os.path.exists(WORKTREES_DIR):
-        print(f"No jobs found (no worktrees in {WORKTREES_DIR})")
-        return
+    """List all jobs (any directory with a session, plus worktrees) with their status."""
+    # Get all tmux sessions and their directories
+    result = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'],
+                    capture_output=True, text=True)
 
-    items = sorted(os.listdir(WORKTREES_DIR))
-    if not items:
+    jobs_by_path = {}  # path -> list of sessions
+
+    if result.returncode == 0:
+        sessions = [s for s in result.stdout.strip().split('\n') if s]
+
+        # Get directory for each session
+        for session in sessions:
+            path_result = sp.run(['tmux', 'display-message', '-p', '-t', session,
+                                 '#{pane_current_path}'],
+                                capture_output=True, text=True)
+            if path_result.returncode == 0:
+                session_path = path_result.stdout.strip()
+                if session_path not in jobs_by_path:
+                    jobs_by_path[session_path] = []
+                jobs_by_path[session_path].append(session)
+
+    # Also include worktrees without sessions
+    if os.path.exists(WORKTREES_DIR):
+        for item in os.listdir(WORKTREES_DIR):
+            worktree_path = os.path.join(WORKTREES_DIR, item)
+            if os.path.isdir(worktree_path) and worktree_path not in jobs_by_path:
+                jobs_by_path[worktree_path] = []
+
+    if not jobs_by_path:
         print("No jobs found")
         return
 
-    print("Jobs (Worktrees):\n")
+    print("Jobs:\n")
 
-    for item in items:
-        worktree_path = os.path.join(WORKTREES_DIR, item)
-        if not os.path.isdir(worktree_path):
-            continue
+    # Sort by path
+    for job_path in sorted(jobs_by_path.keys()):
+        sessions_in_job = jobs_by_path[job_path]
 
-        # Find session for this worktree
-        session = get_session_for_worktree(worktree_path)
+        # Determine if this is a worktree
+        is_worktree = job_path.startswith(WORKTREES_DIR)
+        job_name = os.path.basename(job_path)
 
-        if not session:
-            # No session attached
-            status = "review"
+        # Check if any session is actively outputting
+        is_active = False
+        if sessions_in_job:
+            for session in sessions_in_job:
+                if is_pane_receiving_output(session):
+                    is_active = True
+                    break
+
+        # Determine status display
+        if not sessions_in_job:
             status_display = "📋 REVIEW"
             session_info = "(no session)"
-        else:
-            # Session attached - check if actively outputting
-            is_active = is_pane_receiving_output(session)
-            if is_active:
-                status = "running"
-                status_display = "🏃 RUNNING"
+        elif is_active:
+            status_display = "🏃 RUNNING"
+            if len(sessions_in_job) == 1:
+                session_info = f"(session: {sessions_in_job[0]})"
             else:
-                status = "review"
-                status_display = "📋 REVIEW"
-            session_info = f"(session: {session})"
+                session_info = f"({len(sessions_in_job)} sessions: {', '.join(sessions_in_job)})"
+        else:
+            status_display = "📋 REVIEW"
+            if len(sessions_in_job) == 1:
+                session_info = f"(session: {sessions_in_job[0]})"
+            else:
+                session_info = f"({len(sessions_in_job)} sessions: {', '.join(sessions_in_job)})"
 
-        print(f"  {status_display}  {item}")
+        # Add worktree indicator
+        type_indicator = " [worktree]" if is_worktree else ""
+
+        print(f"  {status_display}  {job_name}{type_indicator}")
         print(f"           {session_info}")
-        print(f"           {worktree_path}")
+        print(f"           {job_path}")
         print()
 
 def list_worktrees():
@@ -545,7 +579,7 @@ Usage:
   ./mon.py -w [dir/#]      Open NEW terminal in directory (no session)
   ./mon.py p               List saved projects
   ./mon.py ls              List all sessions
-  ./mon.py jobs            List all jobs (worktrees) with status
+  ./mon.py jobs            List all jobs (directories with sessions + worktrees)
   ./mon.py x               Kill all sessions
 
 Worktrees:
@@ -580,7 +614,7 @@ Examples:
   ./mon.py c 0 -w          Launch codex in NEW window
   ./mon.py -w 0            Open terminal in project 0
   ./mon.py ++c 0           New codex with worktree
-  ./mon.py jobs            Show status of all jobs (worktrees)
+  ./mon.py jobs            Show all active work (sessions + worktrees) with status
   ./mon.py w               List all worktrees
   ./mon.py w0              Open worktree #0
   ./mon.py w0 -w           Open worktree #0 in new window
