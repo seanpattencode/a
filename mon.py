@@ -2,6 +2,7 @@
 import os, sys, subprocess as sp
 import sqlite3
 from datetime import datetime
+import pexpect
 
 # Auto-update: Pull latest version from git repo
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -293,6 +294,267 @@ def get_session_for_worktree(worktree_path):
 
     return None
 
+def run_with_expect(command, expectations, timeout=30, cwd=None, echo=True):
+    """Run command with expect-style pattern matching and auto-responses.
+
+    Args:
+        command: Command string or list to execute
+        expectations: List of (pattern, response) tuples or dict with patterns as keys
+        timeout: Timeout in seconds for each expect operation
+        cwd: Working directory for command
+        echo: Whether to echo output to stdout
+
+    Returns:
+        (exit_code, output) tuple
+
+    Example:
+        run_with_expect(
+            'git push',
+            [('Username:', 'myuser\\n'),
+             ('Password:', 'mypass\\n')]
+        )
+    """
+    try:
+        # Convert expectations dict to list if needed
+        if isinstance(expectations, dict):
+            expectations = list(expectations.items())
+
+        # Spawn the process
+        if isinstance(command, str):
+            child = pexpect.spawn(command, cwd=cwd, encoding='utf-8', timeout=timeout)
+        else:
+            child = pexpect.spawn(command[0], command[1:], cwd=cwd, encoding='utf-8', timeout=timeout)
+
+        output = []
+
+        # Process expectations
+        while True:
+            # Build pattern list for expect
+            patterns = [pattern for pattern, _ in expectations]
+            patterns.append(pexpect.EOF)
+            patterns.append(pexpect.TIMEOUT)
+
+            try:
+                index = child.expect(patterns, timeout=timeout)
+
+                # Capture what we've seen so far
+                if child.before:
+                    output.append(child.before)
+                    if echo:
+                        print(child.before, end='')
+
+                # Check if we hit EOF or TIMEOUT
+                if index == len(expectations):  # EOF
+                    if child.after and child.after != pexpect.EOF:
+                        output.append(str(child.after))
+                        if echo:
+                            print(child.after, end='')
+                    break
+                elif index == len(expectations) + 1:  # TIMEOUT
+                    # Just break on timeout, process might be done
+                    break
+                else:
+                    # Found a pattern, send the response
+                    _, response = expectations[index]
+                    if response:
+                        child.sendline(response)
+
+            except pexpect.EOF:
+                break
+            except pexpect.TIMEOUT:
+                break
+
+        # Get remaining output
+        try:
+            remaining = child.read()
+            if remaining:
+                output.append(remaining)
+                if echo:
+                    print(remaining, end='')
+        except:
+            pass
+
+        # Wait for process to finish
+        child.close()
+
+        return (child.exitstatus or 0, ''.join(output))
+
+    except Exception as e:
+        print(f"✗ Error running command: {e}")
+        return (1, str(e))
+
+def watch_tmux_session(session_name, expectations, duration=None):
+    """Watch a tmux session and auto-respond to patterns.
+
+    Args:
+        session_name: Name of tmux session to watch
+        expectations: Dict of {pattern: response} or list of (pattern, response) tuples
+        duration: How long to watch (None = watch once and exit)
+
+    Example:
+        watch_tmux_session('codex', {
+            'Are you sure?': 'y',
+            'Continue?': 'yes'
+        })
+    """
+    import time
+    import re
+
+    # Convert expectations to dict if needed
+    if isinstance(expectations, (list, tuple)):
+        expectations = dict(expectations)
+
+    # Compile patterns for efficiency
+    compiled_patterns = {re.compile(pattern): response
+                        for pattern, response in expectations.items()}
+
+    last_content = ""
+    start_time = time.time()
+
+    while True:
+        # Check if duration exceeded
+        if duration and (time.time() - start_time) > duration:
+            break
+
+        # Capture current pane content
+        result = sp.run(['tmux', 'capture-pane', '-t', session_name, '-p'],
+                       capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f"✗ Session {session_name} not found")
+            return False
+
+        current_content = result.stdout
+
+        # Check if content changed
+        if current_content != last_content:
+            # Look for patterns in new content
+            for pattern, response in compiled_patterns.items():
+                if pattern.search(current_content):
+                    # Found a pattern, send response
+                    sp.run(['tmux', 'send-keys', '-t', session_name, response, 'Enter'])
+                    print(f"✓ Auto-responded to pattern: {pattern.pattern}")
+
+                    # If no duration specified, exit after first response
+                    if duration is None:
+                        return True
+
+            last_content = current_content
+
+        # Small delay to avoid hammering tmux
+        time.sleep(0.1)
+
+    return True
+
+def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None):
+    """Send a prompt to a tmux session.
+
+    Args:
+        session_name: Name of tmux session
+        prompt: Text to send to the session
+        wait_for_completion: If True, wait for activity to stop before returning
+        timeout: Max seconds to wait for completion (only used if wait_for_completion=True)
+
+    Returns:
+        True if successful, False otherwise
+
+    Example:
+        send_prompt_to_session('codex', 'create a test.txt file with hello world')
+    """
+    import time
+
+    # Check if session exists
+    result = sp.run(['tmux', 'has-session', '-t', session_name],
+                   capture_output=True)
+    if result.returncode != 0:
+        print(f"✗ Session {session_name} not found")
+        return False
+
+    # Send the prompt
+    sp.run(['tmux', 'send-keys', '-t', session_name, prompt, 'Enter'])
+    print(f"✓ Sent prompt to session '{session_name}'")
+
+    if wait_for_completion:
+        print("⏳ Waiting for completion...", end='', flush=True)
+        start_time = time.time()
+        last_active = time.time()
+        idle_threshold = 3  # seconds of inactivity to consider "done"
+
+        while True:
+            # Check if timeout exceeded
+            if timeout and (time.time() - start_time) > timeout:
+                print(f"\n⚠ Timeout ({timeout}s) reached")
+                return True
+
+            # Check if session is active
+            is_active = is_pane_receiving_output(session_name, threshold=2)
+
+            if is_active:
+                last_active = time.time()
+                print(".", end='', flush=True)
+            else:
+                # Check if idle for long enough
+                if (time.time() - last_active) > idle_threshold:
+                    print("\n✓ Completed (activity stopped)")
+                    return True
+
+            time.sleep(0.5)
+
+    return True
+
+def get_or_create_directory_session(session_key, target_dir):
+    """Find existing session for directory or create new one.
+
+    Returns session name to attach to.
+    """
+    if session_key not in sessions:
+        return None
+
+    base_name, cmd_template = sessions[session_key]
+
+    # First, check if there's already a session in this directory
+    result = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'],
+                    capture_output=True, text=True)
+
+    if result.returncode == 0:
+        existing_sessions = [s for s in result.stdout.strip().split('\n') if s]
+
+        # Check each session's current path
+        for session in existing_sessions:
+            # Only check sessions that match our base name pattern
+            if not (session == base_name or session.startswith(base_name + '-')):
+                continue
+
+            path_result = sp.run(['tmux', 'display-message', '-p', '-t', session,
+                                 '#{pane_current_path}'],
+                                capture_output=True, text=True)
+            if path_result.returncode == 0:
+                session_path = path_result.stdout.strip()
+                if session_path == target_dir:
+                    # Found existing session in this directory!
+                    return session
+
+    # No existing session in this directory, create new one
+    # Use directory name to make it unique
+    dir_name = os.path.basename(target_dir)
+    session_name = f"{base_name}-{dir_name}"
+
+    # If that session name is taken (in a different directory), add a suffix
+    attempt = 0
+    final_session_name = session_name
+    while True:
+        check_result = sp.run(['tmux', 'has-session', '-t', final_session_name],
+                             capture_output=True)
+        if check_result.returncode != 0:
+            # Session doesn't exist, we can use this name
+            break
+
+        # Session exists, try with suffix
+        attempt += 1
+        final_session_name = f"{session_name}-{attempt}"
+
+    return final_session_name
+
 def list_jobs():
     """List all jobs (any directory with a session, plus worktrees) with their status."""
     # Get all tmux sessions and their directories
@@ -451,7 +713,7 @@ def get_project_for_worktree(worktree_path):
 
     return None
 
-def remove_worktree(worktree_path, push=False, commit_msg=None):
+def remove_worktree(worktree_path, push=False, commit_msg=None, skip_confirm=False):
     """Remove worktree and optionally push changes"""
     if not os.path.exists(worktree_path):
         print(f"✗ Worktree does not exist: {worktree_path}")
@@ -475,10 +737,13 @@ def remove_worktree(worktree_path, push=False, commit_msg=None):
     else:
         print(f"Action: Remove worktree and delete branch (no push)")
 
-    response = input("\nAre you sure? (y/n): ").strip().lower()
-    if response not in ['y', 'yes']:
-        print("✗ Cancelled")
-        return False
+    if not skip_confirm:
+        response = input("\nAre you sure? (y/n): ").strip().lower()
+        if response not in ['y', 'yes']:
+            print("✗ Cancelled")
+            return False
+    else:
+        print("\n⚠ Confirmation skipped (--yes flag)")
 
     print(f"\nRemoving worktree: {worktree_name}")
 
@@ -581,8 +846,8 @@ def create_worktree(project_path, session_name):
         print(f"✗ Failed to create worktree: {result.stderr.strip()}")
         return None
 
-# Handle worktree commands
-if arg and arg.startswith('w'):
+# Handle worktree commands (but not 'watch')
+if arg and arg.startswith('w') and arg != 'watch':
     if arg == 'w':
         # List worktrees
         list_worktrees()
@@ -590,29 +855,37 @@ if arg and arg.startswith('w'):
     elif arg.startswith('w--'):
         # Remove and push
         pattern = work_dir_arg
-        commit_msg = sys.argv[3] if len(sys.argv) > 3 else None
+        commit_msg = None
+        skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
+
+        # Parse remaining args for commit message
+        for i in range(3, len(sys.argv)):
+            if sys.argv[i] not in ['--yes', '-y']:
+                commit_msg = sys.argv[i]
+                break
 
         if not pattern:
-            print("✗ Usage: ./mon.py w-- <worktree#/name> [commit message]")
+            print("✗ Usage: ./mon.py w-- <worktree#/name> [commit message] [--yes/-y]")
             sys.exit(1)
 
         worktree_path = find_worktree(pattern)
         if worktree_path:
-            remove_worktree(worktree_path, push=True, commit_msg=commit_msg)
+            remove_worktree(worktree_path, push=True, commit_msg=commit_msg, skip_confirm=skip_confirm)
         else:
             print(f"✗ Worktree not found: {pattern}")
         sys.exit(0)
     elif arg.startswith('w-'):
         # Remove only
         pattern = work_dir_arg
+        skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
 
         if not pattern:
-            print("✗ Usage: ./mon.py w- <worktree#/name>")
+            print("✗ Usage: ./mon.py w- <worktree#/name> [--yes/-y]")
             sys.exit(1)
 
         worktree_path = find_worktree(pattern)
         if worktree_path:
-            remove_worktree(worktree_path, push=False)
+            remove_worktree(worktree_path, push=False, skip_confirm=skip_confirm)
         else:
             print(f"✗ Worktree not found: {pattern}")
         sys.exit(0)
@@ -653,6 +926,8 @@ Usage:
   ./mon.py p               List saved projects
   ./mon.py ls              List all sessions
   ./mon.py jobs            List all jobs (directories with sessions + worktrees)
+  ./mon.py watch <session> Watch session and auto-respond to prompts
+  ./mon.py watch <session> 60  Watch for 60 seconds
   ./mon.py x               Kill all sessions
   ./mon.py install         Install as 'mon' command (callable from anywhere)
 
@@ -661,15 +936,24 @@ Worktrees:
   ./mon.py w<#/name>       Open worktree in current terminal
   ./mon.py w<#/name> -w    Open worktree in NEW window
   ./mon.py w- <#/name>     Remove worktree (git + delete)
+  ./mon.py w- <#/name> -y  Remove worktree without confirmation
   ./mon.py w-- <#/name>    Remove worktree, commit, and push (default msg)
+  ./mon.py w-- <#/name> --yes  Remove and push without confirmation
   ./mon.py w-- <#/name> "Custom message"  Same but with custom commit message
 
 Git Operations (works in ANY directory):
   ./mon.py push            Commit all changes and push (default message)
   ./mon.py push "msg"      Commit all changes and push with custom message
 
+Automation (sending prompts to AI sessions):
+  ./mon.py send <session> <prompt>        Send prompt to existing session
+  ./mon.py send <session> <prompt> --wait Send prompt and wait for completion
+  ./mon.py <key> <prompt>                 Create/attach session and send prompt
+  ./mon.py <key> <dir> <prompt>           Create/attach in dir and send prompt
+
 Flags:
   -w, --new-window         Launch in new terminal window
+  --wait                   Wait for command completion (send command only)
 
 Terminals:
   Supported: gnome-terminal, alacritty
@@ -694,8 +978,15 @@ Examples:
   ./mon.py w0              Open worktree #0
   ./mon.py w0 -w           Open worktree #0 in new window
   ./mon.py w- codex-123    Remove worktree matching 'codex-123'
+  ./mon.py w- 0 -y         Remove worktree #0 without confirmation
   ./mon.py w-- 0           Remove worktree #0 and push (default message)
+  ./mon.py w-- 0 --yes     Remove worktree #0 and push (skip confirmation)
   ./mon.py w-- 0 "Cleanup experimental feature"  Remove and push with custom message
+  ./mon.py watch codex     Watch codex session and auto-respond to confirmations
+  ./mon.py send codex "create a test file"  Send prompt to codex session
+  ./mon.py send codex "list all files" --wait  Send and wait for completion
+  ./mon.py c "create README.md"  Start codex and send prompt
+  ./mon.py c 3 "fix the bug"  Start codex in project 3 and send prompt
   ./mon.py push            Quick commit+push in current directory
   ./mon.py push "Fix bug in authentication"  Commit+push with custom message
 
@@ -704,7 +995,11 @@ Worktrees Location: {WORKTREES_DIR}
 Notes:
   • Run './mon.py install' to use 'mon' globally from any directory
   • Auto-updates from git on each run (always latest version)
-  • The 'push' command works in ANY git repository, not just worktrees""")
+  • The 'push' command works in ANY git repository, not just worktrees
+  • Use -y/--yes flags to skip interactive confirmations
+  • Use 'watch' to auto-respond to prompts in running sessions (expect-based)
+  • Use 'send' or pass prompts directly to automate AI agent tasks
+  • Prompts are sent via tmux send-keys to running sessions""")
 elif arg == 'install':
     # Install mon as a global command
     bin_dir = os.path.expanduser("~/.local/bin")
@@ -739,6 +1034,81 @@ elif arg == 'install':
         print(f"✓ You can now run 'mon' from anywhere!")
 
     print(f"\nThe script will auto-update from git on each run.")
+elif arg == 'watch':
+    # Watch a tmux session and auto-respond to patterns
+    if not work_dir_arg:
+        print("✗ Usage: mon watch <session_name> [duration_seconds]")
+        print("\nExamples:")
+        print("  mon watch codex          # Watch codex session, respond once and exit")
+        print("  mon watch codex 60       # Watch codex session for 60 seconds")
+        print("\nDefault patterns:")
+        print("  'Are you sure?' -> 'y'")
+        print("  'Continue?' -> 'yes'")
+        print("  '[y/N]' -> 'y'")
+        print("  '[Y/n]' -> 'y'")
+        sys.exit(1)
+
+    session_name = work_dir_arg
+    duration = None
+
+    # Check if duration provided
+    if len(sys.argv) > 3:
+        try:
+            duration = int(sys.argv[3])
+        except ValueError:
+            print(f"✗ Invalid duration: {sys.argv[3]}")
+            sys.exit(1)
+
+    # Default expectations
+    default_expectations = {
+        r'Are you sure\?': 'y',
+        r'Continue\?': 'yes',
+        r'\[y/N\]': 'y',
+        r'\[Y/n\]': 'y',
+    }
+
+    print(f"👁 Watching session '{session_name}'...")
+    if duration:
+        print(f"   Duration: {duration} seconds")
+    else:
+        print(f"   Mode: Auto-respond once and exit")
+
+    result = watch_tmux_session(session_name, default_expectations, duration)
+    if result:
+        print("✓ Watch completed")
+    else:
+        sys.exit(1)
+elif arg == 'send':
+    # Send a prompt to an existing session
+    if not work_dir_arg:
+        print("✗ Usage: mon send <session_name> <prompt>")
+        print("\nExamples:")
+        print("  mon send codex 'create a test file'")
+        print("  mon send claude-aios 'explain this code'")
+        print("\nFlags:")
+        print("  --wait    Wait for completion before returning")
+        sys.exit(1)
+
+    session_name = work_dir_arg
+    wait = '--wait' in sys.argv
+
+    # Get prompt from remaining args
+    prompt_parts = []
+    for i in range(3, len(sys.argv)):
+        if sys.argv[i] == '--wait':
+            continue
+        prompt_parts.append(sys.argv[i])
+
+    if not prompt_parts:
+        print("✗ No prompt provided")
+        sys.exit(1)
+
+    prompt = ' '.join(prompt_parts)
+
+    # Send the prompt
+    result = send_prompt_to_session(session_name, prompt, wait_for_completion=wait, timeout=60)
+    if not result:
+        sys.exit(1)
 elif arg == 'jobs':
     list_jobs()
 elif arg == 'p':
@@ -855,10 +1225,44 @@ elif arg.startswith('+'):
         else:
             os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
 else:
-    name, cmd = sessions.get(arg, (arg, None))
-    sp.run(['tmux', 'new', '-d', '-s', name, '-c', work_dir, cmd or arg], capture_output=True)
+    # Try directory-based session logic first
+    session_name = get_or_create_directory_session(arg, work_dir)
+
+    if session_name is None:
+        # Not a known session key, use original behavior
+        name, cmd = sessions.get(arg, (arg, None))
+        sp.run(['tmux', 'new', '-d', '-s', name, '-c', work_dir, cmd or arg], capture_output=True)
+        session_name = name
+    else:
+        # Got a directory-specific session name
+        # Check if it exists, create if not
+        check_result = sp.run(['tmux', 'has-session', '-t', session_name],
+                             capture_output=True)
+        if check_result.returncode != 0:
+            # Session doesn't exist, create it
+            _, cmd = sessions[arg]
+            sp.run(['tmux', 'new', '-d', '-s', session_name, '-c', work_dir, cmd],
+                  capture_output=True)
+
+    # Check if there's a prompt to send (remaining args after session key and work_dir)
+    # Look for args starting from index 2 or 3 depending on if work_dir_arg was provided
+    prompt_start_idx = 3 if work_dir_arg else 2
+    prompt_parts = []
+
+    for i in range(prompt_start_idx, len(sys.argv)):
+        if sys.argv[i] not in ['-w', '--new-window', '--yes', '-y']:
+            prompt_parts.append(sys.argv[i])
+
+    if prompt_parts:
+        # Wait a moment for session to initialize
+        import time
+        time.sleep(1)
+
+        prompt = ' '.join(prompt_parts)
+        print(f"📤 Sending prompt to session...")
+        send_prompt_to_session(session_name, prompt, wait_for_completion=False)
 
     if new_window:
-        launch_in_new_window(name)
+        launch_in_new_window(session_name)
     else:
-        os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
+        os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', session_name])
