@@ -298,13 +298,16 @@ def remove_worktree(worktree_path, push=False, commit_msg=None):
 
     print(f"✓ Removed git worktree")
 
-    # Delete branch
+    # Delete branch (git worktree remove might have already deleted it)
     branch_name = f"wt-{worktree_name}"
     result = sp.run(['git', '-C', project_path, 'branch', '-D', branch_name],
                     capture_output=True, text=True)
 
     if result.returncode == 0:
         print(f"✓ Deleted branch: {branch_name}")
+    elif 'not found' not in result.stderr:
+        # Only show warning if it's not just "branch not found"
+        print(f"⚠ Branch deletion: {result.stderr.strip()}")
 
     # Remove directory if still exists
     if os.path.exists(worktree_path):
