@@ -21,6 +21,9 @@ arg = sys.argv[1] if len(sys.argv) > 1 else None
 
 if not arg:
     sp.run(['tmux', 'ls'])
+elif arg == 'x':
+    sp.run(['tmux', 'kill-server'])
+    print("✓ All sessions killed")
 elif arg.startswith('+'):
     key = arg[1:]
     if key in sessions:
