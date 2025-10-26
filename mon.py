@@ -156,7 +156,23 @@ def remove_worktree(worktree_path, push=False, commit_msg=None):
         print(f"✗ Could not determine project for worktree: {worktree_name}")
         return False
 
-    print(f"Removing worktree: {worktree_name}")
+    # Confirmation prompt
+    print(f"\nWorktree: {worktree_name}")
+    print(f"Path: {worktree_path}")
+    print(f"Project: {project_path}")
+    if push:
+        print(f"Action: Remove worktree, delete branch, AND PUSH to remote")
+        if commit_msg:
+            print(f"Commit message: {commit_msg}")
+    else:
+        print(f"Action: Remove worktree and delete branch (no push)")
+
+    response = input("\nAre you sure? (y/n): ").strip().lower()
+    if response not in ['y', 'yes']:
+        print("✗ Cancelled")
+        return False
+
+    print(f"\nRemoving worktree: {worktree_name}")
 
     # Git worktree remove
     result = sp.run(['git', '-C', project_path, 'worktree', 'remove', worktree_path],
@@ -219,8 +235,8 @@ if new_window:
     arg = sys.argv[1] if len(sys.argv) > 1 else None
     work_dir_arg = sys.argv[2] if len(sys.argv) > 2 else None
 
-# Check if arg is actually a directory/number (not a session key)
-is_directory_only = new_window and arg and not arg.startswith('+') and arg not in sessions
+# Check if arg is actually a directory/number (not a session key or worktree command)
+is_directory_only = new_window and arg and not arg.startswith('+') and not arg.startswith('w') and arg not in sessions
 
 # If directory-only mode, treat arg as work_dir_arg
 if is_directory_only:
