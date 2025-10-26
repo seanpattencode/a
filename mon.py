@@ -367,6 +367,32 @@ def list_jobs():
         print(f"  {status_display}  {job_name}{type_indicator}")
         print(f"           {session_info}")
         print(f"           {job_path}")
+
+        # Add copy-pastable commands
+        print()
+
+        # Command to open directory in new window
+        if is_worktree:
+            # For worktrees, show the 'w' command if possible
+            worktrees_list = sorted([d for d in os.listdir(WORKTREES_DIR)
+                                    if os.path.isdir(os.path.join(WORKTREES_DIR, d))])
+            if job_name in worktrees_list:
+                worktree_index = worktrees_list.index(job_name)
+                print(f"           Open dir:  mon w{worktree_index} -w")
+            else:
+                print(f"           Open dir:  mon -w {job_path}")
+        else:
+            print(f"           Open dir:  mon -w {job_path}")
+
+        # Command to attach to session(s)
+        if sessions_in_job:
+            if len(sessions_in_job) == 1:
+                print(f"           Attach:    tmux attach -t {sessions_in_job[0]}")
+            else:
+                # Show all sessions
+                for session in sessions_in_job:
+                    print(f"           Attach:    tmux attach -t {session}")
+
         print()
 
 def list_worktrees():
