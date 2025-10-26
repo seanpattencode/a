@@ -411,17 +411,6 @@ elif arg == 'push':
     # Get commit message
     commit_msg = work_dir_arg if work_dir_arg else f"Update {os.path.basename(cwd)}"
 
-    # Show status
-    print(f"Repository: {cwd}")
-    print(f"Commit message: {commit_msg}\n")
-    sp.run(['git', '-C', cwd, 'status', '--short'])
-
-    # Confirmation
-    response = input("\nCommit and push? (y/n): ").strip().lower()
-    if response not in ['y', 'yes']:
-        print("✗ Cancelled")
-        sys.exit(0)
-
     # Add all changes
     sp.run(['git', '-C', cwd, 'add', '-A'])
 
