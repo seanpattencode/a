@@ -1025,6 +1025,39 @@ if not arg:
 Sessions:  h=htop  t=top  g=gemini  c=codex  l=claude
 Prompts:   gp=gemini+prompt  cp=codex+prompt  lp=claude+prompt
 
+Working Directory: {WORK_DIR}
+
+Saved Projects:""")
+    for i, proj in enumerate(PROJECTS):
+        exists = "✓" if os.path.exists(proj) else "✗"
+        print(f"  {i}. {exists} {proj}")
+    print(f"""
+Examples:
+  ./mon.py install         Install globally (use 'mon' instead of './mon.py')
+  ./mon.py 1               Open project 1 in current terminal
+  ./mon.py c 0             Launch codex in project 0
+  ./mon.py c 0 -w          Launch codex in NEW window
+  ./mon.py ++c 0           New codex with worktree
+  ./mon.py jobs            Show all jobs with status
+  ./mon.py w               List all worktrees
+  ./mon.py w0              Open worktree #0
+  ./mon.py w-- 0 --yes     Remove worktree #0 and push to main
+  ./mon.py push "message"  Commit and push in current directory
+
+Common Commands:
+  jobs                     List all active work
+  w                        List worktrees
+  ls                       List all sessions
+  p                        List saved projects
+  push                     Quick commit and push
+
+For full documentation, run: ./mon.py help""")
+elif arg == 'help' or arg == '--help' or arg == '-h':
+    print(f"""mon.py - tmux session manager (FULL DOCUMENTATION)
+
+Sessions:  h=htop  t=top  g=gemini  c=codex  l=claude
+Prompts:   gp=gemini+prompt  cp=codex+prompt  lp=claude+prompt
+
 Usage:
   ./mon.py <key>           Attach to session (create if needed)
   ./mon.py <key> -w        Attach in NEW terminal window
