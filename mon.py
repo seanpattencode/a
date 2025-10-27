@@ -1475,13 +1475,12 @@ elif arg == 'push':
     if result.returncode == 0:
         print(f"✓ Committed: {commit_msg}")
     elif 'nothing to commit' in result.stdout:
-        print("ℹ Nothing to commit, working tree clean")
+        print("ℹ No changes to send")
         sys.exit(0)
     elif 'no changes added to commit' in result.stdout:
-        print("✗ No changes staged for commit")
-        print("  Run 'git status' to see unstaged changes")
-        print("  Tip: Some files may be ignored or in submodules")
-        sys.exit(1)
+        print("ℹ No changes to send")
+        print("  (Some files may be ignored or in submodules)")
+        sys.exit(0)
     else:
         # Show both stdout and stderr for better error messages
         error_msg = result.stderr.strip() or result.stdout.strip()
