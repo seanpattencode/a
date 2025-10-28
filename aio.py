@@ -974,12 +974,20 @@ def remove_worktree(worktree_path, push=False, commit_msg=None, skip_confirm=Fal
 arg = sys.argv[1] if len(sys.argv) > 1 else None
 work_dir_arg = sys.argv[2] if len(sys.argv) > 2 else None
 new_window = '--new-window' in sys.argv or '-w' in sys.argv
+with_terminal = '--with-terminal' in sys.argv or '-t' in sys.argv
 
 # Clean args
 if new_window:
     sys.argv = [a for a in sys.argv if a not in ['--new-window', '-w']]
     arg = sys.argv[1] if len(sys.argv) > 1 else None
     work_dir_arg = sys.argv[2] if len(sys.argv) > 2 else None
+
+if with_terminal:
+    sys.argv = [a for a in sys.argv if a not in ['--with-terminal', '-t']]
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    work_dir_arg = sys.argv[2] if len(sys.argv) > 2 else None
+    # with_terminal implies new_window for the session
+    new_window = True
 
 # Check if arg is actually a directory/number (not a session key or worktree command)
 is_directory_only = new_window and arg and not arg.startswith('+') and not arg.startswith('w') and arg not in sessions
@@ -1121,9 +1129,9 @@ Examples:
   ./aio.py add ~/myproject Add specific directory to saved projects
   ./aio.py remove 2        Remove project #2 from saved list
   ./aio.py 1               Open project 1 in current terminal
-  ./aio.py c 0             Launch codex in project 0
   ./aio.py c 0 -w          Launch codex in NEW window
-  ./aio.py ++c 0           New codex with worktree
+  ./aio.py c 0 -t          Launch codex + terminal in separate windows
+  ./aio.py ++c 0 -t        New codex with worktree + terminal
   ./aio.py jobs            Show all jobs with status
   ./aio.py w               List all worktrees
   ./aio.py w0              Open worktree #0
@@ -1198,6 +1206,7 @@ Multi-Agent Parallel Execution:
 
 Flags:
   -w, --new-window         Launch in new terminal window
+  -t, --with-terminal      Launch session + separate terminal window
   --wait                   Wait for command completion (send command only)
 
 Terminals:
@@ -1703,6 +1712,9 @@ elif arg.startswith('++'):
 
                 if new_window:
                     launch_in_new_window(name)
+                    # Also launch a regular terminal if requested
+                    if with_terminal:
+                        launch_terminal_in_dir(worktree_path)
                 else:
                     os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
         else:
@@ -1719,6 +1731,9 @@ elif arg.startswith('+'):
 
         if new_window:
             launch_in_new_window(name)
+            # Also launch a regular terminal if requested
+            if with_terminal:
+                launch_terminal_in_dir(work_dir)
         else:
             os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
 else:
@@ -1766,5 +1781,8 @@ else:
 
     if new_window:
         launch_in_new_window(session_name)
+        # Also launch a regular terminal if requested
+        if with_terminal:
+            launch_terminal_in_dir(work_dir)
     else:
         os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', session_name])
