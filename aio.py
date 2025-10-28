@@ -150,6 +150,60 @@ def load_projects():
         projects = [row[0] for row in cursor.fetchall()]
     return projects
 
+def add_project(path):
+    """Add a project to the database."""
+    # Expand and normalize path
+    path = os.path.abspath(os.path.expanduser(path))
+
+    # Check if path exists
+    if not os.path.exists(path):
+        return False, f"Path does not exist: {path}"
+
+    if not os.path.isdir(path):
+        return False, f"Path is not a directory: {path}"
+
+    with WALManager(DB_PATH) as conn:
+        with conn:
+            # Check if project already exists
+            cursor = conn.execute("SELECT COUNT(*) FROM projects WHERE path = ?", (path,))
+            if cursor.fetchone()[0] > 0:
+                return False, f"Project already exists: {path}"
+
+            # Get the next display order
+            cursor = conn.execute("SELECT MAX(display_order) FROM projects")
+            max_order = cursor.fetchone()[0]
+            next_order = (max_order + 1) if max_order is not None else 0
+
+            # Insert the project
+            conn.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)",
+                        (path, next_order))
+
+    return True, f"Added project: {path}"
+
+def remove_project(index):
+    """Remove a project from the database by index."""
+    with WALManager(DB_PATH) as conn:
+        with conn:
+            # Get all projects
+            cursor = conn.execute("SELECT id, path FROM projects ORDER BY display_order")
+            projects = cursor.fetchall()
+
+            if index < 0 or index >= len(projects):
+                return False, f"Invalid project index: {index}"
+
+            # Delete the project
+            project_id, project_path = projects[index]
+            conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+
+            # Reorder remaining projects
+            cursor = conn.execute("SELECT id FROM projects ORDER BY display_order")
+            project_ids = [row[0] for row in cursor.fetchall()]
+
+            for i, pid in enumerate(project_ids):
+                conn.execute("UPDATE projects SET display_order = ? WHERE id = ?", (i, pid))
+
+    return True, f"Removed project: {project_path}"
+
 def load_sessions(config):
     """Load sessions from database and substitute prompt values."""
     with WALManager(DB_PATH) as conn:
@@ -1063,6 +1117,9 @@ Saved Projects:""")
     print(f"""
 Examples:
   ./aio.py install         Install globally (use 'aio' instead of './aio.py')
+  ./aio.py add             Add current directory to saved projects
+  ./aio.py add ~/myproject Add specific directory to saved projects
+  ./aio.py remove 2        Remove project #2 from saved list
   ./aio.py 1               Open project 1 in current terminal
   ./aio.py c 0             Launch codex in project 0
   ./aio.py c 0 -w          Launch codex in NEW window
@@ -1079,6 +1136,8 @@ Common Commands:
   w                        List worktrees
   ls                       List all sessions
   p                        List saved projects
+  add [path]               Add project to saved list (defaults to current dir)
+  remove <#>               Remove project from saved list
   push                     Quick commit and push
 
 Tip: Hold Shift while selecting text with mouse to copy (mouse mode enabled)
@@ -1100,6 +1159,8 @@ Usage:
   ./aio.py <#>             Open project in current terminal (no session)
   ./aio.py -w [dir/#]      Open NEW terminal in directory (no session)
   ./aio.py p               List saved projects
+  ./aio.py add [path]      Add project to saved list (defaults to current dir)
+  ./aio.py remove <#>      Remove project from saved list by index
   ./aio.py ls              List all sessions
   ./aio.py jobs            List all jobs (directories with sessions + worktrees)
   ./aio.py watch <session> Watch session and auto-respond to prompts
@@ -1413,6 +1474,48 @@ elif arg == 'p':
     for i, proj in enumerate(PROJECTS):
         exists = "✓" if os.path.exists(proj) else "✗"
         print(f"  {i}. {exists} {proj}")
+elif arg == 'add':
+    # Add a project to saved list
+    if work_dir_arg:
+        path = work_dir_arg
+    else:
+        path = os.getcwd()
+
+    success, message = add_project(path)
+    if success:
+        print(f"✓ {message}")
+        print("\nUpdated project list:")
+        # Reload and display projects
+        updated_projects = load_projects()
+        for i, proj in enumerate(updated_projects):
+            exists = "✓" if os.path.exists(proj) else "✗"
+            print(f"  {i}. {exists} {proj}")
+    else:
+        print(f"✗ {message}")
+        sys.exit(1)
+elif arg == 'remove':
+    # Remove a project from saved list
+    if not work_dir_arg or not work_dir_arg.isdigit():
+        print("✗ Usage: aio remove <project#>")
+        print("\nCurrent projects:")
+        for i, proj in enumerate(PROJECTS):
+            exists = "✓" if os.path.exists(proj) else "✗"
+            print(f"  {i}. {exists} {proj}")
+        sys.exit(1)
+
+    index = int(work_dir_arg)
+    success, message = remove_project(index)
+    if success:
+        print(f"✓ {message}")
+        print("\nUpdated project list:")
+        # Reload and display projects
+        updated_projects = load_projects()
+        for i, proj in enumerate(updated_projects):
+            exists = "✓" if os.path.exists(proj) else "✗"
+            print(f"  {i}. {exists} {proj}")
+    else:
+        print(f"✗ {message}")
+        sys.exit(1)
 elif arg == 'ls':
     # List sessions with their directories
     result = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'],
