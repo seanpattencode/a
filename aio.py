@@ -267,7 +267,7 @@ ensure_tmux_mouse_mode()
 
 def detect_terminal():
     """Detect available terminal emulator"""
-    for term in ['gnome-terminal', 'alacritty']:
+    for term in ['ptyxis', 'gnome-terminal', 'alacritty']:
         try:
             sp.run(['which', term], capture_output=True, check=True)
             return term
@@ -281,10 +281,12 @@ def launch_in_new_window(session_name, terminal=None):
         terminal = detect_terminal()
 
     if not terminal:
-        print("✗ No supported terminal found (gnome-terminal, alacritty)")
+        print("✗ No supported terminal found (ptyxis, gnome-terminal, alacritty)")
         return False
 
-    if terminal == 'gnome-terminal':
+    if terminal == 'ptyxis':
+        cmd = ['ptyxis', '--', 'tmux', 'attach', '-t', session_name]
+    elif terminal == 'gnome-terminal':
         cmd = ['gnome-terminal', '--', 'tmux', 'attach', '-t', session_name]
     elif terminal == 'alacritty':
         cmd = ['alacritty', '-e', 'tmux', 'attach', '-t', session_name]
@@ -303,7 +305,7 @@ def launch_terminal_in_dir(directory, terminal=None):
         terminal = detect_terminal()
 
     if not terminal:
-        print("✗ No supported terminal found (gnome-terminal, alacritty)")
+        print("✗ No supported terminal found (ptyxis, gnome-terminal, alacritty)")
         return False
 
     directory = os.path.expanduser(directory)
@@ -313,7 +315,9 @@ def launch_terminal_in_dir(directory, terminal=None):
         print(f"✗ Directory does not exist: {directory}")
         return False
 
-    if terminal == 'gnome-terminal':
+    if terminal == 'ptyxis':
+        cmd = ['ptyxis', '--working-directory', directory]
+    elif terminal == 'gnome-terminal':
         cmd = ['gnome-terminal', f'--working-directory={directory}']
     elif terminal == 'alacritty':
         cmd = ['alacritty', '--working-directory', directory]
@@ -1224,7 +1228,7 @@ Flags:
   --wait                   Wait for command completion (send command only)
 
 Terminals:
-  Supported: gnome-terminal, alacritty
+  Supported: ptyxis, gnome-terminal, alacritty
   Auto-detects available terminal
 
 Working Directory:
