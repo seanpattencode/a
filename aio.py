@@ -99,9 +99,26 @@ def init_database():
             cursor = conn.execute("SELECT COUNT(*) FROM config")
             if cursor.fetchone()[0] == 0:
                 # Insert default config
-                conn.execute("INSERT INTO config VALUES ('claude_prompt', 'tell me a joke')")
-                conn.execute("INSERT INTO config VALUES ('codex_prompt', 'tell me a joke')")
-                conn.execute("INSERT INTO config VALUES ('gemini_prompt', 'tell me a joke')")
+                default_prompt = """When given a task follow the 3 steps:
+
+Step 1: Read project and relevant files. Then ultrathink how to best solve this.
+For any technical decision or problem, first ask what the most popular/deployed apps in the world do most similar to this project. Assume the best way to solve the problem already exists and your task is just to figure out how to find that and use it, not create your own method. Ask how did they solve it and how they implemented the solution? If applicable, look up the most direct source relevant docs.
+
+Step 2: Write the changes with the following:
+
+Write in the style I would call "library glue", where you only use library functions, no or almost no business logic, and fully rely on the library to do everything for all code lines.
+
+Make line count as minimal as possible while doing exactly the same things, use direct library calls as often as possible, keep it readable and follow all program readability conventions, and manually run debug and inspect output and fix issues.
+If rewriting existing sections of code with no features added, each change must be readable and follow all program readability conventions, run as fast or faster than previous code, be lower in line count or equal to original, use the same or greater number of direct library calls, reduce the number of states the program could be in or keep it equal, and make it simpler or keep the same complexity than before.
+Specific practices:
+No polling whatsoever, only event based.
+
+
+Step 3:
+After you make edits, run manually exactly as the user would, and check the output manually, if applicable inspect screenshots. Set an aggressive timeout on any terminal command. Don't add any features just make sure everything works and fix any issues according to library glue principles."""
+                conn.execute("INSERT INTO config VALUES ('claude_prompt', ?)", (default_prompt,))
+                conn.execute("INSERT INTO config VALUES ('codex_prompt', ?)", (default_prompt,))
+                conn.execute("INSERT INTO config VALUES ('gemini_prompt', ?)", (default_prompt,))
                 conn.execute("INSERT INTO config VALUES ('worktrees_dir', ?)",
                            (os.path.expanduser("~/projects/aiosWorktrees"),))
 
@@ -210,13 +227,37 @@ def load_sessions(config):
         cursor = conn.execute("SELECT key, name, command_template FROM sessions")
         sessions_data = cursor.fetchall()
 
+    default_prompt = """When given a task follow the 3 steps:
+
+Step 1: Read project and relevant files. Then ultrathink how to best solve this.
+For any technical decision or problem, first ask what the most popular/deployed apps in the world do most similar to this project. Assume the best way to solve the problem already exists and your task is just to figure out how to find that and use it, not create your own method. Ask how did they solve it and how they implemented the solution? If applicable, look up the most direct source relevant docs.
+
+Step 2: Write the changes with the following:
+
+Write in the style I would call "library glue", where you only use library functions, no or almost no business logic, and fully rely on the library to do everything for all code lines.
+
+Make line count as minimal as possible while doing exactly the same things, use direct library calls as often as possible, keep it readable and follow all program readability conventions, and manually run debug and inspect output and fix issues.
+If rewriting existing sections of code with no features added, each change must be readable and follow all program readability conventions, run as fast or faster than previous code, be lower in line count or equal to original, use the same or greater number of direct library calls, reduce the number of states the program could be in or keep it equal, and make it simpler or keep the same complexity than before.
+Specific practices:
+No polling whatsoever, only event based.
+
+
+Step 3:
+After you make edits, run manually exactly as the user would, and check the output manually, if applicable inspect screenshots. Set an aggressive timeout on any terminal command. Don't add any features just make sure everything works and fix any issues according to library glue principles."""
+
     sessions = {}
     for key, name, cmd_template in sessions_data:
+        # Get prompts and escape them for shell/CLI usage
+        # Replace newlines with literal \n to preserve formatting while avoiding shell parsing issues
+        claude_prompt = config.get('claude_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
+        codex_prompt = config.get('codex_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
+        gemini_prompt = config.get('gemini_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
+
         # Substitute prompt placeholders
         cmd = cmd_template.format(
-            CLAUDE_PROMPT=config.get('claude_prompt', 'tell me a joke'),
-            CODEX_PROMPT=config.get('codex_prompt', 'tell me a joke'),
-            GEMINI_PROMPT=config.get('gemini_prompt', 'tell me a joke')
+            CLAUDE_PROMPT=claude_prompt,
+            CODEX_PROMPT=codex_prompt,
+            GEMINI_PROMPT=gemini_prompt
         )
         sessions[key] = (name, cmd)
 
@@ -227,9 +268,26 @@ init_database()
 
 # Load configuration from database
 config = load_config()
-CLAUDE_PROMPT = config.get('claude_prompt', 'tell me a joke')
-CODEX_PROMPT = config.get('codex_prompt', 'tell me a joke')
-GEMINI_PROMPT = config.get('gemini_prompt', 'tell me a joke')
+DEFAULT_PROMPT = """When given a task follow the 3 steps:
+
+Step 1: Read project and relevant files. Then ultrathink how to best solve this.
+For any technical decision or problem, first ask what the most popular/deployed apps in the world do most similar to this project. Assume the best way to solve the problem already exists and your task is just to figure out how to find that and use it, not create your own method. Ask how did they solve it and how they implemented the solution? If applicable, look up the most direct source relevant docs.
+
+Step 2: Write the changes with the following:
+
+Write in the style I would call "library glue", where you only use library functions, no or almost no business logic, and fully rely on the library to do everything for all code lines.
+
+Make line count as minimal as possible while doing exactly the same things, use direct library calls as often as possible, keep it readable and follow all program readability conventions, and manually run debug and inspect output and fix issues.
+If rewriting existing sections of code with no features added, each change must be readable and follow all program readability conventions, run as fast or faster than previous code, be lower in line count or equal to original, use the same or greater number of direct library calls, reduce the number of states the program could be in or keep it equal, and make it simpler or keep the same complexity than before.
+Specific practices:
+No polling whatsoever, only event based.
+
+
+Step 3:
+After you make edits, run manually exactly as the user would, and check the output manually, if applicable inspect screenshots. Set an aggressive timeout on any terminal command. Don't add any features just make sure everything works and fix any issues according to library glue principles."""
+CLAUDE_PROMPT = config.get('claude_prompt', DEFAULT_PROMPT)
+CODEX_PROMPT = config.get('codex_prompt', DEFAULT_PROMPT)
+GEMINI_PROMPT = config.get('gemini_prompt', DEFAULT_PROMPT)
 WORK_DIR = os.getcwd()
 WORKTREES_DIR = config.get('worktrees_dir', os.path.expanduser("~/projects/aiosWorktrees"))
 
@@ -586,7 +644,7 @@ def wait_for_agent_ready(session_name, timeout=5):
     # Timeout - try sending anyway
     return True
 
-def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None, wait_for_ready=True):
+def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None, wait_for_ready=True, send_enter=True):
     """Send a prompt to a tmux session.
 
     Args:
@@ -595,12 +653,14 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
         wait_for_completion: If True, wait for activity to stop before returning
         timeout: Max seconds to wait for completion (only used if wait_for_completion=True)
         wait_for_ready: If True, wait for agent to be ready before sending
+        send_enter: If True, send Enter key after prompt (default True)
 
     Returns:
         True if successful, False otherwise
 
     Example:
         send_prompt_to_session('codex', 'create a test.txt file with hello world')
+        send_prompt_to_session('codex', 'list files', send_enter=False)  # Insert without running
     """
     import time
 
@@ -619,11 +679,15 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
         else:
             print(" (timeout, sending anyway)")
 
-    # Send the prompt and Enter separately for reliability
+    # Send the prompt
     sp.run(['tmux', 'send-keys', '-t', session_name, prompt])
-    time.sleep(0.1)  # Brief delay before Enter for terminal processing
-    sp.run(['tmux', 'send-keys', '-t', session_name, 'Enter'])
-    print(f"✓ Sent prompt to session '{session_name}'")
+
+    if send_enter:
+        time.sleep(0.1)  # Brief delay before Enter for terminal processing
+        sp.run(['tmux', 'send-keys', '-t', session_name, 'Enter'])
+        print(f"✓ Sent prompt to session '{session_name}'")
+    else:
+        print(f"✓ Inserted prompt into session '{session_name}' (ready to edit/run)")
 
     if wait_for_completion:
         print("⏳ Waiting for completion...", end='', flush=True)
@@ -994,7 +1058,7 @@ if with_terminal:
     new_window = True
 
 # Check if arg is actually a directory/number (not a session key or worktree command)
-is_directory_only = new_window and arg and not arg.startswith('+') and not arg.startswith('w') and arg not in sessions
+is_directory_only = new_window and arg and not arg.startswith('+') and not arg.endswith('--') and not arg.startswith('w') and arg not in sessions
 
 # If directory-only mode, treat arg as work_dir_arg
 if is_directory_only:
@@ -1129,152 +1193,189 @@ if new_window and not arg:
     sys.exit(0)
 
 if not arg:
-    print(f"""aio.py - tmux session manager
+    print(f"""aio - AI agent session manager
 
-Sessions:  h=htop  t=top  g=gemini  c=codex  l=claude
-Prompts:   gp=gemini+prompt  cp=codex+prompt  lp=claude+prompt
+QUICK START:
+  aio c               Start codex in current directory
+  aio cp              Start codex with prompt (can edit before running)
+  aio cpp             Start codex with prompt (auto-execute)
+  aio c--             Start codex in new worktree (current dir)
+  aio c-- 0           Start codex in new worktree (project 0)
 
-Working Directory: {WORK_DIR}
+SESSIONS: c=codex  l=claude  g=gemini  h=htop  t=top
+  aio <key>           Attach to session (or create if needed)
+  aio <key> <#>       Start in saved project # (0-{len(PROJECTS)-1})
+  aio <key> -w        Launch in new window
+  aio <key> -t        Launch session + separate terminal
 
-Saved Projects:""")
-    for i, proj in enumerate(PROJECTS):
-        exists = "✓" if os.path.exists(proj) else "✗"
-        print(f"  {i}. {exists} {proj}")
-    print(f"""
-Examples:
-  ./aio.py install         Install globally (use 'aio' instead of './aio.py')
-  ./aio.py add             Add current directory to saved projects
-  ./aio.py add ~/myproject Add specific directory to saved projects
-  ./aio.py remove 2        Remove project #2 from saved list
-  ./aio.py 1               Open project 1 in current terminal
-  ./aio.py c 0 -w          Launch codex in NEW window
-  ./aio.py c 0 -t          Launch codex + terminal in separate windows
-  ./aio.py ++c 0 -t        New codex with worktree + terminal
-  ./aio.py jobs            Show all jobs with status
-  ./aio.py w               List all worktrees
-  ./aio.py w0              Open worktree #0
-  ./aio.py w- 0            Remove worktree #0 (no push)
-  ./aio.py w-- 0 --yes     Remove worktree #0 and push to main
-  ./aio.py push "message"  Commit and push in current directory
+PROMPTS:
+  aio cp/lp/gp        Insert prompt (ready to edit before running)
+  aio cpp/lpp/gpp     Auto-run prompt immediately
 
-Common Commands:
-  jobs                     List all active work
-  w                        List worktrees
-  ls                       List all sessions
-  p                        List saved projects
-  add [path]               Add project to saved list (defaults to current dir)
-  remove <#>               Remove project from saved list
-  push                     Quick commit and push
+WORKTREES:
+  aio <key>--         New worktree in current dir
+  aio <key>-- <#>     New worktree in project #
+  aio w               List all worktrees
+  aio w<#>            Open worktree #
+  aio w- <#>          Remove worktree (no push)
+  aio w-- <#>         Remove worktree and push to main
 
-Tip: Hold Shift while selecting text with mouse to copy (mouse mode enabled)
+MANAGEMENT:
+  aio jobs            Show all active work with status
+  aio ls              List all tmux sessions
+  aio p               Show saved projects
+  aio push ["msg"]    Quick commit and push
 
-For full documentation, run: ./aio.py help""")
+SETUP:
+  aio install         Install as global 'aio' command
+  aio add [path]      Add project to saved list
+  aio remove <#>      Remove project from list
+
+Working directory: {WORK_DIR}
+Run 'aio help' for detailed documentation""")
+    if PROJECTS:
+        print(f"\nSaved projects:")
+        for i, proj in enumerate(PROJECTS[:3]):  # Show first 3
+            exists = "✓" if os.path.exists(proj) else "✗"
+            print(f"  {i}. {exists} {proj}")
+        if len(PROJECTS) > 3:
+            print(f"  ... and {len(PROJECTS)-3} more (run 'aio p' to see all)")
 elif arg == 'help' or arg == '--help' or arg == '-h':
-    print(f"""aio.py - tmux session manager (FULL DOCUMENTATION)
+    print(f"""aio - AI agent session manager (DETAILED HELP)
 
-Sessions:  h=htop  t=top  g=gemini  c=codex  l=claude
-Prompts:   gp=gemini+prompt  cp=codex+prompt  lp=claude+prompt
+═══════════════════════════════════════════════════════════════════════════════
+SESSION MANAGEMENT
+═══════════════════════════════════════════════════════════════════════════════
 
-Usage:
-  ./aio.py <key>           Attach to session (create if needed)
-  ./aio.py <key> -w        Attach in NEW terminal window
-  ./aio.py +<key>          Create NEW instance with timestamp
-  ./aio.py ++<key>         Create NEW instance with git worktree
-  ./aio.py <key> <dir>     Start session in custom directory
-  ./aio.py <key> <#>       Start session in saved project (#=0-{len(PROJECTS)-1})
-  ./aio.py <#>             Open project in current terminal (no session)
-  ./aio.py -w [dir/#]      Open NEW terminal in directory (no session)
-  ./aio.py p               List saved projects
-  ./aio.py add [path]      Add project to saved list (defaults to current dir)
-  ./aio.py remove <#>      Remove project from saved list by index
-  ./aio.py ls              List all sessions
-  ./aio.py jobs            List all jobs (directories with sessions + worktrees)
-  ./aio.py watch <session> Watch session and auto-respond to prompts
-  ./aio.py watch <session> 60  Watch for 60 seconds
-  ./aio.py x               Kill all sessions
-  ./aio.py install         Install as 'aio' command (callable from anywhere)
+Sessions: c=codex  l=claude  g=gemini  h=htop  t=top
+
+BASIC:
+  aio <key>              Attach to session (create if needed)
+  aio <key> <#>          Start in saved project # (0-{len(PROJECTS)-1})
+  aio <key> <dir>        Start in custom directory
+  aio +<key>             Create NEW timestamped instance
+  aio <key> -w           Launch in new window
+  aio <key> -t           Launch session + separate terminal
+
+PROMPTS (insert vs auto-run):
+  aio cp/lp/gp           Insert default prompt (can edit before running)
+  aio cpp/lpp/gpp        Auto-execute default prompt immediately
+  aio <key> "custom"     Start and send custom prompt
+
+WORKTREES (isolated git branches):
+  aio <key>--            New worktree in current directory
+  aio <key>-- <#>        New worktree in saved project #
+  aio <key>-- -t         New worktree + terminal window
+
+═══════════════════════════════════════════════════════════════════════════════
+WORKTREE MANAGEMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+  aio w                  List all worktrees
+  aio w<#/name>          Open worktree by index or name
+  aio w<#> -w            Open worktree in new window
+  aio w- <#/name>        Remove worktree (no git push)
+  aio w- <#> -y          Remove without confirmation
+  aio w-- <#/name>       Remove, merge to main, and push
+  aio w-- <#> --yes      Remove and push (skip confirmation)
+  aio w-- <#> "message"  Remove and push with custom commit message
+
+═══════════════════════════════════════════════════════════════════════════════
+PROJECT MANAGEMENT
+═══════════════════════════════════════════════════════════════════════════════
+
+  aio p                  List all saved projects
+  aio <#>                Open project # in current terminal (no session)
+  aio -w <#>             Open project # in new window
+  aio add [path]         Add project (defaults to current dir)
+  aio remove <#>         Remove project from saved list
+
+═══════════════════════════════════════════════════════════════════════════════
+MONITORING & AUTOMATION
+═══════════════════════════════════════════════════════════════════════════════
+
+  aio jobs               Show all active work with status
+  aio ls                 List all tmux sessions
+  aio watch <session>    Auto-respond to prompts (watch once)
+  aio watch <session> 60 Auto-respond for 60 seconds
+  aio send <sess> "text" Send prompt to existing session
+  aio send <sess> "text" --wait  Send and wait for completion
+
+MULTI-AGENT PARALLEL:
+  aio multi <#> c:3 g:1 "prompt"  Run 3 codex + 1 gemini in parallel
+  aio multi <#> c:2 l:1 "prompt"  Run 2 codex + 1 claude in parallel
+
+═══════════════════════════════════════════════════════════════════════════════
+GIT OPERATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+  aio push               Quick commit and push (default message)
+  aio push "message"     Commit and push with custom message
+  aio push -y            Push without confirmation (in worktrees)
+
+Note: Works in any git directory, not just worktrees
+
+═══════════════════════════════════════════════════════════════════════════════
+SETUP & CONFIGURATION
+═══════════════════════════════════════════════════════════════════════════════
+
+  aio install            Install as global 'aio' command
+  aio x                  Kill all tmux sessions
+
+FLAGS:
+  -w, --new-window       Launch in new terminal window
+  -t, --with-terminal    Launch session + separate terminal
+  -y, --yes              Skip confirmation prompts
+
+TERMINALS: Auto-detects ptyxis, gnome-terminal, alacritty
+DATABASE: ~/.local/share/aios/aio.db
+WORKTREES: {WORKTREES_DIR}
+
+═══════════════════════════════════════════════════════════════════════════════
+EXAMPLES
+═══════════════════════════════════════════════════════════════════════════════
+
+Getting Started:
+  aio install              Make 'aio' globally available
+  aio c                    Start codex in current directory
+  aio cp                   Start codex with editable prompt
+  aio cpp                  Start codex with auto-run prompt
+
+Sessions:
+  aio c 0                  Start codex in project 0
+  aio l -w                 Start claude in new window
+  aio g 2 -t               Start gemini in project 2 + terminal
 
 Worktrees:
-  ./aio.py w               List all worktrees
-  ./aio.py w<#/name>       Open worktree in current terminal
-  ./aio.py w<#/name> -w    Open worktree in NEW window
-  ./aio.py w- <#/name>     Remove worktree (git + delete)
-  ./aio.py w- <#/name> -y  Remove worktree without confirmation
-  ./aio.py w-- <#/name>    Remove worktree, switch to main, commit, and push to main
-  ./aio.py w-- <#/name> --yes  Remove and push to main without confirmation
-  ./aio.py w-- <#/name> "Custom message"  Same but with custom commit message
+  aio c--                  Codex in new worktree (current dir)
+  aio c-- 0 -t             Codex in new worktree (project 0) + terminal
+  aio l-- -w               Claude in new worktree in new window
 
-Git Operations (works in ANY directory):
-  ./aio.py push            Commit all changes and push (default message)
-  ./aio.py push "msg"      Commit all changes and push with custom message
+Management:
+  aio jobs                 View all active work
+  aio w                    List worktrees
+  aio w0 -w                Open worktree 0 in new window
+  aio w-- 0 "Done"         Remove worktree 0 and push to main
 
-Automation (sending prompts to AI sessions):
-  ./aio.py send <session> <prompt>        Send prompt to existing session
-  ./aio.py send <session> <prompt> --wait Send prompt and wait for completion
-  ./aio.py <key> <prompt>                 Create/attach session and send prompt
-  ./aio.py <key> <dir> <prompt>           Create/attach in dir and send prompt
+Automation:
+  aio send codex "fix bug" Send prompt to running session
+  aio multi 0 c:3 "task"   Run 3 codex in parallel on task
+  aio push "Fix login"     Quick commit and push
 
-Multi-Agent Parallel Execution:
-  ./aio.py multi <project#> c:3 g:1 <prompt>  Run 3 codex + 1 gemini in parallel
-  ./aio.py multi <project#> c:2 l:1 <prompt>  Run 2 codex + 1 claude in parallel
-  ./aio.py multi 3 c:4 "create tests"         Run 4 codex instances with same prompt
+═══════════════════════════════════════════════════════════════════════════════
 
-  Agent specs: c:N (codex), l:N (claude), g:N (gemini)
-  Creates worktrees and sends prompts to all instances automatically
+NOTES:
+• Auto-updates from git on each run (always latest version)
+• Works in any git directory for push/worktree commands
+• Mouse mode enabled: Hold Shift to select and copy text
+• Database stores: projects, sessions, prompts, configuration
 
-Flags:
-  -w, --new-window         Launch in new terminal window
-  -t, --with-terminal      Launch session + separate terminal window
-  --wait                   Wait for command completion (send command only)
-
-Terminals:
-  Supported: ptyxis, gnome-terminal, alacritty
-  Auto-detects available terminal
-
-Working Directory:
-  Default: {WORK_DIR}
-
-Saved Projects (stored in database: {DB_PATH}):""")
-    for i, proj in enumerate(PROJECTS):
-        exists = "✓" if os.path.exists(proj) else "✗"
-        print(f"  {i}. {exists} {proj}")
-    print(f"""
-Examples:
-  ./aio.py install         Install globally (then use 'aio' instead of './aio.py')
-  ./aio.py 1               Open project 1 in current terminal
-  ./aio.py c 0             Launch codex in project 0
-  ./aio.py c 0 -w          Launch codex in NEW window
-  ./aio.py -w 0            Open terminal in project 0 (new window)
-  ./aio.py ++c 0           New codex with worktree
-  ./aio.py jobs            Show all active work (sessions + worktrees) with status
-  ./aio.py w               List all worktrees
-  ./aio.py w0              Open worktree #0
-  ./aio.py w0 -w           Open worktree #0 in new window
-  ./aio.py w- codex-123    Remove worktree matching 'codex-123'
-  ./aio.py w- 0 -y         Remove worktree #0 without confirmation
-  ./aio.py w-- 0           Remove worktree #0, switch to main, and push to main
-  ./aio.py w-- 0 --yes     Remove and push to main (skip confirmation)
-  ./aio.py w-- 0 "Cleanup experimental feature"  Remove and push to main with custom message
-  ./aio.py watch codex     Watch codex session and auto-respond to confirmations
-  ./aio.py send codex "create a test file"  Send prompt to codex session
-  ./aio.py send codex "list all files" --wait  Send and wait for completion
-  ./aio.py c "create README.md"  Start codex and send prompt
-  ./aio.py c 3 "fix the bug"  Start codex in project 3 and send prompt
-  ./aio.py multi 3 c:3 g:1 "create a login feature"  Run 3 codex + 1 gemini in parallel
-  ./aio.py push            Quick commit+push in current directory
-  ./aio.py push "Fix bug in authentication"  Commit+push with custom message
-
-Worktrees Location: {WORKTREES_DIR}
-
-Notes:
-  • Run './aio.py install' to use 'aio' globally from any directory
-  • Auto-updates from git on each run (always latest version)
-  • The 'push' command works in ANY git repository, not just worktrees
-  • Use -y/--yes flags to skip interactive confirmations
-  • Use 'watch' to auto-respond to prompts in running sessions (expect-based)
-  • Use 'send' or pass prompts directly to automate AI agent tasks
-  • Prompts are sent via tmux send-keys to running sessions
-  • Mouse mode enabled: Hold Shift while selecting text to copy to clipboard""")
+Working directory: {WORK_DIR}""")
+    if PROJECTS:
+        print(f"\nSaved projects:")
+        for i, proj in enumerate(PROJECTS):
+            exists = "✓" if os.path.exists(proj) else "✗"
+            print(f"  {i}. {exists} {proj}")
 elif arg == 'install':
     # Install aio as a global command
     bin_dir = os.path.expanduser("~/.local/bin")
@@ -1721,31 +1822,36 @@ elif arg == 'push':
             error_msg = result.stderr.strip() or result.stdout.strip()
             print(f"✗ Push failed: {error_msg}")
             sys.exit(1)
-elif arg.startswith('++'):
-    key = arg[2:]
-    if key in sessions and work_dir_arg and work_dir_arg.isdigit():
-        idx = int(work_dir_arg)
-        if 0 <= idx < len(PROJECTS):
-            project_path = PROJECTS[idx]
-            base_name, cmd = sessions[key]
-            ts = datetime.now().strftime('%H%M%S')
-            name = f"{base_name}-{ts}"
-
-            if worktree_path := create_worktree(project_path, name):
-                print(f"✓ Created worktree: {worktree_path}")
-                sp.run(['tmux', 'new', '-d', '-s', name, '-c', worktree_path, cmd])
-
-                if new_window:
-                    launch_in_new_window(name)
-                    # Also launch a regular terminal if requested
-                    if with_terminal:
-                        launch_terminal_in_dir(worktree_path)
-                else:
-                    os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
+elif arg.endswith('--') and not arg.startswith('w'):
+    key = arg[:-2]
+    if key in sessions:
+        # Determine project path: use specified project or current directory
+        if work_dir_arg and work_dir_arg.isdigit():
+            idx = int(work_dir_arg)
+            if 0 <= idx < len(PROJECTS):
+                project_path = PROJECTS[idx]
+            else:
+                print(f"✗ Invalid project index: {work_dir_arg}")
+                sys.exit(1)
         else:
-            print(f"✗ Invalid project index: {work_dir_arg}")
+            project_path = work_dir
+
+        base_name, cmd = sessions[key]
+        ts = datetime.now().strftime('%H%M%S')
+        name = f"{base_name}-{ts}"
+
+        if worktree_path := create_worktree(project_path, name):
+            print(f"✓ Created worktree: {worktree_path}")
+            sp.run(['tmux', 'new', '-d', '-s', name, '-c', worktree_path, cmd])
+
+            if new_window:
+                launch_in_new_window(name)
+                if with_terminal:
+                    launch_terminal_in_dir(worktree_path)
+            else:
+                os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
     else:
-        print("✗ Usage: ./aio.py ++<key> <project#>")
+        print(f"✗ Unknown session key: {key}")
 elif arg.startswith('+'):
     key = arg[1:]
     if key in sessions:
@@ -1781,6 +1887,9 @@ else:
             sp.run(['tmux', 'new', '-d', '-s', session_name, '-c', work_dir, cmd],
                   capture_output=True)
 
+    # Check if this is a single-p session (cp, lp, gp but not cpp, lpp, gpp)
+    is_single_p_session = arg.endswith('p') and not arg.endswith('pp') and len(arg) == 2 and arg in sessions
+
     # Check if there's a prompt to send (remaining args after session key and work_dir)
     # Determine where prompts start based on whether work_dir_arg was a directory or prompt
     if is_work_dir_a_prompt:
@@ -1795,14 +1904,22 @@ else:
 
     prompt_parts = []
     for i in range(prompt_start_idx, len(sys.argv)):
-        if sys.argv[i] not in ['-w', '--new-window', '--yes', '-y']:
+        if sys.argv[i] not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']:
             prompt_parts.append(sys.argv[i])
 
     if prompt_parts:
+        # Custom prompt provided on command line
         prompt = ' '.join(prompt_parts)
         print(f"📤 Sending prompt to session...")
-        # send_prompt_to_session will wait for agent to be ready
         send_prompt_to_session(session_name, prompt, wait_for_completion=False, wait_for_ready=True)
+    elif is_single_p_session:
+        # Single-p session without custom prompt - insert default prompt without running
+        # Map session key to prompt config key
+        prompt_map = {'cp': CODEX_PROMPT, 'lp': CLAUDE_PROMPT, 'gp': GEMINI_PROMPT}
+        default_prompt = prompt_map.get(arg, '')
+        if default_prompt:
+            print(f"📝 Inserting default prompt into session...")
+            send_prompt_to_session(session_name, default_prompt, wait_for_completion=False, wait_for_ready=True, send_enter=False)
 
     if new_window:
         launch_in_new_window(session_name)
