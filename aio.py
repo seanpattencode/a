@@ -864,7 +864,7 @@ def list_jobs():
                                     if os.path.isdir(os.path.join(WORKTREES_DIR, d))])
             if job_name in worktrees_list:
                 worktree_index = worktrees_list.index(job_name)
-                print(f"           Open dir:  aio w{worktree_index} -w")
+                print(f"           Open dir:  aio w{worktree_index}")
             else:
                 print(f"           Open dir:  aio -w {job_path}")
         else:
@@ -1145,7 +1145,7 @@ if arg and arg.startswith('w') and arg != 'watch':
         # List worktrees
         list_worktrees()
         sys.exit(0)
-    elif arg.startswith('w--'):
+    elif arg.startswith('w++'):
         # Remove and push
         pattern = work_dir_arg
         commit_msg = None
@@ -1158,7 +1158,7 @@ if arg and arg.startswith('w') and arg != 'watch':
                 break
 
         if not pattern:
-            print("✗ Usage: ./aio.py w-- <worktree#/name> [commit message] [--yes/-y]")
+            print("✗ Usage: ./aio.py w++ <worktree#/name> [commit message] [--yes/-y]")
             sys.exit(1)
 
         worktree_path = find_worktree(pattern)
@@ -1167,13 +1167,13 @@ if arg and arg.startswith('w') and arg != 'watch':
         else:
             print(f"✗ Worktree not found: {pattern}")
         sys.exit(0)
-    elif arg.startswith('w-'):
-        # Remove only
+    elif arg.startswith('w+') and not arg.startswith('w++'):
+        # Remove only (w+ but not w++)
         pattern = work_dir_arg
         skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
 
         if not pattern:
-            print("✗ Usage: ./aio.py w- <worktree#/name> [--yes/-y]")
+            print("✗ Usage: ./aio.py w+ <worktree#/name> [--yes/-y]")
             sys.exit(1)
 
         worktree_path = find_worktree(pattern)
@@ -1208,8 +1208,8 @@ QUICK START:
   aio c               Start codex in current directory
   aio cp              Start codex with prompt (can edit before running)
   aio cpp             Start codex with prompt (auto-execute)
-  aio c--             Start codex in new worktree (current dir)
-  aio c-- 0           Start codex in new worktree (project 0)
+  aio c++             Start codex in new worktree (current dir)
+  aio c++ 0           Start codex in new worktree (project 0)
 MULTI-AGENT (run N agents in parallel worktrees):
   aio multi c:3                 Launch 3 codex (DEFAULT: 11-step protocol)
   aio multi c:3 "task"          Launch 3 codex with custom task
@@ -1230,12 +1230,12 @@ PROMPTS:
   aio cp/lp/gp        Insert prompt (ready to edit before running)
   aio cpp/lpp/gpp     Auto-run prompt immediately
 WORKTREES:
-  aio <key>--         New worktree in current dir
-  aio <key>-- <#>     New worktree in project #
+  aio <key>++         New worktree in current dir
+  aio <key>++ <#>     New worktree in project #
   aio w               List all worktrees
   aio w<#>            Open worktree #
-  aio w- <#>          Remove worktree (no push)
-  aio w-- <#>         Remove worktree and push to main
+  aio w+ <#>          Remove worktree (no push)
+  aio w++ <#>         Remove worktree and push to main
 MANAGEMENT:
   aio jobs            Show all active work with status
   aio cleanup         Delete all worktrees (with confirmation)
@@ -1285,11 +1285,11 @@ WORKTREE MANAGEMENT
   aio w                  List all worktrees
   aio w<#/name>          Open worktree by index or name
   aio w<#> -w            Open worktree in new window
-  aio w- <#/name>        Remove worktree (no git push)
-  aio w- <#> -y          Remove without confirmation
-  aio w-- <#/name>       Remove, merge to main, and push
-  aio w-- <#> --yes      Remove and push (skip confirmation)
-  aio w-- <#> "message"  Remove and push with custom commit message
+  aio w+ <#/name>        Remove worktree (no git push)
+  aio w+ <#> -y          Remove without confirmation
+  aio w++ <#/name>       Remove, merge to main, and push
+  aio w++ <#> --yes      Remove and push (skip confirmation)
+  aio w++ <#> "message"  Remove and push with custom commit message
 ═══════════════════════════════════════════════════════════════════════════════
 PROJECT MANAGEMENT
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1349,14 +1349,14 @@ Sessions:
   aio l -w                 Start claude in new window
   aio g 2 -t               Start gemini in project 2 + terminal
 Worktrees:
-  aio c--                  Codex in new worktree (current dir)
-  aio c-- 0 -t             Codex in new worktree (project 0) + terminal
-  aio l-- -w               Claude in new worktree in new window
+  aio c++                  Codex in new worktree (current dir)
+  aio c++ 0 -t             Codex in new worktree (project 0) + terminal
+  aio l++ -w               Claude in new worktree in new window
 Management:
   aio jobs                 View all active work
   aio w                    List worktrees
   aio w0 -w                Open worktree 0 in new window
-  aio w-- 0 "Done"         Remove worktree 0 and push to main
+  aio w++ 0 "Done"         Remove worktree 0 and push to main
 Automation:
   aio send codex "fix bug" Send prompt to running session
   aio multi 0 c:3 "task"   Run 3 codex in parallel on task
@@ -1570,11 +1570,12 @@ elif arg == 'multi':
             continue
 
         for instance_num in range(count):
-            # Create unique worktree name
-            ts = datetime.now().strftime('%H%M%S')
+            # Create unique worktree name with full date and command source
             import time
+            date_str = datetime.now().strftime('%Y%m%d')
+            time_str = datetime.now().strftime('%H%M%S')
             time.sleep(0.01)  # Ensure unique timestamps
-            worktree_name = f"{base_name}-{ts}-{instance_num}"
+            worktree_name = f"{base_name}-{date_str}-{time_str}-multi-{instance_num}"
 
             # Create worktree
             worktree_path = create_worktree(project_path, worktree_name)
@@ -1712,11 +1713,12 @@ elif arg == 'all':
                 continue
 
             for instance_num in range(count):
-                # Create unique worktree name
-                ts = datetime.now().strftime('%H%M%S')
+                # Create unique worktree name with full date and command source
                 import time
+                date_str = datetime.now().strftime('%Y%m%d')
+                time_str = datetime.now().strftime('%H%M%S')
                 time.sleep(0.01)  # Ensure unique timestamps
-                worktree_name = f"{base_name}-{ts}-{instance_num}"
+                worktree_name = f"{base_name}-{date_str}-{time_str}-all-{instance_num}"
 
                 # Create worktree
                 worktree_path = create_worktree(project_path, worktree_name)
@@ -2218,7 +2220,7 @@ elif arg == 'setup':
         # Set main as default branch
         sp.run(['git', '-C', cwd, 'branch', '-M', 'main'], capture_output=True)
         print("✓ Ready to push with: git push -u origin main")
-elif arg.endswith('--') and not arg.startswith('w'):
+elif arg.endswith('++') and not arg.startswith('w'):
     key = arg[:-2]
     if key in sessions:
         # Determine project path: use specified project or current directory
@@ -2233,8 +2235,9 @@ elif arg.endswith('--') and not arg.startswith('w'):
             project_path = work_dir
 
         base_name, cmd = sessions[key]
-        ts = datetime.now().strftime('%H%M%S')
-        name = f"{base_name}-{ts}"
+        date_str = datetime.now().strftime('%Y%m%d')
+        time_str = datetime.now().strftime('%H%M%S')
+        name = f"{base_name}-{date_str}-{time_str}-single"
 
         if worktree_path := create_worktree(project_path, name):
             print(f"✓ Created worktree: {worktree_path}")
@@ -2248,21 +2251,8 @@ elif arg.endswith('--') and not arg.startswith('w'):
                 os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
     else:
         print(f"✗ Unknown session key: {key}")
-elif arg.startswith('+'):
-    key = arg[1:]
-    if key in sessions:
-        base_name, cmd = sessions[key]
-        ts = datetime.now().strftime('%H%M%S')
-        name = f"{base_name}-{ts}"
-        sp.run(['tmux', 'new', '-d', '-s', name, '-c', work_dir, cmd])
-
-        if new_window:
-            launch_in_new_window(name)
-            # Also launch a regular terminal if requested
-            if with_terminal:
-                launch_terminal_in_dir(work_dir)
-        else:
-            os.execvp('tmux', ['tmux', 'switch-client' if "TMUX" in os.environ else 'attach', '-t', name])
+# Removed old '+' feature (timestamped session without worktree)
+# to make room for new '+' and '++' worktree commands
 else:
     # Try directory-based session logic first
     session_name = get_or_create_directory_session(arg, work_dir)
