@@ -1201,6 +1201,10 @@ QUICK START:
   aio cpp             Start codex with prompt (auto-execute)
   aio c--             Start codex in new worktree (current dir)
   aio c-- 0           Start codex in new worktree (project 0)
+MULTI-AGENT (run N agents in parallel worktrees):
+  aio multi 0 c:3 "task"        Launch 3 codex in parallel (fast!)
+  aio multi 0 c:2 l:1 "task"    Launch 2 codex + 1 claude in parallel
+  aio multi 0 c:3 --seq "task"  Launch 3 codex one by one (safe!)
 SESSIONS: c=codex  l=claude  g=gemini  h=htop  t=top
   aio <key>           Attach to session (or create if needed)
   aio <key> <#>       Start in saved project # (0-{len(PROJECTS)-1})
@@ -1479,6 +1483,9 @@ elif arg == 'multi':
 
     project_path = PROJECTS[project_idx]
 
+    # Check for sequential flag
+    sequential = '--seq' in sys.argv or '--sequential' in sys.argv
+
     # Parse agent specifications and prompt
     agent_specs = []
     prompt_parts = []
@@ -1486,6 +1493,10 @@ elif arg == 'multi':
 
     for i in range(3, len(sys.argv)):
         arg_part = sys.argv[i]
+
+        # Skip flags
+        if arg_part in ['--seq', '--sequential']:
+            continue
 
         # Check if this looks like an agent spec (e.g., "c:3")
         if parsing_agents and ':' in arg_part and len(arg_part) <= 4:
@@ -1513,10 +1524,13 @@ elif arg == 'multi':
     # Calculate total instances
     total_instances = sum(count for _, count in agent_specs)
 
-    print(f"🚀 Starting {total_instances} agent instances in parallel worktrees...")
+    mode = "sequentially (one by one)" if sequential else "in parallel (all at once)"
+    print(f"🚀 Starting {total_instances} agent instances {mode}...")
     print(f"   Project: {project_path}")
     print(f"   Agents: {', '.join(f'{key}×{count}' for key, count in agent_specs)}")
     print(f"   Prompt: {prompt}")
+    if sequential:
+        print(f"   Mode: Sequential - each agent completes before next starts")
     print()
 
     # Create worktrees and launch sessions
@@ -1555,19 +1569,27 @@ elif arg == 'multi':
         print("✗ No sessions were created")
         sys.exit(1)
 
-    print(f"\n📤 Sending prompt to all {len(launched_sessions)} sessions...")
+    if sequential:
+        print(f"\n📤 Running agents sequentially (waiting for each to complete)...")
+    else:
+        print(f"\n📤 Sending prompt to all {len(launched_sessions)} sessions...")
 
     # Send prompts to all sessions
     for session_name, agent_name, instance_num in launched_sessions:
         print(f"   → {agent_name} instance {instance_num}...", end=' ', flush=True)
-        result = send_prompt_to_session(session_name, prompt, wait_for_ready=True, wait_for_completion=False)
+        result = send_prompt_to_session(session_name, prompt, wait_for_ready=True, wait_for_completion=sequential)
         if result:
             print("✓")
         else:
             print("✗")
 
-    print(f"\n✓ All sessions launched! Use 'aio jobs' to see status")
-    print(f"   Session names: {', '.join(s[0] for s in launched_sessions)}")
+    mode_msg = "one by one" if sequential else "in parallel"
+    print(f"\n✓ All {len(launched_sessions)} agents launched {mode_msg}!")
+    print(f"\n📊 Monitor all agents:")
+    print(f"   aio jobs")
+    print(f"\n🔗 Attach to specific agent:")
+    for session_name, agent_name, instance_num in launched_sessions:
+        print(f"   tmux attach -t {session_name}  # {agent_name} #{instance_num}")
 elif arg == 'jobs':
     list_jobs()
 elif arg == 'p':
