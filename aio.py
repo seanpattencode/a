@@ -1202,9 +1202,10 @@ QUICK START:
   aio c--             Start codex in new worktree (current dir)
   aio c-- 0           Start codex in new worktree (project 0)
 MULTI-AGENT (run N agents in parallel worktrees):
-  aio multi 0 c:3 "task"        Launch 3 codex in parallel (fast!)
-  aio multi 0 c:2 l:1 "task"    Launch 2 codex + 1 claude in parallel
-  aio multi 0 c:3 --seq "task"  Launch 3 codex one by one (safe!)
+  aio multi c:3 "task"          Launch 3 codex in current dir (fast!)
+  aio multi c:2 l:1 "task"      Launch 2 codex + 1 claude (parallel)
+  aio multi c:3 --seq "task"    Launch 3 codex one by one (safe!)
+  aio multi 0 c:2 "task"        Or use project #: launch in project 0
 SESSIONS: c=codex  l=claude  g=gemini  h=htop  t=top
   aio <key>           Attach to session (or create if needed)
   aio <key> <#>       Start in saved project # (0-{len(PROJECTS)-1})
@@ -1464,24 +1465,21 @@ elif arg == 'send':
         sys.exit(1)
 elif arg == 'multi':
     # Run multiple agent instances in parallel worktrees
-    # Usage: aio multi <project#> c:3 g:1 "prompt text"
-    if not work_dir_arg or not work_dir_arg.isdigit():
-        print("✗ Usage: aio multi <project#> <agent_specs>... <prompt>")
-        print("\nExamples:")
-        print("  aio multi 3 c:3 g:1 'create a test file'")
-        print("  aio multi 0 c:2 l:1 'fix the bug'")
-        print("\nAgent specs:")
-        print("  c:N  - N codex instances")
-        print("  l:N  - N claude instances")
-        print("  g:N  - N gemini instances")
-        sys.exit(1)
+    # Usage: aio multi c:3 "prompt" (current dir) OR aio multi <project#> c:3 "prompt"
 
-    project_idx = int(work_dir_arg)
-    if not (0 <= project_idx < len(PROJECTS)):
-        print(f"✗ Invalid project index: {project_idx}")
-        sys.exit(1)
-
-    project_path = PROJECTS[project_idx]
+    # Check if first arg is a project number or agent spec
+    if work_dir_arg and work_dir_arg.isdigit():
+        # Explicit project number provided: aio multi 3 c:2 "task"
+        project_idx = int(work_dir_arg)
+        if not (0 <= project_idx < len(PROJECTS)):
+            print(f"✗ Invalid project index: {project_idx}")
+            sys.exit(1)
+        project_path = PROJECTS[project_idx]
+        start_parse_at = 3  # Start parsing from argv[3]
+    else:
+        # No project number, use current directory: aio multi c:2 "task"
+        project_path = os.getcwd()
+        start_parse_at = 2  # Start parsing from argv[2]
 
     # Check for sequential flag
     sequential = '--seq' in sys.argv or '--sequential' in sys.argv
@@ -1491,7 +1489,7 @@ elif arg == 'multi':
     prompt_parts = []
     parsing_agents = True
 
-    for i in range(3, len(sys.argv)):
+    for i in range(start_parse_at, len(sys.argv)):
         arg_part = sys.argv[i]
 
         # Skip flags
