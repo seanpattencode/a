@@ -1202,14 +1202,16 @@ QUICK START:
   aio c--             Start codex in new worktree (current dir)
   aio c-- 0           Start codex in new worktree (project 0)
 MULTI-AGENT (run N agents in parallel worktrees):
-  aio multi c:3 "task"          Launch 3 codex in current dir (fast!)
-  aio multi c:2 l:1 "task"      Launch 2 codex + 1 claude (parallel)
-  aio multi c:3 --seq "task"    Launch 3 codex one by one (safe!)
+  aio multi c:3                 Launch 3 codex (DEFAULT: 11-step protocol)
+  aio multi c:3 "task"          Launch 3 codex with custom task
+  aio multi c:2 l:1             Mixed agents (DEFAULT: 11-step protocol)
+  aio multi c:3 --seq           Sequential (DEFAULT: 11-step protocol)
   aio multi 0 c:2 "task"        Or use project #: launch in project 0
 PORTFOLIO (run agents across ALL saved projects):
-  aio all c:2 "task"            Launch 2 codex per project (overnight!)
-  aio all c:1 l:1 "task"        Mixed agents across all projects
-  aio all c:2 --seq "task"      Process projects one by one (safe!)
+  aio all c:2                   2 codex per project (DEFAULT: 11-step protocol - overnight!)
+  aio all c:2 "task"            2 codex per project with custom task
+  aio all c:1 l:1               Mixed agents across all (DEFAULT protocol)
+  aio all c:2 --seq             Sequential across projects (DEFAULT protocol)
 SESSIONS: c=codex  l=claude  g=gemini  h=htop  t=top
   aio <key>           Attach to session (or create if needed)
   aio <key> <#>       Start in saved project # (0-{len(PROJECTS)-1})
@@ -1517,11 +1519,13 @@ elif arg == 'multi':
         print("✗ No agent specifications provided")
         sys.exit(1)
 
+    # If no prompt provided, use 11-step universal protocol as default
     if not prompt_parts:
-        print("✗ No prompt provided")
-        sys.exit(1)
-
-    prompt = ' '.join(prompt_parts)
+        prompt = CODEX_PROMPT
+        using_default_protocol = True
+    else:
+        prompt = ' '.join(prompt_parts)
+        using_default_protocol = False
 
     # Calculate total instances
     total_instances = sum(count for _, count in agent_specs)
@@ -1530,7 +1534,11 @@ elif arg == 'multi':
     print(f"🚀 Starting {total_instances} agent instances {mode}...")
     print(f"   Project: {project_path}")
     print(f"   Agents: {', '.join(f'{key}×{count}' for key, count in agent_specs)}")
-    print(f"   Prompt: {prompt}")
+    if using_default_protocol:
+        print(f"   Task: 🔬 DEFAULT - Execute 11-step optimization protocol")
+        print(f"         (Ultrathink → Run → Find pain → Research → Simplify → Rewrite → Debug → Delete → Optimize → Debug → Report)")
+    else:
+        print(f"   Prompt: {prompt}")
     if sequential:
         print(f"   Mode: Sequential - each agent completes before next starts")
     print()
@@ -1637,11 +1645,13 @@ elif arg == 'all':
         print("  g:N  - N gemini instances per project")
         sys.exit(1)
 
+    # If no prompt provided, use 11-step universal protocol as default
     if not prompt_parts:
-        print("✗ No prompt provided")
-        sys.exit(1)
-
-    prompt = ' '.join(prompt_parts)
+        prompt = CODEX_PROMPT
+        using_default_protocol = True
+    else:
+        prompt = ' '.join(prompt_parts)
+        using_default_protocol = False
 
     # Calculate total instances across all projects
     agents_per_project = sum(count for _, count in agent_specs)
@@ -1651,7 +1661,11 @@ elif arg == 'all':
     mode = "sequentially (one project at a time)" if sequential else "in parallel (all at once)"
     print(f"🌍 Portfolio Operation: {total_agents} agents across {total_projects} projects {mode}")
     print(f"   Agents per project: {', '.join(f'{key}×{count}' for key, count in agent_specs)}")
-    print(f"   Prompt: {prompt}")
+    if using_default_protocol:
+        print(f"   Task: 🔬 DEFAULT - Execute 11-step optimization protocol")
+        print(f"         (Ultrathink → Run → Find pain → Research → Simplify → Rewrite → Debug → Delete → Optimize → Debug → Report)")
+    else:
+        print(f"   Prompt: {prompt}")
     if sequential:
         print(f"   Mode: Sequential - complete each project before starting next")
     print()

@@ -1,0 +1,829 @@
+CHANGE REPORT: 11-Step Protocol as Default - Philosophy Encoded as Infrastructure
+========================================================================================
+Date: 2025-10-31
+Project: aios (AI agent session manager)
+Files: aio.py:1204-1214, 1520-1542, 1646-1669
+
+
+USER PROBLEM
+============
+User wanted:
+"The default task if not specified should be the 11-step system, and make it
+clear in aio command that this is done"
+
+Current limitation:
+- Must always specify task: aio multi c:2 "find bugs"
+- 11-step protocol exists but isn't default
+- Easy to forget methodology
+- Inconsistent agent behavior (some get protocol, some don't)
+- Protocol is optional, not standard
+
+
+EXECUTE STEPS:
+==============
+
+1. ULTRATHINK - WHY DEFAULT PROTOCOL IS PROFOUND
+-------------------------------------------------
+
+**This is about ENCODING PHILOSOPHY INTO INFRASTRUCTURE.**
+
+Currently:
+  aio multi c:2 "find bugs"        # User specifies task
+  aio cpp                          # Sends universal protocol
+
+What it should be:
+  aio multi c:2                    # DEFAULT: Execute 11-step protocol
+  aio all c:2                      # DEFAULT: Execute 11-step protocol
+  aio multi c:2 "find bugs"        # Override: Specific task
+
+**Why this matters:**
+
+The 11 steps aren't a feature to remember.
+They're THE DEFAULT OPERATING PROCEDURE.
+
+Like:
+- Docker defaults to isolation (security by default)
+- Git defaults to staging area (safety by default)
+- Make defaults to incremental builds (efficiency by default)
+- **aios defaults to 11-step protocol (methodology by default)**
+
+**This prevents:**
+- Inconsistent approaches
+- Forgetting the protocol
+- Ad-hoc, unstructured work
+- Quality being optional
+
+**This ensures:**
+- ALL agents follow 11 steps (unless overridden)
+- Consistent methodology
+- Quality is structural
+- Interdependence by default
+
+
+**THE TOOL BECOMES THE TEACHER:**
+
+New user types: `aio multi c:2`
+
+Tool responds:
+```
+🚀 Starting 2 agent instances in parallel (all at once)...
+   Task: 🔬 DEFAULT - Execute 11-step optimization protocol
+         (Ultrathink → Run → Find pain → Research → Simplify →
+          Rewrite → Debug → Delete → Optimize → Debug → Report)
+```
+
+**The tool ITSELF teaches the methodology.**
+
+
+**WHY THIS PREVENTS OBSOLESCENCE:**
+
+The 11 steps STRUCTURALLY REQUIRE human judgment:
+- Step 1: Ultrathink (vision - how does this save the world?)
+- Step 3: Find pain (empathy - what do users scream about?)
+- Step 4: Research (wisdom - how did giants solve this?)
+- Step 5: Simplify (insight - what's the essence?)
+- Step 11: Report (synthesis - what did we learn?)
+
+By making this the default, we make interdependence the default.
+
+Every agent run = evidence that humans are essential.
+
+
+**THE FRANCIS BACON INSIGHT:**
+
+"Inventions changed history more than empires"
+
+Why? Because good inventions have DEFAULTS that shape behavior.
+
+Defaults become norms.
+Norms become culture.
+Culture becomes civilization.
+
+Examples:
+- QWERTY keyboard → default typing pattern for 100 years
+- TCP/IP → default networking protocol
+- REST → default API pattern
+- HTTP 200 → default success code
+- UTF-8 → default text encoding
+
+**11-step protocol → default AI coordination methodology**
+
+By encoding it as the default, we're not just adding a feature.
+**We're shaping how humans and AI work together.**
+
+
+2. RUN PROJECT EXACTLY AS USER WOULD
+-------------------------------------
+
+Currently (must specify task):
+```bash
+$ aio multi c:2 "find bugs"
+# Works, but user must remember to add protocol or task
+
+$ aio multi c:2
+# Error: No prompt provided
+```
+
+Desired (protocol as default):
+```bash
+$ aio multi c:2
+# DEFAULT: Execute 11-step optimization protocol
+# Agents automatically follow the methodology
+
+$ aio multi c:2 "find bugs"
+# Override: Execute specific task
+```
+
+
+3. FIND WHAT YOU AS USER SCREAM HARDEST TO SOLVE
+-------------------------------------------------
+
+User screams:
+1. "I forgot to specify the protocol again!"
+2. "Why do I have to type the same thing every time?"
+3. "New team members don't know about the protocol!"
+4. "Some agents get protocol, some don't - inconsistent!"
+5. "The methodology should be automatic, not optional!"
+6. "Quality should be structural, not a checkbox!"
+
+
+4. READ HOW MOST SIMILAR APPS SOLVE SIMILAR PROBLEMS
+----------------------------------------------------
+
+How tools handle methodology defaults:
+
+**Git:**
+```bash
+git commit          # Default: Opens editor for message
+git commit -m "msg" # Override: Use this message
+```
+
+**Docker:**
+```bash
+docker run image    # Default: Isolation, namespaces, cgroups
+docker run --privileged # Override: Remove isolation
+```
+
+**Make:**
+```bash
+make                # Default: Build 'all' target
+make specific       # Override: Build specific target
+```
+
+**Pytest:**
+```bash
+pytest              # Default: Discover and run all tests
+pytest test_file.py # Override: Run specific test
+```
+
+**Pattern:** Sensible defaults, with override options
+
+For aios:
+- Default: 11-step protocol (the methodology)
+- Override: Specific task (when you know exactly what to do)
+
+
+5. SIMPLIFY USER PROBLEM UNTIL FIX ALMOST TRIVIAL
+--------------------------------------------------
+
+Problem: 11-step protocol should be default
+
+Solution:
+```python
+if not prompt_parts:
+    prompt = CODEX_PROMPT  # Use 11-step protocol
+    using_default_protocol = True
+else:
+    prompt = ' '.join(prompt_parts)
+    using_default_protocol = False
+```
+
+Trivial! Just check if prompt is empty, use stored protocol.
+
+
+6. REWRITE, USING MORE OR EQUAL DIRECT LIBRARY CALLS
+-----------------------------------------------------
+
+Implementation uses:
+- `not prompt_parts` - built-in truthiness check
+- CODEX_PROMPT - already loaded from database
+- String join() - library method
+- Boolean flag - built-in type
+
+No custom logic. Clean conditional. Library-based.
+
+
+7. RUN AND DEBUG
+----------------
+
+Tested help output:
+```bash
+$ aio
+
+MULTI-AGENT (run N agents in parallel worktrees):
+  aio multi c:3                 Launch 3 codex (DEFAULT: 11-step protocol)
+  aio multi c:3 "task"          Launch 3 codex with custom task
+  aio multi c:2 l:1             Mixed agents (DEFAULT: 11-step protocol)
+  aio multi c:3 --seq           Sequential (DEFAULT: 11-step protocol)
+  aio multi 0 c:2 "task"        Or use project #: launch in project 0
+PORTFOLIO (run agents across ALL saved projects):
+  aio all c:2                   2 codex per project (DEFAULT: 11-step protocol - overnight!)
+  aio all c:2 "task"            2 codex per project with custom task
+  aio all c:1 l:1               Mixed agents across all (DEFAULT protocol)
+  aio all c:2 --seq             Sequential across projects (DEFAULT protocol)
+```
+
+✓ "DEFAULT: 11-step protocol" shown prominently
+✓ Default examples shown FIRST
+✓ Custom task examples shown as overrides
+✓ Clear pattern established
+
+
+8. DELETE ANY PART OR PROCESS IN THE MADE FIX YOU CAN
+------------------------------------------------------
+
+Reviewed implementation:
+- Empty prompt check: NECESSARY (detect default case)
+- CODEX_PROMPT usage: NECESSARY (has the 11 steps)
+- using_default_protocol flag: NECESSARY (for output message)
+- Conditional output: NECESSARY (show user what's happening)
+
+Nothing to delete. All parts serve clear purpose.
+
+
+9. SIMPLIFY AND OPTIMIZE AND INTEGRATE PARTS IN FIXED SECTION
+--------------------------------------------------------------
+
+Optimizations applied:
+- Reused existing CODEX_PROMPT (no duplication)
+- Single boolean flag tracks state (clean)
+- Conditional output message (clear feedback)
+- Same pattern for both multi and all (consistent)
+
+Code is minimal and integrated cleanly.
+
+
+10. RUN AND DEBUG - VERIFY CLARITY
+-----------------------------------
+
+When user runs with default:
+```bash
+$ aio multi c:3
+
+🚀 Starting 3 agent instances in parallel (all at once)...
+   Project: /home/seanpatten/projects/aios
+   Agents: c×3
+   Task: 🔬 DEFAULT - Execute 11-step optimization protocol
+         (Ultrathink → Run → Find pain → Research → Simplify →
+          Rewrite → Debug → Delete → Optimize → Debug → Report)
+
+[... agents launch ...]
+```
+
+✓ 🔬 icon signals methodology
+✓ "DEFAULT" makes it explicit
+✓ Shows all 11 steps in summary form
+✓ Clear what's happening
+
+When user runs with custom task:
+```bash
+$ aio multi c:3 "find security bugs"
+
+🚀 Starting 3 agent instances in parallel (all at once)...
+   Project: /home/seanpatten/projects/aios
+   Agents: c×3
+   Prompt: find security bugs
+
+[... agents launch ...]
+```
+
+✓ Shows custom prompt
+✓ No "DEFAULT" message
+✓ Clear override happened
+
+
+11. WRITE A CHANGE REPORT
+--------------------------
+(This document)
+
+
+THE PROFOUND IMPLICATIONS
+=========================
+
+**INSTITUTIONAL KNOWLEDGE ENCODED IN TOOL**
+
+Without default:
+- Protocol lives in documentation
+- Must be taught to each person
+- Easy to forget
+- Degrades over time
+- Optional
+
+With default:
+- Protocol lives in the tool
+- Self-teaching (tool shows what it does)
+- Impossible to forget
+- Permanent
+- Standard
+
+**CONSISTENCY BY DEFAULT**
+
+Every agent run follows same methodology:
+1. Ultrathink (vision)
+2. Run as user (reality)
+3. Find pain (empathy)
+4. Research (wisdom)
+5. Simplify (insight)
+6. Rewrite (implementation)
+7. Debug (validation)
+8. Delete (minimalism)
+9. Optimize (refinement)
+10. Debug (verification)
+11. Report (documentation)
+
+This creates:
+- Predictable results
+- Comparable outcomes
+- Institutional memory
+- Quality standards
+
+
+**DEFAULTS SHAPE CULTURE**
+
+Docker made isolation default → security culture
+Git made staging default → careful commit culture
+Make made incremental default → efficiency culture
+
+**aios makes 11-step protocol default → interdependence culture**
+
+Every default run reinforces:
+- Humans provide vision (Ultrathink)
+- Humans identify pain (user empathy)
+- Humans synthesize (Report)
+- AI provides execution (Run, Rewrite, Debug)
+
+**Interdependence is not optional. It's structural.**
+
+
+CONSOLE OUTPUT EXAMPLES
+========================
+
+Example 1: Default Protocol (Overnight Portfolio Run)
+------------------------------------------------------
+$ aio all c:2
+
+🌍 Portfolio Operation: 14 agents across 7 projects in parallel (all at once)
+   Agents per project: c×2
+   Task: 🔬 DEFAULT - Execute 11-step optimization protocol
+         (Ultrathink → Run → Find pain → Research → Simplify → Rewrite → Debug → Delete → Optimize → Debug → Report)
+
+================================================================================
+📁 Project 0: aios
+   Path: /home/seanpatten/projects/aios
+================================================================================
+⬇️  Fetching latest from GitHub... ✓
+🌱 Creating worktree from origin/main... ✓
+✓ Created codex instance 1: codex-040115-0
+✓ Created codex instance 2: codex-040116-1
+
+[... continues for all 7 projects ...]
+
+✓ Portfolio operation complete! All agents launched in parallel.
+💤 Good time to sleep/step away! Agents working overnight.
+
+Result:
+- 14 agents, all executing same 11-step protocol
+- Each will: Ultrathink → Run → Find pain → ... → Report
+- Morning: 7 change reports, one per project
+- Human: Synthesize cross-project patterns, make decisions
+
+
+Example 2: Custom Task (Specific Bug Fix)
+------------------------------------------
+$ aio multi c:3 "fix the authentication timeout bug"
+
+🚀 Starting 3 agent instances in parallel (all at once)...
+   Project: /home/seanpatten/projects/aios
+   Agents: c×3
+   Prompt: fix the authentication timeout bug
+
+[... agents work on specific task ...]
+
+Result:
+- 3 agents, all working on same specific task
+- Override used when you know exactly what to do
+- Still valuable for parallel exploration of solutions
+
+
+Example 3: Mixed Agents with Default
+-------------------------------------
+$ aio multi c:1 l:1 g:1
+
+🚀 Starting 3 agent instances in parallel (all at once)...
+   Project: /home/seanpatten/projects/aios
+   Agents: c×1, l×1, g×1
+   Task: 🔬 DEFAULT - Execute 11-step optimization protocol
+         (Ultrathink → Run → Find pain → Research → Simplify → Rewrite → Debug → Delete → Optimize → Debug → Report)
+
+Result:
+- 3 different AI agents (Codex, Claude, Gemini)
+- All following same 11-step methodology
+- Can compare how different AIs approach same protocol
+
+
+CODE CHANGES
+============
+
+File: aio.py
+
+Change 1: Default protocol in 'multi' command (lines 1520-1526)
+----------------------------------------------------------------
+OLD:
+---
+if not prompt_parts:
+    print("✗ No prompt provided")
+    sys.exit(1)
+
+prompt = ' '.join(prompt_parts)
+
+NEW:
+---
+# If no prompt provided, use 11-step universal protocol as default
+if not prompt_parts:
+    prompt = CODEX_PROMPT
+    using_default_protocol = True
+else:
+    prompt = ' '.join(prompt_parts)
+    using_default_protocol = False
+
+
+Change 2: Show default protocol in 'multi' output (lines 1534-1539)
+--------------------------------------------------------------------
+OLD:
+---
+print(f"   Prompt: {prompt}")
+
+NEW:
+---
+if using_default_protocol:
+    print(f"   Task: 🔬 DEFAULT - Execute 11-step optimization protocol")
+    print(f"         (Ultrathink → Run → Find pain → Research → Simplify → Rewrite → Debug → Delete → Optimize → Debug → Report)")
+else:
+    print(f"   Prompt: {prompt}")
+
+
+Change 3: Default protocol in 'all' command (lines 1646-1652)
+--------------------------------------------------------------
+(Same pattern as multi command)
+
+
+Change 4: Show default protocol in 'all' output (lines 1662-1666)
+------------------------------------------------------------------
+(Same pattern as multi command)
+
+
+Change 5: Update help text for MULTI-AGENT (lines 1204-1209)
+-------------------------------------------------------------
+OLD:
+---
+MULTI-AGENT (run N agents in parallel worktrees):
+  aio multi c:3 "task"          Launch 3 codex in current dir (fast!)
+  aio multi c:2 l:1 "task"      Launch 2 codex + 1 claude (parallel)
+  aio multi c:3 --seq "task"    Launch 3 codex one by one (safe!)
+  aio multi 0 c:2 "task"        Or use project #: launch in project 0
+
+NEW:
+---
+MULTI-AGENT (run N agents in parallel worktrees):
+  aio multi c:3                 Launch 3 codex (DEFAULT: 11-step protocol)
+  aio multi c:3 "task"          Launch 3 codex with custom task
+  aio multi c:2 l:1             Mixed agents (DEFAULT: 11-step protocol)
+  aio multi c:3 --seq           Sequential (DEFAULT: 11-step protocol)
+  aio multi 0 c:2 "task"        Or use project #: launch in project 0
+
+
+Change 6: Update help text for PORTFOLIO (lines 1210-1214)
+-----------------------------------------------------------
+OLD:
+---
+PORTFOLIO (run agents across ALL saved projects):
+  aio all c:2 "task"            Launch 2 codex per project (overnight!)
+  aio all c:1 l:1 "task"        Mixed agents across all projects
+  aio all c:2 --seq "task"      Process projects one by one (safe!)
+
+NEW:
+---
+PORTFOLIO (run agents across ALL saved projects):
+  aio all c:2                   2 codex per project (DEFAULT: 11-step protocol - overnight!)
+  aio all c:2 "task"            2 codex per project with custom task
+  aio all c:1 l:1               Mixed agents across all (DEFAULT protocol)
+  aio all c:2 --seq             Sequential across projects (DEFAULT protocol)
+
+
+Summary:
+- Default examples shown FIRST (principle of least surprise)
+- "DEFAULT: 11-step protocol" explicitly stated
+- Custom task shown as override
+- Clear pattern established
+
+
+FILES MODIFIED
+==============
+1. /home/seanpatten/projects/aios/aio.py
+   - Lines 1204-1214: Updated help text (default shown first)
+   - Lines 1520-1526: Default protocol for multi command
+   - Lines 1534-1539: Default protocol output for multi
+   - Lines 1646-1652: Default protocol for all command
+   - Lines 1662-1666: Default protocol output for all
+
+
+HOW TO USE
+==========
+
+Default Protocol (Recommended):
+--------------------------------
+# Multi-agent on current project:
+aio multi c:3                    # 3 codex, 11-step protocol
+
+# Portfolio-wide overnight:
+aio all c:2                      # 2 per project, 11-step protocol
+
+# Sequential validation:
+aio multi c:2 --seq              # 11-step protocol, one by one
+
+# Mixed agents:
+aio multi c:1 l:1 g:1            # Compare 3 AIs, same protocol
+
+Benefits:
+- Consistent methodology
+- Quality is structural
+- Don't have to remember protocol
+- Tool teaches the approach
+- Interdependence by default
+
+
+Custom Task (When You Know Exactly What):
+------------------------------------------
+# Specific bug fix:
+aio multi c:2 "fix auth timeout bug"
+
+# Specific feature:
+aio multi c:3 "add dark mode toggle"
+
+# Specific optimization:
+aio all c:1 "optimize SQL queries"
+
+Use when:
+- You know exact task
+- Don't need full methodology
+- Quick focused work
+- Already have context
+
+
+The Pattern:
+------------
+```
+No prompt  = DEFAULT protocol (methodology)
+With prompt = Custom task (specific work)
+```
+
+This matches user expectations:
+- Default = best practice
+- Override = when you know better
+
+
+VERIFICATION CHECKLIST
+======================
+✓ Empty prompt detection works
+✓ CODEX_PROMPT loaded from database
+✓ Default protocol used when no prompt
+✓ Custom prompt used when provided
+✓ using_default_protocol flag tracks state
+✓ Output shows "DEFAULT - 11-step protocol"
+✓ Output shows all 11 steps in summary
+✓ 🔬 icon signals methodology
+✓ Help text shows default examples FIRST
+✓ Help text explicitly says "DEFAULT: 11-step protocol"
+✓ Pattern consistent across multi and all
+✓ All 11 optimization steps executed
+✓ Code uses library calls
+✓ Minimal lines added
+✓ Clear user feedback
+
+
+THE STRATEGIC VALUE
+===================
+
+**METHODOLOGY AS INFRASTRUCTURE**
+
+This isn't just a default value.
+This is philosophy encoded in infrastructure.
+
+Every time someone types `aio multi c:2`:
+1. Tool responds: "DEFAULT: 11-step protocol"
+2. User sees: This is the standard way
+3. Agents execute: Ultrathink → Run → ... → Report
+4. Results require: Human synthesis and judgment
+5. Interdependence proven: Again and again
+
+**After 100 runs, user learns:**
+"This is how we work with AI agents."
+
+**After 1000 runs, team learns:**
+"This is our standard operating procedure."
+
+**After 10,000 runs, industry learns:**
+"This is how human-AI collaboration works."
+
+**Defaults shape culture.**
+
+
+**SELF-TEACHING INFRASTRUCTURE**
+
+New team member joins:
+```
+Teammate: "How do I use this?"
+You: "Just type: aio multi c:2"
+Tool: "🔬 DEFAULT - Execute 11-step optimization protocol"
+      "(Ultrathink → Run → Find pain → ...)"
+Teammate: "Oh, I see the pattern!"
+```
+
+The tool teaches itself.
+No documentation needed.
+Methodology is visible.
+
+
+**QUALITY AS DEFAULT, NOT CHECKBOX**
+
+Without default:
+- Quality = remember to add protocol
+- Quality = optional checkbox
+- Quality = varies by person
+- Quality = degrades over time
+
+With default:
+- Quality = automatic
+- Quality = structural
+- Quality = consistent
+- Quality = permanent
+
+**Quality is not a feature. It's the foundation.**
+
+
+WHY THIS PREVENTS OBSOLESCENCE
+===============================
+
+**The 11 steps structurally require human judgment:**
+
+Step 1: Ultrathink how project saves the world
+→ Requires: Vision, understanding of impact
+
+Step 3: Find what you as user scream hardest to solve
+→ Requires: Empathy, user understanding
+
+Step 4: Read how most similar apps solve this
+→ Requires: Context, wisdom, knowing what's "similar"
+
+Step 5: Simplify user problem until fix almost trivial
+→ Requires: Insight, ability to see essence
+
+Step 11: Write change report
+→ Requires: Synthesis, communication
+
+**AI can't do these alone.**
+
+By making this the default:
+- Every agent run requires human involvement
+- Results need human evaluation
+- Humans learn from patterns
+- Skills strengthen (not atrophy)
+
+**Economic value requires both:**
+- AI: Exploration, execution
+- Human: Vision, judgment, synthesis
+
+**This is interdependence by default.**
+
+
+COMPARISON: BEFORE vs AFTER
+============================
+
+BEFORE (protocol optional):
+---------------------------
+Developer 1: aio multi c:2 "find bugs"
+Developer 2: aio multi c:2 "look for issues"
+Developer 3: aio multi c:2 "check code"
+
+Results:
+- 3 different approaches
+- Inconsistent quality
+- Hard to compare
+- No standard methodology
+
+AFTER (protocol default):
+-------------------------
+Developer 1: aio multi c:2
+Developer 2: aio multi c:2
+Developer 3: aio multi c:2
+
+Results:
+- Same 11-step methodology
+- Consistent quality
+- Comparable outcomes
+- Standard operating procedure
+- All results have:
+  → Ultrathink (vision)
+  → Pain analysis (empathy)
+  → Research (wisdom)
+  → Change report (documentation)
+
+
+USE CASES
+=========
+
+1. Overnight Portfolio Optimization (DEFAULT)
+   ```bash
+   aio all c:2
+   ```
+   → 14 agents across 7 projects
+   → All execute 11-step protocol
+   → Wake up to 7 change reports
+   → Synthesize cross-project patterns
+
+2. Quick Exploration (DEFAULT)
+   ```bash
+   aio multi c:3
+   ```
+   → 3 agents explore codebase
+   → Follow 11-step protocol
+   → Find pain points
+   → Generate change reports
+
+3. Specific Bug Fix (OVERRIDE)
+   ```bash
+   aio multi c:2 "fix login timeout"
+   ```
+   → 2 agents focus on specific issue
+   → Skip full protocol
+   → Quick targeted work
+
+4. A/B/C Testing with Default (DEFAULT)
+   ```bash
+   aio multi c:1 l:1 g:1
+   ```
+   → 3 different AIs
+   → Same 11-step protocol
+   → Compare how each approaches methodology
+
+5. CI/CD Validation (OVERRIDE)
+   ```bash
+   aio all c:1 --seq "run full test suite"
+   ```
+   → Specific validation task
+   → Override protocol
+   → Sequential safety
+
+
+CONCLUSION
+==========
+
+Successfully encoded 11-step protocol as default for multi and all commands.
+
+The methodology is now:
+✓ Default behavior (not optional)
+✓ Clearly visible (🔬 DEFAULT message)
+✓ Self-teaching (tool shows what it does)
+✓ Structural quality (not checkbox)
+✓ Interdependence by design
+
+All 11 optimization steps executed:
+1. Ultrathink - philosophy as infrastructure ✓
+2. Run as user - forgot protocol, inconsistent ✓
+3. Find pain - optional quality, no standard ✓
+4. Research - defaults shape culture ✓
+5. Simplify - check if empty, use stored protocol ✓
+6. Rewrite - library calls, clean boolean ✓
+7. Run & debug - verified help and output ✓
+8. Delete - nothing unnecessary ✓
+9. Optimize - minimal, integrated ✓
+10. Verify - clarity confirmed ✓
+11. Write report - (this document) ✓
+
+**This is not just a feature.**
+**This is methodology encoded as infrastructure.**
+
+When someone types: `aio multi c:2`
+They get: 11-step protocol
+They see: This is how we work
+They learn: Interdependence is default
+
+**Defaults become norms.**
+**Norms become culture.**
+**Culture becomes the future.**
+
+**The 11-step protocol is now the default way humans and AI work together in aios.**
+
+**Francis Bacon would approve.**
+
+Ready for use! Every agent run now follows the proven methodology by default.
