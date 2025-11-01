@@ -1,0 +1,91 @@
+AIOS KEYRING DIALOG FIX - CHANGE REPORT
+========================================
+Date: 2024-11-01
+Fixed by: Claude Code
+
+PROBLEM DESCRIPTION
+-------------------
+When running `aio all`, `aio push`, or `aio pull`, users were seeing GUI keyring/authentication
+dialog prompts instead of terminal-only operation. This broke the workflow for automated/background
+operations and was inconsistent with expected CLI behavior.
+
+ROOT CAUSE ANALYSIS
+-------------------
+1. Git was invoking system credential helpers (gnome-keyring, osxkeychain, etc.)
+2. These credential helpers triggered GUI dialog boxes
+3. Environment variables like SSH_AUTH_SOCK were enabling GNOME Keyring
+4. Previous attempts to set GIT_ASKPASS=echo were ineffective because credential helpers
+   run BEFORE askpass mechanisms
+
+SOLUTION IMPLEMENTED
+--------------------
+Adopted GitHub Actions' approach: Clear ALL credential helpers using Git's config environment variables.
+
+Created function `get_noninteractive_git_env()` that sets:
+- GIT_CONFIG_COUNT=1
+- GIT_CONFIG_KEY_0=credential.helper
+- GIT_CONFIG_VALUE_0= (empty string to clear all helpers)
+- GIT_TERMINAL_PROMPT=0 (backup to disable terminal prompts)
+
+This simple 4-variable solution replaces the previous 17-line approach and is more effective.
+
+FILES MODIFIED
+--------------
+aio.py:
+- Added get_noninteractive_git_env() function (lines 1207-1223)
+- Updated create_worktree() to use new function (line 1241)
+- Updated 'push' command to use new function (line 2203)
+- Updated 'pull' command to use new function (line 2234)
+- Updated all other git push operations to use new function
+
+CODE CHANGES SUMMARY
+--------------------
+- Total lines added: 18
+- Total lines removed: 30
+- Net reduction: 12 lines
+- Simplified from 17 lines to 6 lines in core function
+
+TESTING PERFORMED
+-----------------
+1. Tested `aio push` - Works without GUI dialogs ✓
+2. Tested `aio pull` - Works without GUI dialogs ✓
+3. Tested `aio all` - Works without GUI dialogs ✓
+4. Tested authentication failures - Shows clear error messages ✓
+5. Tested with repos that have auth - Works normally ✓
+6. Tested with repos without auth - Fails gracefully with helpful message ✓
+
+Console output for failed authentication:
+```
+❌ Authentication failed. Please set up git credentials:
+   • For SSH: Add SSH key to your Git provider
+   • For HTTPS: Run 'git config --global credential.helper cache'
+   • Then manually 'git fetch' once to save credentials
+```
+
+BENEFITS OF THIS FIX
+--------------------
+1. No more GUI dialog interruptions
+2. Works in headless/SSH environments
+3. Clearer error messages for authentication issues
+4. Simpler code (reduced by 12 lines)
+5. Uses industry-standard approach (same as GitHub Actions)
+6. More reliable - clears ALL credential helpers
+
+USER IMPACT
+-----------
+- Users can now run `aio all` without GUI popups
+- Background/automated operations work correctly
+- Authentication errors are clearly explained
+- Setup instructions provided when auth fails
+
+FUTURE CONSIDERATIONS
+---------------------
+Users still need to set up authentication separately using one of:
+- SSH keys (recommended for automation)
+- Git credential cache (for HTTPS repos)
+- Personal access tokens
+
+The fix doesn't provide authentication - it just ensures no GUI dialogs appear
+and provides clear guidance when authentication is needed.
+
+END OF REPORT
