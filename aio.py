@@ -288,7 +288,15 @@ After you make edits, run manually exactly as the user would, and check the outp
 CLAUDE_PROMPT = config.get('claude_prompt', DEFAULT_PROMPT)
 CODEX_PROMPT = config.get('codex_prompt', DEFAULT_PROMPT)
 GEMINI_PROMPT = config.get('gemini_prompt', DEFAULT_PROMPT)
-WORK_DIR = os.getcwd()
+
+# Get working directory, fallback to home if current dir is invalid
+try:
+    WORK_DIR = os.getcwd()
+except FileNotFoundError:
+    WORK_DIR = os.path.expanduser("~")
+    os.chdir(WORK_DIR)
+    print(f"⚠ Current directory was invalid, changed to: {WORK_DIR}")
+
 WORKTREES_DIR = config.get('worktrees_dir', os.path.expanduser("~/projects/aiosWorktrees"))
 
 PROJECTS = load_projects()
@@ -1062,6 +1070,25 @@ def remove_worktree(worktree_path, push=False, commit_msg=None, skip_confirm=Fal
         print(f"✗ Could not determine project for worktree: {worktree_name}")
         return False
 
+    # Check if we're currently inside the worktree being deleted
+    try:
+        current_dir = os.getcwd()
+        # Normalize paths for comparison
+        worktree_path_abs = os.path.abspath(worktree_path)
+        current_dir_abs = os.path.abspath(current_dir)
+
+        # Check if current directory is inside the worktree
+        if current_dir_abs == worktree_path_abs or current_dir_abs.startswith(worktree_path_abs + os.sep):
+            # Change to a safe directory before deletion
+            safe_dir = project_path if os.path.exists(project_path) else os.path.expanduser("~")
+            print(f"📂 Changing directory to: {safe_dir}")
+            os.chdir(safe_dir)
+    except FileNotFoundError:
+        # Current directory already doesn't exist, change to home
+        safe_dir = os.path.expanduser("~")
+        os.chdir(safe_dir)
+        print(f"📂 Changed to home directory (current dir was invalid)")
+
     # Confirmation prompt
     print(f"\nWorktree: {worktree_name}")
     print(f"Path: {worktree_path}")
@@ -1340,57 +1367,53 @@ if arg and arg.startswith('w') and arg != 'watch':
         # List worktrees
         list_worktrees()
         sys.exit(0)
-    elif arg.startswith('w++'):
-        # Remove and push
-        pattern = work_dir_arg
-        commit_msg = None
-        skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
-
-        # Parse remaining args for commit message
-        for i in range(3, len(sys.argv)):
-            if sys.argv[i] not in ['--yes', '-y']:
-                commit_msg = sys.argv[i]
-                break
-
-        if not pattern:
-            print("✗ Usage: ./aio.py w++ <worktree#/name> [commit message] [--yes/-y]")
-            sys.exit(1)
-
-        worktree_path = find_worktree(pattern)
-        if worktree_path:
-            remove_worktree(worktree_path, push=True, commit_msg=commit_msg, skip_confirm=skip_confirm)
-        else:
-            print(f"✗ Worktree not found: {pattern}")
-        sys.exit(0)
-    elif arg.startswith('w+') and not arg.startswith('w++'):
-        # Remove only (w+ but not w++)
-        pattern = work_dir_arg
-        skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
-
-        if not pattern:
-            print("✗ Usage: ./aio.py w+ <worktree#/name> [--yes/-y]")
-            sys.exit(1)
-
-        worktree_path = find_worktree(pattern)
-        if worktree_path:
-            remove_worktree(worktree_path, push=False, skip_confirm=skip_confirm)
-        else:
-            print(f"✗ Worktree not found: {pattern}")
-        sys.exit(0)
     elif len(arg) > 1:
-        # Open worktree - pattern is after 'w'
-        pattern = arg[1:]
-        worktree_path = find_worktree(pattern)
+        # Check if it's a removal command (ends with - or --)
+        if arg.endswith('--'):
+            # Remove and push: w0--, w1--, etc.
+            pattern = arg[1:-2]  # Extract pattern between 'w' and '--'
+            commit_msg = work_dir_arg  # First arg after command is commit message
+            skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
 
-        if worktree_path:
-            if new_window:
-                launch_terminal_in_dir(worktree_path)
+            if not pattern:
+                print("✗ Usage: ./aio.py w<#/name>-- [commit message] [--yes/-y]")
+                sys.exit(1)
+
+            worktree_path = find_worktree(pattern)
+            if worktree_path:
+                remove_worktree(worktree_path, push=True, commit_msg=commit_msg, skip_confirm=skip_confirm)
             else:
-                os.chdir(worktree_path)
-                os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
+                print(f"✗ Worktree not found: {pattern}")
+            sys.exit(0)
+        elif arg.endswith('-'):
+            # Remove only: w0-, w1-, etc.
+            pattern = arg[1:-1]  # Extract pattern between 'w' and '-'
+            skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
+
+            if not pattern:
+                print("✗ Usage: ./aio.py w<#/name>- [--yes/-y]")
+                sys.exit(1)
+
+            worktree_path = find_worktree(pattern)
+            if worktree_path:
+                remove_worktree(worktree_path, push=False, skip_confirm=skip_confirm)
+            else:
+                print(f"✗ Worktree not found: {pattern}")
+            sys.exit(0)
         else:
-            print(f"✗ Worktree not found: {pattern}")
-        sys.exit(0)
+            # Open worktree: w0, w1, etc.
+            pattern = arg[1:]
+            worktree_path = find_worktree(pattern)
+
+            if worktree_path:
+                if new_window:
+                    launch_terminal_in_dir(worktree_path)
+                else:
+                    os.chdir(worktree_path)
+                    os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
+            else:
+                print(f"✗ Worktree not found: {pattern}")
+            sys.exit(0)
 
 # Handle launching terminal in directory without session
 if new_window and not arg:
@@ -1429,8 +1452,8 @@ WORKTREES:
   aio <key>++ <#>     New worktree in project #
   aio w               List all worktrees
   aio w<#>            Open worktree #
-  aio w+ <#>          Remove worktree (no push)
-  aio w++ <#>         Remove worktree and push to main
+  aio w<#>-           Remove worktree (no push)
+  aio w<#>--          Remove worktree and push to main
 MANAGEMENT:
   aio jobs            Show all active work with status
   aio jobs --running  Show only running jobs (filter out review)
@@ -1481,11 +1504,11 @@ WORKTREE MANAGEMENT
   aio w                  List all worktrees
   aio w<#/name>          Open worktree by index or name
   aio w<#> -w            Open worktree in new window
-  aio w+ <#/name>        Remove worktree (no git push)
-  aio w+ <#> -y          Remove without confirmation
-  aio w++ <#/name>       Remove, merge to main, and push
-  aio w++ <#> --yes      Remove and push (skip confirmation)
-  aio w++ <#> "message"  Remove and push with custom commit message
+  aio w<#/name>-         Remove worktree (no git push)
+  aio w<#>- -y           Remove without confirmation
+  aio w<#/name>--        Remove, merge to main, and push
+  aio w<#>-- --yes       Remove and push (skip confirmation)
+  aio w<#>-- "message"   Remove and push with custom commit message
 ═══════════════════════════════════════════════════════════════════════════════
 PROJECT MANAGEMENT
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1554,7 +1577,7 @@ Management:
   aio jobs                 View all active work
   aio w                    List worktrees
   aio w0 -w                Open worktree 0 in new window
-  aio w++ 0 "Done"         Remove worktree 0 and push to main
+  aio w0-- "Done"          Remove worktree 0 and push to main
 Automation:
   aio send codex "fix bug" Send prompt to running session
   aio multi 0 c:3 "task"   Run 3 codex in parallel on task
