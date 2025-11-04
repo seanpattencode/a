@@ -2263,9 +2263,9 @@ elif arg == 'push':
 
         print(f"✓ Switched to {main_branch}")
 
-        # Merge worktree branch into main
+        # Merge worktree branch into main (auto-resolve conflicts using worktree version)
         print(f"→ Merging {worktree_branch} into {main_branch}...")
-        result = sp.run(['git', '-C', project_path, 'merge', worktree_branch, '--no-edit'],
+        result = sp.run(['git', '-C', project_path, 'merge', worktree_branch, '--no-edit', '-X', 'theirs'],
                         capture_output=True, text=True)
 
         if result.returncode != 0:
@@ -2273,7 +2273,7 @@ elif arg == 'push':
             print(f"✗ Merge failed: {error_msg}")
             sys.exit(1)
 
-        print(f"✓ Merged {worktree_branch} into {main_branch}")
+        print(f"✓ Merged {worktree_branch} into {main_branch} (conflicts auto-resolved)")
 
         # Push to main
         env = get_noninteractive_git_env()
@@ -2306,24 +2306,48 @@ elif arg == 'push':
         if not skip_confirm:
             response = input(f"\nDelete worktree '{worktree_name}'? (y/n): ").strip().lower()
             if response in ['y', 'yes']:
-                # Remove worktree without pushing (we already pushed)
+                print(f"\n→ Removing worktree: {worktree_name}")
+
+                # Check if we're currently in the worktree being deleted
+                try:
+                    current_dir = os.getcwd()
+                    worktree_path_abs = os.path.abspath(cwd)
+                    current_dir_abs = os.path.abspath(current_dir)
+                    in_worktree = (current_dir_abs == worktree_path_abs or
+                                   current_dir_abs.startswith(worktree_path_abs + os.sep))
+                except (FileNotFoundError, OSError):
+                    in_worktree = True  # Assume we're in it if we can't determine
+
+                # Remove worktree
                 result = sp.run(['git', '-C', project_path, 'worktree', 'remove', '--force', cwd],
                                 capture_output=True, text=True)
                 if result.returncode == 0:
                     print(f"✓ Removed worktree")
-                    # Delete branch
-                    branch_name = f"wt-{worktree_name}"
-                    result = sp.run(['git', '-C', project_path, 'branch', '-D', branch_name],
-                                    capture_output=True, text=True)
-                    if result.returncode == 0:
-                        print(f"✓ Deleted branch: {branch_name}")
-                    # Remove directory if still exists
-                    if os.path.exists(cwd):
-                        import shutil
-                        shutil.rmtree(cwd)
-                        print(f"✓ Deleted directory")
                 else:
                     print(f"✗ Failed to remove worktree: {result.stderr.strip()}")
+                    sys.exit(1)
+
+                # Delete branch
+                branch_name = f"wt-{worktree_name}"
+                result = sp.run(['git', '-C', project_path, 'branch', '-D', branch_name],
+                                capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"✓ Deleted branch: {branch_name}")
+
+                # Remove directory if still exists
+                if os.path.exists(cwd):
+                    import shutil
+                    shutil.rmtree(cwd)
+                    print(f"✓ Deleted directory")
+
+                # If we were in the worktree, spawn a new shell in the safe directory
+                if in_worktree:
+                    print(f"\n📂 Opening shell in: {project_path}")
+                    os.chdir(project_path)
+                    os.execvp(os.environ.get('SHELL', '/bin/bash'),
+                             [os.environ.get('SHELL', '/bin/bash')])
+                else:
+                    print(f"✓ Worktree deleted successfully")
 
     else:
         # Normal repo - regular push behavior
