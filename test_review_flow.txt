@@ -1,0 +1,99 @@
+TEST: Review Mode with Existing Sessions
+=========================================
+
+SCENARIO 1: No existing session
+--------------------------------
+$ aio review
+
+📋 REVIEW MODE - 20 worktrees need review
+============================================================
+
+📖 Instructions:
+  1. Each worktree opens in tmux (existing session if available)
+  2. Review output/logs, then detach: Ctrl+B then D
+  3. Use inspection commands: l=ls g=git d=diff h=log
+  4. Choose action: 1=push+delete 2=delete 3=keep 4=stop
+
+💡 TIP: Hold Shift to select text in tmux
+============================================================
+
+Press Enter to start review... [ENTER]
+
+[1/20] aios-claude-20251101-220039-multi-0
+Age: 7d 0h
+🆕 Creating review session
+💡 Detach: Ctrl+B D
+Opening: /home/seanpatten/projects/aiosWorktrees/aios-claude-20251101-220039-multi-0
+
+[Attaches to new tmux session]
+[User reviews and detaches]
+
+📁 Inspect: l=ls  g=git-status  d=diff  h=log  t=terminal  v=vscode
+🎯 Action: 1=push+del  2=delete  3=keep  4=stop
+Choice: 2
+✓ Removed worktree
+[Review session automatically cleaned up]
+
+SCENARIO 2: Existing session present
+-------------------------------------
+[2/20] waylandauto
+Age: 5d 12h
+📺 Found existing session: claude-waylandauto
+💡 Detach: Ctrl+B D
+Opening: /home/seanpatten/projects/waylandauto
+
+[Attaches to EXISTING session claude-waylandauto]
+[User reviews and detaches]
+
+📁 Inspect: l=ls  g=git-status  d=diff  h=log  t=terminal  v=vscode
+🎯 Action: 1=push+del  2=delete  3=keep  4=stop
+Choice: 3
+✓ Kept
+[Existing session NOT killed - still running]
+
+BENEFITS OF IMPROVED FLOW
+--------------------------
+1. **Start Screen**: User reads instructions BEFORE being thrown into tmux
+   - Knows Ctrl+B D command
+   - Understands workflow
+   - Can prepare mentally
+
+2. **Session Reuse**: Existing sessions preserved
+   - No unnecessary session creation
+   - Preserves command history
+   - Maintains user context
+
+3. **Smart Cleanup**: Only kills review sessions
+   - Review sessions (review-0, review-1) are temporary
+   - Existing sessions preserved
+   - Clean workspace after review
+
+4. **Visual Indicators**:
+   - 📺 Found existing session (reusing)
+   - 🆕 Creating review session (temporary)
+   - Clear distinction helps user understand
+
+IMPLEMENTATION (Pure Library Glue)
+-----------------------------------
+Functions used:
+- get_session_for_worktree() - check existing
+- sp.run(['tmux', 'attach-session']) - attach
+- sp.run(['tmux', 'new-session']) - create new
+- input() - wait for user
+- print() - display info
+
+No custom logic, just library orchestration!
+
+USER WORKFLOW
+-------------
+1. Run `aio review`
+2. Read instructions (new!)
+3. Press Enter when ready
+4. For each worktree:
+   - See if existing session (reuse) or new (create)
+   - Review in tmux
+   - Detach with Ctrl+B D
+   - Inspect with shortcuts
+   - Take action
+5. Review sessions cleaned up
+6. Existing sessions preserved

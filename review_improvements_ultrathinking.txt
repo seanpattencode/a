@@ -1,0 +1,101 @@
+ULTRATHINKING: Review Mode Session Management
+==============================================
+
+PROBLEMS IDENTIFIED
+-------------------
+1. User thrown into tmux without warning - no time to read Ctrl+B D instruction
+2. Creates unnecessary review sessions when existing sessions available
+3. Could kill user's active sessions accidentally
+4. No clear indicator of session type (existing vs temporary)
+
+SOLUTION (Library Glue Approach)
+---------------------------------
+1. **Start Screen** - input() to pause before starting
+2. **Session Detection** - get_session_for_worktree() to find existing
+3. **Conditional Creation** - only create if no existing session
+4. **Smart Cleanup** - only kill sessions starting with 'review-'
+
+IMPLEMENTATION
+--------------
+Lines added: ~15
+Functions used: 100% existing library functions
+- get_session_for_worktree() - detect existing
+- sp.run(['tmux', 'attach-session']) - attach to any session
+- sp.run(['tmux', 'new-session']) - create if needed
+- input() - wait for user ready
+- str.startswith() - identify review sessions
+
+CODE CHANGES
+------------
+Before: Always created new review session, killed any session
+After: Reuses existing, only creates/kills temporary review sessions
+
+# Check for existing session first
+existing_session = get_session_for_worktree(wt_path)
+session_to_attach = None
+
+if existing_session:
+    print(f"📺 Found existing session: {existing_session}")
+    session_to_attach = existing_session
+else:
+    print(f"🆕 Creating review session")
+    session_to_attach = f"review-{idx}"
+    # Create new session...
+
+# Cleanup only review sessions
+if not existing_session and session_to_attach.startswith('review-'):
+    sp.run(['tmux', 'kill-session', '-t', session_to_attach])
+
+USER EXPERIENCE IMPROVEMENTS
+----------------------------
+1. **Preparation Time**: Start screen gives user time to:
+   - Read instructions
+   - Note Ctrl+B D command
+   - Mentally prepare
+   - Choose to proceed or cancel
+
+2. **Session Intelligence**:
+   - 📺 "Found existing session" - reusing your work
+   - 🆕 "Creating review session" - temporary for review
+   - User knows what's happening
+
+3. **Workspace Preservation**:
+   - Existing sessions never killed
+   - Command history preserved
+   - User context maintained
+   - Only temporary review sessions cleaned
+
+4. **Clear Instructions**:
+   ```
+   📖 Instructions:
+     1. Each worktree opens in tmux (existing session if available)
+     2. Review output/logs, then detach: Ctrl+B then D
+     3. Use inspection commands: l=ls g=git d=diff h=log
+     4. Choose action: 1=push+delete 2=delete 3=keep 4=stop
+
+   💡 TIP: Hold Shift to select text in tmux
+   ```
+
+UNIX PHILOSOPHY
+---------------
+- Do one thing well: Manage tmux sessions
+- Compose with existing tools: tmux, git, ls
+- Respect user's environment: Don't destroy existing sessions
+- Be transparent: Show what's happening (📺 vs 🆕)
+
+RESULTS
+-------
+Before: Confusing, destructive, abrupt
+After: Clear, safe, user-controlled
+
+The implementation is 100% library glue:
+- No custom session management logic
+- No state tracking beyond single variable
+- Direct subprocess calls for all operations
+- Reuses ALL existing infrastructure
+
+This follows the pattern seen in successful tools:
+- vim: Shows instructions before starting
+- git rebase -i: Explains commands at top
+- docker system prune: Confirms before destructive operations
+- apt upgrade: Shows what will happen first

@@ -1046,6 +1046,22 @@ def get_project_for_worktree(worktree_path):
         if worktree_name.startswith(proj_name + '-'):
             return proj
 
+    # Fallback: Get project path from worktree's .git file
+    git_file = os.path.join(worktree_path, '.git')
+    if os.path.isfile(git_file):
+        try:
+            with open(git_file, 'r') as f:
+                content = f.read().strip()
+                if content.startswith('gitdir: '):
+                    # Extract path: gitdir: /path/to/repo/.git/worktrees/name
+                    gitdir = content.replace('gitdir: ', '')
+                    # Remove /.git/worktrees/name to get main repo path
+                    if '/.git/worktrees/' in gitdir:
+                        project_path = gitdir.split('/.git/worktrees/')[0]
+                        return project_path
+        except:
+            pass
+
     return None
 
 def remove_worktree(worktree_path, push=False, commit_msg=None, skip_confirm=False):
@@ -2086,8 +2102,17 @@ elif arg == 'review':
         print("✓ No worktrees need review!")
         sys.exit(0)
 
-    print(f"\n📋 Review Mode - {len(review_worktrees)} worktrees")
+    # Start screen
+    print(f"\n📋 REVIEW MODE - {len(review_worktrees)} worktrees need review")
     print("=" * 60)
+    print("\n📖 Instructions:")
+    print("  1. Opens agent session if available (codex/claude/gemini output)")
+    print("  2. Review agent's work, then detach: Ctrl+B then D")
+    print("  3. Inspect files: l=ls g=git d=diff h=log t=terminal v=vscode")
+    print("  4. Take action: 1=push+delete 2=delete 3=keep 4=stop")
+    print("\n💡 TIP: Hold Shift to select text in tmux")
+    print("=" * 60)
+    input("\nPress Enter to start review... ")
 
     for idx, (wt_name, wt_path) in enumerate(review_worktrees):
         print(f"\n[{idx+1}/{len(review_worktrees)}] {wt_name}")
@@ -2102,21 +2127,35 @@ elif arg == 'review':
             except:
                 pass
 
-        print(f"\n💡 Ctrl+B D = detach from tmux")
+        # Check for agent session first (session name = worktree name)
+        agent_session_exists = sp.run(['tmux', 'has-session', '-t', wt_name],
+                                      capture_output=True).returncode == 0
+        session_to_attach = None
+
+        if agent_session_exists:
+            # Agent session exists - attach to see agent's work
+            print(f"🤖 Found agent session: {wt_name}")
+            print(f"💡 Review agent output, then detach: Ctrl+B D")
+            session_to_attach = wt_name
+        else:
+            # No agent session - create review session for browsing
+            print(f"📁 No agent session, creating file browser")
+            print(f"💡 Browse files, then detach: Ctrl+B D")
+            session_to_attach = f"review-{idx}"
+
+            # Kill any old review session
+            sp.run(['tmux', 'kill-session', '-t', session_to_attach],
+                   stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+
+            # Create new session in worktree directory
+            if sp.run(['tmux', 'new-session', '-d', '-s', session_to_attach, '-c', wt_path],
+                      capture_output=True).returncode != 0:
+                print(f"✗ Failed to create session")
+                continue
+
+        # Attach to session (blocks until detach)
         print(f"Opening: {wt_path}\n")
-
-        # Create tmux session
-        session_name = f"review-{idx}"
-        sp.run(['tmux', 'kill-session', '-t', session_name],
-               stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-
-        if sp.run(['tmux', 'new-session', '-d', '-s', session_name, '-c', wt_path],
-                  capture_output=True).returncode != 0:
-            print(f"✗ Failed to create session")
-            continue
-
-        # Attach (blocks until detach)
-        sp.run(['tmux', 'attach-session', '-t', session_name])
+        sp.run(['tmux', 'attach-session', '-t', session_to_attach])
 
         # Review options
         print(f"\n📁 Inspect: l=ls  g=git-status  d=diff  h=log  t=terminal  v=vscode")
@@ -2158,23 +2197,34 @@ elif arg == 'review':
             # Action commands
             elif action == '1':
                 msg = input("Commit msg (Enter=default): ").strip() or f"Merge {wt_name}"
-                remove_worktree(wt_path, push=True, commit_msg=msg, skip_confirm=True)
-                break
+                if remove_worktree(wt_path, push=True, commit_msg=msg, skip_confirm=True):
+                    print("✓ Worktree removed and pushed")
+                    break
+                else:
+                    print("✗ Failed to remove worktree - check project association")
+                    continue
             elif action == '2':
-                remove_worktree(wt_path, push=False, skip_confirm=True)
-                break
+                if remove_worktree(wt_path, push=False, skip_confirm=True):
+                    print("✓ Worktree removed")
+                    break
+                else:
+                    print("✗ Failed to remove worktree - check project association")
+                    continue
             elif action in ['3', '']:
                 print("✓ Kept")
                 break
             elif action == '4':
                 print(f"\n✓ Reviewed {idx+1}/{len(review_worktrees)}")
-                sp.run(['tmux', 'kill-session', '-t', session_name],
-                      stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+                # Only kill review sessions, never agent sessions
+                if session_to_attach.startswith('review-'):
+                    sp.run(['tmux', 'kill-session', '-t', session_to_attach],
+                          stdout=sp.DEVNULL, stderr=sp.DEVNULL)
                 sys.exit(0)
 
-        # Cleanup session
-        sp.run(['tmux', 'kill-session', '-t', session_name],
-               stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        # Cleanup only review sessions, never agent sessions
+        if session_to_attach.startswith('review-'):
+            sp.run(['tmux', 'kill-session', '-t', session_to_attach],
+                   stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
     print(f"\n✅ Review complete!")
 elif arg == 'cleanup':
