@@ -1437,7 +1437,21 @@ if new_window and not arg:
     sys.exit(0)
 
 if not arg:
-    print(f"""aio - AI agent session manager
+    # Check if there are worktrees needing review
+    review_count = 0
+    if os.path.exists(WORKTREES_DIR):
+        worktrees = get_worktrees_sorted_by_datetime()
+        for wt_name in worktrees:
+            wt_path = os.path.join(WORKTREES_DIR, wt_name)
+            session = get_session_for_worktree(wt_path)
+            if not session or not is_pane_receiving_output(session):
+                review_count += 1
+
+    review_notice = ""
+    if review_count > 0:
+        review_notice = f"\n💡 You have {review_count} worktrees ready for review! Run: aio review\n"
+
+    print(f"""aio - AI agent session manager{review_notice}
 QUICK START:
   aio c               Start codex in current directory
   aio cp              Start codex with prompt (can edit before running)
@@ -1473,6 +1487,7 @@ WORKTREES:
 MANAGEMENT:
   aio jobs            Show all active work with status
   aio jobs --running  Show only running jobs (filter out review)
+  aio review          Review & clean up finished worktrees (NEW!)
   aio cleanup         Delete all worktrees (with confirmation)
   aio cleanup --yes   Delete all worktrees (skip confirmation)
   aio ls              List all tmux sessions
@@ -1539,6 +1554,11 @@ MONITORING & AUTOMATION
   aio jobs               Show all active work with status
   aio jobs --running     Show only running jobs (filter out review)
   aio jobs -r            Same as --running (short form)
+  aio review             Review & clean up finished worktrees 🆕
+                        - Opens each worktree in tmux (Ctrl+B D to detach)
+                        - Quick inspect: l=ls g=git d=diff h=log
+                        - Actions: 1=push+delete 2=delete 3=keep 4=stop
+                        - Terminal-first workflow (no GUI needed)
   aio cleanup            Delete all worktrees (with confirmation)
   aio cleanup --yes      Delete all worktrees (skip confirmation)
   aio ls                 List all tmux sessions
@@ -1591,6 +1611,7 @@ Worktrees:
   aio l++ -w               Claude in new worktree in new window
 Management:
   aio jobs                 View all active work
+  aio review               Review finished worktrees one-by-one
   aio w                    List worktrees
   aio w0 -w                Open worktree 0 in new window
   aio w0-- "Done"          Remove worktree 0 and push to main
@@ -2039,6 +2060,123 @@ elif arg == 'jobs':
     # Check for --running flag
     running_only = '--running' in sys.argv or '-r' in sys.argv
     list_jobs(running_only=running_only)
+elif arg == 'review':
+    # Review mode for worktrees
+    import time
+    import re
+    from datetime import datetime
+
+    # Get worktrees needing review
+    if not os.path.exists(WORKTREES_DIR):
+        print("No worktrees directory found")
+        sys.exit(0)
+
+    worktrees = get_worktrees_sorted_by_datetime()
+    review_worktrees = []
+
+    for wt_name in worktrees:
+        wt_path = os.path.join(WORKTREES_DIR, wt_name)
+        session = get_session_for_worktree(wt_path)
+
+        # Include if no session or session is inactive
+        if not session or not is_pane_receiving_output(session):
+            review_worktrees.append((wt_name, wt_path))
+
+    if not review_worktrees:
+        print("✓ No worktrees need review!")
+        sys.exit(0)
+
+    print(f"\n📋 Review Mode - {len(review_worktrees)} worktrees")
+    print("=" * 60)
+
+    for idx, (wt_name, wt_path) in enumerate(review_worktrees):
+        print(f"\n[{idx+1}/{len(review_worktrees)}] {wt_name}")
+
+        # Show age if available
+        match = re.search(r'-(\d{8})-(\d{6})-', wt_name)
+        if match:
+            try:
+                created = datetime.strptime(f"{match.group(1)}{match.group(2)}", "%Y%m%d%H%M%S")
+                age = datetime.now() - created
+                print(f"Age: {age.days}d {age.seconds//3600}h")
+            except:
+                pass
+
+        print(f"\n💡 Ctrl+B D = detach from tmux")
+        print(f"Opening: {wt_path}\n")
+
+        # Create tmux session
+        session_name = f"review-{idx}"
+        sp.run(['tmux', 'kill-session', '-t', session_name],
+               stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+
+        if sp.run(['tmux', 'new-session', '-d', '-s', session_name, '-c', wt_path],
+                  capture_output=True).returncode != 0:
+            print(f"✗ Failed to create session")
+            continue
+
+        # Attach (blocks until detach)
+        sp.run(['tmux', 'attach-session', '-t', session_name])
+
+        # Review options
+        print(f"\n📁 Inspect: l=ls  g=git-status  d=diff  h=log  t=terminal  v=vscode")
+        print(f"🎯 Action: 1=push+del  2=delete  3=keep  4=stop")
+
+        while True:
+            action = input("Choice: ").strip().lower()
+
+            # Inspection commands
+            if action == 'l':
+                result = sp.run(['ls', '-la', wt_path], capture_output=True, text=True)
+                print(result.stdout[:500])  # First 500 chars
+                continue
+            elif action == 'g':
+                result = sp.run(['git', '-C', wt_path, 'status', '--short'],
+                               capture_output=True, text=True)
+                print(result.stdout or "Clean")
+                continue
+            elif action == 'd':
+                result = sp.run(['git', '-C', wt_path, 'diff', 'HEAD~1', '--stat'],
+                               capture_output=True, text=True)
+                print(result.stdout[:500] or "No diff")
+                continue
+            elif action == 'h':
+                result = sp.run(['git', '-C', wt_path, 'log', '--oneline', '-5'],
+                               capture_output=True, text=True)
+                print(result.stdout or "No commits")
+                continue
+            elif action == 't':
+                terminal = detect_terminal()
+                if terminal:
+                    launch_terminal_in_dir(wt_path, terminal)
+                    print("✓ Opened terminal")
+                continue
+            elif action == 'v':
+                sp.run(['code', wt_path])
+                print("✓ Opened in VSCode")
+                continue
+            # Action commands
+            elif action == '1':
+                msg = input("Commit msg (Enter=default): ").strip() or f"Merge {wt_name}"
+                remove_worktree(wt_path, push=True, commit_msg=msg, skip_confirm=True)
+                break
+            elif action == '2':
+                remove_worktree(wt_path, push=False, skip_confirm=True)
+                break
+            elif action in ['3', '']:
+                print("✓ Kept")
+                break
+            elif action == '4':
+                print(f"\n✓ Reviewed {idx+1}/{len(review_worktrees)}")
+                sp.run(['tmux', 'kill-session', '-t', session_name],
+                      stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+                sys.exit(0)
+
+        # Cleanup session
+        sp.run(['tmux', 'kill-session', '-t', session_name],
+               stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+
+    print(f"\n✅ Review complete!")
 elif arg == 'cleanup':
     # Delete all worktrees without pushing
     if not os.path.exists(WORKTREES_DIR):
