@@ -2,8 +2,10 @@
 import os, sys, subprocess as sp
 import sqlite3
 from datetime import datetime
+from pathlib import Path
 import pexpect
 import shlex
+import time
 
 # Auto-update: Pull latest version from git repo
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +52,35 @@ auto_update()
 DATA_DIR = os.path.expanduser("~/.local/share/aios")
 DB_PATH = os.path.join(DATA_DIR, "aio.db")
 
+def backup_database(label="manual"):
+    """Backup database using SQLite's .backup() method."""
+    backup_path = os.path.join(DATA_DIR, f"aio_{label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db")
+    with sqlite3.connect(DB_PATH) as src, sqlite3.connect(backup_path) as dst:
+        src.backup(dst)
+    return backup_path
+
+def restore_database(backup_path):
+    """Restore database from backup using SQLite's .backup() method."""
+    with sqlite3.connect(backup_path) as src, sqlite3.connect(DB_PATH) as dst:
+        src.backup(dst)
+
+def auto_backup_check():
+    """Git-style auto-backup: fork subprocess if 10+ min passed, return immediately."""
+    if not hasattr(os, 'fork'):
+        return
+    timestamp_file = os.path.join(DATA_DIR, ".backup_timestamp")
+    if os.path.exists(timestamp_file) and time.time() - os.path.getmtime(timestamp_file) < 600:
+        return
+    if os.fork() == 0:
+        backup_database("auto")
+        Path(timestamp_file).touch()
+        os._exit(0)
+
+def list_backups():
+    """List all backup files with metadata."""
+    backups = sorted([f for f in os.listdir(DATA_DIR) if f.startswith('aio_') and f.endswith('.db') and f != 'aio.db'])
+    return [(os.path.join(DATA_DIR, b), os.path.getsize(os.path.join(DATA_DIR, b)), os.path.getmtime(os.path.join(DATA_DIR, b))) for b in backups]
+
 class WALManager:
     """Context manager for SQLite database with WAL mode enabled."""
     def __init__(self, db_path: str):
@@ -84,6 +115,15 @@ def init_database():
                 CREATE TABLE IF NOT EXISTS projects (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     path TEXT NOT NULL,
+                    display_order INTEGER NOT NULL UNIQUE
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS apps (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    command TEXT NOT NULL,
                     display_order INTEGER NOT NULL UNIQUE
                 )
             """)
@@ -151,6 +191,17 @@ After you make edits, run manually exactly as the user would, and check the outp
                 for i, path in enumerate(default_projects):
                     conn.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)",
                                (path, i))
+
+            # Check if apps exist
+            cursor = conn.execute("SELECT COUNT(*) FROM apps")
+            if cursor.fetchone()[0] == 0:
+                # Insert default apps
+                default_apps = [
+                    ("testRepo", f"cd {os.path.expanduser('~/projects/testRepoPrivate')} && $SHELL")
+                ]
+                for i, (name, command) in enumerate(default_apps):
+                    conn.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)",
+                               (name, command, i))
 
             # Check if sessions exist
             cursor = conn.execute("SELECT COUNT(*) FROM sessions")
@@ -244,6 +295,60 @@ def remove_project(index):
 
     return True, f"Removed project: {project_path}"
 
+def load_apps():
+    """Load apps from database."""
+    with WALManager(DB_PATH) as conn:
+        cursor = conn.execute("SELECT name, command FROM apps ORDER BY display_order")
+        apps = [(row[0], row[1]) for row in cursor.fetchall()]
+    return apps
+
+def add_app(name, command):
+    """Add an app to the database."""
+    if not name or not command:
+        return False, "Name and command are required"
+
+    with WALManager(DB_PATH) as conn:
+        with conn:
+            # Check if app already exists
+            cursor = conn.execute("SELECT COUNT(*) FROM apps WHERE name = ?", (name,))
+            if cursor.fetchone()[0] > 0:
+                return False, f"App already exists: {name}"
+
+            # Get the next display order
+            cursor = conn.execute("SELECT MAX(display_order) FROM apps")
+            max_order = cursor.fetchone()[0]
+            next_order = (max_order + 1) if max_order is not None else 0
+
+            # Insert the app
+            conn.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)",
+                        (name, command, next_order))
+
+    return True, f"Added app: {name}"
+
+def remove_app(index):
+    """Remove an app from the database by index."""
+    with WALManager(DB_PATH) as conn:
+        with conn:
+            # Get all apps
+            cursor = conn.execute("SELECT id, name FROM apps ORDER BY display_order")
+            apps = cursor.fetchall()
+
+            if index < 0 or index >= len(apps):
+                return False, f"Invalid app index: {index}"
+
+            # Delete the app
+            app_id, app_name = apps[index]
+            conn.execute("DELETE FROM apps WHERE id = ?", (app_id,))
+
+            # Reorder remaining apps
+            cursor = conn.execute("SELECT id FROM apps ORDER BY display_order")
+            app_ids = [row[0] for row in cursor.fetchall()]
+
+            for i, aid in enumerate(app_ids):
+                conn.execute("UPDATE apps SET display_order = ? WHERE id = ?", (i, aid))
+
+    return True, f"Removed app: {app_name}"
+
 def load_sessions(config):
     """Load sessions from database and substitute prompt values."""
     with WALManager(DB_PATH) as conn:
@@ -254,18 +359,27 @@ def load_sessions(config):
 
     sessions = {}
     for key, name, cmd_template in sessions_data:
+        # Check if this is a single-p session (cp, lp, gp) - these should NOT auto-execute prompts
+        is_single_p = key in ['cp', 'lp', 'gp']
+
         # Get prompts and escape them for shell/CLI usage
         # Replace newlines with literal \n to preserve formatting while avoiding shell parsing issues
         claude_prompt = config.get('claude_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
         codex_prompt = config.get('codex_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
         gemini_prompt = config.get('gemini_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
 
-        # Substitute prompt placeholders
-        cmd = cmd_template.format(
-            CLAUDE_PROMPT=claude_prompt,
-            CODEX_PROMPT=codex_prompt,
-            GEMINI_PROMPT=gemini_prompt
-        )
+        # For single-p sessions, remove prompt from command (we'll send it via tmux later)
+        # For other sessions, substitute prompt placeholders normally
+        if is_single_p:
+            # Remove the prompt argument entirely
+            cmd = cmd_template.replace(' "{CLAUDE_PROMPT}"', '').replace(' "{CODEX_PROMPT}"', '').replace(' "{GEMINI_PROMPT}"', '')
+        else:
+            # Substitute prompt placeholders
+            cmd = cmd_template.format(
+                CLAUDE_PROMPT=claude_prompt,
+                CODEX_PROMPT=codex_prompt,
+                GEMINI_PROMPT=gemini_prompt
+            )
         sessions[key] = (name, cmd)
 
     return sessions
@@ -291,6 +405,7 @@ except FileNotFoundError:
 WORKTREES_DIR = config.get('worktrees_dir', os.path.expanduser("~/projects/aiosWorktrees"))
 
 PROJECTS = load_projects()
+APPS = load_apps()
 sessions = load_sessions(config)
 
 def ensure_tmux_mouse_mode():
@@ -679,7 +794,8 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
             print(" (timeout, sending anyway)")
 
     # Send the prompt
-    sp.run(['tmux', 'send-keys', '-t', session_name, prompt])
+    # Use -l flag to send literal keys (prevents newlines from being interpreted as Enter)
+    sp.run(['tmux', 'send-keys', '-l', '-t', session_name, prompt])
 
     if send_enter:
         time.sleep(0.1)  # Brief delay before Enter for terminal processing
@@ -1213,6 +1329,9 @@ if with_terminal:
     # with_terminal implies new_window for the session
     new_window = True
 
+# Auto-backup check (git-style: fork if needed, returns immediately)
+auto_backup_check()
+
 # Check if arg is actually a directory/number (not a session key or worktree command)
 is_directory_only = new_window and arg and not arg.startswith('+') and not arg.endswith('--') and not arg.startswith('w') and arg not in sessions
 
@@ -1227,7 +1346,17 @@ is_work_dir_a_prompt = False
 
 if work_dir_arg and work_dir_arg.isdigit():
     idx = int(work_dir_arg)
-    work_dir = PROJECTS[idx] if 0 <= idx < len(PROJECTS) else WORK_DIR
+    if 0 <= idx < len(PROJECTS):
+        work_dir = PROJECTS[idx]
+    elif 0 <= idx - len(PROJECTS) < len(APPS):
+        # Execute app command
+        app_name, app_command = APPS[idx - len(PROJECTS)]
+        print(f"Running app: {app_name}")
+        print(f"Command: {app_command}")
+        os.system(app_command)
+        sys.exit(0)
+    else:
+        work_dir = WORK_DIR
 elif work_dir_arg and os.path.isdir(os.path.expanduser(work_dir_arg)):
     # It's a valid directory path
     work_dir = work_dir_arg
@@ -1382,16 +1511,25 @@ def parse_agent_specs_and_prompt(argv, start_idx):
 
 # Handle project number shortcut: aio 1, aio 2, etc.
 if arg and arg.isdigit() and not work_dir_arg:
-    project_idx = int(arg)
-    if 0 <= project_idx < len(PROJECTS):
-        project_path = PROJECTS[project_idx]
-        print(f"📂 Opening project {project_idx}: {project_path}")
+    idx = int(arg)
+    if 0 <= idx < len(PROJECTS):
+        project_path = PROJECTS[idx]
+        print(f"📂 Opening project {idx}: {project_path}")
         os.chdir(project_path)
         os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
+    elif 0 <= idx - len(PROJECTS) < len(APPS):
+        # Execute app command
+        app_name, app_command = APPS[idx - len(PROJECTS)]
+        print(f"▶️  Running app {idx}: {app_name}")
+        print(f"Command: {app_command}")
+        os.system(app_command)
+        sys.exit(0)
     else:
-        print(f"✗ Invalid project index: {project_idx}")
-        print(f"   Valid range: 0-{len(PROJECTS)-1}")
+        print(f"✗ Invalid index: {idx}")
+        print(f"   Valid range: 0-{len(PROJECTS) + len(APPS) - 1}")
+        print(f"   Projects: 0-{len(PROJECTS)-1}, Apps: {len(PROJECTS)}-{len(PROJECTS) + len(APPS) - 1}")
         sys.exit(1)
+
 
 # Handle worktree commands (but not 'watch')
 if arg and arg.startswith('w') and arg != 'watch':
@@ -1508,6 +1646,9 @@ MANAGEMENT:
   aio cleanup --yes   Delete all worktrees (skip confirmation)
   aio ls              List all tmux sessions
   aio p               Show saved projects
+DATABASE:
+  aio backups         List all database backups
+  aio restore <file>  Restore database from backup
 GIT:
   aio setup <url>     Initialize git repo with remote
   aio push ["msg"]    Quick commit and push
@@ -1519,11 +1660,13 @@ SETUP:
   aio remove <#>      Remove project from list
 Working directory: {WORK_DIR}
 Run 'aio help' for detailed documentation""")
-    if PROJECTS:
-        print(f"Saved projects:")
+    if PROJECTS or APPS:
+        print(f"Saved projects & apps (use 'aio <#>' or 'aio -w <#>'):")
         for i, proj in enumerate(PROJECTS):
             exists = "✓" if os.path.exists(proj) else "✗"
             print(f"  {i}. {exists} {proj}")
+        for i, (app_name, app_cmd) in enumerate(APPS):
+            print(f"  {len(PROJECTS) + i}. [APP] {app_name}: {app_cmd}")
 elif arg == 'help' or arg == '--help' or arg == '-h':
     print(f"""aio - AI agent session manager (DETAILED HELP)
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1557,13 +1700,16 @@ WORKTREE MANAGEMENT
   aio w<#>-- --yes       Remove and push (skip confirmation)
   aio w<#>-- "message"   Remove and push with custom commit message
 ═══════════════════════════════════════════════════════════════════════════════
-PROJECT MANAGEMENT
+PROJECT & APP MANAGEMENT
 ═══════════════════════════════════════════════════════════════════════════════
-  aio p                  List all saved projects
-  aio <#>                Open project # in current terminal (no session)
+  aio p                  List all saved projects & apps (unified numbering)
+  aio <#>                Open project # or run app # (e.g., aio 0, aio 10)
   aio -w <#>             Open project # in new window
   aio add [path]         Add project (defaults to current dir)
+  aio add-app <name> <command>  Add executable app
   aio remove <#>         Remove project from saved list
+  aio remove-app <#>     Remove app from saved list
+Note: Projects (0-9) = directories to cd into. Apps (10+) = commands to execute.
 ═══════════════════════════════════════════════════════════════════════════════
 MONITORING & AUTOMATION
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1610,6 +1756,20 @@ TERMINALS: Auto-detects ptyxis, gnome-terminal, alacritty
 DATABASE: ~/.local/share/aios/aio.db
 WORKTREES: {WORKTREES_DIR}
 ═══════════════════════════════════════════════════════════════════════════════
+DATABASE BACKUP & RESTORE
+═══════════════════════════════════════════════════════════════════════════════
+  aio backups            List all database backups with timestamps
+  aio restore <file>     Restore database from backup (with confirmation)
+AUTOMATIC BACKUPS:
+• Backups created automatically every 10 minutes (silent, zero delay)
+• Uses git-style fork: parent continues instantly, child backs up in background
+• Backups stored in: ~/.local/share/aios/aio_auto_YYYYMMDD_HHMMSS.db
+• Protects: projects, sessions, prompts, configuration, worktree history
+MANUAL BACKUP:
+• Create manual backup: Use backup_database("label") in Python
+• Restore from backup: aio restore <filename>
+• Backups use SQLite's .backup() method (safe, atomic, consistent)
+═══════════════════════════════════════════════════════════════════════════════
 EXAMPLES
 ═══════════════════════════════════════════════════════════════════════════════
 Getting Started:
@@ -1638,15 +1798,17 @@ Automation:
 ═══════════════════════════════════════════════════════════════════════════════
 NOTES:
 • Auto-updates from git on each run (always latest version)
+• Auto-backup every 10 minutes (silent, zero delay, stored in ~/.local/share/aios)
 • Works in any git directory for push/worktree commands
 • Mouse mode enabled: Hold Shift to select and copy text
 • Database stores: projects, sessions, prompts, configuration
-Working directory: {WORK_DIR}""")
-    if PROJECTS:
-        print(f"Saved projects:")
-        for i, proj in enumerate(PROJECTS):
-            exists = "✓" if os.path.exists(proj) else "✗"
-            print(f"  {i}. {exists} {proj}")
+Working directory: {WORK_DIR}
+Saved projects & apps (examples: 'aio 0' opens project 0, 'aio 10' runs first app):""")
+    for i, proj in enumerate(PROJECTS):
+        exists = "✓" if os.path.exists(proj) else "✗"
+        print(f"  {i}. {exists} {proj}")
+    for i, (app_name, app_cmd) in enumerate(APPS):
+        print(f"  {len(PROJECTS) + i}. [APP] {app_name}: {app_cmd}")
 elif arg == 'install':
     # Install aio as a global command
     bin_dir = os.path.expanduser("~/.local/bin")
@@ -1681,6 +1843,41 @@ elif arg == 'install':
         print(f"✓ You can now run 'aio' from anywhere!")
 
     print(f"\nThe script will auto-update from git on each run.")
+elif arg == 'backups' or arg == 'backup':
+    backups = list_backups()
+    if not backups:
+        print("No backups found.")
+    else:
+        print(f"\n📦 Database Backups ({len(backups)} total)")
+        print("━" * 70)
+        for i, (path, size, mtime) in enumerate(backups[-10:], 1):
+            name = os.path.basename(path)
+            age = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"{i:2}. {name}")
+            print(f"    {size:,} bytes | {age}")
+        print(f"\n📁 Location: {DATA_DIR}")
+        print(f"   Restore: aio restore <filename>")
+elif arg == 'restore':
+    if not work_dir_arg:
+        print("Usage: aio restore <backup_filename>")
+        backups = list_backups()
+        if backups:
+            print(f"\nAvailable backups:")
+            for i, (path, size, mtime) in enumerate(backups[-5:], 1):
+                print(f"  {os.path.basename(path)}")
+        sys.exit(1)
+    backup_path = os.path.join(DATA_DIR, work_dir_arg) if not os.path.isabs(work_dir_arg) else work_dir_arg
+    if not os.path.exists(backup_path):
+        print(f"✗ Backup not found: {backup_path}")
+        sys.exit(1)
+    print(f"⚠️  WARNING: This will overwrite current database!")
+    print(f"   Restoring from: {os.path.basename(backup_path)}")
+    response = input("   Continue? [y/N]: ")
+    if response.lower() != 'y':
+        print("Cancelled.")
+        sys.exit(0)
+    restore_database(backup_path)
+    print(f"✅ Database restored successfully!")
 elif arg == 'watch':
     # Watch a tmux session and auto-respond to patterns
     if not work_dir_arg:
@@ -2279,10 +2476,12 @@ elif arg == 'cleanup':
         print(f"✗ Failed: {failed_count}")
     print(f"{'='*60}")
 elif arg == 'p':
-    print("Saved Projects:")
+    print("Saved Projects & Apps:")
     for i, proj in enumerate(PROJECTS):
         exists = "✓" if os.path.exists(proj) else "✗"
         print(f"  {i}. {exists} {proj}")
+    for i, (app_name, app_cmd) in enumerate(APPS):
+        print(f"  {len(PROJECTS) + i}. [APP] {app_name}: {app_cmd}")
 elif arg == 'add':
     # Add a project to saved list
     if work_dir_arg:
@@ -2322,6 +2521,57 @@ elif arg == 'remove':
         for i, proj in enumerate(updated_projects):
             exists = "✓" if os.path.exists(proj) else "✗"
             print(f"  {i}. {exists} {proj}")
+    else:
+        print(f"✗ {message}")
+        sys.exit(1)
+elif arg == 'add-app':
+    # Add an app to saved list
+    # Usage: aio add-app <name> <command>
+    if not work_dir_arg:
+        print("✗ Usage: aio add-app <name> <command>")
+        print("Example: aio add-app vscode \"code ~/projects/myproject\"")
+        sys.exit(1)
+
+    # Name is first arg, command is everything else
+    app_name = work_dir_arg
+    # Get command from remaining arguments
+    remaining_args = sys.argv[3:] if len(sys.argv) > 3 else []
+    if not remaining_args:
+        print("✗ Usage: aio add-app <name> <command>")
+        print("Example: aio add-app vscode \"code ~/projects/myproject\"")
+        sys.exit(1)
+
+    app_command = ' '.join(remaining_args)
+
+    success, message = add_app(app_name, app_command)
+    if success:
+        print(f"✓ {message}")
+        print("\nUpdated app list:")
+        # Reload and display apps
+        updated_apps = load_apps()
+        for i, (name, cmd) in enumerate(updated_apps):
+            print(f"  {i}. [APP] {name}: {cmd}")
+    else:
+        print(f"✗ {message}")
+        sys.exit(1)
+elif arg == 'remove-app':
+    # Remove an app from saved list
+    if not work_dir_arg or not work_dir_arg.isdigit():
+        print("✗ Usage: aio remove-app <app#>")
+        print("\nCurrent apps:")
+        for i, (name, cmd) in enumerate(APPS):
+            print(f"  {i}. [APP] {name}: {cmd}")
+        sys.exit(1)
+
+    index = int(work_dir_arg)
+    success, message = remove_app(index)
+    if success:
+        print(f"✓ {message}")
+        print("\nUpdated app list:")
+        # Reload and display apps
+        updated_apps = load_apps()
+        for i, (name, cmd) in enumerate(updated_apps):
+            print(f"  {i}. [APP] {name}: {cmd}")
     else:
         print(f"✗ {message}")
         sys.exit(1)
@@ -2836,7 +3086,7 @@ else:
         # Custom prompt provided on command line
         prompt = ' '.join(prompt_parts)
         print(f"📤 Sending prompt to session...")
-        send_prompt_to_session(session_name, prompt, wait_for_completion=False, wait_for_ready=True)
+        send_prompt_to_session(session_name, prompt, wait_for_completion=False, wait_for_ready=True, send_enter=not is_single_p_session)
     elif is_single_p_session:
         # Single-p session without custom prompt - insert default prompt without running
         # Map session key to prompt config key
