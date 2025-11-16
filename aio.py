@@ -1238,10 +1238,41 @@ def remove_worktree(worktree_path, push=False, commit_msg=None, skip_confirm=Fal
                     capture_output=True, text=True)
 
     if result.returncode != 0:
-        print(f"✗ Failed to remove worktree: {result.stderr.strip()}")
-        return False
+        # Check if this is a corrupted worktree (main working tree error)
+        if 'is a main working tree' in result.stderr:
+            print(f"⚠ Detected corrupted worktree (may be symlink or standalone repo)")
+            # Safety check: only delete if it's actually in the worktrees directory
+            if worktree_path.startswith(WORKTREES_DIR):
+                import shutil
+                try:
+                    # Check if it's a symlink
+                    if os.path.islink(worktree_path):
+                        os.unlink(worktree_path)
+                        print(f"✓ Removed symlink worktree")
+                    else:
+                        # It's a corrupted standalone repository
+                        shutil.rmtree(worktree_path)
+                        print(f"✓ Removed corrupted worktree directory")
 
-    print(f"✓ Removed git worktree")
+                    # Try to clean up any dangling worktree references in parent repo
+                    prune_result = sp.run(['git', '-C', project_path, 'worktree', 'prune'],
+                                        capture_output=True, text=True)
+                    if prune_result.returncode == 0:
+                        print(f"✓ Pruned worktree references")
+
+                    # For corrupted worktrees, skip branch deletion and return success
+                    return True
+                except Exception as e:
+                    print(f"✗ Failed to remove directory: {e}")
+                    return False
+            else:
+                print(f"✗ Safety check failed: not in worktrees directory")
+                return False
+        else:
+            print(f"✗ Failed to remove worktree: {result.stderr.strip()}")
+            return False
+    else:
+        print(f"✓ Removed git worktree")
 
     # Delete branch (git worktree remove might have already deleted it)
     branch_name = f"wt-{worktree_name}"
