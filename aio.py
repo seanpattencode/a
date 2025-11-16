@@ -2569,100 +2569,78 @@ elif arg == 'app' or arg == 'apps':
             print(f"   aio <#>                       - Run app by number")
 
     elif subcommand == 'add':
-        # Get app name (third argument)
-        app_name = sys.argv[3] if len(sys.argv) > 3 else None
+        # Check for --global flag
+        is_global = '--global' in sys.argv
+        args = [arg for arg in sys.argv[3:] if arg != '--global']
 
-        if not app_name:
-            print("✗ Usage: aio app add <name> [command]")
-            print("\nExamples:")
-            print("  From project dir: aio app add test 'pytest'")
-            print("                   → Creates: cd <current-dir> && pytest")
-            print("  Global command:  aio app add docker --global 'docker ps -a'")
-            print("                   → Runs from anywhere")
-            print("\n💡 Default: Commands include current directory automatically")
-            print("   Use --global to run from anywhere")
+        if not args:
+            print("✗ Usage: aio app add <name> <command>")
+            print("        aio app add <command>  (prompts for name)")
             sys.exit(1)
 
-        # Check for --no-dir flag (to skip adding directory context)
-        no_dir = '--no-dir' in sys.argv or '--global' in sys.argv
-        if no_dir:
-            # Remove the flag from argv for command processing
-            sys.argv = [arg for arg in sys.argv if arg not in ['--no-dir', '--global']]
+        # Check if first arg looks like a command (starts with common interpreters)
+        first_arg = args[0]
+        command_starters = ['python', 'python3', 'node', 'npm', 'ruby', 'perl', 'java', 'go', 'sh', 'bash']
 
-        # Get command (everything after the name)
-        if len(sys.argv) > 4:
-            # Command provided on command line
-            app_command = ' '.join(sys.argv[4:])
-
-            # Clean up common mistakes (remove square brackets)
-            if app_command.startswith('[') and app_command.endswith(']'):
-                app_command = app_command[1:-1]
-                print(f"ℹ️ Removed brackets from command: {app_command}")
-        else:
-            # Interactive prompt for command
-            print(f"Adding app: {app_name}")
-
-            # Check if we're in a project directory (not home)
-            current_dir = os.getcwd()
-            home_dir = os.path.expanduser('~')
-
-            if current_dir != home_dir and not no_dir:
-                # Show that we'll add directory context
-                rel_path = current_dir.replace(home_dir, '~') if current_dir.startswith(home_dir) else current_dir
-                print(f"📍 Current directory: {rel_path}")
-                print(f"💡 App will run from this directory by default")
-                print(f"   To run from anywhere, use: aio app add {app_name} --global")
-                print("")
-
-            print("Enter the command to run (or 'cancel' to abort):")
-            app_command = input("> ").strip()
-
-            if app_command.lower() == 'cancel':
+        if first_arg in command_starters or len(args) == 1:
+            # Treat whole thing as command, prompt for name
+            app_command = ' '.join(args)
+            print(f"Command: {format_app_command(app_command)}")
+            app_name = input("Name for this app: ").strip()
+            if not app_name:
                 print("✗ Cancelled")
-                sys.exit(0)
+                sys.exit(1)
+        else:
+            # First arg is name, rest is command
+            app_name = args[0]
+            app_command = ' '.join(args[1:]) if len(args) > 1 else None
 
-        if not app_command:
-            print("✗ Command cannot be empty")
-            sys.exit(1)
+            if not app_command:
+                print(f"Adding app: {app_name}")
+                app_command = input("Command: ").strip()
+                if not app_command:
+                    print("✗ Cancelled")
+                    sys.exit(1)
 
-        # Clean up command
-        app_command = app_command.strip()
+        # Clean brackets if present
         if app_command.startswith('[') and app_command.endswith(']'):
             app_command = app_command[1:-1]
-            print(f"ℹ️ Removed brackets from command: {app_command}")
 
-        # Add directory context by default (unless in home, command has cd, or --no-dir flag)
+        # Add directory context (unless --global or already has cd)
         current_dir = os.getcwd()
         home_dir = os.path.expanduser('~')
 
-        should_add_dir = (
-            not no_dir and  # User didn't explicitly skip directory
-            current_dir != home_dir and  # Not in home directory
-            not app_command.startswith('cd ')  # Command doesn't already have cd
-        )
-
-        if should_add_dir:
-            # Add current directory to the command
+        if not is_global and current_dir != home_dir and not app_command.startswith('cd '):
             rel_path = current_dir.replace(home_dir, '~') if current_dir.startswith(home_dir) else current_dir
             app_command = f"cd {rel_path} && {app_command}"
-            print(f"📍 Added directory context: {rel_path}")
-            print(f"   (Use --global to skip directory context)")
-        elif current_dir != home_dir and no_dir:
-            # User explicitly skipped directory context
-            print(f"💡 App will run from any directory (--global flag used)")
+            print(f"📍 Added: {rel_path}")
+
+        # Handle duplicates
+        existing = {name.lower(): name for name, _ in APPS}
+        if app_name.lower() in existing:
+            print(f"✗ '{existing[app_name.lower()]}' exists. (1) rename (2) update (3) cancel")
+            choice = input("> ").strip()
+            if choice == '1':
+                app_name = input("New name: ").strip()
+                if not app_name:
+                    sys.exit(1)
+            elif choice == '2':
+                with WALManager(DB_PATH) as conn:
+                    conn.execute("UPDATE apps SET command = ? WHERE LOWER(name) = LOWER(?)",
+                               (app_command, app_name))
+                print(f"✓ Updated: {app_name}")
+                sys.exit(0)
+            else:
+                sys.exit(1)
 
         # Add the app
         success, message = add_app(app_name, app_command)
         if success:
             print(f"✓ {message}")
-
-            # Show the new app list
+            # Show updated list
             APPS_NEW = load_apps()
-            print(f"\n⚡ APPS:")
             for i, (name, cmd) in enumerate(APPS_NEW):
-                cmd_display = format_app_command(cmd)
-                app_idx = len(PROJECTS) + i
-                print(f"  [{app_idx}] {name} → {cmd_display}")
+                print(f"  [{len(PROJECTS) + i}] {name} → {format_app_command(cmd)}")
         else:
             print(f"✗ {message}")
             sys.exit(1)
