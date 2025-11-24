@@ -3189,7 +3189,22 @@ elif arg == 'push':
                     print(f"✓ Worktree deleted successfully")
 
     else:
-        # Normal repo - regular push behavior
+        # Normal repo - always push to main branch
+        # Get current branch
+        result = sp.run(['git', '-C', cwd, 'branch', '--show-current'],
+                        capture_output=True, text=True)
+        current_branch = result.stdout.strip()
+
+        # Detect main branch name
+        result = sp.run(['git', '-C', cwd, 'symbolic-ref', 'refs/remotes/origin/HEAD'],
+                        capture_output=True, text=True)
+        if result.returncode == 0:
+            main_branch = result.stdout.strip().replace('refs/remotes/origin/', '')
+        else:
+            result = sp.run(['git', '-C', cwd, 'rev-parse', '--verify', 'main'],
+                           capture_output=True)
+            main_branch = 'main' if result.returncode == 0 else 'master'
+
         # Add all changes
         sp.run(['git', '-C', cwd, 'add', '-A'])
 
@@ -3223,20 +3238,41 @@ elif arg == 'push':
             print(f"✗ Commit failed: {error_msg}")
             sys.exit(1)
 
-        # Push
+        # If we're not on main, switch to it and merge current branch
+        if current_branch != main_branch:
+            print(f"→ Switching to {main_branch} and merging {current_branch}...")
+
+            # Switch to main branch
+            result = sp.run(['git', '-C', cwd, 'checkout', main_branch],
+                            capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"✗ Failed to switch to {main_branch}: {result.stderr.strip()}")
+                sys.exit(1)
+
+            # Merge current branch into main
+            result = sp.run(['git', '-C', cwd, 'merge', current_branch, '--no-edit', '-X', 'theirs'],
+                            capture_output=True, text=True)
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                print(f"✗ Merge failed: {error_msg}")
+                sys.exit(1)
+
+            print(f"✓ Merged {current_branch} into {main_branch}")
+
+        # Push to main branch
         # Use non-interactive environment to prevent GUI dialogs
         env = get_noninteractive_git_env()
-        result = sp.run(['git', '-C', cwd, 'push'], capture_output=True, text=True, env=env)
+        result = sp.run(['git', '-C', cwd, 'push', 'origin', main_branch], capture_output=True, text=True, env=env)
         if result.returncode == 0:
-            print("✓ Pushed to remote")
+            print(f"✓ Pushed to {main_branch}")
         else:
             error_msg = result.stderr.strip() or result.stdout.strip()
             if 'rejected' in error_msg and 'non-fast-forward' in error_msg:
-                print("⚠️  Push rejected - remote has diverged. Force pushing...")
-                result = sp.run(['git', '-C', cwd, 'push', '--force-with-lease'],
+                print(f"⚠️  Push rejected - remote has diverged. Force pushing...")
+                result = sp.run(['git', '-C', cwd, 'push', '--force-with-lease', 'origin', main_branch],
                                 capture_output=True, text=True, env=env)
                 if result.returncode == 0:
-                    print("✓ Force pushed to remote (remote was overwritten)")
+                    print(f"✓ Force pushed to {main_branch} (remote was overwritten)")
                 else:
                     print(f"✗ Force push failed: {result.stderr.strip()}")
                     sys.exit(1)
