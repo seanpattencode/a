@@ -3198,8 +3198,20 @@ elif arg == 'push':
         if result.returncode == 0:
             print(f"✓ Committed: {commit_msg}")
         elif 'nothing to commit' in result.stdout:
-            print("ℹ No changes to send")
-            sys.exit(0)
+            # Check if user provided a custom message (not the default)
+            if work_dir_arg:  # User provided a message
+                # Create empty clarification commit
+                result = sp.run(['git', '-C', cwd, 'commit', '--allow-empty', '-m', commit_msg],
+                                capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"✓ Created clarification commit: {commit_msg}")
+                    # Continue to push below
+                else:
+                    print("ℹ No changes to send")
+                    sys.exit(0)
+            else:
+                print("ℹ No changes to send")
+                sys.exit(0)
         elif 'no changes added to commit' in result.stdout:
             print("ℹ No changes to send")
             print("  (Some files may be ignored or in submodules)")
