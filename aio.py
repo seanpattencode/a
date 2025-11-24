@@ -7,6 +7,38 @@ import pexpect
 import shlex
 import time
 
+# Session Manager abstraction - auto-detect tmux or zellij
+def which(cmd): return sp.run(['which', cmd], capture_output=True).returncode == 0
+def find_zellij(): return '/tmp/zellij/bootstrap/zellij' if os.path.exists('/tmp/zellij/bootstrap/zellij') else 'zellij' if which('zellij') else None
+
+class SessionManager:
+    def new_session(self, n, d, c, e=None): return self._new(n, d, c, e)
+    def send_keys(self, n, t): return self._keys(n, t)
+    def attach(self, n): return self._att(n)
+    def has_session(self, n): return self._has(n)
+    def list_sessions(self): return self._list()
+    def capture(self, n): return self._cap(n)
+
+class TmuxManager(SessionManager):
+    def _new(self, n, d, c, e): return sp.run(['tmux', 'new-session', '-d', '-s', n, '-c', d] + ([c] if c else []), capture_output=True, env=e)
+    def _keys(self, n, t): return sp.run(['tmux', 'send-keys', '-l', '-t', n, t])
+    def _att(self, n): return ['tmux', 'attach', '-t', n]
+    def _has(self, n): return sp.run(['tmux', 'has-session', '-t', n], capture_output=True).returncode == 0
+    def _list(self): return sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True)
+    def _cap(self, n): return sp.run(['tmux', 'capture-pane', '-p', '-t', n], capture_output=True, text=True)
+
+class ZellijManager(SessionManager):
+    def __init__(self, cmd): self.z = cmd
+    def _new(self, n, d, c, e): r = sp.run([self.z, 'attach', n, '--create-background'], cwd=d, capture_output=True, env=e); sp.run([self.z, '--session', n, 'run', '--'] + shlex.split(c), cwd=d, capture_output=True) if c and r.returncode == 0 else None; return r
+    def _keys(self, n, t): return sp.run([self.z, '--session', n, 'action', 'write-chars', '--', t], capture_output=True)
+    def _att(self, n): return [self.z, 'attach', n, '--create']
+    def _has(self, n): r = sp.run([self.z, 'list-sessions', '--short', '--no-formatting'], capture_output=True, text=True); return r.returncode == 0 and n in r.stdout
+    def _list(self): return sp.run([self.z, 'list-sessions', '--short', '--no-formatting'], capture_output=True, text=True)
+    def _cap(self, n): return sp.run([self.z, '--session', n, 'action', 'dump-screen'], capture_output=True, text=True)
+
+z = find_zellij()
+sm = ZellijManager(z) if z else TmuxManager()  # Use zellij if available, otherwise tmux
+
 # Auto-update: Pull latest version from git repo
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -466,15 +498,8 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     # Ensure mouse mode is enabled (only checks once per tmux server)
     ensure_tmux_mouse_mode()
 
-    # Create the session
-    tmux_cmd = ['tmux', 'new-session', '-d', '-s', session_name, '-c', work_dir]
-    if cmd:
-        tmux_cmd.append(cmd)
-
-    if capture_output:
-        return sp.run(tmux_cmd, capture_output=True, text=True, env=env)
-    else:
-        return sp.run(tmux_cmd, env=env)
+    # Create the session using session manager
+    return sm.new_session(session_name, work_dir, cmd or '', env)
 
 def detect_terminal():
     """Detect available terminal emulator"""
@@ -495,12 +520,13 @@ def launch_in_new_window(session_name, terminal=None):
         print("✗ No supported terminal found (ptyxis, gnome-terminal, alacritty)")
         return False
 
+    attach_cmd = sm.attach(session_name)
     if terminal == 'ptyxis':
-        cmd = ['ptyxis', '--', 'tmux', 'attach', '-t', session_name]
+        cmd = ['ptyxis', '--'] + attach_cmd
     elif terminal == 'gnome-terminal':
-        cmd = ['gnome-terminal', '--', 'tmux', 'attach', '-t', session_name]
+        cmd = ['gnome-terminal', '--'] + attach_cmd
     elif terminal == 'alacritty':
-        cmd = ['alacritty', '-e', 'tmux', 'attach', '-t', session_name]
+        cmd = ['alacritty', '-e'] + attach_cmd
 
     try:
         sp.Popen(cmd)
@@ -818,9 +844,7 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
     import time
 
     # Check if session exists
-    result = sp.run(['tmux', 'has-session', '-t', session_name],
-                   capture_output=True)
-    if result.returncode != 0:
+    if not sm.has_session(session_name):
         print(f"✗ Session {session_name} not found")
         return False
 
@@ -833,12 +857,12 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
             print(" (timeout, sending anyway)")
 
     # Send the prompt
-    # Use -l flag to send literal keys (prevents newlines from being interpreted as Enter)
-    sp.run(['tmux', 'send-keys', '-l', '-t', session_name, prompt])
+    # Use session manager to send keys
+    sm.send_keys(session_name, prompt)
 
     if send_enter:
         time.sleep(0.1)  # Brief delay before Enter for terminal processing
-        sp.run(['tmux', 'send-keys', '-t', session_name, 'Enter'])
+        sm.send_keys(session_name, '\n')
         print(f"✓ Sent prompt to session '{session_name}'")
     else:
         print(f"✓ Inserted prompt into session '{session_name}' (ready to edit/run)")
@@ -882,8 +906,7 @@ def get_or_create_directory_session(session_key, target_dir):
     base_name, cmd_template = sessions[session_key]
 
     # First, check if there's already a session in this directory
-    result = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'],
-                    capture_output=True, text=True)
+    result = sm.list_sessions()
 
     if result.returncode == 0:
         existing_sessions = [s for s in result.stdout.strip().split('\n') if s]
@@ -912,9 +935,7 @@ def get_or_create_directory_session(session_key, target_dir):
     attempt = 0
     final_session_name = session_name
     while True:
-        check_result = sp.run(['tmux', 'has-session', '-t', final_session_name],
-                             capture_output=True)
-        if check_result.returncode != 0:
+        if not sm.has_session(final_session_name):
             # Session doesn't exist, we can use this name
             break
 
@@ -2459,8 +2480,7 @@ elif arg == 'review':
                 pass
 
         # Check for agent session first (session name = worktree name)
-        agent_session_exists = sp.run(['tmux', 'has-session', '-t', wt_name],
-                                      capture_output=True).returncode == 0
+        agent_session_exists = sm.has_session(wt_name)
         session_to_attach = None
 
         if agent_session_exists:
@@ -3405,13 +3425,14 @@ elif arg.endswith('++') and not arg.startswith('w'):
                 launch_in_new_window(session_name)
                 if with_terminal:
                     launch_terminal_in_dir(worktree_path)
-            elif "TMUX" in os.environ:
-                # Already inside tmux - let session run in background
+            elif "TMUX" in os.environ or "ZELLIJ" in os.environ or not sys.stdout.isatty():
+                # Already inside tmux/zellij or no TTY - let session run in background
                 print(f"✓ Session running in background: {session_name}")
-                print(f"   Switch to it: tmux switch-client -t {session_name}")
+                print(f"   Attach with: {' '.join(sm.attach(session_name))}")
             else:
-                # Not in tmux - attach normally
-                os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
+                # Not in tmux/zellij - attach normally
+                cmd = sm.attach(session_name)
+                os.execvp(cmd[0], cmd)
     else:
         print(f"✗ Unknown session key: {key}")
 # Removed old '+' feature (timestamped session without worktree)
@@ -3430,9 +3451,7 @@ else:
     else:
         # Got a directory-specific session name
         # Check if it exists, create if not
-        check_result = sp.run(['tmux', 'has-session', '-t', session_name],
-                             capture_output=True)
-        if check_result.returncode != 0:
+        if not sm.has_session(session_name):
             # Session doesn't exist, create it
             _, cmd = sessions[arg]
             # Use clean environment to prevent GUI dialogs
@@ -3478,10 +3497,11 @@ else:
         # Also launch a regular terminal if requested
         if with_terminal:
             launch_terminal_in_dir(work_dir)
-    elif "TMUX" in os.environ:
-        # Already inside tmux - let session run in background
+    elif "TMUX" in os.environ or "ZELLIJ" in os.environ or not sys.stdout.isatty():
+        # Already inside tmux/zellij or no TTY - let session run in background
         print(f"✓ Session running in background: {session_name}")
-        print(f"   Switch to it: tmux switch-client -t {session_name}")
+        print(f"   Attach with: {' '.join(sm.attach(session_name))}")
     else:
-        # Not in tmux - attach normally
-        os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
+        # Not in tmux/zellij - attach normally
+        cmd = sm.attach(session_name)
+        os.execvp(cmd[0], cmd)
