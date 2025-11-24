@@ -38,6 +38,7 @@ class ZellijManager(SessionManager):
 
 z = find_zellij()
 sm = ZellijManager(z) if z else TmuxManager()  # Use zellij if available, otherwise tmux
+if not os.path.exists('/tmp/zellij/bootstrap/zellij'): print("⚠ Zellij not found at /tmp/zellij/bootstrap/zellij - using tmux", file=sys.stderr)
 
 # Auto-update: Pull latest version from git repo
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
