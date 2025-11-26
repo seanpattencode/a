@@ -2532,7 +2532,6 @@ elif arg == 'review':
     print("  4. Take action: 1=push+delete 2=delete 3=keep 4=stop")
     print("\n💡 TIP: Hold Shift to select text in tmux")
     print("=" * 60)
-    input("\nPress Enter to start review... ")
 
     for idx, (wt_name, wt_path) in enumerate(review_worktrees):
         print(f"\n[{idx+1}/{len(review_worktrees)}] {wt_name}")
@@ -2629,16 +2628,7 @@ elif arg == 'review':
                 break
             elif action == '4':
                 print(f"\n✓ Reviewed {idx+1}/{len(review_worktrees)}")
-                # Only kill review sessions, never agent sessions
-                if session_to_attach.startswith('review-'):
-                    sp.run(['tmux', 'kill-session', '-t', session_to_attach],
-                          stdout=sp.DEVNULL, stderr=sp.DEVNULL)
                 sys.exit(0)
-
-        # Cleanup only review sessions, never agent sessions
-        if session_to_attach.startswith('review-'):
-            sp.run(['tmux', 'kill-session', '-t', session_to_attach],
-                   stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
     print(f"\n✅ Review complete!")
 elif arg == 'cleanup':
