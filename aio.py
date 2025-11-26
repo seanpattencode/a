@@ -2557,11 +2557,18 @@ elif arg == 'review':
         else:
             print(f"📁 No agent session (use t=terminal to browse)")
 
-        # Auto-show diff from base branch
-        diff = sp.run(['git', '-C', wt_path, 'diff', '--color=always', 'origin/main...HEAD'], capture_output=True, text=True)
-        if diff.returncode != 0:  # Fallback if origin/main doesn't exist
-            diff = sp.run(['git', '-C', wt_path, 'diff', '--color=always', 'HEAD~1'], capture_output=True, text=True)
-        print(f"\n{'─'*60}\n{diff.stdout or '(no changes)'}\n{'─'*60}")
+        # Show commit message and changed lines only
+        msg = sp.run(['git', '-C', wt_path, 'log', '-1', '--format=%s'], capture_output=True, text=True)
+        print(f"\n📝 {msg.stdout.strip() or '(no commit)'}")
+        diff_range = 'origin/main...HEAD'
+        diff = sp.run(['git', '-C', wt_path, 'diff', diff_range], capture_output=True, text=True)
+        if diff.returncode != 0:
+            diff_range = 'HEAD~1'
+            diff = sp.run(['git', '-C', wt_path, 'diff', diff_range], capture_output=True, text=True)
+        lines = [l for l in diff.stdout.split('\n') if l and l[0] in '+-' and not l.startswith('+++') and not l.startswith('---')]
+        print('\n'.join(lines) if lines else '(no changes)')
+        stat = sp.run(['git', '-C', wt_path, 'diff', '--shortstat', diff_range], capture_output=True, text=True)
+        print(stat.stdout.strip())
 
         # Review options
         print(f"\n📁 Inspect: l=ls  g=git-status  d=diff  h=log  t=terminal  v=vscode")
