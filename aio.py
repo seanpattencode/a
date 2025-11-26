@@ -1764,7 +1764,7 @@ APP MANAGEMENT:
   aio app rm <#|name>      Remove app
 SETUP:
   aio install         Install as global 'aio' command
-  aio deps            Install dependencies (zellij, codex)
+  aio deps            Install dependencies (node, zellij, codex, claude, gemini)
   aio update          Update aio to latest version from git
   aio add [path]      Add project to saved list
   aio remove <#>      Remove project from list
@@ -1998,20 +1998,16 @@ elif arg == 'install':
 
     print(f"\nThe script will auto-update from git on each run.")
 elif arg == 'deps':
-    # Install dependencies (zellij, codex)
-    import platform, urllib.request, tarfile
+    # Install dependencies: zellij, node/npm, codex, claude, gemini
+    import platform, urllib.request, tarfile, lzma
     bin_dir = os.path.expanduser('~/.local/bin')
     os.makedirs(bin_dir, exist_ok=True)
-    deps = [
-        ('zellij', ZELLIJ_PATH, lambda: None),  # placeholder, handled specially below
-        ('codex', None, lambda: sp.run(['npm', 'install', '-g', '@openai/codex'], check=True)),
-    ]
-    print("📦 Installing dependencies...")
-    # Zellij: download from GitHub releases
+    print("📦 Installing dependencies...\n")
+    # 1. Zellij (binary)
     if not os.path.exists(ZELLIJ_PATH):
         arch = 'x86_64' if platform.machine() in ('x86_64', 'AMD64') else 'aarch64'
         url = f'https://github.com/zellij-org/zellij/releases/latest/download/zellij-{arch}-unknown-linux-musl.tar.gz'
-        print(f"⬇️  Downloading zellij from {url}...")
+        print(f"⬇️  zellij: downloading...")
         try:
             tar_path = '/tmp/zellij.tar.gz'
             urllib.request.urlretrieve(url, tar_path)
@@ -2019,25 +2015,51 @@ elif arg == 'deps':
                 tar.extract('zellij', bin_dir, filter='data')
             os.chmod(ZELLIJ_PATH, 0o755)
             os.remove(tar_path)
-            print(f"✓ Installed zellij to {ZELLIJ_PATH}")
+            print(f"✓ zellij installed")
         except Exception as e:
-            print(f"✗ Failed to install zellij: {e}")
+            print(f"✗ zellij failed: {e}")
     else:
-        print(f"✓ zellij already installed at {ZELLIJ_PATH}")
-    # Codex: install via npm
-    if which('npm'):
-        if not which('codex'):
-            print("⬇️  Installing codex via npm...")
+        print("✓ zellij")
+    # 2. Node.js/npm (binary)
+    node_dir = os.path.expanduser('~/.local/node')
+    node_bin = os.path.join(node_dir, 'bin')
+    npm_path = os.path.join(node_bin, 'npm')
+    if not which('npm') and not os.path.exists(npm_path):
+        arch = 'x64' if platform.machine() in ('x86_64', 'AMD64') else 'arm64'
+        url = f'https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-{arch}.tar.xz'
+        print(f"⬇️  node/npm: downloading...")
+        try:
+            xz_path = '/tmp/node.tar.xz'
+            urllib.request.urlretrieve(url, xz_path)
+            with lzma.open(xz_path) as xz:
+                with tarfile.open(fileobj=xz) as tar:
+                    tar.extractall(os.path.expanduser('~/.local'), filter='data')
+            os.rename(os.path.expanduser(f'~/.local/node-v22.11.0-linux-{arch}'), node_dir)
+            os.remove(xz_path)
+            # Symlink npm and node to bin_dir
+            for cmd in ['node', 'npm', 'npx']:
+                src, dst = os.path.join(node_bin, cmd), os.path.join(bin_dir, cmd)
+                if os.path.exists(dst): os.remove(dst)
+                os.symlink(src, dst)
+            print("✓ node/npm installed")
+        except Exception as e:
+            print(f"✗ node/npm failed: {e}")
+    else:
+        print("✓ node/npm")
+    # 3. npm packages (codex, claude, gemini)
+    npm_cmd = npm_path if os.path.exists(npm_path) else 'npm'
+    npm_deps = [('codex', '@openai/codex'), ('claude', '@anthropic-ai/claude-code'), ('gemini', '@google/gemini-cli')]
+    for cmd, pkg in npm_deps:
+        if not which(cmd):
+            print(f"⬇️  {cmd}: installing...")
             try:
-                sp.run(['npm', 'install', '-g', '@openai/codex'], check=True)
-                print("✓ Installed codex")
+                sp.run([npm_cmd, 'install', '-g', pkg], check=True, capture_output=True)
+                print(f"✓ {cmd} installed")
             except Exception as e:
-                print(f"✗ Failed to install codex: {e}")
+                print(f"✗ {cmd} failed: {e}")
         else:
-            print("✓ codex already installed")
-    else:
-        print("⚠ npm not found - skipping codex install. Install Node.js first.")
-    print("\n✅ Dependency check complete!")
+            print(f"✓ {cmd}")
+    print("\n✅ Done! Restart terminal or run: export PATH=\"$HOME/.local/bin:$PATH\"")
 elif arg == 'backups' or arg == 'backup':
     backups = list_backups()
     if not backups:
