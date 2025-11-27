@@ -42,12 +42,15 @@ sm = ZellijManager(z) if z else TmuxManager()  # Use zellij if available, otherw
 if not z: print("⚠ Zellij not found - using tmux. Run 'aio deps' to install dependencies.", file=sys.stderr)
 
 # Auto-update: Pull latest version from git repo
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))  # realpath follows symlinks
 PROMPTS_FILE = os.path.join(SCRIPT_DIR, 'data', 'prompts.json')
 DEFAULT_PROMPTS = {
-    "fix": "Analyze codebase, find issues, fix them. {task}",
-    "bug": "Fix this bug: {task}",
-    "feat": "Add this feature: {task}"
+    "fix": "Analyze codebase, find issues, fix them.",
+    "bug": "Fix this bug: {task}. Minimize line count, use direct library calls only.",
+    "feat": "Add this feature: {task}. Use library glue, minimize line count.",
+    "auto": "Auto-improve: find pain points, simplify, rewrite with more library calls.",
+    "del": "Deletion mode: delete aggressively, add back only what user fights for.",
+    "gen": "Guidelines: minimize line count, maximize speed, use direct library calls only."
 }
 
 def load_prompts():
@@ -1722,9 +1725,11 @@ if not arg:
     print(f"""aio - AI agent session manager
 QUICK START:
   aio c               Start codex in current directory
-  aio fix "task"      AI finds/fixes issues (claude default)
+  aio fix             AI finds/fixes issues (claude default)
   aio bug "task"      Fix a bug (c=codex l=claude g=gemini)
   aio feat "task"     Add feature: aio feat c "dark mode"
+  aio auto            Auto-improve: find pain points, simplify, rewrite
+  aio del             Deletion mode: delete aggressively, add back only essentials
 MULTI-AGENT (run N agents in parallel worktrees):
   aio multi c:3                 Launch 3 codex (DEFAULT: 11-step protocol)
   aio multi c:3 "task"          Launch 3 codex with custom task
@@ -1816,6 +1821,18 @@ WORKTREES (isolated git branches):
   aio <key>--            New worktree in current directory
   aio <key>-- <#>        New worktree in saved project #
   aio <key>-- -t         New worktree + terminal window
+═══════════════════════════════════════════════════════════════════════════════
+CUSTOM PROMPTS (predefined workflows)
+═══════════════════════════════════════════════════════════════════════════════
+  aio fix                Autonomous: find/fix issues (11-step protocol)
+  aio bug "task"         Fix bug: read, run, research best practices, fix
+  aio feat "task"        Add feature: library glue pattern, minimal code
+  aio auto               Auto-improve: find pain, simplify, rewrite better
+  aio del                Deletion: delete aggressively, add back only essentials
+AGENT SELECTION (optional, default=claude):
+  aio bug c "task"       Use codex for bug fix
+  aio feat l "task"      Use claude for feature
+  aio auto g             Use gemini for auto-improve
 ═══════════════════════════════════════════════════════════════════════════════
 WORKTREE MANAGEMENT
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1974,15 +1991,15 @@ Working directory: {WORK_DIR}
 elif arg == 'update':
     # Explicitly update aio from git repository
     manual_update()
-elif arg in ('fix', 'bug', 'feat'):
-    # Prompt-based sessions: aio fix, aio bug "task", aio feat "task"
+elif arg in ('fix', 'bug', 'feat', 'auto', 'del'):
+    # Prompt-based sessions: aio fix, aio bug "task", aio feat "task", aio auto, aio del
     prompts = load_prompts()
     args = sys.argv[2:]
     agent = 'l'  # Default to claude
     if args and args[0] in ('c', 'l', 'g'):
         agent, args = args[0], args[1:]
-    if arg == 'fix':
-        prompt = prompts[arg]  # fix: autonomous 11-step, no task needed
+    if arg in ('fix', 'auto', 'del'):
+        prompt = prompts[arg]  # autonomous modes, no task needed
         task = 'autonomous'
     else:
         task = ' '.join(args) if args else input(f"{arg}: ")
