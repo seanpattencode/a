@@ -5,10 +5,14 @@ Usage:
   python test_voice.py file <audio.wav>     # Test with audio file
   python test_voice.py mic <duration>       # Test with microphone (default 5s)
   python test_voice.py mic 10 whisper       # Specific method
+  python test_voice.py all                  # Real-time streaming methods only
 
-Methods: sherpa, whisper, vosk
+Methods: sherpa, whisper, vosk, fwhisper (faster-whisper)
 """
 import sys, os, time
+
+# Latency config: smaller = lower latency, higher CPU
+CHUNK_MS = 30  # 30ms chunks for low latency (was 100ms)
 
 # ============== METHOD 1: SHERPA-ONNX (streaming) ==============
 def test_sherpa_file(audio_path):
@@ -80,10 +84,10 @@ def test_sherpa_mic(duration=5):
 
         stream = recognizer.create_stream()
         sample_rate = 48000  # Use native rate, sherpa resamples internally
-        chunk_samples = int(0.1 * sample_rate)  # 100ms chunks
+        chunk_samples = int(CHUNK_MS / 1000 * sample_rate)  # Low latency chunks
         chunk_bytes = chunk_samples * 2  # 2 bytes per int16 sample
 
-        print(f"  Sample rate: {sample_rate}Hz (pasimple)")
+        print(f"  Sample rate: {sample_rate}Hz, chunk: {CHUNK_MS}ms (low latency)")
         print("  Speak now! (real-time partial results shown)")
 
         all_results = []
@@ -224,10 +228,10 @@ def test_vosk_mic(duration=5):
         rec = vosk.KaldiRecognizer(model, sample_rate)
         rec.SetWords(True)
 
-        chunk_samples = int(0.1 * sample_rate)  # 100ms
+        chunk_samples = int(CHUNK_MS / 1000 * sample_rate)  # Low latency chunks
         chunk_bytes = chunk_samples * 2
 
-        print(f"  Sample rate: {sample_rate}Hz (pasimple)")
+        print(f"  Sample rate: {sample_rate}Hz, chunk: {CHUNK_MS}ms (low latency)")
         print("  Speak now! (real-time partial results shown)")
 
         all_results = []
@@ -259,17 +263,90 @@ def test_vosk_mic(duration=5):
         import traceback; traceback.print_exc()
         return None
 
+# ============== METHOD 4: FASTER-WHISPER (pseudo-streaming) ==============
+def test_fwhisper_file(audio_path, model_size='base'):
+    """Test faster-whisper with audio file"""
+    print(f"\n[FASTER-WHISPER {model_size}] Testing with file...")
+    try:
+        from faster_whisper import WhisperModel
+
+        print("  Loading model...")
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+
+        print("  Transcribing...")
+        start = time.time()
+        segments, info = model.transcribe(audio_path, beam_size=1, vad_filter=True)
+        text = ' '.join(s.text for s in segments).strip()
+        elapsed = time.time() - start
+
+        print(f"  Result ({elapsed:.2f}s): {text}")
+        return text
+    except Exception as e:
+        print(f"  ERROR: {e}")
+        return None
+
+def test_fwhisper_mic(duration=5, model_size='base'):
+    """Test faster-whisper with mic - pseudo-real-time using short segments"""
+    print(f"\n[FASTER-WHISPER {model_size}] Recording {duration}s from mic (pseudo-streaming)...")
+    try:
+        from faster_whisper import WhisperModel
+        from pasimple import PaSimple, PA_STREAM_RECORD, PA_SAMPLE_S16LE
+        import numpy as np
+        import io, wave
+
+        print("  Loading model...")
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+
+        sample_rate = 16000  # Whisper native rate
+        segment_ms = 500  # Process every 500ms for pseudo-real-time
+        chunk_samples = int(segment_ms / 1000 * sample_rate)
+        chunk_bytes = chunk_samples * 2
+
+        print(f"  Sample rate: {sample_rate}Hz, segment: {segment_ms}ms")
+        print("  Speak now! (pseudo-real-time ~500ms latency)")
+
+        all_audio = []
+        last_len = 0
+        all_text = []
+
+        with PaSimple(PA_STREAM_RECORD, PA_SAMPLE_S16LE, 1, sample_rate) as pa:
+            end = time.time() + duration
+            while time.time() < end:
+                data = pa.read(chunk_bytes)
+                all_audio.append(np.frombuffer(data, dtype=np.int16))
+
+                # Transcribe accumulated audio every segment
+                audio = np.concatenate(all_audio).astype(np.float32) / 32768.0
+                if len(audio) > last_len + chunk_samples:
+                    segments, _ = model.transcribe(audio, beam_size=1, vad_filter=True,
+                                                   without_timestamps=True, language='en')
+                    text = ' '.join(s.text for s in segments).strip()
+                    if text:
+                        print(f"\r  Partial: {text[-60:]}", end='', flush=True)
+                    last_len = len(audio)
+
+        # Final transcription
+        audio = np.concatenate(all_audio).astype(np.float32) / 32768.0
+        segments, _ = model.transcribe(audio, beam_size=1, vad_filter=True, language='en')
+        text = ' '.join(s.text for s in segments).strip()
+        print(f"\n  Final: {text}")
+        return text
+    except Exception as e:
+        print(f"  ERROR: {e}")
+        import traceback; traceback.print_exc()
+        return None
+
 # ============== MAIN ==============
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
-        print("\nAvailable methods: sherpa, whisper, vosk")
+        print("\nAvailable methods: sherpa, whisper, vosk, fwhisper")
         print("\nExamples:")
         print("  python test_voice.py file /tmp/test_audio.wav")
-        print("  python test_voice.py file /tmp/test_audio.wav whisper")
+        print("  python test_voice.py file /tmp/test_audio.wav fwhisper")
         print("  python test_voice.py mic 5")
         print("  python test_voice.py mic 10 sherpa")
-        print("  python test_voice.py all")  # Run all methods
+        print("  python test_voice.py all")  # Real-time streaming only
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -290,6 +367,8 @@ def main():
             test_whisper_file(audio_path)
         if method in ('all', 'vosk'):
             test_vosk_file(audio_path)
+        if method in ('all', 'fwhisper'):
+            test_fwhisper_file(audio_path)
 
     elif mode == 'mic':
         duration = int(sys.argv[2]) if len(sys.argv) > 2 else 5
@@ -303,15 +382,19 @@ def main():
             test_whisper_mic(duration)
         if method in ('all', 'vosk'):
             test_vosk_mic(duration)
+        if method in ('all', 'fwhisper'):
+            test_fwhisper_mic(duration)
 
     elif mode == 'all':
-        # Test only real-time streaming methods
+        # Test only real-time streaming methods (30ms latency)
         duration = int(sys.argv[2]) if len(sys.argv) > 2 else 5
-        print(f"=== REAL-TIME STREAMING TESTS ({duration}s each) ===")
+        print(f"=== REAL-TIME STREAMING TESTS ({duration}s each, {CHUNK_MS}ms chunks) ===")
         print("Testing SHERPA-ONNX...")
         test_sherpa_mic(duration)
         print("\nTesting VOSK...")
         test_vosk_mic(duration)
+        print("\nTesting FASTER-WHISPER (pseudo-streaming)...")
+        test_fwhisper_mic(duration)
 
     else:
         print(f"Unknown mode: {mode}")
