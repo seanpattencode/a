@@ -488,18 +488,25 @@ def ensure_tmux_options():
     # Copy mode: mouse drag copies to clipboard
     for mode in ['copy-mode', 'copy-mode-vi']:
         sp.run(['tmux', 'bind-key', '-T', mode, 'MouseDragEnd1Pane', 'send-keys', '-X', 'copy-pipe-and-cancel', 'xclip -sel clip'], capture_output=True)
-    # Chrome-like shortcuts: C-t new pane, C-w close pane, C-q detach
+    # Chrome-like shortcuts: C-t new pane, C-w close pane, C-q detach, M-m voice input (global keybindings)
     for k,a in [('C-t','split-window'),('C-w','kill-pane'),('C-q','detach')]: sp.run(['tmux','bind-key','-n',k,a],capture_output=True)
-    sp.run(['tmux','set-option','-g','status-right','C-t:New C-w:Close C-q:Quit | Drag=Copy'],capture_output=True)
+    sp.run(['tmux','bind-key','-n','M-m','run-shell',f'python3 {os.path.realpath(__file__)} voice 2>/dev/null'],capture_output=True)
+    # Update all existing sessions with status bar
+    r = sp.run(['tmux','list-sessions','-F','#{session_name}'],capture_output=True,text=True)
+    if r.returncode == 0:
+        for s in r.stdout.strip().split('\n'):
+            if s: sp.run(['tmux','set-option','-t',s,'status-right','C-t:New C-w:Close C-q:Quit M-m:Voice'],capture_output=True)
     _tmux_configured = True
 
-# Tmux mouse mode check disabled for instant startup
-# Will be called lazily when creating tmux sessions
+# Apply tmux options immediately if tmux is running
+ensure_tmux_options()
 
 def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=True):
     """Create a tmux session with enhanced options. Agent sessions get agent+bash panes."""
     ensure_tmux_options()
     result = sm.new_session(session_name, work_dir, cmd or '', env)
+    # Set per-session status bar with shortcuts
+    sp.run(['tmux', 'set-option', '-t', session_name, 'status-right', 'C-t:New C-w:Close C-q:Quit M-m:Voice'], capture_output=True)
     # Auto-add bash pane for agent sessions (side by side, focus agent)
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-h', '-t', session_name, '-c', work_dir], capture_output=True)
@@ -2081,6 +2088,58 @@ elif arg == 'deps':
         else:
             print(f"✓ {cmd}")
     print("\n✅ Done! Restart terminal or run: export PATH=\"$HOME/.local/bin:$PATH\"")
+elif arg == 'voice':
+    # Real-time streaming voice-to-text using sherpa-onnx + pasimple
+    # Install: pip install sherpa-onnx pasimple
+    import sherpa_onnx
+    from pasimple import PaSimple, PA_STREAM_RECORD, PA_SAMPLE_S16LE
+    import numpy as np
+    d = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+    sr_bar = 'C-t:New C-w:Close C-q:Quit M-m:Voice'
+    def tset(s): sp.run(['tmux','set','status-right',s],capture_output=True)
+    # Auto-download model if needed
+    model_dir = os.path.expanduser('~/.local/share/sherpa-onnx/sherpa-onnx-streaming-zipformer-en-2023-06-26')
+    if not os.path.exists(model_dir):
+        tset('⬇️ Downloading model...')
+        import urllib.request, tarfile
+        os.makedirs(os.path.dirname(model_dir), exist_ok=True)
+        url = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-en-2023-06-26.tar.bz2'
+        tar_path = '/tmp/sherpa-model.tar.bz2'
+        urllib.request.urlretrieve(url, tar_path)
+        with tarfile.open(tar_path, 'r:bz2') as tar: tar.extractall(os.path.dirname(model_dir))
+        os.unlink(tar_path)
+    recognizer = sherpa_onnx.OnlineRecognizer.from_transducer(
+        tokens=f'{model_dir}/tokens.txt',
+        encoder=f'{model_dir}/encoder-epoch-99-avg-1-chunk-16-left-128.onnx',
+        decoder=f'{model_dir}/decoder-epoch-99-avg-1-chunk-16-left-128.onnx',
+        joiner=f'{model_dir}/joiner-epoch-99-avg-1-chunk-16-left-128.onnx',
+        num_threads=2, sample_rate=16000, feature_dim=80,
+        enable_endpoint_detection=True, rule1_min_trailing_silence=2.0, rule2_min_trailing_silence=1.0,
+    )
+    stream = recognizer.create_stream()
+    sample_rate = 48000  # Native rate - sherpa resamples internally
+    chunk_bytes = int(0.1 * sample_rate) * 2  # 100ms chunks, 2 bytes per int16
+    last_result = ''
+    tset('🎤 Listening...')
+    with PaSimple(PA_STREAM_RECORD, PA_SAMPLE_S16LE, 1, sample_rate) as pa:
+        import time; end = time.time() + d
+        while time.time() < end:
+            data = pa.read(chunk_bytes)
+            samples = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+            stream.accept_waveform(sample_rate, samples)
+            while recognizer.is_ready(stream): recognizer.decode_stream(stream)
+            result = recognizer.get_result(stream)
+            if result and result != last_result:
+                last_result = result
+                tset(f'🎤 {result[-30:]}')
+            if recognizer.is_endpoint(stream) and result:
+                sp.run(['tmux','send-keys','-l',result+' '],capture_output=True)
+                recognizer.reset(stream)
+                last_result = ''
+        # Final result
+        if (r := recognizer.get_result(stream)): sp.run(['tmux','send-keys','-l',r+' '],capture_output=True)
+    tset(sr_bar)
+    sys.exit(0)
 elif arg == 'backups' or arg == 'backup':
     backups = list_backups()
     if not backups:
