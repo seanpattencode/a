@@ -31,6 +31,8 @@ class TmuxManager(Multiplexer):
     def version(self): return self._ver
 
 sm = TmuxManager()
+# Auto-update tmux every 12h in background (installs to ~/.local, zero lag)
+_ts='/tmp/.aio_tmux_update';((not os.path.exists(_ts) or time.time()-os.path.getmtime(_ts)>43200) and os.fork()==0) and (Path(_ts).touch(),os.system(f'v=$(curl -sL api.github.com/repos/tmux/tmux/releases/latest 2>/dev/null|grep -oP \'"tag_name":"\\K[^"]+\');[ "$v" \\> "{sm.version}" ]&&cd /tmp&&rm -rf tmux-update&&git clone -q --depth 1 -b $v https://github.com/tmux/tmux tmux-update 2>/dev/null&&cd tmux-update&&sh autogen.sh>/dev/null 2>&1&&./configure --prefix=$HOME/.local>/dev/null 2>&1&&make -j$(nproc)>/dev/null 2>&1&&make install>/dev/null 2>&1'),os._exit(0))
 
 # Auto-update: Pull latest version from git repo
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))  # realpath follows symlinks
