@@ -475,12 +475,13 @@ sessions = load_sessions(config)
 
 _tmux_configured = False
 def ensure_tmux_options():
-    """Configure tmux with mouse mode, scrollbars (3.6+), and copy-to-clipboard bindings."""
+    """Configure tmux: status bar on top, mouse, scrollbars, keyboard shortcuts."""
     global _tmux_configured
     if _tmux_configured: return
     if sp.run(['tmux', 'info'], stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode != 0: return
-    # Mouse mode
-    sp.run(['tmux', 'set-option', '-g', 'mouse', 'on'], capture_output=True)
+    # Status bar on top, mouse mode, longer status text
+    for opt in [('mouse', 'on'), ('status-position', 'top'), ('status-right-length', '100')]:
+        sp.run(['tmux', 'set-option', '-g', opt[0], opt[1]], capture_output=True)
     # Scrollbars (tmux 3.6+)
     if sm.version >= '3.6':
         sp.run(['tmux', 'set-option', '-g', 'pane-scrollbars', 'on'], capture_output=True)
@@ -488,13 +489,15 @@ def ensure_tmux_options():
     # Copy mode: mouse drag copies to clipboard
     for mode in ['copy-mode', 'copy-mode-vi']:
         sp.run(['tmux', 'bind-key', '-T', mode, 'MouseDragEnd1Pane', 'send-keys', '-X', 'copy-pipe-and-cancel', 'xclip -sel clip'], capture_output=True)
-    # Chrome-like shortcuts: C-t new pane, C-w close pane, C-q detach (global keybindings)
-    for k,a in [('C-t','split-window'),('C-w','kill-pane'),('C-q','detach')]: sp.run(['tmux','bind-key','-n',k,a],capture_output=True)
-    # Update all existing sessions with status bar
-    r = sp.run(['tmux','list-sessions','-F','#{session_name}'],capture_output=True,text=True)
+    # Keyboard shortcuts: Ctrl+T new, Ctrl+W close, Ctrl+Q detach, Ctrl+X kill session
+    for k, a in [('C-t', 'split-window'), ('C-w', 'kill-pane'), ('C-q', 'detach')]:
+        sp.run(['tmux', 'bind-key', '-n', k, a], capture_output=True)
+    sp.run(['tmux', 'bind-key', '-n', 'C-x', 'confirm-before', '-p', 'Kill session? (y/n)', 'kill-session'], capture_output=True)
+    # Update status bar on all sessions
+    r = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True)
     if r.returncode == 0:
         for s in r.stdout.strip().split('\n'):
-            if s: sp.run(['tmux','set-option','-t',s,'status-right','C-t:New C-w:Close C-q:Quit'],capture_output=True)
+            if s: sp.run(['tmux', 'set-option', '-t', s, 'status-right', 'Ctrl+T:New Ctrl+W:Close Ctrl+X:Kill Ctrl+Q:Detach'], capture_output=True)
     _tmux_configured = True
 
 # Apply tmux options immediately if tmux is running
@@ -504,8 +507,8 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     """Create a tmux session with enhanced options. Agent sessions get agent+bash panes."""
     ensure_tmux_options()
     result = sm.new_session(session_name, work_dir, cmd or '', env)
-    # Set per-session status bar with shortcuts
-    sp.run(['tmux', 'set-option', '-t', session_name, 'status-right', 'C-t:New C-w:Close C-q:Quit'], capture_output=True)
+    # Set per-session status bar
+    sp.run(['tmux', 'set-option', '-t', session_name, 'status-right', 'Ctrl+T:New Ctrl+W:Close Ctrl+X:Kill Ctrl+Q:Detach'], capture_output=True)
     # Auto-add bash pane for agent sessions (side by side, focus agent)
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-h', '-t', session_name, '-c', work_dir], capture_output=True)
