@@ -1748,6 +1748,8 @@ GIT:
   aio pull            Sync with server
 MANAGEMENT:
   aio jobs            Show active jobs
+  aio attach          Reconnect to session
+  aio killall         Kill all tmux sessions
   aio cleanup         Delete all worktrees
   aio add [path]      Add project
   aio remove <#>      Remove project
@@ -1837,6 +1839,8 @@ MONITORING & AUTOMATION
   aio cleanup            Delete all worktrees (with confirmation)
   aio cleanup --yes      Delete all worktrees (skip confirmation)
   aio ls                 List all tmux sessions
+  aio attach             Reconnect to multi-agent session
+  aio killall            Kill all tmux sessions (keeps current if inside tmux)
   aio watch <session>    Auto-respond to prompts (watch once)
   aio watch <session> 60 Auto-respond for 60 seconds
   aio send <sess> "text" Send prompt to existing session
@@ -3609,6 +3613,12 @@ elif arg.endswith('++') and not arg.startswith('w'):
 # Removed old '+' feature (timestamped session without worktree)
 # to make room for new '+' and '++' worktree commands
 else:
+    # If inside tmux and arg is simple agent key (c/l/g), create pane instead of session
+    if 'TMUX' in os.environ and arg in sessions and len(arg) == 1:
+        _, cmd = sessions[arg]
+        sp.run(['tmux', 'split-window', '-h', '-c', work_dir, cmd])
+        sys.exit(0)
+
     # Try directory-based session logic first
     session_name = get_or_create_directory_session(arg, work_dir)
 
