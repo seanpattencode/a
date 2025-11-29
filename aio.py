@@ -1722,68 +1722,22 @@ if new_window and not arg:
 if not arg:
     print(f"""aio - AI agent session manager
 QUICK START:
-  aio c               Start codex in current directory
-  aio fix             AI finds/fixes issues (claude default)
-  aio bug "task"      Fix a bug (c=codex l=claude g=gemini)
-  aio feat "task"     Add feature: aio feat c "dark mode"
-  aio auto            Auto-improve: find pain points, simplify, rewrite
-  aio del             Deletion mode: delete aggressively, add back only essentials
-MULTI-AGENT (run N agents in parallel worktrees):
-  aio multi c:3                 Launch 3 codex (DEFAULT: 11-step protocol)
-  aio multi c:3 "task"          Launch 3 codex with custom task
-  aio multi c:2 l:1             Mixed agents (DEFAULT: 11-step protocol)
-  aio multi c:3 --seq           Sequential (DEFAULT: 11-step protocol)
-  aio multi 0 c:2 "task"        Or use project #: launch in project 0
-PORTFOLIO (run agents across ALL saved projects):
-  aio all c:2                   2 codex per project (DEFAULT: 11-step protocol - overnight!)
-  aio all c:2 "task"            2 codex per project with custom task
-  aio all c:1 l:1               Mixed agents across all (DEFAULT protocol)
-  aio all c:2 --seq             Sequential across projects (DEFAULT protocol)
-SESSIONS: c=codex  l=claude  g=gemini  h=htop  t=top
-  aio <key>           Attach to session (or create if needed)
-  aio <key> <#>       Start in saved project # (0-{len(PROJECTS)-1})
-  aio <key> -w        Launch in new window
-  aio <key> -t        Launch session + separate terminal
-PROMPTS:
-  aio cp/lp/gp        Insert prompt (ready to edit before running)
-  aio cpp/lpp/gpp     Auto-run prompt immediately
-WORKTREES:
-  aio <key>++         New worktree in current dir
-  aio <key>++ <#>     New worktree in project #
-  aio w               List all worktrees
-  aio w<#>            Open worktree #
-  aio w<#>-           Remove worktree (no push)
-  aio w<#>--          Remove worktree and push to main
-MANAGEMENT:
-  aio jobs            Show all active work with status
-  aio jobs --running  Show only running jobs (filter out review)
-  aio review          Review & clean up finished worktrees (NEW!)
-  aio cleanup         Delete all worktrees (with confirmation)
-  aio cleanup --yes   Delete all worktrees (skip confirmation)
-  aio ls              List all tmux sessions
-  aio p               Show saved projects
-DATABASE:
-  aio backups         List all database backups
-  aio restore <file>  Restore database from backup
+  aio c               Start codex (c=codex l=claude g=gemini)
+  aio fix             AI finds/fixes issues
+  aio bug "task"      Fix a bug
+  aio feat "task"     Add a feature
+  aio multi c:3       Launch 3 agents in parallel worktrees
 GIT:
-  aio setup <url>     Initialize git repo with remote
-  aio push ["msg"]    Quick commit and push
-  aio pull            Replace local with server (destructive)
-  aio revert [N]      Undo last N commits (default: 1)
-APP MANAGEMENT:
-  aio app                  List all configured apps
-  aio app add <name> [cmd] Add app (auto-includes current dir)
-  aio app add --global     Skip directory context
-  aio app edit <#|name>    Edit app command
-  aio app rm <#|name>      Remove app
-SETUP:
-  aio install         Install as global 'aio' command
-  aio deps            Install dependencies (node, codex, claude, gemini)
-  aio update          Update aio to latest version from git
-  aio add [path]      Add project to saved list
-  aio remove <#>      Remove project from list
-Working directory: {WORK_DIR}
-Run 'aio help' for detailed documentation""")
+  aio push ["msg"]    Commit and push
+  aio pull            Sync with server
+MANAGEMENT:
+  aio jobs            Show active jobs
+  aio cleanup         Delete all worktrees
+  aio add [path]      Add project
+  aio remove <#>      Remove project
+  aio app add <name>  Add app
+  aio app rm <#>      Remove app
+Run 'aio help' for all commands""")
     if PROJECTS or APPS:
         if PROJECTS:
             print("📁 PROJECTS (use 'aio <#>' to open):")
