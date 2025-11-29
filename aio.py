@@ -2173,8 +2173,10 @@ elif arg == 'multi':
 
     agent_specs, prompt, using_default_protocol = parse_agent_specs_and_prompt(sys.argv, start_parse_at)
     if not agent_specs:
-        print("✗ No agent specifications provided")
-        sys.exit(1)
+        spec = input("Agent specs (e.g. c:3 or c:2 l:1): ").strip()
+        if not spec:
+            sys.exit(1)
+        agent_specs, prompt, using_default_protocol = parse_agent_specs_and_prompt([''] + spec.split(), 1)
 
     total_instances = sum(count for _, count in agent_specs)
     print(f"🚀 Starting {total_instances} agents as tabs in one session...")
