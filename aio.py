@@ -1726,7 +1726,11 @@ QUICK START:
   aio fix             AI finds/fixes issues
   aio bug "task"      Fix a bug
   aio feat "task"     Add a feature
-  aio multi c:3       Launch 3 agents in parallel worktrees
+MULTI-AGENT:
+  aio multi c:3             Launch 3 codex in parallel worktrees
+  aio multi c:3 "task"      Launch 3 codex with custom task
+  aio multi c:2 l:1         Mixed: 2 codex + 1 claude
+  aio multi 0 c:2 "task"    Launch in project 0
 GIT:
   aio push ["msg"]    Commit and push
   aio pull            Sync with server
