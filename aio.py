@@ -2607,13 +2607,19 @@ After creating REVIEW.md, say REVIEW COMPLETE."""
         run_id = work_dir_arg
     else:
         with WALManager(DB_PATH) as conn:
-            runs = conn.execute("SELECT id, repo, prompt, status FROM multi_runs ORDER BY created_at DESC LIMIT 10").fetchall()
+            runs = conn.execute("SELECT id, repo, prompt, status, created_at FROM multi_runs ORDER BY created_at DESC LIMIT 10").fetchall()
         if not runs:
             print("No runs to review. Use 'aio multi' first.")
             sys.exit(0)
         print("Recent runs:")
-        for i, (rid, repo, prompt, status) in enumerate(runs):
-            print(f"  {i}. [{status}] {rid} - {os.path.basename(repo)}: {prompt[:40]}...")
+        for i, (rid, repo, prompt, status, created_at) in enumerate(runs):
+            elapsed = ""
+            if created_at:
+                try:
+                    mins = int((datetime.now() - datetime.fromisoformat(created_at)).total_seconds() / 60)
+                    elapsed = f"{mins}m" if mins < 60 else f"{mins//60}h{mins%60}m"
+                except: pass
+            print(f"  {i}. [{status}] {elapsed:>5} {rid} - {os.path.basename(repo)}: {prompt[:40]}...")
         choice = input("Select #: ").strip()
         run_id = runs[int(choice)][0] if choice.isdigit() and int(choice) < len(runs) else choice
 
