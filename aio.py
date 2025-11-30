@@ -6,6 +6,22 @@ from pathlib import Path
 import pexpect
 import shlex
 import time
+from prompt_toolkit import Application
+from prompt_toolkit.layout import Layout
+from prompt_toolkit.widgets import TextArea, Frame
+from prompt_toolkit.key_binding import KeyBindings
+
+def input_box(prefill="", title="Ctrl+D to run"):
+    # Fallback to simple input inside tmux or non-TTY
+    if not sys.stdin.isatty() or 'TMUX' in os.environ:
+        print(f"[{title}] " if not prefill else f"[{title}]\n{prefill}\n> ", end="", flush=True)
+        return input() if not prefill else prefill
+    kb = KeyBindings()
+    @kb.add('c-d')
+    def _(e): e.app.exit()
+    ta = TextArea(text=prefill, multiline=True, focus_on_click=True)
+    Application(layout=Layout(Frame(ta, title=title)), key_bindings=kb, full_screen=True, mouse_support=True).run()
+    return ta.text
 
 # Session Manager - generic multiplexer abstraction (tmux implementation)
 class Multiplexer:
@@ -242,6 +258,33 @@ No polling whatsoever, only event based.
 Step 3:
 After you make edits, run manually exactly as the user would, and check the output manually, if applicable inspect screenshots. Set an aggressive timeout on any terminal command. Don't add any features just make sure everything works and fix any issues according to library glue principles."""
                 conn.execute("INSERT INTO prompts VALUES ('default', ?)", (default_prompt,))
+
+            # Add reviewer prompt if not exists
+            cursor = conn.execute("SELECT COUNT(*) FROM prompts WHERE name = 'reviewer'")
+            if cursor.fetchone()[0] == 0:
+                reviewer_prompt = """You are reviewing code implementations for: {TASK}
+
+Agents used: {AGENTS}
+Directories to review: {DIRS}
+
+You do NOT edit code. Run tests to verify. Rank by:
+1. Runs without errors
+2. Solves the problem
+3. Shortest code (fewer lines)
+4. Most library calls (library glue pattern)
+5. Fastest execution
+
+Create REVIEW.md with:
+# Review Results
+## Ranking
+1. [best] - reason
+2. [next] - reason
+
+## Recommendation
+Which to push to main and why.
+
+Say REVIEW COMPLETE when done."""
+                conn.execute("INSERT INTO prompts VALUES ('reviewer', ?)", (reviewer_prompt,))
 
             # Check if config exists
             cursor = conn.execute("SELECT COUNT(*) FROM config")
@@ -1751,6 +1794,7 @@ MANAGEMENT:
   aio attach          Reconnect to session
   aio killall         Kill all tmux sessions
   aio cleanup         Delete all worktrees
+  aio prompt [name]   Edit prompts (feat, fix, bug, auto, del)
   aio add [path]      Add project
   aio remove <#>      Remove project
   aio app add <name>  Add app
@@ -2188,11 +2232,18 @@ elif arg == 'multi':
         project_path = os.getcwd()
         start_parse_at = 2
 
-    agent_specs, prompt, _ = parse_agent_specs_and_prompt(sys.argv, start_parse_at)
+    agent_specs, task, used_default = parse_agent_specs_and_prompt(sys.argv, start_parse_at)
     if not agent_specs:
         spec = input("Agent specs (e.g. c:3 or c:2 l:1): ").strip()
         if not spec: sys.exit(1)
-        agent_specs, prompt, _ = parse_agent_specs_and_prompt([''] + spec.split(), 1)
+        agent_specs, task, used_default = parse_agent_specs_and_prompt([''] + spec.split(), 1)
+    if used_default:
+        task = input_box("", "Task (Ctrl+D to run)").strip()
+        if not task: sys.exit(1)
+
+    # Wrap task with feat prompt template
+    prompts = load_prompts()
+    prompt = prompts['feat'].format(task=task)
 
     total = sum(count for _, count in agent_specs)
     repo_name = os.path.basename(project_path)
@@ -2203,15 +2254,14 @@ elif arg == 'multi':
     run_dir = os.path.join(WORKTREES_DIR, repo_name, run_id)
     os.makedirs(run_dir, exist_ok=True)
 
-    # Save prompt to JSON
-    run_info = {"prompt": prompt, "agents": [f"{k}:{c}" for k, c in agent_specs], "created": run_id, "repo": project_path}
+    # Save to JSON and DB (store task for display, prompt is the full formatted version)
+    run_info = {"task": task, "prompt": prompt, "agents": [f"{k}:{c}" for k, c in agent_specs], "created": run_id, "repo": project_path}
     with open(os.path.join(run_dir, "run.json"), "w") as f:
         json.dump(run_info, f, indent=2)
 
-    # Save to DB
     with WALManager(DB_PATH) as conn:
         conn.execute("INSERT OR REPLACE INTO multi_runs VALUES (?, ?, ?, ?, 'running', CURRENT_TIMESTAMP, NULL)",
-                    (run_id, project_path, prompt, json.dumps([f"{k}:{c}" for k, c in agent_specs])))
+                    (run_id, project_path, task, json.dumps([f"{k}:{c}" for k, c in agent_specs])))
         conn.commit()
 
     print(f"🚀 Starting {total} agents + reviewer in {repo_name}/{run_id}...")
@@ -2219,11 +2269,6 @@ elif arg == 'multi':
     env = get_noninteractive_git_env()
     launched = []
     agent_num = {}  # Track count per agent type for naming
-
-    # Reviewer prompt
-    REVIEWER_PROMPT = '''You are a code review agent. Review each attempt directory (c0, c1, l0, etc).
-You do NOT edit code. Run tests to verify. Rank by: runs without errors, solves problem, shortest code, most library calls, fastest.
-Create REVIEW.md with rankings and recommendation. Say REVIEW COMPLETE when done.'''
 
     first_window = True
     for agent_key, count in agent_specs:
@@ -2260,6 +2305,12 @@ Create REVIEW.md with rankings and recommendation. Say REVIEW COMPLETE when done
 
     if not launched:
         print("✗ No agents created"); sys.exit(1)
+
+    # Build reviewer prompt with context
+    agents_str = ", ".join(f"{k}:{c}" for k, c in agent_specs)
+    dirs_str = ", ".join(os.path.basename(p) for _, _, p in launched)
+    prompt_template = get_prompt('reviewer') or "Review {DIRS} for: {TASK}"
+    REVIEWER_PROMPT = prompt_template.format(TASK=prompt, AGENTS=agents_str, DIRS=dirs_str)
 
     # Add reviewer window (event-driven: waits for all agent signals, then auto-starts)
     wait_cmds = '; '.join(f'echo "  waiting for {w}..."; tmux wait-for {session_name}-{w}; echo "  ✓ {w} done"' for w, _, _ in launched)
@@ -2574,33 +2625,25 @@ elif arg == 'killall':
     else:
         print("Cancelled")
 
+elif arg == 'prompt':
+    # Edit prompts: aio prompt [name]
+    prompts = load_prompts()
+    name = work_dir_arg or 'feat'
+    if name not in prompts:
+        print(f"Available: {', '.join(prompts.keys())}")
+        sys.exit(1)
+    new_val = input_box(prompts[name], f"Edit '{name}' (Ctrl+D to save)")
+    if new_val != prompts[name]:
+        prompts[name] = new_val
+        os.makedirs(os.path.dirname(PROMPTS_FILE), exist_ok=True)
+        with open(PROMPTS_FILE, 'w') as f: json.dump(prompts, f, indent=2)
+        print(f"✓ Saved '{name}' prompt")
+    else:
+        print("No changes")
+
 elif arg == 'review':
     # Review mode: add reviewer window to existing session
     import json
-
-    REVIEWER_PROMPT = """You are a code review agent. Review the code in each worktree directory.
-You do NOT edit code. You evaluate and rank implementations.
-Run tests to verify code works. You may fix environment issues (install deps) but not code.
-
-Rank criteria (in order):
-1. Does it run without errors?
-2. Does it solve the problem?
-3. Shortest code (fewer lines)
-4. Most direct library calls (library glue pattern)
-5. Fastest execution
-6. Most readable
-
-Create a file REVIEW.md with rankings:
-# Review Results
-## Ranking
-1. [best] c0 - runs, solves problem, 45 lines, clean
-2. c1 - runs, partial solution, 60 lines
-3. l0 - errors on startup
-
-## Recommendation
-Push c0 to main.
-
-After creating REVIEW.md, say REVIEW COMPLETE."""
 
     # Find run to review
     if work_dir_arg:
@@ -2637,12 +2680,27 @@ After creating REVIEW.md, say REVIEW COMPLETE."""
         print(f"✗ Run not found: {run_id}")
         sys.exit(1)
 
+    # Load run context and build reviewer prompt
+    run_json = os.path.join(run_dir, "run.json")
+    task, agents = "unknown", "unknown"
+    if os.path.exists(run_json):
+        with open(run_json) as f:
+            info = json.load(f)
+            task = info.get("task") or info.get("prompt", "unknown")
+            agents = ", ".join(info.get("agents", []))
+    dirs = ", ".join(d for d in os.listdir(run_dir) if os.path.isdir(os.path.join(run_dir, d)))
+
+    prompt_template = get_prompt('reviewer') or "Review the code in {DIRS} for task: {TASK}"
+    REVIEWER_PROMPT = prompt_template.format(TASK=task, AGENTS=agents, DIRS=dirs)
+    print(f"📋 Reviewing: {task[:60]}...")
+    print(f"   Agents: {agents} | Dirs: {dirs}")
+
     # Session name matches multi command
     session_name = f"{repo_name}-{run_id}"
     env = get_noninteractive_git_env()
 
     # Add reviewer window to existing session (or create if doesn't exist)
-    reviewer_cmd = f"claude {shlex.quote(REVIEWER_PROMPT)}"
+    reviewer_cmd = f"claude --dangerously-skip-permissions {shlex.quote(REVIEWER_PROMPT)}"
     if sm.has_session(session_name):
         # Add reviewer as new window
         sp.run(['tmux', 'new-window', '-t', session_name, '-n', 'reviewer', '-c', run_dir, reviewer_cmd], env=env)
