@@ -3479,15 +3479,7 @@ elif arg == 'pull':
         print("✗ Not a git repository")
         sys.exit(1)
 
-    print("⚠ WARNING: This will DELETE all local changes and replace with server version!")
-    skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
-    if not skip_confirm:
-        response = input("Are you sure? (y/n): ").strip().lower()
-        if response not in ['y', 'yes']:
-            print("✗ Cancelled")
-            sys.exit(0)
-
-    # Use non-interactive environment to prevent GUI dialogs
+    # Fetch first to show what we'll sync to
     env = get_noninteractive_git_env()
     fetch_result = sp.run(['git', '-C', cwd, 'fetch', 'origin'], capture_output=True, text=True, env=env)
     if fetch_result.returncode != 0:
@@ -3498,12 +3490,27 @@ elif arg == 'pull':
             print(f"   • For HTTPS: Run 'git config --global credential.helper cache'")
             print(f"   • Then manually 'git fetch' once to save credentials")
             sys.exit(1)
-    result = sp.run(['git', '-C', cwd, 'reset', '--hard', 'origin/main'], capture_output=True, text=True)
-    if result.returncode != 0:
-        result = sp.run(['git', '-C', cwd, 'reset', '--hard', 'origin/master'], capture_output=True, text=True)
+
+    # Get target commit info (try main, then master)
+    target_ref = 'origin/main'
+    target_commit = sp.run(['git', '-C', cwd, 'log', '-1', '--format=%h %s', target_ref], capture_output=True, text=True)
+    if target_commit.returncode != 0:
+        target_ref = 'origin/master'
+        target_commit = sp.run(['git', '-C', cwd, 'log', '-1', '--format=%h %s', target_ref], capture_output=True, text=True)
+
+    print("⚠ WARNING: This will DELETE all local changes and replace with server version!")
+    if target_commit.returncode == 0:
+        print(f"   Target: {target_commit.stdout.strip()}")
+    skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
+    if not skip_confirm:
+        response = input("Are you sure? (y/n): ").strip().lower()
+        if response not in ['y', 'yes']:
+            print("✗ Cancelled")
+            sys.exit(0)
+
+    result = sp.run(['git', '-C', cwd, 'reset', '--hard', target_ref], capture_output=True, text=True)
     sp.run(['git', '-C', cwd, 'clean', '-f', '-d'], capture_output=True)
-    commit_msg = sp.run(['git', '-C', cwd, 'log', '-1', '--format=%h %s'], capture_output=True, text=True)
-    print(f"✓ Synced with server: {commit_msg.stdout.strip()}" if commit_msg.returncode == 0 else "✓ Local changes removed. Synced with server.")
+    print(f"✓ Synced with server: {target_commit.stdout.strip()}" if target_commit.returncode == 0 else "✓ Local changes removed. Synced with server.")
 elif arg == 'revert':
     # Undo N commits using git revert
     cwd = os.getcwd()
