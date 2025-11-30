@@ -2280,7 +2280,8 @@ elif arg == 'multi':
             agent_num[base_name] = agent_num.get(base_name, 0) + 1
             window_name = f"{base_name}-{agent_num[base_name]}"
             attempt_name = f"{agent_key}{i}"
-            wt_path = os.path.join(run_dir, attempt_name)
+            # Put worktree at top level with clear project name: repo-runid-agent
+            wt_path = os.path.join(WORKTREES_DIR, f"{repo_name}-{run_id}-{attempt_name}")
 
             # Create git worktree
             branch_name = f"wt-{repo_name}-{run_id}-{attempt_name}"
@@ -2732,56 +2733,69 @@ elif arg == 'review':
     else:
         os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
 elif arg == 'cleanup':
-    # Delete all worktrees without pushing
-    if not os.path.exists(WORKTREES_DIR):
-        print("No worktrees directory found")
+    # Delete all worktrees - simple approach: rm -rf + git worktree prune
+    import shutil
+
+    worktrees = []
+    if os.path.exists(WORKTREES_DIR):
+        worktrees = [d for d in os.listdir(WORKTREES_DIR)
+                     if os.path.isdir(os.path.join(WORKTREES_DIR, d))]
+
+    # Check if there's anything to clean (directories or db entries)
+    with WALManager(DB_PATH) as conn:
+        db_count = conn.execute("SELECT COUNT(*) FROM multi_runs").fetchone()[0]
+
+    if not worktrees and db_count == 0:
+        print("Nothing to clean")
         sys.exit(0)
 
-    worktrees = [d for d in os.listdir(WORKTREES_DIR)
-                 if os.path.isdir(os.path.join(WORKTREES_DIR, d))]
+    if worktrees:
+        print(f"Found {len(worktrees)} directories:\n")
+        for wt in worktrees:
+            print(f"  • {wt}")
+    if db_count:
+        print(f"\n{db_count} run entries in database")
 
-    if not worktrees:
-        print("No worktrees found")
-        sys.exit(0)
+    print(f"\n⚠️  This will:")
+    if worktrees:
+        print(f"   • Delete {len(worktrees)} directories")
+    print(f"   • Prune stale worktree refs from projects")
+    if db_count:
+        print(f"   • Clear {db_count} run history entries")
 
-    # Show what will be deleted
-    print(f"Found {len(worktrees)} worktrees to delete:\n")
-    for wt in worktrees:
-        print(f"  • {wt}")
-
-    print(f"\n⚠️  This will DELETE all {len(worktrees)} worktrees (no push to git)")
-
-    # Check for --yes flag
     skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
-
     if not skip_confirm:
-        response = input("\nAre you sure? (y/n): ").strip().lower()
-        if response not in ['y', 'yes']:
-            print("✗ Cancelled")
-            sys.exit(0)
-    else:
-        print("\n⚠️  Confirmation skipped (--yes flag)")
+        if input("\nContinue? (y/n): ").strip().lower() not in ['y', 'yes']:
+            print("✗ Cancelled"); sys.exit(0)
 
-    print("\n🗑️  Deleting worktrees...\n")
+    # Step 1: Delete all directories
+    deleted = 0
+    if worktrees:
+        print("\n🗑️  Deleting directories...")
+        for wt in worktrees:
+            path = os.path.join(WORKTREES_DIR, wt)
+            try:
+                shutil.rmtree(path)
+                print(f"  ✓ {wt}")
+                deleted += 1
+            except Exception as e:
+                print(f"  ✗ {wt}: {e}")
 
-    success_count = 0
-    failed_count = 0
+    # Step 2: Prune stale worktree refs from all known projects
+    print("\n🧹 Pruning stale refs from projects...")
+    for proj in PROJECTS:
+        if os.path.exists(proj):
+            result = sp.run(['git', '-C', proj, 'worktree', 'prune'], capture_output=True)
+            if result.returncode == 0:
+                print(f"  ✓ {os.path.basename(proj)}")
 
-    for wt in worktrees:
-        worktree_path = os.path.join(WORKTREES_DIR, wt)
-        print(f"Deleting: {wt}...")
-        if remove_worktree(worktree_path, push=False, skip_confirm=True):
-            success_count += 1
-            print(f"✓ Deleted {wt}\n")
-        else:
-            failed_count += 1
-            print(f"✗ Failed to delete {wt}\n")
+    # Step 3: Clear multi_runs database table
+    with WALManager(DB_PATH) as conn:
+        conn.execute("DELETE FROM multi_runs")
+        conn.commit()
+    print("  ✓ Cleared run history")
 
-    print(f"\n{'='*60}")
-    print(f"✓ Deleted: {success_count}")
-    if failed_count > 0:
-        print(f"✗ Failed: {failed_count}")
-    print(f"{'='*60}")
+    print(f"\n✓ Cleanup complete" + (f" ({deleted} directories)" if deleted else ""))
 elif arg == 'p':
     if PROJECTS:
         print("📁 PROJECTS:")
