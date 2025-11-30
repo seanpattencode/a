@@ -3502,7 +3502,8 @@ elif arg == 'pull':
     if result.returncode != 0:
         result = sp.run(['git', '-C', cwd, 'reset', '--hard', 'origin/master'], capture_output=True, text=True)
     sp.run(['git', '-C', cwd, 'clean', '-f', '-d'], capture_output=True)
-    print("✓ Local changes removed. Synced with server.")
+    commit_msg = sp.run(['git', '-C', cwd, 'log', '-1', '--format=%h %s'], capture_output=True, text=True)
+    print(f"✓ Synced with server: {commit_msg.stdout.strip()}" if commit_msg.returncode == 0 else "✓ Local changes removed. Synced with server.")
 elif arg == 'revert':
     # Undo N commits using git revert
     cwd = os.getcwd()
