@@ -3,17 +3,29 @@ import os, sys, subprocess as sp, json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-import pexpect
 import shlex
+import shutil
 import time
-from prompt_toolkit import Application
-from prompt_toolkit.layout import Layout
-from prompt_toolkit.widgets import TextArea, Frame
-from prompt_toolkit.key_binding import KeyBindings
+
+# Optional dependencies - graceful fallback if not installed
+try:
+    import pexpect
+    HAS_PEXPECT = True
+except ImportError:
+    HAS_PEXPECT = False
+
+try:
+    from prompt_toolkit import Application
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.widgets import TextArea, Frame
+    from prompt_toolkit.key_binding import KeyBindings
+    HAS_PROMPT_TOOLKIT = True
+except ImportError:
+    HAS_PROMPT_TOOLKIT = False
 
 def input_box(prefill="", title="Ctrl+D to run"):
-    # Fallback to simple input inside tmux or non-TTY
-    if not sys.stdin.isatty() or 'TMUX' in os.environ:
+    # Fallback to simple input inside tmux, non-TTY, or if prompt_toolkit not installed
+    if not sys.stdin.isatty() or 'TMUX' in os.environ or not HAS_PROMPT_TOOLKIT:
         print(f"[{title}] " if not prefill else f"[{title}]\n{prefill}\n> ", end="", flush=True)
         return input() if not prefill else prefill
     kb = KeyBindings()
@@ -36,7 +48,7 @@ class Multiplexer:
 class TmuxManager(Multiplexer):
     """Tmux multiplexer with enhanced options (scrollbars, mouse mode, keybindings)."""
     def __init__(self):
-        self._ver = sp.check_output(['tmux', '-V'], text=True).split()[1] if sp.run(['which', 'tmux'], capture_output=True).returncode == 0 else '0'
+        self._ver = sp.check_output(['tmux', '-V'], text=True).split()[1] if shutil.which('tmux') else '0'
     def new_session(self, n, d, c, e=None): return sp.run(['tmux', 'new-session', '-d', '-s', n, '-c', d] + ([c] if c else []), capture_output=True, env=e)
     def send_keys(self, n, t): return sp.run(['tmux', 'send-keys', '-l', '-t', n, t])
     def attach(self, n): return ['tmux', 'attach', '-t', n]
@@ -573,11 +585,8 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
 def detect_terminal():
     """Detect available terminal emulator"""
     for term in ['ptyxis', 'gnome-terminal', 'alacritty']:
-        try:
-            sp.run(['which', term], capture_output=True, check=True)
+        if shutil.which(term):
             return term
-        except:
-            pass
     return None
 
 def launch_in_new_window(session_name, terminal=None):
@@ -707,6 +716,9 @@ def run_with_expect(command, expectations, timeout=30, cwd=None, echo=True):
              ('Password:', 'mypass\\n')]
         )
     """
+    if not HAS_PEXPECT:
+        print("✗ pexpect not installed. Run: aio deps")
+        return (1, "pexpect not installed")
     try:
         # Convert expectations dict to list if needed
         if isinstance(expectations, dict):
@@ -2060,14 +2072,60 @@ elif arg == 'install':
 
     print(f"\nThe script will auto-update from git on each run.")
 elif arg == 'deps':
-    # Install dependencies: node/npm, codex, claude, gemini
+    # Install dependencies: python packages, node/npm, codex, claude, gemini
     import platform, urllib.request, tarfile, lzma
-    def _which(cmd): return sp.run(['which', cmd], capture_output=True).returncode == 0
+    def _which(cmd): return shutil.which(cmd) is not None
     bin_dir = os.path.expanduser('~/.local/bin')
     os.makedirs(bin_dir, exist_ok=True)
     print("📦 Installing dependencies...\n")
+    # Python packages (pexpect, prompt_toolkit)
+    # pkg_name -> (import_name, apt_package_name)
+    pip_deps = [('pexpect', 'pexpect', 'python3-pexpect'), ('prompt_toolkit', 'prompt_toolkit', 'python3-prompt-toolkit')]
+    for pkg, import_name, apt_pkg in pip_deps:
+        try:
+            __import__(import_name)
+            print(f"✓ {pkg}")
+        except ImportError:
+            print(f"⬇️  {pkg}: installing...")
+            installed = False
+            # Try pip first
+            try:
+                result = sp.run([sys.executable, '-m', 'pip', 'install', '--user', pkg], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"✓ {pkg} installed (pip)")
+                    installed = True
+            except: pass
+            # Try apt-get (Ubuntu/Debian) - update cache first if needed
+            if not installed and _which('apt-get'):
+                try:
+                    # Check if we need sudo
+                    need_sudo = os.geteuid() != 0 if hasattr(os, 'geteuid') else False
+                    apt_cmd = ['sudo', 'apt-get'] if need_sudo else ['apt-get']
+                    # Try install, if fails with "Unable to locate", run update first
+                    result = sp.run(apt_cmd + ['install', '-y', apt_pkg], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print(f"✓ {pkg} installed (apt)")
+                        installed = True
+                    elif 'unable to locate' in result.stderr.lower():
+                        # Update package cache and retry
+                        sp.run(apt_cmd + ['update'], capture_output=True, text=True)
+                        result = sp.run(apt_cmd + ['install', '-y', apt_pkg], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            print(f"✓ {pkg} installed (apt)")
+                            installed = True
+                except: pass
+            # Try pkg (Termux)
+            if not installed and _which('pkg'):
+                try:
+                    result = sp.run(['pkg', 'install', '-y', import_name], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print(f"✓ {pkg} installed (pkg)")
+                        installed = True
+                except: pass
+            if not installed:
+                print(f"✗ {pkg} - install manually: pip install {pkg} OR apt install {apt_pkg}")
     # Check tmux
-    print("✓ tmux" if _which('tmux') else "⚠ tmux not found - install via: sudo apt install tmux")
+    print("✓ tmux" if _which('tmux') else "⚠ tmux not found - install via: pkg install tmux (Termux) or sudo apt install tmux")
     # Node.js/npm (binary)
     node_dir = os.path.expanduser('~/.local/node')
     node_bin = os.path.join(node_dir, 'bin')
@@ -3616,8 +3674,7 @@ elif arg == 'setup':
     # If no URL provided and no remote exists, try to help
     if not remote_url and not has_remote:
         # Try using GitHub CLI to create repo automatically
-        gh_check = sp.run(['which', 'gh'], capture_output=True)
-        if gh_check.returncode == 0:
+        if shutil.which('gh'):
             print("🚀 No remote configured. Creating GitHub repository...")
             repo_name = os.path.basename(cwd)
             print(f"   Repository name: {repo_name}")
