@@ -3737,7 +3737,7 @@ elif arg.endswith('++') and not arg.startswith('w'):
             elif "TMUX" in os.environ or not sys.stdout.isatty():
                 # Already inside tmux or no TTY - let session run in background
                 print(f"✓ Session running in background: {session_name}")
-                print(f"   Attach with: {' '.join(sm.attach(session_name))}")
+                print(f"   Reattach: aio attach")
             else:
                 # Not in tmux - attach normally
                 cmd = sm.attach(session_name)
@@ -3815,8 +3815,8 @@ else:
     elif "TMUX" in os.environ or not sys.stdout.isatty():
         # Already inside tmux or no TTY - let session run in background
         print(f"✓ Session running in background: {session_name}")
-        print(f"   Attach with: {' '.join(sm.attach(session_name))}")
+        print(f"   Reattach: aio attach")
     else:
         # Not in tmux - attach normally
-        cmd = sm.attach(session_name)
-        os.execvp(cmd[0], cmd)
+        sp.run(sm.attach(session_name))
+        print("Reattach: aio attach")
