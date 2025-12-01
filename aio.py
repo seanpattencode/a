@@ -2250,9 +2250,10 @@ elif arg == 'multi':
     run_id = datetime.now().strftime('%Y%m%d-%H%M%S')
     session_name = f"{repo_name}-{run_id}"
 
-    # Create run directory: WORKTREES_DIR/repo_name/run_id/
+    # Create run directory: WORKTREES_DIR/repo_name/run_id/candidates/
     run_dir = os.path.join(WORKTREES_DIR, repo_name, run_id)
-    os.makedirs(run_dir, exist_ok=True)
+    candidates_dir = os.path.join(run_dir, "candidates")
+    os.makedirs(candidates_dir, exist_ok=True)
 
     # Save to JSON and DB (store task for display, prompt is the full formatted version)
     run_info = {"task": task, "prompt": prompt, "agents": [f"{k}:{c}" for k, c in agent_specs], "created": run_id, "repo": project_path}
@@ -2280,8 +2281,8 @@ elif arg == 'multi':
             agent_num[base_name] = agent_num.get(base_name, 0) + 1
             window_name = f"{base_name}-{agent_num[base_name]}"
             attempt_name = f"{agent_key}{i}"
-            # Put worktree at top level with clear project name: repo-runid-agent
-            wt_path = os.path.join(WORKTREES_DIR, f"{repo_name}-{run_id}-{attempt_name}")
+            # Put worktree in candidates folder: repo/runid/candidates/c0
+            wt_path = os.path.join(candidates_dir, attempt_name)
 
             # Create git worktree
             branch_name = f"wt-{repo_name}-{run_id}-{attempt_name}"
@@ -2324,6 +2325,7 @@ elif arg == 'multi':
     REVIEWER_PROMPT = prompt_template.format(TASK=prompt, AGENTS=agents_str, DIRS=dirs_str)
 
     # Add reviewer window (event-driven: waits for all agent signals, then auto-starts)
+    # Review runs in candidates/ folder so it can see all candidate dirs
     wait_cmds = '; '.join(f'echo "  waiting for {w}..."; tmux wait-for {session_name}-{w}; echo "  ✓ {w} done"' for w, _, _ in launched)
     wait_script = f'''echo "⏳ Waiting for agents to complete..."
 echo "   Run 'aio r' to force review now"
@@ -2332,8 +2334,8 @@ echo ""
 echo ""
 echo "✓ All agents done. Starting review..."
 claude --dangerously-skip-permissions {shlex.quote(REVIEWER_PROMPT)}'''
-    sp.run(['tmux', 'new-window', '-t', session_name, '-n', '📋review', '-c', run_dir, f'bash -c {shlex.quote(wait_script)}'], env=env)
-    sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:📋review', '-c', run_dir], env=env)
+    sp.run(['tmux', 'new-window', '-t', session_name, '-n', '📋review', '-c', candidates_dir, f'bash -c {shlex.quote(wait_script)}'], env=env)
+    sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:📋review', '-c', candidates_dir], env=env)
     print("✓ 📋review (auto-starts when agents finish)")
 
     # Select first agent window
@@ -2685,43 +2687,40 @@ elif arg == 'r' or arg == 'review':
             choice = input("Select #: ").strip()
             run_id = runs[int(choice)][0] if choice.isdigit() and int(choice) < len(runs) else choice
 
-    # Find run directory (nested: repo/run_id/) and worktrees (flat: repo-run_id-*)
+    # Find run directory: WORKTREES_DIR/repo/run_id/
+    # Worktrees are in: WORKTREES_DIR/repo/run_id/candidates/c0, l0, etc.
     run_dir = None
     repo_name = None
-    worktree_dirs = []
+    candidates_dir = None
 
     if os.path.exists(WORKTREES_DIR):
-        # Check nested structure for run.json
         for rd in os.listdir(WORKTREES_DIR):
             candidate = os.path.join(WORKTREES_DIR, rd, run_id)
             if os.path.isdir(candidate):
                 run_dir = candidate
                 repo_name = rd
+                candidates_dir = os.path.join(run_dir, "candidates")
                 break
 
-        # Find flat worktrees matching repo-run_id-*
-        if repo_name:
-            prefix = f"{repo_name}-{run_id}-"
-            worktree_dirs = [d for d in os.listdir(WORKTREES_DIR)
-                           if d.startswith(prefix) and os.path.isdir(os.path.join(WORKTREES_DIR, d))]
-
-    if not run_dir and not worktree_dirs:
+    if not run_dir:
         print(f"✗ Run not found: {run_id}")
         sys.exit(1)
 
     # Load run context and build reviewer prompt
     task, agents = "unknown", "unknown"
-    if run_dir:
-        run_json = os.path.join(run_dir, "run.json")
-        if os.path.exists(run_json):
-            with open(run_json) as f:
-                info = json.load(f)
-                task = info.get("task") or info.get("prompt", "unknown")
-                agents = ", ".join(info.get("agents", []))
+    run_json = os.path.join(run_dir, "run.json")
+    if os.path.exists(run_json):
+        with open(run_json) as f:
+            info = json.load(f)
+            task = info.get("task") or info.get("prompt", "unknown")
+            agents = ", ".join(info.get("agents", []))
 
-    # Use flat worktree dirs, or fall back to nested subdirs
-    dirs = ", ".join(worktree_dirs) if worktree_dirs else ", ".join(
-        d for d in os.listdir(run_dir) if os.path.isdir(os.path.join(run_dir, d)))
+    # List candidate dirs (c0, l0, etc.)
+    candidate_names = []
+    if candidates_dir and os.path.exists(candidates_dir):
+        candidate_names = [d for d in os.listdir(candidates_dir)
+                         if os.path.isdir(os.path.join(candidates_dir, d))]
+    dirs = ", ".join(candidate_names)
 
     prompt_template = get_prompt('reviewer') or "Review the code in {DIRS} for task: {TASK}"
     REVIEWER_PROMPT = prompt_template.format(TASK=task, AGENTS=agents, DIRS=dirs)
@@ -2732,8 +2731,8 @@ elif arg == 'r' or arg == 'review':
     session_name = f"{repo_name}-{run_id}"
     env = get_noninteractive_git_env()
 
-    # Working dir: first worktree (flat) or run_dir (nested)
-    review_cwd = os.path.join(WORKTREES_DIR, worktree_dirs[0]) if worktree_dirs else run_dir
+    # Working dir: candidates folder (contains c0, l0, etc.)
+    review_cwd = candidates_dir if candidates_dir and os.path.exists(candidates_dir) else run_dir
 
     # Add reviewer window to existing session (or create if doesn't exist)
     reviewer_cmd = f"claude --dangerously-skip-permissions {shlex.quote(REVIEWER_PROMPT)}"
