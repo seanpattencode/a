@@ -60,7 +60,11 @@ class TmuxManager(Multiplexer):
 
 sm = TmuxManager()
 # Auto-update tmux every 12h in background (installs to ~/.local, zero lag)
-_ts='/tmp/.aio_tmux_update';((not os.path.exists(_ts) or time.time()-os.path.getmtime(_ts)>43200) and os.fork()==0) and (Path(_ts).touch(),os.system(f'v=$(curl -sL api.github.com/repos/tmux/tmux/releases/latest 2>/dev/null|grep -oP \'"tag_name":"\\K[^"]+\');[ "$v" \\> "{sm.version}" ]&&cd /tmp&&rm -rf tmux-update&&git clone -q --depth 1 -b $v https://github.com/tmux/tmux tmux-update 2>/dev/null&&cd tmux-update&&sh autogen.sh>/dev/null 2>&1&&./configure --prefix=$HOME/.local>/dev/null 2>&1&&make -j$(nproc)>/dev/null 2>&1&&make install>/dev/null 2>&1'),os._exit(0))
+try:
+    _ts_dir = os.path.expanduser('~/.local/share/aios'); os.makedirs(_ts_dir, exist_ok=True)
+    _ts = os.path.join(_ts_dir, '.tmux_update')
+    ((not os.path.exists(_ts) or time.time()-os.path.getmtime(_ts)>43200) and os.fork()==0) and (Path(_ts).touch(),os.system(f'v=$(curl -sL api.github.com/repos/tmux/tmux/releases/latest 2>/dev/null|grep -oP \'"tag_name":"\\K[^"]+\');[ "$v" \\> "{sm.version}" ]&&cd /tmp&&rm -rf tmux-update&&git clone -q --depth 1 -b $v https://github.com/tmux/tmux tmux-update 2>/dev/null&&cd tmux-update&&sh autogen.sh>/dev/null 2>&1&&./configure --prefix=$HOME/.local>/dev/null 2>&1&&make -j$(nproc)>/dev/null 2>&1&&make install>/dev/null 2>&1'),os._exit(0))
+except: pass
 
 # Auto-update: Pull latest version from git repo
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))  # realpath follows symlinks
@@ -140,6 +144,33 @@ def manual_update():
     return True
 
 # No auto-update - Git philosophy: explicit updates only
+
+def ensure_git_config():
+    """Auto-configure git user from GitHub credentials if not set."""
+    # Check if already configured
+    name = sp.run(['git', 'config', 'user.name'], capture_output=True, text=True)
+    email = sp.run(['git', 'config', 'user.email'], capture_output=True, text=True)
+    if name.returncode == 0 and email.returncode == 0 and name.stdout.strip() and email.stdout.strip():
+        return True
+    # Try to get from gh (GitHub CLI)
+    if not shutil.which('gh'):
+        return False
+    try:
+        result = sp.run(['gh', 'api', 'user'], capture_output=True, text=True)
+        if result.returncode != 0:
+            return False
+        import json as _json
+        user = _json.loads(result.stdout)
+        gh_name = user.get('name') or user.get('login', '')
+        gh_login = user.get('login', '')
+        gh_email = user.get('email') or f"{gh_login}@users.noreply.github.com"
+        if gh_name and not name.stdout.strip():
+            sp.run(['git', 'config', '--global', 'user.name', gh_name], capture_output=True)
+        if gh_email and not email.stdout.strip():
+            sp.run(['git', 'config', '--global', 'user.email', gh_email], capture_output=True)
+        return True
+    except:
+        return False
 
 # Database setup
 DATA_DIR = os.path.expanduser("~/.local/share/aios")
@@ -3257,6 +3288,9 @@ elif arg == 'x':
 elif arg == 'push':
     # Quick commit and push in current directory
     cwd = os.getcwd()
+
+    # Auto-configure git user from GitHub if needed
+    ensure_git_config()
 
     # Check if git repo
     result = sp.run(['git', '-C', cwd, 'rev-parse', '--git-dir'], capture_output=True, text=True)
