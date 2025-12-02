@@ -2197,6 +2197,167 @@ elif arg == 'deps':
         else:
             print(f"✓ {cmd}")
     print("\n✅ Done! Restart terminal or run: export PATH=\"$HOME/.local/bin:$PATH\"")
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOCAL FILES SERVICE - Commented out for future activation
+# Provides HTTP access to Termux local files for AI agents
+# Activate with: aio files [port]
+# ═══════════════════════════════════════════════════════════════════════════════
+# elif arg == 'files':
+#     # Local files HTTP server for agent access to Termux storage
+#     import http.server
+#     import socketserver
+#     import threading
+#     import urllib.parse
+#
+#     port = int(work_dir_arg) if work_dir_arg and work_dir_arg.isdigit() else 8421
+#
+#     # Paths accessible to agents (Termux storage locations)
+#     ALLOWED_ROOTS = [
+#         os.path.expanduser('~/storage/downloads'),
+#         os.path.expanduser('~/storage/shared'),
+#         os.path.expanduser('~/storage/dcim'),
+#         os.path.expanduser('~/storage/pictures'),
+#         os.path.expanduser('~/storage/music'),
+#         os.path.expanduser('~/storage/movies'),
+#         os.path.expanduser('~'),  # Home directory
+#     ]
+#
+#     class LocalFilesHandler(http.server.BaseHTTPRequestHandler):
+#         """HTTP handler for serving local files to AI agents."""
+#
+#         def log_message(self, format, *args):
+#             print(f"[files] {args[0]}")
+#
+#         def send_cors_headers(self):
+#             self.send_header('Access-Control-Allow-Origin', '*')
+#             self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+#             self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+#
+#         def do_OPTIONS(self):
+#             self.send_response(200)
+#             self.send_cors_headers()
+#             self.end_headers()
+#
+#         def do_GET(self):
+#             # Parse path
+#             parsed = urllib.parse.urlparse(self.path)
+#             path = urllib.parse.unquote(parsed.path)
+#
+#             # List roots at /
+#             if path == '/' or path == '':
+#                 self.send_response(200)
+#                 self.send_header('Content-Type', 'application/json')
+#                 self.send_cors_headers()
+#                 self.end_headers()
+#                 roots = [{'path': r, 'name': os.path.basename(r) or 'home', 'exists': os.path.exists(r)} for r in ALLOWED_ROOTS]
+#                 self.wfile.write(json.dumps({'roots': roots, 'usage': 'GET /path/to/file'}).encode())
+#                 return
+#
+#             # Resolve full path
+#             full_path = None
+#             for root in ALLOWED_ROOTS:
+#                 if path.startswith('/' + os.path.basename(root)):
+#                     # Path starts with root name (e.g., /downloads/file.txt)
+#                     rel = path[len('/' + os.path.basename(root)):]
+#                     candidate = os.path.join(root, rel.lstrip('/'))
+#                     if os.path.exists(candidate):
+#                         full_path = candidate
+#                         break
+#                 elif os.path.exists(root + path):
+#                     full_path = root + path
+#                     break
+#
+#             # Also try absolute path if within allowed roots
+#             if not full_path and path.startswith('/'):
+#                 abs_path = path
+#                 for root in ALLOWED_ROOTS:
+#                     if abs_path.startswith(root) and os.path.exists(abs_path):
+#                         full_path = abs_path
+#                         break
+#
+#             if not full_path or not os.path.exists(full_path):
+#                 self.send_response(404)
+#                 self.send_cors_headers()
+#                 self.end_headers()
+#                 self.wfile.write(b'File not found')
+#                 return
+#
+#             # Security: ensure path is within allowed roots
+#             real_path = os.path.realpath(full_path)
+#             if not any(real_path.startswith(os.path.realpath(r)) for r in ALLOWED_ROOTS):
+#                 self.send_response(403)
+#                 self.send_cors_headers()
+#                 self.end_headers()
+#                 self.wfile.write(b'Access denied')
+#                 return
+#
+#             # Directory listing
+#             if os.path.isdir(full_path):
+#                 self.send_response(200)
+#                 self.send_header('Content-Type', 'application/json')
+#                 self.send_cors_headers()
+#                 self.end_headers()
+#                 entries = []
+#                 for name in sorted(os.listdir(full_path)):
+#                     entry_path = os.path.join(full_path, name)
+#                     entries.append({
+#                         'name': name,
+#                         'type': 'dir' if os.path.isdir(entry_path) else 'file',
+#                         'size': os.path.getsize(entry_path) if os.path.isfile(entry_path) else None
+#                     })
+#                 self.wfile.write(json.dumps({'path': path, 'entries': entries}).encode())
+#                 return
+#
+#             # Serve file
+#             try:
+#                 with open(full_path, 'rb') as f:
+#                     content = f.read()
+#                 self.send_response(200)
+#                 # Guess content type
+#                 ext = os.path.splitext(full_path)[1].lower()
+#                 content_types = {
+#                     '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+#                     '.py': 'text/x-python', '.js': 'text/javascript', '.html': 'text/html',
+#                     '.css': 'text/css', '.xml': 'application/xml', '.pdf': 'application/pdf',
+#                     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+#                     '.gif': 'image/gif', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg',
+#                     '.mp4': 'video/mp4', '.epub': 'application/epub+zip',
+#                 }
+#                 self.send_header('Content-Type', content_types.get(ext, 'application/octet-stream'))
+#                 self.send_header('Content-Length', str(len(content)))
+#                 self.send_cors_headers()
+#                 self.end_headers()
+#                 self.wfile.write(content)
+#             except Exception as e:
+#                 self.send_response(500)
+#                 self.send_cors_headers()
+#                 self.end_headers()
+#                 self.wfile.write(f'Error: {e}'.encode())
+#
+#     print(f"📂 Local Files Server")
+#     print(f"═══════════════════════════════════════════════════")
+#     print(f"URL: http://localhost:{port}")
+#     print(f"")
+#     print(f"Accessible paths:")
+#     for root in ALLOWED_ROOTS:
+#         exists = "✓" if os.path.exists(root) else "✗"
+#         print(f"  {exists} {root}")
+#     print(f"")
+#     print(f"Usage for agents:")
+#     print(f"  curl http://localhost:{port}/downloads/")
+#     print(f"  curl http://localhost:{port}/downloads/file.txt")
+#     print(f"")
+#     print(f"Press Ctrl+C to stop")
+#     print(f"═══════════════════════════════════════════════════")
+#
+#     with socketserver.TCPServer(("", port), LocalFilesHandler) as httpd:
+#         try:
+#             httpd.serve_forever()
+#         except KeyboardInterrupt:
+#             print("\n✓ Server stopped")
+#             sys.exit(0)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 elif arg == 'backups' or arg == 'backup':
     backups = list_backups()
     if not backups:
