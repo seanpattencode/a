@@ -2191,8 +2191,8 @@ MULTI-AGENT:
   aio multi c:2 l:1         Mixed: 2 codex + 1 claude
   aio multi 0 c:2 "task"    Launch in project 0
 GIT:
-  aio push ["msg"]    Commit and push
-  aio pull            Sync with server
+  aio push [file] [msg]  Commit and push (file or all)
+  aio pull               Sync with server
 MANAGEMENT:
   aio jobs            Show active jobs
   aio attach          Reconnect to session
@@ -2300,9 +2300,11 @@ MULTI-AGENT PARALLEL:
 GIT OPERATIONS
 ═══════════════════════════════════════════════════════════════════════════════
   aio setup <url>        Initialize repo and add remote
-  aio push               Quick commit and push (default message)
-  aio push "message"     Commit and push with custom message
-  aio push -y            Push without confirmation (in worktrees)
+  aio push               Commit all and push
+  aio push msg here      Commit all with message (quotes optional)
+  aio push file.py       Commit only file.py
+  aio push src/          Commit only src/ directory
+  aio push file.py msg   Commit file.py with message
   aio pull               Replace local with server (destructive, needs confirmation)
   aio pull -y            Pull without confirmation
   aio revert             Undo last commit
@@ -3839,9 +3841,29 @@ elif arg == 'push':
     git_dir = result.stdout.strip()
     is_worktree = '.git/worktrees/' in git_dir or cwd.startswith(WORKTREES_DIR)
 
-    # Get commit message (join all remaining args - supports both quoted and unquoted)
+    # Parse args: check if first arg is a file/directory to push specifically
     remaining_args = [a for a in sys.argv[2:] if a not in ['--yes', '-y']]
-    commit_msg = ' '.join(remaining_args) if remaining_args else f"Update {os.path.basename(cwd)}"
+    target_path = None
+    if remaining_args:
+        potential = remaining_args[0]
+        full_path = os.path.join(cwd, potential)
+        if os.path.exists(full_path):
+            target_path = potential
+            remaining_args = remaining_args[1:]
+            # Warn if pushing file in new directory
+            if '/' in potential:
+                dir_part = os.path.dirname(potential)
+                result = sp.run(['git', '-C', cwd, 'ls-files', dir_part], capture_output=True, text=True)
+                if not result.stdout.strip():
+                    print(f"⚠️  Will also add directory: {dir_part}/")
+
+    # Build commit message
+    if remaining_args:
+        commit_msg = ' '.join(remaining_args)
+    elif target_path:
+        commit_msg = f"Update {target_path}"
+    else:
+        commit_msg = f"Update {os.path.basename(cwd)}"
 
     if is_worktree:
         # We're in a worktree
@@ -3878,8 +3900,11 @@ elif arg == 'push':
                 print("✗ Cancelled")
                 sys.exit(0)
 
-        # Add and commit changes in worktree
-        sp.run(['git', '-C', cwd, 'add', '-A'])
+        # Add changes (specific file/dir or all)
+        if target_path:
+            sp.run(['git', '-C', cwd, 'add', target_path])
+        else:
+            sp.run(['git', '-C', cwd, 'add', '-A'])
         result = sp.run(['git', '-C', cwd, 'commit', '-m', commit_msg],
                         capture_output=True, text=True)
 
@@ -4048,8 +4073,11 @@ elif arg == 'push':
                            capture_output=True)
             main_branch = 'main' if result.returncode == 0 else 'master'
 
-        # Add all changes
-        sp.run(['git', '-C', cwd, 'add', '-A'])
+        # Add changes (specific file/dir or all)
+        if target_path:
+            sp.run(['git', '-C', cwd, 'add', target_path])
+        else:
+            sp.run(['git', '-C', cwd, 'add', '-A'])
 
         # Commit
         result = sp.run(['git', '-C', cwd, 'commit', '-m', commit_msg],
