@@ -687,6 +687,295 @@ def detect_terminal():
             return term
     return None
 
+# Font size controller - generic architecture with terminal-specific implementations
+class FontController:
+    """Base class for terminal font size control."""
+    name = "unknown"
+
+    @classmethod
+    def detect(cls) -> bool:
+        """Return True if this terminal is detected."""
+        return False
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        """Get current font size, or None if unavailable."""
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        """Set font size. Returns True on success."""
+        return False
+
+    @classmethod
+    def adjust(cls, delta: int) -> bool:
+        """Adjust font size by delta. Returns True on success."""
+        current = cls.get_size()
+        if current is not None:
+            return cls.set_size(current + delta)
+        return False
+
+    @classmethod
+    def show_help(cls):
+        """Show help for manual font adjustment."""
+        print("Font size control not available for this terminal.")
+
+class TermuxFont(FontController):
+    """Termux font controller - provides guidance since no API exists."""
+    name = "termux"
+
+    @classmethod
+    def detect(cls) -> bool:
+        return os.environ.get('TERMUX_VERSION') is not None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        # Termux doesn't expose current font size
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        # No programmatic control available
+        print(f"⚠️  Termux doesn't support programmatic font size control.")
+        cls.show_help()
+        return False
+
+    @classmethod
+    def adjust(cls, delta: int) -> bool:
+        direction = "larger" if delta > 0 else "smaller"
+        print(f"To make text {direction}:")
+        cls.show_help()
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("""
+╔═══════════════════════════════════════════════════════╗
+║  TERMUX FONT SIZE                                     ║
+╠═══════════════════════════════════════════════════════╣
+║  📱 Touch: Pinch to zoom in/out                       ║
+║  ⌨️  Keys:  Ctrl+Alt++ (larger) Ctrl+Alt+- (smaller)  ║
+║  💡 Tip:   Volume keys may also work on some devices  ║
+╚═══════════════════════════════════════════════════════╝""")
+
+class GnomeTerminalFont(FontController):
+    """GNOME Terminal font controller using gsettings."""
+    name = "gnome-terminal"
+
+    @classmethod
+    def detect(cls) -> bool:
+        return (os.environ.get('GNOME_TERMINAL_SCREEN') is not None or
+                os.environ.get('VTE_VERSION') is not None) and shutil.which('gsettings')
+
+    @classmethod
+    def _get_profile(cls) -> str | None:
+        """Get the default profile UUID."""
+        try:
+            result = sp.run(['gsettings', 'get', 'org.gnome.Terminal.ProfilesList', 'default'],
+                          capture_output=True, text=True)
+            if result.returncode == 0:
+                return result.stdout.strip().strip("'")
+        except: pass
+        return None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        profile = cls._get_profile()
+        if not profile:
+            return None
+        try:
+            result = sp.run(['gsettings', 'get',
+                           f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{profile}/',
+                           'font'], capture_output=True, text=True)
+            if result.returncode == 0:
+                # Font string like "'Monospace 12'"
+                font = result.stdout.strip().strip("'")
+                size = int(font.split()[-1])
+                return size
+        except: pass
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        profile = cls._get_profile()
+        if not profile:
+            return False
+        try:
+            # Get current font name
+            result = sp.run(['gsettings', 'get',
+                           f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{profile}/',
+                           'font'], capture_output=True, text=True)
+            if result.returncode == 0:
+                font = result.stdout.strip().strip("'")
+                font_name = ' '.join(font.split()[:-1])
+                new_font = f"{font_name} {size}"
+                sp.run(['gsettings', 'set',
+                       f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{profile}/',
+                       'font', new_font], capture_output=True)
+                print(f"✓ Font size set to {size}")
+                return True
+        except: pass
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("GNOME Terminal: Use Ctrl+Shift++ / Ctrl+- or Edit → Preferences → Profiles")
+
+class AlacrittyFont(FontController):
+    """Alacritty font controller using config file."""
+    name = "alacritty"
+    config_paths = [
+        os.path.expanduser("~/.config/alacritty/alacritty.toml"),
+        os.path.expanduser("~/.config/alacritty/alacritty.yml"),
+        os.path.expanduser("~/.alacritty.toml"),
+        os.path.expanduser("~/.alacritty.yml"),
+    ]
+
+    @classmethod
+    def detect(cls) -> bool:
+        return os.environ.get('ALACRITTY_WINDOW_ID') is not None
+
+    @classmethod
+    def _get_config_path(cls) -> str | None:
+        for path in cls.config_paths:
+            if os.path.exists(path):
+                return path
+        return None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        config = cls._get_config_path()
+        if not config:
+            return None
+        try:
+            with open(config) as f:
+                content = f.read()
+            # Simple regex for size in TOML or YAML
+            import re
+            match = re.search(r'size\s*[=:]\s*(\d+(?:\.\d+)?)', content)
+            if match:
+                return int(float(match.group(1)))
+        except: pass
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        config = cls._get_config_path()
+        if not config:
+            # Create default config
+            config = cls.config_paths[0]
+            os.makedirs(os.path.dirname(config), exist_ok=True)
+            with open(config, 'w') as f:
+                f.write(f'[font]\nsize = {size}\n')
+            print(f"✓ Created {config} with font size {size}")
+            return True
+        try:
+            with open(config) as f:
+                content = f.read()
+            import re
+            if re.search(r'size\s*[=:]\s*\d+', content):
+                new_content = re.sub(r'(size\s*[=:]\s*)\d+(?:\.\d+)?', f'\\g<1>{size}', content)
+            else:
+                # Add font size section
+                if config.endswith('.toml'):
+                    new_content = content + f'\n[font]\nsize = {size}\n'
+                else:
+                    new_content = content + f'\nfont:\n  size: {size}\n'
+            with open(config, 'w') as f:
+                f.write(new_content)
+            print(f"✓ Font size set to {size} (Alacritty auto-reloads)")
+            return True
+        except Exception as e:
+            print(f"✗ Failed: {e}")
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("Alacritty: Use Ctrl+= / Ctrl+- or edit ~/.config/alacritty/alacritty.toml")
+
+class KittyFont(FontController):
+    """Kitty font controller using remote control."""
+    name = "kitty"
+
+    @classmethod
+    def detect(cls) -> bool:
+        return os.environ.get('KITTY_WINDOW_ID') is not None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        try:
+            result = sp.run(['kitty', '@', 'get-colors'], capture_output=True, text=True)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'font_size' in line:
+                        return int(float(line.split()[-1]))
+        except: pass
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        try:
+            result = sp.run(['kitty', '@', 'set-font-size', str(size)], capture_output=True)
+            if result.returncode == 0:
+                print(f"✓ Font size set to {size}")
+                return True
+        except: pass
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("Kitty: Use Ctrl+Shift+= / Ctrl+Shift+- or 'kitty @ set-font-size SIZE'")
+
+# Ordered list of font controllers (checked in order)
+FONT_CONTROLLERS = [TermuxFont, KittyFont, AlacrittyFont, GnomeTerminalFont]
+
+def get_font_controller() -> FontController | None:
+    """Detect and return the appropriate font controller."""
+    for controller in FONT_CONTROLLERS:
+        if controller.detect():
+            return controller
+    return None
+
+def handle_font_command(args: list):
+    """Handle 'aio font' command."""
+    controller = get_font_controller()
+
+    if not controller:
+        print("✗ Unknown terminal. Supported: Termux, Kitty, Alacritty, GNOME Terminal")
+        return
+
+    print(f"Terminal: {controller.name}")
+
+    if not args:
+        # Show current size or help
+        size = controller.get_size()
+        if size:
+            print(f"Current font size: {size}")
+        else:
+            controller.show_help()
+        return
+
+    arg = args[0]
+
+    if arg == '+' or arg == 'up' or arg == 'bigger':
+        delta = int(args[1]) if len(args) > 1 else 2
+        controller.adjust(delta)
+    elif arg == '-' or arg == 'down' or arg == 'smaller':
+        delta = int(args[1]) if len(args) > 1 else 2
+        controller.adjust(-delta)
+    elif arg.isdigit():
+        controller.set_size(int(arg))
+    elif arg == 'help':
+        controller.show_help()
+    else:
+        print(f"Usage: aio font [+|-|SIZE|help]")
+        print(f"  aio font        Show current size or help")
+        print(f"  aio font +      Increase by 2")
+        print(f"  aio font -      Decrease by 2")
+        print(f"  aio font + 4    Increase by 4")
+        print(f"  aio font 16     Set to size 16")
+        print(f"  aio font help   Show terminal-specific help")
+
 def launch_in_new_window(session_name, terminal=None):
     """Launch tmux session in new terminal window"""
     if not terminal:
@@ -2023,6 +2312,7 @@ SETUP & CONFIGURATION
   aio install            Install as global 'aio' command
   aio deps               Install dependencies (node, codex, claude, gemini)
   aio update             Update aio to latest version from git
+  aio font [+|-|SIZE]    Adjust terminal font size (Termux/Kitty/Alacritty/GNOME)
   aio x                  Kill all tmux sessions
 FLAGS:
   -w, --new-window       Launch in new terminal window
@@ -2120,6 +2410,9 @@ Working directory: {WORK_DIR}
 elif arg == 'update':
     # Explicitly update aio from git repository
     manual_update()
+elif arg == 'font':
+    # Font size control
+    handle_font_command(sys.argv[2:])
 elif arg in ('fix', 'bug', 'feat', 'auto', 'del'):
     # Prompt-based sessions: aio fix, aio bug "task", aio feat "task", aio auto, aio del
     prompts = load_prompts()
