@@ -615,12 +615,12 @@ sessions = load_sessions(config)
 
 _tmux_configured = False
 def ensure_tmux_options():
-    """Configure tmux: status bar on top, mouse, scrollbars, keyboard shortcuts."""
+    """Configure tmux: 2-line status bar, mouse, scrollbars, keyboard shortcuts."""
     global _tmux_configured
     if _tmux_configured: return
     if sp.run(['tmux', 'info'], stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode != 0: return
-    # Status bar on top, mouse mode, longer status text
-    for opt in [('mouse', 'on'), ('status-position', 'top'), ('status-right-length', '100')]:
+    # Status bar on top, mouse mode, 2-line status (tmux 2.9+)
+    for opt in [('mouse', 'on'), ('status-position', 'top'), ('status', '2')]:
         sp.run(['tmux', 'set-option', '-g', opt[0], opt[1]], capture_output=True)
     # Scrollbars (tmux 3.6+)
     if sm.version >= '3.6':
@@ -633,19 +633,37 @@ def ensure_tmux_options():
     for k, a in [('C-t', 'split-window'), ('C-w', 'kill-pane'), ('C-q', 'detach')]:
         sp.run(['tmux', 'bind-key', '-n', k, a], capture_output=True)
     sp.run(['tmux', 'bind-key', '-n', 'C-x', 'confirm-before', '-p', 'Kill session? (y/n)', 'kill-session'], capture_output=True)
-    # Clickable status bar (tmux 3.2+): wrap each action in #[range=user|name]...#[norange]
+
+    # 2-line status bar layout:
+    # Line 0: Session name (left) + window list (center) - NO status-right
+    # Line 1: Keyboard shortcuts (centered) with responsive width detection
+
+    # Line 0: Clean session/window display only (no status-right to avoid overlap)
+    # Format: [session] window-list
+    line0 = '#[align=left][#S]#[align=centre]#{W:#I:#W#{?window_active,*, } }'
+    sp.run(['tmux', 'set-option', '-g', 'status-format[0]', line0], capture_output=True)
+
+    # Line 1: Shortcuts with 3-tier responsive width detection
+    # <45: minimal (^T ^W ^X ^Q), 45-70: short labels, >70: full labels
     if sm.version >= '3.2':
-        status_right = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
-        # Mouse click binding: check mouse_status_range and run corresponding action
+        # Clickable shortcuts with range markers
+        sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
+        sh_med = '#[range=user|new]^T:New#[norange] #[range=user|close]^W:Close#[norange] #[range=user|kill]^X:Kill#[norange] #[range=user|detach]^Q:Quit#[norange]'
+        sh_min = '#[range=user|new]^T#[norange] #[range=user|close]^W#[norange] #[range=user|kill]^X#[norange] #[range=user|detach]^Q#[norange]'
+        # Mouse click binding
         click_binding = "if -F '#{==:#{mouse_status_range},new}' { split-window } { if -F '#{==:#{mouse_status_range},close}' { kill-pane } { if -F '#{==:#{mouse_status_range},kill}' { confirm-before -p 'Kill?' kill-session } { if -F '#{==:#{mouse_status_range},detach}' { detach } { if -F '#{==:#{mouse_status_range},window}' { select-window } } } } }"
         sp.run(['tmux', 'bind-key', '-Troot', 'MouseDown1Status', click_binding], capture_output=True)
     else:
-        status_right = 'Ctrl+T:New Ctrl+W:Close Ctrl+X:Kill Ctrl+Q:Detach'
-    # Update status bar on all sessions
-    r = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True)
-    if r.returncode == 0:
-        for s in r.stdout.strip().split('\n'):
-            if s: sp.run(['tmux', 'set-option', '-t', s, 'status-right', status_right], capture_output=True)
+        sh_full = 'Ctrl+T:New Ctrl+W:Close Ctrl+X:Kill Ctrl+Q:Detach'
+        sh_med = '^T:New ^W:Close ^X:Kill ^Q:Quit'
+        sh_min = '^T ^W ^X ^Q'
+
+    # Nested conditional: #{?#{e|<:width,45},MIN,#{?#{e|<:width,70},MED,FULL}}
+    line1 = '#{?#{e|<:#{client_width},45},' + sh_min + ',#{?#{e|<:#{client_width},70},' + sh_med + ',' + sh_full + '}}'
+    sp.run(['tmux', 'set-option', '-g', 'status-format[1]', '#[align=centre]' + line1], capture_output=True)
+
+    # Clear status-right since we're using status-format now
+    sp.run(['tmux', 'set-option', '-g', 'status-right', ''], capture_output=True)
     _tmux_configured = True
 
 # Apply tmux options immediately if tmux is running
@@ -655,9 +673,7 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     """Create a tmux session with enhanced options. Agent sessions get agent+bash panes."""
     ensure_tmux_options()
     result = sm.new_session(session_name, work_dir, cmd or '', env)
-    # Set per-session status bar (clickable in tmux 3.2+)
-    status = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]' if sm.version >= '3.2' else 'Ctrl+T:New Ctrl+W:Close Ctrl+X:Kill Ctrl+Q:Detach'
-    sp.run(['tmux', 'set-option', '-t', session_name, 'status-right', status], capture_output=True)
+    # Status bar configured globally via status-format[1] in ensure_tmux_options()
     # Auto-add bash pane for agent sessions (bash left, agent right)
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-bh', '-t', session_name, '-c', work_dir], capture_output=True)
