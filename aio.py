@@ -619,7 +619,6 @@ PROJECTS = load_projects()
 APPS = load_apps()
 sessions = load_sessions(config)
 
-_tmux_configured = False
 _TMUX_CONF = os.path.expanduser('~/.tmux.conf')
 _AIO_MARKER = '# aio-managed-config'
 
@@ -655,14 +654,7 @@ bind-key -T root MouseDown1Status run-shell 'r="#{{mouse_status_range}}"; case "
     if sm.version >= '3.6':
         conf += 'set -g pane-scrollbars on\nset -g pane-scrollbars-position right\n'
 
-    # Check if we need to update
-    if os.path.exists(_TMUX_CONF):
-        with open(_TMUX_CONF) as f:
-            existing = f.read()
-        if _AIO_MARKER in existing:
-            if existing.strip() == conf.strip():
-                return False  # Already up to date
-
+    # Always write config to ensure latest version is applied
     with open(_TMUX_CONF, 'w') as f:
         f.write(conf)
     return True
@@ -675,25 +667,20 @@ def ensure_tmux_options():
       Line 1: Ctrl+T:New  Ctrl+W:Close  Ctrl+E:Edit  Ctrl+X:Kill  Ctrl+Q:Detach
       Line 2: ⌨ Keyboard (tapping triggers virtual keyboard on Termux)
 
-    Called at module load and after session creation. Writes ~/.tmux.conf once,
-    then sources it into running tmux. Config persists across restarts.
+    Always writes and sources config to ensure changes are applied immediately.
     """
-    global _tmux_configured
-    if _tmux_configured: return
-
-    # Write persistent config (skips if already up-to-date)
-    conf_updated = _write_tmux_conf()
+    # Always write config
+    _write_tmux_conf()
 
     # Apply to running tmux if available
     if sp.run(['tmux', 'info'], stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode != 0: return
 
-    # Source the config file to apply settings - check for errors
+    # Source the config file to apply settings
     result = sp.run(['tmux', 'source-file', _TMUX_CONF], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"⚠ tmux config error: {result.stderr.strip()}")
         return
     sp.run(['tmux', 'refresh-client', '-S'], capture_output=True)
-    _tmux_configured = True
 
 # Apply tmux options immediately if tmux is running
 ensure_tmux_options()
