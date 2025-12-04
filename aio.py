@@ -656,12 +656,10 @@ def ensure_tmux_options():
         # Clickable shortcuts with range markers
         sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
         sh_min = '#[range=user|new]Ctrl+T#[norange] #[range=user|close]Ctrl+W#[norange] #[range=user|edit]Ctrl+E#[norange] #[range=user|kill]Ctrl+X#[norange] #[range=user|detach]Ctrl+Q#[norange]'
-        # Mouse click binding - bind both Down and Up for maximum compatibility
-        # Desktop uses MouseDown, some touch interfaces may generate MouseUp
-        # Note: nvim cmd simplified - complex args cause tmux quoting issues
-        click_binding = "if -F '#{==:#{mouse_status_range},new}' { split-window } { if -F '#{==:#{mouse_status_range},close}' { kill-pane } { if -F '#{==:#{mouse_status_range},edit}' { split-window nvim } { if -F '#{==:#{mouse_status_range},kill}' { confirm-before -p Kill? kill-session } { if -F '#{==:#{mouse_status_range},detach}' { detach } { if -F '#{==:#{mouse_status_range},window}' { select-window } } } } }"
-        for mouse_event in ['MouseDown1Status', 'MouseUp1Status']:
-            sp.run(['tmux', 'bind-key', '-Troot', mouse_event, click_binding], capture_output=True)
+        # Mouse click binding - use shell=True with single quotes to handle complex nesting
+        click_cmd = 'if-shell -F "#{==:#{mouse_status_range},new}" { split-window } { if-shell -F "#{==:#{mouse_status_range},close}" { kill-pane } { if-shell -F "#{==:#{mouse_status_range},edit}" { split-window nvim } { if-shell -F "#{==:#{mouse_status_range},kill}" { confirm-before -p Kill? kill-session } { if-shell -F "#{==:#{mouse_status_range},detach}" { detach } { if-shell -F "#{==:#{mouse_status_range},window}" { select-window } } } } }'
+        for evt in ['MouseDown1Status', 'MouseUp1Status']:
+            sp.run(f"tmux bind-key -T root {evt} '{click_cmd}'", shell=True, capture_output=True)
     else:
         sh_full = 'Ctrl+T:New Ctrl+W:Close Ctrl+E:Edit Ctrl+X:Kill Ctrl+Q:Detach'
         sh_min = 'Ctrl+T Ctrl+W Ctrl+E Ctrl+X Ctrl+Q'
