@@ -620,57 +620,60 @@ APPS = load_apps()
 sessions = load_sessions(config)
 
 _tmux_configured = False
+_TMUX_CONF = os.path.expanduser('~/.tmux.conf')
+_AIO_MARKER = '# aio-managed-config'
+
+def _write_tmux_conf():
+    """Write tmux config to ~/.tmux.conf for persistence across restarts."""
+    line0 = '#[align=left][#S]#[align=centre]#{W:#I:#W#{?window_active,*, } }'
+    sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
+    sh_min = '#[range=user|new]Ctrl+T#[norange] #[range=user|close]Ctrl+W#[norange] #[range=user|edit]Ctrl+E#[norange] #[range=user|kill]Ctrl+X#[norange] #[range=user|detach]Ctrl+Q#[norange]'
+    line1 = '#{?#{e|<:#{client_width},50},' + sh_min + ',' + sh_full + '}'
+    click_cmd = 'if-shell -F "#{==:#{mouse_status_range},new}" { split-window } { if-shell -F "#{==:#{mouse_status_range},close}" { kill-pane } { if-shell -F "#{==:#{mouse_status_range},edit}" { split-window nvim } { if-shell -F "#{==:#{mouse_status_range},kill}" { confirm-before -p Kill? kill-session } { if-shell -F "#{==:#{mouse_status_range},detach}" { detach } { if-shell -F "#{==:#{mouse_status_range},window}" { select-window } } } } }'
+
+    conf = f'''{_AIO_MARKER}
+set -g mouse on
+set -g status-position bottom
+set -g status 2
+set -g status-right ""
+set -g status-format[0] "{line0}"
+set -g status-format[1] "#[align=centre]{line1}"
+bind-key -n C-t split-window
+bind-key -n C-w kill-pane
+bind-key -n C-q detach
+bind-key -n C-x confirm-before -p "Kill session? (y/n)" kill-session
+bind-key -n C-e split-window "nvim ."
+bind-key -T root MouseDown1Status {click_cmd}
+bind-key -T root MouseUp1Status {click_cmd}
+'''
+    if sm.version >= '3.6':
+        conf += 'set -g pane-scrollbars on\nset -g pane-scrollbars-position right\n'
+
+    # Check if we need to update
+    if os.path.exists(_TMUX_CONF):
+        with open(_TMUX_CONF) as f:
+            existing = f.read()
+        if _AIO_MARKER in existing:
+            if existing.strip() == conf.strip():
+                return False  # Already up to date
+
+    with open(_TMUX_CONF, 'w') as f:
+        f.write(conf)
+    return True
+
 def ensure_tmux_options():
     """Configure tmux: 2-line status bar, mouse, scrollbars, keyboard shortcuts."""
     global _tmux_configured
     if _tmux_configured: return
+
+    # Write persistent config
+    conf_updated = _write_tmux_conf()
+
+    # Apply to running tmux if available
     if sp.run(['tmux', 'info'], stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode != 0: return
-    # Status bar on bottom, mouse mode, 2-line status (tmux 2.9+)
-    for opt in [('mouse', 'on'), ('status-position', 'bottom'), ('status', '2')]:
-        sp.run(['tmux', 'set-option', '-g', opt[0], opt[1]], capture_output=True)
-    # Scrollbars (tmux 3.6+)
-    if sm.version >= '3.6':
-        sp.run(['tmux', 'set-option', '-g', 'pane-scrollbars', 'on'], capture_output=True)
-        sp.run(['tmux', 'set-option', '-g', 'pane-scrollbars-position', 'right'], capture_output=True)
-    # Copy mode: mouse drag copies to clipboard
-    for mode in ['copy-mode', 'copy-mode-vi']:
-        sp.run(['tmux', 'bind-key', '-T', mode, 'MouseDragEnd1Pane', 'send-keys', '-X', 'copy-pipe-and-cancel', 'xclip -sel clip'], capture_output=True)
-    # Keyboard shortcuts: Ctrl+T new, Ctrl+W close, Ctrl+Q detach, Ctrl+X kill session
-    for k, a in [('C-t', 'split-window'), ('C-w', 'kill-pane'), ('C-q', 'detach')]:
-        sp.run(['tmux', 'bind-key', '-n', k, a], capture_output=True)
-    sp.run(['tmux', 'bind-key', '-n', 'C-x', 'confirm-before', '-p', 'Kill session? (y/n)', 'kill-session'], capture_output=True)
-    sp.run(['tmux', 'bind-key', '-n', 'C-e', 'split-window', 'nvim . -c "nmap <LeftMouse> <LeftMouse><CR>"'], capture_output=True)
 
-    # 2-line status bar layout:
-    # Line 0: Session name (left) + window list (center) - NO status-right
-    # Line 1: Keyboard shortcuts (centered) with responsive width detection
-
-    # Line 0: Clean session/window display only (no status-right to avoid overlap)
-    # Format: [session] window-list
-    line0 = '#[align=left][#S]#[align=centre]#{W:#I:#W#{?window_active,*, } }'
-    sp.run(['tmux', 'set-option', '-g', 'status-format[0]', line0], capture_output=True)
-
-    # Line 1: Shortcuts with 2-tier responsive width detection
-    # <50: minimal (Ctrl+X only), >=50: with labels
-    if sm.version >= '3.2':
-        # Clickable shortcuts with range markers
-        sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
-        sh_min = '#[range=user|new]Ctrl+T#[norange] #[range=user|close]Ctrl+W#[norange] #[range=user|edit]Ctrl+E#[norange] #[range=user|kill]Ctrl+X#[norange] #[range=user|detach]Ctrl+Q#[norange]'
-        # Mouse click binding - use shell=True with single quotes to handle complex nesting
-        click_cmd = 'if-shell -F "#{==:#{mouse_status_range},new}" { split-window } { if-shell -F "#{==:#{mouse_status_range},close}" { kill-pane } { if-shell -F "#{==:#{mouse_status_range},edit}" { split-window nvim } { if-shell -F "#{==:#{mouse_status_range},kill}" { confirm-before -p Kill? kill-session } { if-shell -F "#{==:#{mouse_status_range},detach}" { detach } { if-shell -F "#{==:#{mouse_status_range},window}" { select-window } } } } }'
-        for evt in ['MouseDown1Status', 'MouseUp1Status']:
-            sp.run(f"tmux bind-key -T root {evt} '{click_cmd}'", shell=True, capture_output=True)
-    else:
-        sh_full = 'Ctrl+T:New Ctrl+W:Close Ctrl+E:Edit Ctrl+X:Kill Ctrl+Q:Detach'
-        sh_min = 'Ctrl+T Ctrl+W Ctrl+E Ctrl+X Ctrl+Q'
-
-    # Nested conditional: #{?#{e|<:width,50},MIN,FULL}}
-    line1 = '#{?#{e|<:#{client_width},50},' + sh_min + ',' + sh_full + '}'
-    sp.run(['tmux', 'set-option', '-g', 'status-format[1]', '#[align=centre]' + line1], capture_output=True)
-
-    # Clear status-right since we're using status-format now
-    sp.run(['tmux', 'set-option', '-g', 'status-right', ''], capture_output=True)
-    # Force refresh so changes are immediately visible
+    # Source the config file to apply settings
+    sp.run(['tmux', 'source-file', _TMUX_CONF], capture_output=True)
     sp.run(['tmux', 'refresh-client', '-S'], capture_output=True)
     _tmux_configured = True
 
