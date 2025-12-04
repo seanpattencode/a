@@ -23,6 +23,27 @@ try:
 except ImportError:
     HAS_PROMPT_TOOLKIT = False
 
+def ensure_deps():
+    """Install essential dependencies if missing (Termux only)."""
+    if not os.environ.get('TERMUX_VERSION'):
+        return  # Only run on Termux
+
+    # Essential tools for aio
+    deps = {
+        'nvim': 'neovim',      # Editor
+        'git': 'git',          # Version control
+        'rg': 'ripgrep',       # Fast search (for neovim plugins)
+    }
+
+    missing = [pkg for cmd, pkg in deps.items() if not shutil.which(cmd)]
+    if missing:
+        print(f"📦 Installing: {', '.join(missing)}")
+        sp.run(['pkg', 'install', '-y'] + missing, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        print("✓ Dependencies installed")
+
+# Install deps on first run
+ensure_deps()
+
 def input_box(prefill="", title="Ctrl+D to run"):
     # Fallback to simple input inside tmux, non-TTY, or if prompt_toolkit not installed
     if not sys.stdin.isatty() or 'TMUX' in os.environ or not HAS_PROMPT_TOOLKIT:
