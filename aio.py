@@ -3812,8 +3812,11 @@ elif arg == 'ls':
         else:
             print(f"  {session}")
 elif arg == 'e':
-    create_tmux_session('edit', os.getcwd(), 'nvim . -c "nmap <LeftMouse> <LeftMouse><CR>"')
-    os.execvp('tmux', ['tmux', 'attach', '-t', 'edit'])
+    if 'TMUX' in os.environ:
+        os.execvp('nvim', ['nvim', '.', '-c', 'nmap <LeftMouse> <LeftMouse><CR>'])
+    else:
+        create_tmux_session('edit', os.getcwd(), 'nvim . -c "nmap <LeftMouse> <LeftMouse><CR>"')
+        os.execvp('tmux', ['tmux', 'attach', '-t', 'edit'])
 elif arg == 'x':
     sp.run(['tmux', 'kill-server'])
     print("✓ All sessions killed")
