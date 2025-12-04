@@ -633,6 +633,7 @@ def ensure_tmux_options():
     for k, a in [('C-t', 'split-window'), ('C-w', 'kill-pane'), ('C-q', 'detach')]:
         sp.run(['tmux', 'bind-key', '-n', k, a], capture_output=True)
     sp.run(['tmux', 'bind-key', '-n', 'C-x', 'confirm-before', '-p', 'Kill session? (y/n)', 'kill-session'], capture_output=True)
+    sp.run(['tmux', 'bind-key', '-n', 'C-e', 'split-window', 'nvim . -c "nmap <LeftMouse> <LeftMouse><CR>"'], capture_output=True)
 
     # 2-line status bar layout:
     # Line 0: Session name (left) + window list (center) - NO status-right
@@ -647,11 +648,11 @@ def ensure_tmux_options():
     # <45: minimal (^T ^W ^X ^Q), 45-70: short labels, >70: full labels
     if sm.version >= '3.2':
         # Clickable shortcuts with range markers
-        sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
-        sh_med = '#[range=user|new]^T:New#[norange] #[range=user|close]^W:Close#[norange] #[range=user|kill]^X:Kill#[norange] #[range=user|detach]^Q:Quit#[norange]'
-        sh_min = '#[range=user|new]^T#[norange] #[range=user|close]^W#[norange] #[range=user|kill]^X#[norange] #[range=user|detach]^Q#[norange]'
+        sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
+        sh_med = '#[range=user|new]^T:New#[norange] #[range=user|close]^W:Close#[norange] #[range=user|edit]^E:Edit#[norange] #[range=user|kill]^X:Kill#[norange] #[range=user|detach]^Q:Quit#[norange]'
+        sh_min = '#[range=user|new]^T#[norange] #[range=user|close]^W#[norange] #[range=user|edit]^E#[norange] #[range=user|kill]^X#[norange] #[range=user|detach]^Q#[norange]'
         # Mouse click binding
-        click_binding = "if -F '#{==:#{mouse_status_range},new}' { split-window } { if -F '#{==:#{mouse_status_range},close}' { kill-pane } { if -F '#{==:#{mouse_status_range},kill}' { confirm-before -p 'Kill?' kill-session } { if -F '#{==:#{mouse_status_range},detach}' { detach } { if -F '#{==:#{mouse_status_range},window}' { select-window } } } } }"
+        click_binding = "if -F '#{==:#{mouse_status_range},new}' { split-window } { if -F '#{==:#{mouse_status_range},close}' { kill-pane } { if -F '#{==:#{mouse_status_range},edit}' { split-window 'nvim . -c \"nmap <LeftMouse> <LeftMouse><CR>\"' } { if -F '#{==:#{mouse_status_range},kill}' { confirm-before -p 'Kill?' kill-session } { if -F '#{==:#{mouse_status_range},detach}' { detach } { if -F '#{==:#{mouse_status_range},window}' { select-window } } } } }"
         sp.run(['tmux', 'bind-key', '-Troot', 'MouseDown1Status', click_binding], capture_output=True)
     else:
         sh_full = 'Ctrl+T:New Ctrl+W:Close Ctrl+X:Kill Ctrl+Q:Detach'
@@ -3810,6 +3811,9 @@ elif arg == 'ls':
             print(f"    └─ {path}")
         else:
             print(f"  {session}")
+elif arg == 'e':
+    create_tmux_session('edit', os.getcwd(), 'nvim . -c "nmap <LeftMouse> <LeftMouse><CR>"')
+    os.execvp('tmux', ['tmux', 'attach', '-t', 'edit'])
 elif arg == 'x':
     sp.run(['tmux', 'kill-server'])
     print("✓ All sessions killed")
