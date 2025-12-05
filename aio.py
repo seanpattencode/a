@@ -664,6 +664,19 @@ sessions = load_sessions(config)
 _TMUX_CONF = os.path.expanduser('~/.tmux.conf')
 _AIO_MARKER = '# aio-managed-config'
 
+def _get_clipboard_cmd():
+    """Detect platform-appropriate clipboard command for tmux copy."""
+    import sys
+    if os.environ.get('TERMUX_VERSION'):
+        return 'termux-clipboard-set'
+    elif sys.platform == 'darwin':
+        return 'pbcopy'
+    elif shutil.which('xclip'):
+        return 'xclip -selection clipboard -i'
+    elif shutil.which('xsel'):
+        return 'xsel --clipboard --input'
+    return None
+
 def _write_tmux_conf():
     """Write tmux config to ~/.tmux.conf for persistence across restarts.
 
@@ -677,8 +690,11 @@ def _write_tmux_conf():
     line1 = '#{?#{e|<:#{client_width},50},' + sh_min + ',' + sh_full + '}'
     # Line 2: Esc (left) and Keyboard (centre) buttons for Termux
     line2 = '#[align=left]#[range=user|esc]⎋ Esc#[norange]#[align=centre]#[range=user|kbd]⌨ Keyboard#[norange]'
+    # Get clipboard command for mouse copy-on-selection
+    clip_cmd = _get_clipboard_cmd()
     conf = f'''{_AIO_MARKER}
 set -g mouse on
+set -s set-clipboard off
 set -g status-position bottom
 set -g status 3
 set -g status-right ""
@@ -692,6 +708,10 @@ bind-key -n C-x confirm-before -p "Kill session? (y/n)" kill-session
 bind-key -n C-e split-window "nvim ."
 bind-key -T root MouseDown1Status run-shell 'r="#{{mouse_status_range}}"; case "$r" in new) tmux split-window;; close) tmux kill-pane;; edit) tmux split-window nvim;; kill) tmux confirm-before -p "Kill?" kill-session;; detach) tmux detach;; esc) tmux send-keys Escape;; kbd) tmux set -g mouse off; tmux display-message "Tap terminal - mouse restores in 3s"; (sleep 3; tmux set -g mouse on) &;; esac'
 '''
+    # Add mouse copy-on-selection (copies to clipboard when mouse selection ends)
+    if clip_cmd:
+        conf += f'bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "{clip_cmd}"\n'
+        conf += f'bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "{clip_cmd}"\n'
     if sm.version >= '3.6':
         conf += 'set -g pane-scrollbars on\nset -g pane-scrollbars-position right\n'
 
