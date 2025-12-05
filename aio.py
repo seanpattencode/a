@@ -2520,7 +2520,7 @@ elif arg == 'install':
     # Install aio as a global command
     bin_dir = os.path.expanduser("~/.local/bin")
     aio_link = os.path.join(bin_dir, "aio")
-    script_path = os.path.abspath(__file__)
+    script_path = os.path.realpath(__file__)  # realpath follows symlinks
 
     # Create bin directory if needed
     os.makedirs(bin_dir, exist_ok=True)

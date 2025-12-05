@@ -2,6 +2,8 @@
 
 Ultra-fast, event-driven task execution system with git-inspired design, strict performance enforcement, and automatic updates.
 
+This is a work in progress. The below may not be accurate.
+
 ## Features
 
 - **Event-Driven Execution**: Zero polling, subprocess.run() blocks on completion (270x faster)
