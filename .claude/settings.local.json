@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/usr/bin/env python3:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

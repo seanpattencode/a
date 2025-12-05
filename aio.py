@@ -2541,10 +2541,40 @@ elif arg == 'install':
     # Check if ~/.local/bin is in PATH
     user_path = os.environ.get('PATH', '')
     if bin_dir not in user_path:
-        print(f"\n⚠ Warning: {bin_dir} is not in your PATH")
-        print(f"Add this line to your ~/.bashrc or ~/.zshrc:")
-        print(f'  export PATH="$HOME/.local/bin:$PATH"')
-        print(f"\nThen run: source ~/.bashrc (or restart your terminal)")
+        # Detect shell RC file
+        shell = os.environ.get('SHELL', '/bin/bash')
+        if 'zsh' in shell:
+            rc_file = os.path.expanduser('~/.zshrc')
+        elif 'fish' in shell:
+            rc_file = os.path.expanduser('~/.config/fish/config.fish')
+        else:
+            rc_file = os.path.expanduser('~/.bashrc')
+
+        path_line = 'export PATH="$HOME/.local/bin:$PATH"'
+        # Check if already in RC file
+        already_in_rc = False
+        if os.path.exists(rc_file):
+            with open(rc_file, 'r') as f:
+                already_in_rc = '.local/bin' in f.read()
+
+        if already_in_rc:
+            print(f"\n✓ PATH already configured in {rc_file}")
+            print(f"  Restart your terminal or run: source {rc_file}")
+        else:
+            print(f"\n⚠ {bin_dir} is not in your PATH")
+            try:
+                answer = input(f"Add to {rc_file}? [Y/n]: ").strip().lower()
+                if answer != 'n':
+                    with open(rc_file, 'a') as f:
+                        f.write(f'\n# Added by aio install\n{path_line}\n')
+                    print(f"✓ Added PATH to {rc_file}")
+                    print(f"  Restart your terminal or run: source {rc_file}")
+                else:
+                    print(f"Add this line to {rc_file} manually:")
+                    print(f'  {path_line}')
+            except (EOFError, KeyboardInterrupt):
+                print(f"\nAdd this line to {rc_file} manually:")
+                print(f'  {path_line}')
     else:
         print(f"\n✓ {bin_dir} is in your PATH")
         print(f"✓ You can now run 'aio' from anywhere!")
