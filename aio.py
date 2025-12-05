@@ -8,7 +8,9 @@ import shutil
 import time
 
 # Lazy-loaded optional dependencies (import on first use for fast startup)
-# These heavy imports are deferred to save ~50ms on startup
+# prompt_toolkit (~50ms) and pexpect (~5ms) are only imported when actually needed
+# Note: Background thread preloading was tested but adds overhead without benefit
+# because aio startup (~30ms) is faster than import time (~50ms)
 _pexpect = None
 _prompt_toolkit = None
 
