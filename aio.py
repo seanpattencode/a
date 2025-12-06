@@ -430,12 +430,9 @@ Say REVIEW COMPLETE when done."""
             # Check if projects exist
             cursor = conn.execute("SELECT COUNT(*) FROM projects")
             if cursor.fetchone()[0] == 0:
-                # Insert default projects
+                # Insert default projects (aio only)
                 default_projects = [
-                    os.path.expanduser("~/projects/aios"),
-                    os.path.expanduser("~/projects/waylandauto"),
-                    os.path.expanduser("~/AndroidStudioProjects/Workcycle"),
-                    os.path.expanduser("~/projects/testRepoPrivate")
+                    os.path.expanduser("~/projects/aio"),
                 ]
                 for i, path in enumerate(default_projects):
                     conn.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)",
@@ -686,7 +683,8 @@ def _write_tmux_conf():
     config, so each user must run aio once to set up their tmux environment.
     The config persists across tmux/terminal restarts automatically.
     """
-    line0 = '#[align=left][#S]#[align=centre]#{W:#[range=window|#{window_index}]#I:#W#{?window_active,*, }#[norange] }'
+    # Show 🔴 when window_silence_flag=1 (no output for monitor-silence seconds), * when active
+    line0 = '#[align=left][#S]#[align=centre]#{W:#[range=window|#{window_index}]#I:#W#{?window_active,*,#{?window_silence_flag,🔴,}}#[norange] }'
     sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
     sh_min = '#[range=user|new]Ctrl+T#[norange] #[range=user|close]Ctrl+W#[norange] #[range=user|edit]Ctrl+E#[norange] #[range=user|kill]Ctrl+X#[norange] #[range=user|detach]Ctrl+Q#[norange]'
     line1 = '#{?#{e|<:#{client_width},50},' + sh_min + ',' + sh_full + '}'
@@ -696,6 +694,8 @@ def _write_tmux_conf():
     clip_cmd = _get_clipboard_cmd()
     conf = f'''{_AIO_MARKER}
 set -g mouse on
+set -g set-titles on
+set -g set-titles-string "#{{?#{{session_silence_flag}},🔴 ,}}#S:#W"
 set -s set-clipboard off
 set -g status-position bottom
 set -g status 3
@@ -760,6 +760,8 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-bh', '-t', session_name, '-c', work_dir], capture_output=True)
         sp.run(['tmux', 'select-pane', '-t', session_name, '-R'], capture_output=True)
+        # Enable silence detection: window_silence_flag set automatically after 2s of no output
+        sp.run(['tmux', 'set-option', '-t', session_name, 'monitor-silence', '2'], capture_output=True)
     return result
 
 def detect_terminal():
@@ -2769,6 +2771,82 @@ elif arg == 'deps':
             print(f"✓ {cmd}")
     print("\n✅ Done! Restart terminal or run: export PATH=\"$HOME/.local/bin:$PATH\"")
 # ═══════════════════════════════════════════════════════════════════════════════
+# PROOT ISOLATED ENVIRONMENT
+# Test aio global commands (install, deps, etc.) without affecting host system.
+# Creates isolated Ubuntu environment via proot - no root required.
+# Usage: aio proot [check|install|setup|test|shell|teardown]
+# ═══════════════════════════════════════════════════════════════════════════════
+elif arg == 'proot':
+    import platform as _platform
+    PROOT_DIR = os.path.expanduser("~/.local/share/proot-ubuntu")
+    PROOT_ROOTFS = os.path.join(PROOT_DIR, "rootfs")
+    _proot_run = lambda cmd: sp.run(cmd, shell=True, capture_output=True, text=True)
+
+    def _proot_check(): return shutil.which("proot") is not None
+
+    def _proot_install():
+        if _proot_check(): return True
+        bin_dir = os.path.expanduser("~/.local/bin")
+        os.makedirs(bin_dir, exist_ok=True)
+        proot_bin = os.path.join(bin_dir, "proot")
+        _proot_run(f"curl -sL https://proot.gitlab.io/proot/bin/proot -o {proot_bin} && chmod +x {proot_bin}")
+        return os.path.exists(proot_bin) and os.access(proot_bin, os.X_OK)
+
+    def _proot_setup():
+        os.makedirs(PROOT_ROOTFS, exist_ok=True)
+        if os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")): return True
+        arch = "amd64" if _platform.machine() in ("x86_64", "AMD64") else "arm64"
+        url = f"https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-{arch}.tar.gz"
+        print(f"⬇️  Downloading Ubuntu 22.04 ({arch})...")
+        _proot_run(f"curl -sL {url} | tar xz -C {PROOT_ROOTFS}")
+        return os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh"))
+
+    def _proot_test():
+        r = _proot_run(f"proot -r {PROOT_ROOTFS} -0 /bin/cat /etc/os-release")
+        return r.returncode == 0 and "Ubuntu" in r.stdout
+
+    def _proot_teardown():
+        if os.path.exists(PROOT_DIR): shutil.rmtree(PROOT_DIR); return True
+        return False
+
+    sub = work_dir_arg or "check"
+    if sub == "check":
+        print(f"proot binary: {'✓ installed' if _proot_check() else '✗ not found'}")
+        print(f"ubuntu rootfs: {'✓ ready' if os.path.exists(os.path.join(PROOT_ROOTFS, 'bin/sh')) else '✗ not setup'}")
+    elif sub == "install":
+        print("OK" if _proot_install() else "FAILED")
+    elif sub == "setup":
+        if not _proot_check():
+            print("Installing proot first...")
+            if not _proot_install(): print("✗ Failed to install proot"); sys.exit(1)
+        print("OK" if _proot_setup() else "FAILED")
+    elif sub == "test":
+        print("OK" if _proot_test() else "FAILED")
+    elif sub == "shell":
+        # Enter isolated Ubuntu shell - test aio install/commands here safely
+        if not os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")):
+            print("✗ Run 'aio proot setup' first"); sys.exit(1)
+        print("🐧 Entering isolated Ubuntu environment...")
+        print("   Test 'aio install' and global commands here without affecting host.")
+        print("   Type 'exit' to leave.\n")
+        os.execvp("proot", ["proot", "-r", PROOT_ROOTFS, "-0", "-w", "/root", "/bin/bash"])
+    elif sub == "teardown":
+        print("OK" if _proot_teardown() else "NOTHING TO REMOVE")
+    else:
+        print(f"""aio proot - Isolated Ubuntu environment for testing
+Usage: aio proot [command]
+
+Commands:
+  check     Check if proot and rootfs are installed
+  install   Download proot binary (~5MB, no root needed)
+  setup     Download Ubuntu 22.04 rootfs (~28MB)
+  test      Verify proot environment works
+  shell     Enter isolated Ubuntu shell (test aio commands safely)
+  teardown  Remove proot Ubuntu installation
+
+Purpose: Test 'aio install', 'aio deps', and other global commands
+without affecting your current system installation.""")
+# ═══════════════════════════════════════════════════════════════════════════════
 # LOCAL FILES SERVICE - Commented out for future activation
 # Provides HTTP access to Termux local files for AI agents
 # Activate with: aio files [port]
@@ -3058,13 +3136,18 @@ elif arg == 'multi':
         spec = input("Agent specs (e.g. c:3 or c:2 l:1): ").strip()
         if not spec: sys.exit(1)
         agent_specs, task, used_default = parse_agent_specs_and_prompt([''] + spec.split(), 1)
-    if used_default:
-        task = input_box("", "Task (Ctrl+D to run)").strip()
-        if not task: sys.exit(1)
-
-    # Wrap task with feat prompt template
+    # Load prompts first - the input box shows the FULL prompt for editing
     prompts = load_prompts()
-    prompt = prompts['feat'].format(task=task)
+
+    if used_default:
+        # No task provided - show full feat prompt template for editing
+        initial_prompt = prompts['feat'].format(task="<describe task>")
+        prompt = input_box(initial_prompt, "Prompt (Ctrl+D to run)").strip()
+        if not prompt: sys.exit(1)
+        task = prompt  # Store final prompt for run_info
+    else:
+        # Task provided on command line - wrap and execute directly
+        prompt = prompts['feat'].format(task=task)
 
     total = sum(count for _, count in agent_specs)
     repo_name = os.path.basename(project_path)
@@ -3124,14 +3207,14 @@ elif arg == 'multi':
             sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:{window_name}', '-c', wt_path], env=env)
             sp.run(['tmux', 'select-pane', '-t', f'{session_name}:{window_name}.0'], env=env)
 
-            # Fallback 2: Prompt detection (idle agent) - signals if prompt AND (>20 lines OR >10s elapsed)
-            detector = f'''sh -c 's=$(date +%s);n=0;while IFS= read -r l;do n=$((n+1));e=$(($(date +%s)-s));echo "$l"|sed "s/$(printf "\\033")\\[[0-9;]*[a-zA-Z]//g"|grep -q "[›>] "&&[ $n -gt 20 -o $e -gt 10 ]&&tmux wait-for -S {signal_name}&&exit 0;done' '''
-            sp.run(['tmux', 'pipe-pane', '-t', f'{session_name}:{window_name}.0', detector], env=env)
-
-            # Fallback 3: Inactivity timeout (30 min) - handles stuck agents
-            sp.run(['tmux', 'set-option', '-t', f'{session_name}:{window_name}', 'monitor-silence', '1800'], env=env)
-            sp.run(['tmux', 'set-hook', '-t', f'{session_name}:{window_name}', 'alert-silence',
-                    f'run-shell "tmux wait-for -S {signal_name}"'], env=env)
+            # Signal review window when agent shows prompt (for coordination)
+            # Uses pipe-pane to detect prompt patterns and send signal once
+            # Note: %% escapes % since tmux does format expansion on pipe-pane commands
+            target = f'{session_name}:{window_name}'
+            prompt_detector = f'''sh -c 's=0;while IFS= read -r l;do [ $s -eq 1 ]&&continue;c=$(printf "%%s" "$l"|sed "s/\\x1b\\[[0-9;]*[a-zA-Z]//g");case "$c" in *"› "*|*"context left"*|*"> Type"*) tmux wait-for -S {signal_name};s=1;;esac;done' '''
+            sp.run(['tmux', 'pipe-pane', '-t', f'{target}.0', prompt_detector], env=env)
+            # Enable silence detection: window_silence_flag set automatically after 2s
+            sp.run(['tmux', 'set-option', '-t', target, 'monitor-silence', '2'], env=env)
 
             launched.append((window_name, base_name, wt_path))
             print(f"✓ {window_name}")
@@ -3157,6 +3240,9 @@ echo "✓ All agents done. Starting review..."
 claude --dangerously-skip-permissions {shlex.quote(REVIEWER_PROMPT)}'''
     sp.run(['tmux', 'new-window', '-t', session_name, '-n', '📋review', '-c', candidates_dir, f'bash -c {shlex.quote(wait_script)}'], env=env)
     sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:📋review', '-c', candidates_dir], env=env)
+    # Enable silence detection: window_silence_flag set automatically after 2s
+    review_target = f'{session_name}:📋review'
+    sp.run(['tmux', 'set-option', '-t', review_target, 'monitor-silence', '2'], env=env)
     print("✓ 📋review (auto-starts when agents finish)")
 
     # Select first agent window
