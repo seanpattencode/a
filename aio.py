@@ -426,6 +426,10 @@ Say REVIEW COMPLETE when done."""
                 conn.execute("INSERT INTO config VALUES ('gemini_prompt', ?)", (default_prompt,))
                 conn.execute("INSERT INTO config VALUES ('worktrees_dir', ?)",
                            (os.path.expanduser("~/projects/aiosWorktrees"),))
+                conn.execute("INSERT INTO config VALUES ('multi_default', 'c:3')")
+
+            # Ensure multi_default exists for existing users
+            conn.execute("INSERT OR IGNORE INTO config VALUES ('multi_default', 'c:3')")
 
             # Check if projects exist
             cursor = conn.execute("SELECT COUNT(*) FROM projects")
@@ -694,6 +698,7 @@ def _write_tmux_conf():
     clip_cmd = _get_clipboard_cmd()
     conf = f'''{_AIO_MARKER}
 set -g mouse on
+set -g focus-events on
 set -g set-titles on
 set -g set-titles-string "#{{?#{{session_silence_flag}},🔴 ,}}#S:#W"
 set -s set-clipboard off
@@ -3122,6 +3127,25 @@ elif arg == 'multi':
     # Structure: WORKTREES_DIR/repo_name/run_id/attempt_N
     import json, hashlib
 
+    # Handle 'aio multi set c:2 l:1' to change default
+    if work_dir_arg == 'set':
+        new_specs = ' '.join(sys.argv[3:]) if len(sys.argv) > 3 else ''
+        if not new_specs:
+            config = load_config()
+            print(f"Current default: {config.get('multi_default', 'c:3')}")
+            sys.exit(0)
+        # Validate specs
+        test_specs, _, _ = parse_agent_specs_and_prompt([''] + new_specs.split(), 1)
+        if not test_specs:
+            print(f"✗ Invalid specs: {new_specs}")
+            print("  Format: c:N l:N g:N (e.g., c:3 or c:2 l:1)")
+            sys.exit(1)
+        with WALManager(DB_PATH) as conn:
+            conn.execute("INSERT OR REPLACE INTO config VALUES ('multi_default', ?)", (new_specs,))
+            conn.commit()
+        print(f"✓ Default set to: {new_specs}")
+        sys.exit(0)
+
     if work_dir_arg and work_dir_arg.isdigit():
         project_path = PROJECTS[int(work_dir_arg)] if int(work_dir_arg) < len(PROJECTS) else None
         if not project_path:
@@ -3133,9 +3157,11 @@ elif arg == 'multi':
 
     agent_specs, task, used_default = parse_agent_specs_and_prompt(sys.argv, start_parse_at)
     if not agent_specs:
-        spec = input("Agent specs (e.g. c:3 or c:2 l:1): ").strip()
-        if not spec: sys.exit(1)
-        agent_specs, task, used_default = parse_agent_specs_and_prompt([''] + spec.split(), 1)
+        # Use stored default instead of prompting
+        config = load_config()
+        default_specs = config.get('multi_default', 'c:3')
+        agent_specs, _, _ = parse_agent_specs_and_prompt([''] + default_specs.split(), 1)
+        print(f"Using default: {default_specs}  (change with: aio multi set <specs>)")
     # Load prompts first - the input box shows the FULL prompt for editing
     prompts = load_prompts()
 
