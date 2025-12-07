@@ -2553,9 +2553,17 @@ Working directory: {WORK_DIR}
             cmd_display = format_app_command(app_cmd)
             print(f"  {len(PROJECTS) + i}. {app_name} → {cmd_display}")
 elif arg == 'diff':
-    sp.run(['git', 'fetch', 'origin'], capture_output=True)
+    import re; sp.run(['git', 'fetch', 'origin'], capture_output=True)
     b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
-    sp.run(['git', 'diff', f'origin/{b}', '--stat']); sp.run(['git', 'diff', f'origin/{b}'])
+    diff = sp.run(['git', 'diff', f'origin/{b}'], capture_output=True, text=True).stdout
+    if not diff: print("✓ Up to date"); sys.exit(0)
+    print(sp.run(['git', 'diff', f'origin/{b}', '--shortstat'], capture_output=True, text=True).stdout.strip() + "\n")
+    G, R, X = '\033[32m', '\033[31m', '\033[0m'
+    for L in diff.split('\n'):
+        if L.startswith('diff --git'): print(f"\n{L.split(' b/')[-1]}")
+        elif L.startswith('@@'): print(f"  Line {re.search(r'\+(\d+)', L).group(1)}:")
+        elif L.startswith('+') and not L.startswith('+++'): print(f"    {G}+ {L[1:]}{X}")
+        elif L.startswith('-') and not L.startswith('---'): print(f"    {R}- {L[1:]}{X}")
 elif arg == 'update':
     # Explicitly update aio from git repository
     manual_update()
