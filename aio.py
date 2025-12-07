@@ -431,6 +431,9 @@ Say REVIEW COMPLETE when done."""
             # Ensure multi_default exists for existing users
             conn.execute("INSERT OR IGNORE INTO config VALUES ('multi_default', 'c:3')")
 
+            # Claude prefix for extended thinking (Ultrathink. increases thinking budget)
+            conn.execute("INSERT OR IGNORE INTO config VALUES ('claude_prefix', 'Ultrathink. ')")
+
             # Check if projects exist
             cursor = conn.execute("SELECT COUNT(*) FROM projects")
             if cursor.fetchone()[0] == 0:
@@ -649,6 +652,8 @@ DEFAULT_PROMPT = get_prompt('default')
 CLAUDE_PROMPT = config.get('claude_prompt', DEFAULT_PROMPT)
 CODEX_PROMPT = config.get('codex_prompt', DEFAULT_PROMPT)
 GEMINI_PROMPT = config.get('gemini_prompt', DEFAULT_PROMPT)
+# Claude prefix for extended thinking (e.g., "Ultrathink. " increases thinking budget)
+CLAUDE_PREFIX = config.get('claude_prefix', 'Ultrathink. ')
 
 # Get working directory, fallback to home if current dir is invalid
 try:
@@ -1381,6 +1386,21 @@ def wait_for_agent_ready(session_name, timeout=5):
     # Timeout - try sending anyway
     return True
 
+def is_claude_session(session_name):
+    """Check if a session is a Claude session (l, lp, o keys map to claude)."""
+    return 'claude' in session_name.lower()
+
+def claude_prefix_prompt(prompt, is_claude):
+    """Add Claude prefix (from DB config 'claude_prefix') to prompts for Claude sessions.
+
+    Default prefix 'Ultrathink. ' increases Claude's thinking budget.
+    Change via: aio config claude_prefix "your prefix"
+    """
+    prefix = config.get('claude_prefix', 'Ultrathink. ')
+    if is_claude and prefix and not prompt.startswith(prefix.strip()):
+        return prefix + prompt
+    return prompt
+
 def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None, wait_for_ready=True, send_enter=True):
     """Send a prompt to a tmux session.
 
@@ -1413,6 +1433,9 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
             print(" ✓")
         else:
             print(" (timeout, sending anyway)")
+
+    # Add Ultrathink. prefix for Claude sessions (increases thinking budget)
+    prompt = claude_prefix_prompt(prompt, is_claude_session(session_name))
 
     # Send the prompt
     # Use session manager to send keys
@@ -2523,6 +2546,8 @@ elif arg in ('fix', 'bug', 'feat', 'auto', 'del'):
     agent_name, cmd = sessions[agent]
     session_name = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"
     print(f"📝 {arg.upper()} [{agent_name}]: {task[:50]}{'...' if len(task) > 50 else ''}")
+    # Add Ultrathink. prefix for Claude agents (increases thinking budget)
+    prompt = claude_prefix_prompt(prompt, agent_name == 'claude')
     create_tmux_session(session_name, os.getcwd(), f"{cmd} {shlex.quote(prompt)}")
     launch_in_new_window(session_name) if 'TMUX' in os.environ else os.execvp(sm.attach(session_name)[0], sm.attach(session_name))
 elif arg == 'install':
@@ -3222,7 +3247,10 @@ elif arg == 'multi':
             signal_name = f"{session_name}-{window_name}"
             # Fallback 1: Signal on agent exit (handles crashes, user quit, completion)
             exit_signal = f'; tmux wait-for -S {signal_name}'
-            full_cmd = f'{base_cmd} {escaped_prompt}{exit_signal}'
+            # Add Ultrathink. prefix for Claude agents (increases thinking budget)
+            agent_prompt = claude_prefix_prompt(prompt, base_name == 'claude')
+            escaped_agent_prompt = shlex.quote(agent_prompt)
+            full_cmd = f'{base_cmd} {escaped_agent_prompt}{exit_signal}'
             if first_window:
                 sp.run(['tmux', 'new-session', '-d', '-s', session_name, '-n', window_name, '-c', wt_path, full_cmd], env=env)
                 first_window = False
@@ -3253,6 +3281,8 @@ elif arg == 'multi':
     dirs_str = ", ".join(os.path.basename(p) for _, _, p in launched)
     prompt_template = get_prompt('reviewer') or "Review {DIRS} for: {TASK}"
     REVIEWER_PROMPT = prompt_template.format(TASK=prompt, AGENTS=agents_str, DIRS=dirs_str)
+    # Add Ultrathink. prefix for Claude reviewer (increases thinking budget)
+    REVIEWER_PROMPT = claude_prefix_prompt(REVIEWER_PROMPT, True)
 
     # Add reviewer window (event-driven: waits for all agent signals, then auto-starts)
     # Review runs in candidates/ folder so it can see all candidate dirs
@@ -3439,8 +3469,10 @@ elif arg == 'all':
                     projects_using_local.append(project_name)
 
                 # Construct full command with prompt baked in (like lpp/gpp/cpp)
-                # Note: escaped_prompt already has quotes from shlex.quote()
-                full_cmd = f'{base_cmd} {escaped_prompt}'
+                # Add Ultrathink. prefix for Claude agents (increases thinking budget)
+                agent_prompt = claude_prefix_prompt(prompt, base_name == 'claude')
+                escaped_agent_prompt = shlex.quote(agent_prompt)
+                full_cmd = f'{base_cmd} {escaped_agent_prompt}'
 
                 # Create tmux session in worktree with prompt already included
                 # IMPORTANT: Use clean environment to prevent GUI dialogs in the agent session
@@ -3571,6 +3603,33 @@ elif arg == 'killall':
     else:
         print("Cancelled")
 
+elif arg == 'config':
+    # View/edit config: aio config [key] [value]
+    key = work_dir_arg
+    value = ' '.join(sys.argv[3:]) if len(sys.argv) > 3 else None
+
+    if not key:
+        # Show all config
+        print("Configuration (stored in ~/.local/share/aios/aio.db):\n")
+        for k, v in sorted(config.items()):
+            display_v = v[:50] + '...' if len(v) > 50 else v
+            print(f"  {k}: {display_v}")
+        print(f"\nUsage: aio config <key> [new_value]")
+    elif value is not None:
+        # Set config value
+        with WALManager(DB_PATH) as conn:
+            conn.execute("INSERT OR REPLACE INTO config VALUES (?, ?)", (key, value))
+            conn.commit()
+        print(f"✓ Set {key} = {value}")
+    else:
+        # Show single config value
+        val = config.get(key)
+        if val:
+            print(f"{key}: {val}")
+        else:
+            print(f"Config '{key}' not found")
+            print(f"Available: {', '.join(config.keys())}")
+
 elif arg == 'prompt':
     # Edit prompts: aio prompt [name]
     prompts = load_prompts()
@@ -3657,6 +3716,8 @@ elif arg == 'r' or arg == 'review':
 
     prompt_template = get_prompt('reviewer') or "Review the code in {DIRS} for task: {TASK}"
     REVIEWER_PROMPT = prompt_template.format(TASK=task, AGENTS=agents, DIRS=dirs)
+    # Add Ultrathink. prefix for Claude reviewer (increases thinking budget)
+    REVIEWER_PROMPT = claude_prefix_prompt(REVIEWER_PROMPT, True)
     print(f"📋 Reviewing: {task[:60]}...")
     print(f"   Agents: {agents} | Dirs: {dirs}")
 
@@ -4698,6 +4759,12 @@ elif arg.endswith('++') and not arg.startswith('w'):
             env = get_noninteractive_git_env()
             create_tmux_session(session_name, worktree_path, cmd, env=env, capture_output=False)
 
+            # For Claude sessions, send the prefix (user can continue typing)
+            if key in ('l', 'o'):
+                prefix = config.get('claude_prefix', 'Ultrathink. ')
+                if prefix:
+                    send_prompt_to_session(session_name, prefix, wait_for_completion=False, wait_for_ready=True, send_enter=False)
+
             if new_window:
                 launch_in_new_window(session_name)
                 if with_terminal:
@@ -4719,6 +4786,12 @@ else:
     if 'TMUX' in os.environ and arg in sessions and len(arg) == 1:
         _, cmd = sessions[arg]
         sp.run(['tmux', 'split-window', '-h', '-c', work_dir, cmd])
+        # For Claude sessions, send the prefix to the new pane
+        if arg in ('l', 'o'):
+            time.sleep(0.5)  # Wait for pane to initialize
+            prefix = config.get('claude_prefix', 'Ultrathink. ')
+            if prefix:
+                sp.run(['tmux', 'send-keys', '-t', '!', '-l', prefix])
         sys.exit(0)
 
     # Try directory-based session logic first
@@ -4761,6 +4834,9 @@ else:
         if sys.argv[i] not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']:
             prompt_parts.append(sys.argv[i])
 
+    # Check if this is a Claude session (l, lp, o)
+    is_claude = arg in ('l', 'lp', 'o') or (session_name and 'claude' in session_name.lower())
+
     if prompt_parts:
         # Custom prompt provided on command line
         prompt = ' '.join(prompt_parts)
@@ -4774,6 +4850,11 @@ else:
         if default_prompt:
             print(f"📝 Inserting default prompt into session...")
             send_prompt_to_session(session_name, default_prompt, wait_for_completion=False, wait_for_ready=True, send_enter=False)
+    elif is_claude:
+        # Claude session without prompt - insert just the prefix (user can continue typing)
+        prefix = config.get('claude_prefix', 'Ultrathink. ')
+        if prefix:
+            send_prompt_to_session(session_name, prefix, wait_for_completion=False, wait_for_ready=True, send_enter=False)
 
     if new_window:
         launch_in_new_window(session_name)
