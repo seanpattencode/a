@@ -4386,8 +4386,11 @@ elif arg == 'push':
             else:
                 error_msg = result.stderr.strip() or result.stdout.strip()
                 if 'rejected' in error_msg and 'non-fast-forward' in error_msg:
-                    print(f"⚠️  Push rejected - remote has diverged. Force pushing...")
-                    result = sp.run(['git', '-C', project_path, 'push', '--force-with-lease', 'origin', main_branch],
+                    confirm = input("⚠️  Push rejected - remote has diverged. Force push? (y/n): ").strip().lower()
+                    if confirm not in ['y', 'yes']:
+                        print("✗ Cancelled"); sys.exit(1)
+                    sp.run(['git', '-C', project_path, 'fetch', 'origin'], capture_output=True, env=env)
+                    result = sp.run(['git', '-C', project_path, 'push', '--force', 'origin', main_branch],
                                     capture_output=True, text=True, env=env)
                     if result.returncode == 0:
                         print(f"✓ Force pushed to {main_branch} (remote was overwritten)")
@@ -4563,8 +4566,11 @@ elif arg == 'push':
         else:
             error_msg = result.stderr.strip() or result.stdout.strip()
             if 'rejected' in error_msg and 'non-fast-forward' in error_msg:
-                print(f"⚠️  Push rejected - remote has diverged. Force pushing...")
-                result = sp.run(['git', '-C', cwd, 'push', '--force-with-lease', 'origin', main_branch],
+                confirm = input("⚠️  Push rejected - remote has diverged. Force push? (y/n): ").strip().lower()
+                if confirm not in ['y', 'yes']:
+                    print("✗ Cancelled"); sys.exit(1)
+                sp.run(['git', '-C', cwd, 'fetch', 'origin'], capture_output=True, env=env)
+                result = sp.run(['git', '-C', cwd, 'push', '--force', 'origin', main_branch],
                                 capture_output=True, text=True, env=env)
                 if result.returncode == 0:
                     print(f"✓ Force pushed to {main_branch} (remote was overwritten)")
