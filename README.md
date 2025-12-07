@@ -24,7 +24,6 @@ This is a work in progress. The below may not be accurate.
 ```bash
 cd /path/to/AIOS
 python3 aios.py --install
-```
 
 This will:
 1. Check dependencies (Python 3.9+, pip, tmux)

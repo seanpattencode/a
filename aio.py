@@ -61,17 +61,27 @@ def ensure_deps():
 # Install deps on first run
 ensure_deps()
 
-def input_box(prefill="", title="Ctrl+D to run"):
+def input_box(prefill="", title="Ctrl+D to run, Ctrl+C to cancel"):
     # Fallback to simple input inside tmux, non-TTY, or if prompt_toolkit not installed
     pt = _get_prompt_toolkit()
     if not sys.stdin.isatty() or 'TMUX' in os.environ or not pt:
         print(f"[{title}] " if not prefill else f"[{title}]\n{prefill}\n> ", end="", flush=True)
-        return input() if not prefill else prefill
+        try:
+            return input() if not prefill else prefill
+        except KeyboardInterrupt:
+            print("\nCancelled")
+            return None
     kb = pt['KeyBindings']()
+    cancelled = [False]  # Use list to allow modification in closure
     @kb.add('c-d')
     def _(e): e.app.exit()
+    @kb.add('c-c')
+    def _(e): cancelled[0] = True; e.app.exit()
     ta = pt['TextArea'](text=prefill, multiline=True, focus_on_click=True)
     pt['Application'](layout=pt['Layout'](pt['Frame'](ta, title=title)), key_bindings=kb, full_screen=True, mouse_support=True).run()
+    if cancelled[0]:
+        print("Cancelled")
+        return None
     return ta.text
 
 # Session Manager - generic multiplexer abstraction (tmux implementation)
@@ -2430,6 +2440,9 @@ SETUP & CONFIGURATION
   aio deps               Install dependencies (node, codex, claude, gemini)
   aio update             Update aio to latest version from git
   aio font [+|-|SIZE]    Adjust terminal font size (Termux/Kitty/Alacritty/GNOME)
+  aio config             View all config settings
+  aio config <key>       View single config value
+  aio config <key> <val> Set config value
   aio x                  Kill all tmux sessions
 FLAGS:
   -w, --new-window       Launch in new terminal window
@@ -2438,6 +2451,21 @@ FLAGS:
 TERMINALS: Auto-detects ptyxis, gnome-terminal, alacritty
 DATABASE: ~/.local/share/aios/aio.db
 WORKTREES: {WORKTREES_DIR}
+═══════════════════════════════════════════════════════════════════════════════
+CLAUDE ULTRATHINK
+═══════════════════════════════════════════════════════════════════════════════
+All Claude sessions (aio l, aio o) automatically prefix prompts with "Ultrathink. "
+This increases Claude's thinking budget for more thorough reasoning.
+
+  aio config claude_prefix           View current prefix
+  aio config claude_prefix ""        Disable prefix (empty string)
+  aio config claude_prefix "Think. " Change prefix
+
+The prefix is:
+• Auto-inserted when starting Claude sessions (aio l, aio o)
+• Auto-applied to prompts in aio fix, bug, feat, auto, del
+• Auto-applied in multi-agent runs (aio multi) for Claude agents
+• Stored in database (persists across restarts)
 ═══════════════════════════════════════════════════════════════════════════════
 DATABASE BACKUP & RESTORE
 ═══════════════════════════════════════════════════════════════════════════════
@@ -3193,7 +3221,9 @@ elif arg == 'multi':
     if used_default:
         # No task provided - show full feat prompt template for editing
         initial_prompt = prompts['feat'].format(task="<describe task>")
-        prompt = input_box(initial_prompt, "Prompt (Ctrl+D to run)").strip()
+        prompt = input_box(initial_prompt, "Prompt (Ctrl+D to run, Ctrl+C to cancel)")
+        if prompt is None: sys.exit(0)  # Ctrl+C cancellation
+        prompt = prompt.strip()
         if not prompt: sys.exit(1)
         task = prompt  # Store final prompt for run_info
     else:
@@ -3637,8 +3667,10 @@ elif arg == 'prompt':
     if name not in prompts:
         print(f"Available: {', '.join(prompts.keys())}")
         sys.exit(1)
-    new_val = input_box(prompts[name], f"Edit '{name}' (Ctrl+D to save)")
-    if new_val != prompts[name]:
+    new_val = input_box(prompts[name], f"Edit '{name}' (Ctrl+D to save, Ctrl+C to cancel)")
+    if new_val is None:
+        print("Cancelled")
+    elif new_val != prompts[name]:
         prompts[name] = new_val
         os.makedirs(os.path.dirname(PROMPTS_FILE), exist_ok=True)
         with open(PROMPTS_FILE, 'w') as f: json.dump(prompts, f, indent=2)
@@ -4781,6 +4813,11 @@ elif arg.endswith('++') and not arg.startswith('w'):
         print(f"✗ Unknown session key: {key}")
 # Removed old '+' feature (timestamped session without worktree)
 # to make room for new '+' and '++' worktree commands
+elif arg and os.path.isfile(arg):
+    ext = os.path.splitext(arg)[1].lower()
+    if ext == '.py': os.execvp(sys.executable, [sys.executable, arg] + sys.argv[2:])
+    elif ext in ('.html', '.htm'): __import__('webbrowser').open('file://' + os.path.abspath(arg)); sys.exit(0)
+    elif ext == '.md': os.execvp(os.environ.get('EDITOR', 'nvim'), [os.environ.get('EDITOR', 'nvim'), arg])
 else:
     # If inside tmux and arg is simple agent key (c/l/g), create pane instead of session
     if 'TMUX' in os.environ and arg in sessions and len(arg) == 1:
