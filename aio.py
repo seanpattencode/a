@@ -2552,6 +2552,10 @@ Working directory: {WORK_DIR}
         for i, (app_name, app_cmd) in enumerate(APPS):
             cmd_display = format_app_command(app_cmd)
             print(f"  {len(PROJECTS) + i}. {app_name} → {cmd_display}")
+elif arg == 'diff':
+    sp.run(['git', 'fetch', 'origin'], capture_output=True)
+    b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
+    sp.run(['git', 'diff', f'origin/{b}', '--stat']); sp.run(['git', 'diff', f'origin/{b}'])
 elif arg == 'update':
     # Explicitly update aio from git repository
     manual_update()
