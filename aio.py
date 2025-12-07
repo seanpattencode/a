@@ -2556,7 +2556,7 @@ elif arg == 'diff':
     import re; sp.run(['git', 'fetch', 'origin'], capture_output=True)
     b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
     diff = sp.run(['git', 'diff', f'origin/{b}'], capture_output=True, text=True).stdout
-    if not diff: print("✓ Up to date"); sys.exit(0)
+    if not diff: print("No changes"); sys.exit(0)
     print(sp.run(['git', 'diff', f'origin/{b}', '--shortstat'], capture_output=True, text=True).stdout.strip() + "\n")
     G, R, X = '\033[32m', '\033[31m', '\033[0m'
     for L in diff.split('\n'):
