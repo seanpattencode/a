@@ -45,11 +45,13 @@ def ensure_deps():
     if not os.environ.get('TERMUX_VERSION'):
         return  # Only run on Termux
 
-    # Essential tools for aio
+    # Essential tools for aio (pkg packages)
     deps = {
         'nvim': 'neovim',      # Editor
         'git': 'git',          # Version control
         'rg': 'ripgrep',       # Fast search (for neovim plugins)
+        'node': 'nodejs',      # Node.js runtime (for AI CLIs)
+        'proot': 'proot',      # Run commands in isolated environment
     }
 
     missing = [pkg for cmd, pkg in deps.items() if not shutil.which(cmd)]
@@ -57,6 +59,13 @@ def ensure_deps():
         print(f"📦 Installing: {', '.join(missing)}")
         sp.run(['pkg', 'install', '-y'] + missing, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         print("✓ Dependencies installed")
+
+    # Install claude-code via npm if missing (requires nodejs)
+    if shutil.which('npm') and not shutil.which('claude'):
+        print("📦 Installing: claude-code")
+        sp.run(['npm', 'install', '-g', '@anthropic-ai/claude-code'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        if shutil.which('claude'):
+            print("✓ claude-code installed")
 
 # Install deps on first run
 ensure_deps()
@@ -2848,62 +2857,160 @@ elif arg == 'deps':
 # ═══════════════════════════════════════════════════════════════════════════════
 elif arg == 'proot':
     import platform as _platform
-    PROOT_DIR = os.path.expanduser("~/.local/share/proot-ubuntu")
-    PROOT_ROOTFS = os.path.join(PROOT_DIR, "rootfs")
+    _is_termux = os.environ.get('TERMUX_VERSION') is not None
     _proot_run = lambda cmd: sp.run(cmd, shell=True, capture_output=True, text=True)
 
-    def _proot_check(): return shutil.which("proot") is not None
+    if _is_termux:
+        # Termux: use proot-distro for proper Linux distro support
+        def _proot_check():
+            return shutil.which("proot-distro") is not None
 
-    def _proot_install():
-        if _proot_check(): return True
-        bin_dir = os.path.expanduser("~/.local/bin")
-        os.makedirs(bin_dir, exist_ok=True)
-        proot_bin = os.path.join(bin_dir, "proot")
-        _proot_run(f"curl -sL https://proot.gitlab.io/proot/bin/proot -o {proot_bin} && chmod +x {proot_bin}")
-        return os.path.exists(proot_bin) and os.access(proot_bin, os.X_OK)
+        def _proot_install():
+            if _proot_check(): return True
+            result = sp.run(['pkg', 'install', '-y', 'proot-distro'], capture_output=True, text=True)
+            return result.returncode == 0
 
-    def _proot_setup():
-        os.makedirs(PROOT_ROOTFS, exist_ok=True)
-        if os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")): return True
-        arch = "amd64" if _platform.machine() in ("x86_64", "AMD64") else "arm64"
-        url = f"https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-{arch}.tar.gz"
-        print(f"⬇️  Downloading Ubuntu 22.04 ({arch})...")
-        _proot_run(f"curl -sL {url} | tar xz -C {PROOT_ROOTFS}")
-        return os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh"))
+        def _proot_setup():
+            # Check if ubuntu is already installed
+            ubuntu_dir = '/data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu'
+            if os.path.isdir(ubuntu_dir):
+                return True
+            print("⬇️  Installing Ubuntu via proot-distro...")
+            result = sp.run(['proot-distro', 'install', 'ubuntu'], capture_output=True, text=True)
+            return result.returncode == 0
 
-    def _proot_test():
-        r = _proot_run(f"proot -r {PROOT_ROOTFS} -0 /bin/cat /etc/os-release")
-        return r.returncode == 0 and "Ubuntu" in r.stdout
+        def _proot_test():
+            r = sp.run(['proot-distro', 'login', 'ubuntu', '--', 'cat', '/etc/os-release'],
+                      capture_output=True, text=True)
+            return r.returncode == 0 and "Ubuntu" in r.stdout
 
-    def _proot_teardown():
-        if os.path.exists(PROOT_DIR): shutil.rmtree(PROOT_DIR); return True
-        return False
+        def _proot_teardown():
+            result = sp.run(['proot-distro', 'remove', 'ubuntu'], capture_output=True, text=True)
+            return result.returncode == 0
 
-    sub = work_dir_arg or "check"
-    if sub == "check":
-        print(f"proot binary: {'✓ installed' if _proot_check() else '✗ not found'}")
-        print(f"ubuntu rootfs: {'✓ ready' if os.path.exists(os.path.join(PROOT_ROOTFS, 'bin/sh')) else '✗ not setup'}")
-    elif sub == "install":
-        print("OK" if _proot_install() else "FAILED")
-    elif sub == "setup":
-        if not _proot_check():
-            print("Installing proot first...")
-            if not _proot_install(): print("✗ Failed to install proot"); sys.exit(1)
-        print("OK" if _proot_setup() else "FAILED")
-    elif sub == "test":
-        print("OK" if _proot_test() else "FAILED")
-    elif sub == "shell":
-        # Enter isolated Ubuntu shell - test aio install/commands here safely
-        if not os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")):
-            print("✗ Run 'aio proot setup' first"); sys.exit(1)
-        print("🐧 Entering isolated Ubuntu environment...")
-        print("   Test 'aio install' and global commands here without affecting host.")
-        print("   Type 'exit' to leave.\n")
-        os.execvp("proot", ["proot", "-r", PROOT_ROOTFS, "-0", "-w", "/root", "/bin/bash"])
-    elif sub == "teardown":
-        print("OK" if _proot_teardown() else "NOTHING TO REMOVE")
+        def _ubuntu_installed():
+            # Check if ubuntu rootfs directory exists
+            ubuntu_dir = '/data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu'
+            return os.path.isdir(ubuntu_dir)
+
+        sub = work_dir_arg or "check"
+        if sub == "check":
+            print(f"proot-distro: {'✓ installed' if _proot_check() else '✗ not found'}")
+            print(f"ubuntu distro: {'✓ ready' if _ubuntu_installed() else '✗ not setup'}")
+        elif sub == "install":
+            print("OK" if _proot_install() else "FAILED")
+        elif sub == "setup":
+            if not _proot_check():
+                print("Installing proot-distro first...")
+                if not _proot_install(): print("✗ Failed to install proot-distro"); sys.exit(1)
+            print("OK" if _proot_setup() else "FAILED")
+        elif sub == "test":
+            print("OK" if _proot_test() else "FAILED")
+        elif sub == "shell":
+            if not _proot_check():
+                print("✗ Run 'aio proot install' first"); sys.exit(1)
+            if not _ubuntu_installed():
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            print("🐧 Entering Ubuntu via proot-distro...")
+            print("   Test 'aio install' and global commands here without affecting host.")
+            print("   Type 'exit' to leave.\n")
+            os.execvp("proot-distro", ["proot-distro", "login", "ubuntu"])
+        elif sub == "run":
+            # Run a command inside Ubuntu: aio proot run <command...>
+            if not _proot_check():
+                print("✗ Run 'aio proot install' first"); sys.exit(1)
+            if not _ubuntu_installed():
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            # Get command from remaining args (everything after 'aio proot run')
+            cmd_args = sys.argv[3:] if len(sys.argv) > 3 else []
+            if not cmd_args:
+                print("Usage: aio proot run <command>")
+                print("Example: aio proot run apt update")
+                sys.exit(1)
+            os.execvp("proot-distro", ["proot-distro", "login", "ubuntu", "--"] + cmd_args)
+        elif sub == "teardown":
+            print("OK" if _proot_teardown() else "NOTHING TO REMOVE")
+        else:
+            print(f"""aio proot - Isolated Ubuntu environment for testing (Termux)
+Usage: aio proot [command]
+
+Commands:
+  check     Check if proot-distro and ubuntu are installed
+  install   Install proot-distro package
+  setup     Install Ubuntu distro via proot-distro
+  test      Verify proot environment works
+  shell     Enter Ubuntu shell (test aio commands safely)
+  run       Run command in Ubuntu (aio proot run apt update)
+  teardown  Remove Ubuntu distro
+
+Purpose: Test 'aio install', 'aio deps', and other global commands
+without affecting your Termux installation.""")
     else:
-        print(f"""aio proot - Isolated Ubuntu environment for testing
+        # Non-Termux: use standard proot with Ubuntu rootfs
+        PROOT_DIR = os.path.expanduser("~/.local/share/proot-ubuntu")
+        PROOT_ROOTFS = os.path.join(PROOT_DIR, "rootfs")
+
+        def _proot_check(): return shutil.which("proot") is not None
+
+        def _proot_install():
+            if _proot_check(): return True
+            bin_dir = os.path.expanduser("~/.local/bin")
+            os.makedirs(bin_dir, exist_ok=True)
+            proot_bin = os.path.join(bin_dir, "proot")
+            _proot_run(f"curl -sL https://proot.gitlab.io/proot/bin/proot -o {proot_bin} && chmod +x {proot_bin}")
+            return os.path.exists(proot_bin) and os.access(proot_bin, os.X_OK)
+
+        def _proot_setup():
+            os.makedirs(PROOT_ROOTFS, exist_ok=True)
+            if os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")): return True
+            arch = "amd64" if _platform.machine() in ("x86_64", "AMD64") else "arm64"
+            url = f"https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-{arch}.tar.gz"
+            print(f"⬇️  Downloading Ubuntu 22.04 ({arch})...")
+            _proot_run(f"curl -sL {url} | tar xz -C {PROOT_ROOTFS}")
+            return os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh"))
+
+        def _proot_test():
+            r = _proot_run(f"proot -r {PROOT_ROOTFS} -0 /bin/cat /etc/os-release")
+            return r.returncode == 0 and "Ubuntu" in r.stdout
+
+        def _proot_teardown():
+            if os.path.exists(PROOT_DIR): shutil.rmtree(PROOT_DIR); return True
+            return False
+
+        sub = work_dir_arg or "check"
+        if sub == "check":
+            print(f"proot binary: {'✓ installed' if _proot_check() else '✗ not found'}")
+            print(f"ubuntu rootfs: {'✓ ready' if os.path.exists(os.path.join(PROOT_ROOTFS, 'bin/sh')) else '✗ not setup'}")
+        elif sub == "install":
+            print("OK" if _proot_install() else "FAILED")
+        elif sub == "setup":
+            if not _proot_check():
+                print("Installing proot first...")
+                if not _proot_install(): print("✗ Failed to install proot"); sys.exit(1)
+            print("OK" if _proot_setup() else "FAILED")
+        elif sub == "test":
+            print("OK" if _proot_test() else "FAILED")
+        elif sub == "shell":
+            if not os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")):
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            print("🐧 Entering isolated Ubuntu environment...")
+            print("   Test 'aio install' and global commands here without affecting host.")
+            print("   Type 'exit' to leave.\n")
+            os.execvp("proot", ["proot", "-r", PROOT_ROOTFS, "-0", "-w", "/root", "/bin/bash"])
+        elif sub == "run":
+            # Run a command inside Ubuntu: aio proot run <command...>
+            if not os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")):
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            cmd_args = sys.argv[3:] if len(sys.argv) > 3 else []
+            if not cmd_args:
+                print("Usage: aio proot run <command>")
+                print("Example: aio proot run apt update")
+                sys.exit(1)
+            os.execvp("proot", ["proot", "-r", PROOT_ROOTFS, "-0", "-w", "/root"] + cmd_args)
+        elif sub == "teardown":
+            print("OK" if _proot_teardown() else "NOTHING TO REMOVE")
+        else:
+            print(f"""aio proot - Isolated Ubuntu environment for testing
 Usage: aio proot [command]
 
 Commands:
@@ -2912,6 +3019,7 @@ Commands:
   setup     Download Ubuntu 22.04 rootfs (~28MB)
   test      Verify proot environment works
   shell     Enter isolated Ubuntu shell (test aio commands safely)
+  run       Run command in Ubuntu (aio proot run apt update)
   teardown  Remove proot Ubuntu installation
 
 Purpose: Test 'aio install', 'aio deps', and other global commands
