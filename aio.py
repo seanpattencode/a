@@ -726,6 +726,10 @@ set -g focus-events on
 set -g set-titles on
 set -g set-titles-string "#{{?#{{session_silence_flag}},🔴 ,}}#S:#W"
 set -s set-clipboard off
+set -g visual-bell off
+set -g bell-action any
+set -g activity-action none
+set -g silence-action other
 set -g status-position bottom
 set -g status 3
 set -g status-right ""
@@ -3643,29 +3647,35 @@ When done, create DONE.md with:
     if not launched:
         print("✗ No agents created"); sys.exit(1)
 
-    # Create signal watcher: sends tmux signals when DONE.md files appear
-    signal_map = ' '.join(f'{os.path.basename(p)}:{s}' for _, _, p, s in launched)
+    # Create signal watcher: sends tmux signals when DONE.md files appear, disables notifications
+    # Map: candidate_dir:signal:window_name
+    signal_map = ' '.join(f'{os.path.basename(p)}:{s}:{w}' for w, _, p, s in launched)
     watcher_script = f'''#!/bin/bash
-# Watch for DONE.md files and send completion signals
+# Watch for DONE.md files, send completion signals, disable notifications
 declare -A sent
 while true; do
-    for pair in {signal_map}; do
-        name="${{pair%%:*}}"
-        signal="${{pair#*:}}"
+    for triple in {signal_map}; do
+        name="${{triple%%:*}}"
+        rest="${{triple#*:}}"
+        signal="${{rest%%:*}}"
+        window="${{rest#*:}}"
         done_file="{candidates_dir}/$name/DONE.md"
         if [ -f "$done_file" ] && [ -z "${{sent[$name]}}" ]; then
+            # Disable silence monitoring to stop notification sounds
+            tmux set-option -t "{session_name}:$window" monitor-silence 0 2>/dev/null
+            tmux set-option -t "{session_name}:$window" monitor-activity off 2>/dev/null
             tmux wait-for -S "$signal" 2>/dev/null
             sent[$name]=1
-            echo "$(date '+%H:%M:%S') ✓ Signaled: $name"
+            echo "$(date '+%H:%M:%S') ✓ $name done (notifications off)"
         fi
     done
     # Check if all done
     all_done=1
-    for pair in {signal_map}; do
-        name="${{pair%%:*}}"
+    for triple in {signal_map}; do
+        name="${{triple%%:*}}"
         [ -z "${{sent[$name]}}" ] && all_done=0 && break
     done
-    [ "$all_done" = "1" ] && echo "$(date '+%H:%M:%S') All candidates complete!" && exit 0
+    [ "$all_done" = "1" ] && echo "$(date '+%H:%M:%S') All complete!" && exit 0
     sleep 5
 done'''
     sp.run(['tmux', 'new-window', '-t', session_name, '-n', 'watcher', '-c', candidates_dir, f'bash -c {shlex.quote(watcher_script)}'], env=env)
@@ -3718,16 +3728,17 @@ CANDIDATES TO REVIEW: {', '.join(os.path.basename(p) for _, _, p, _ in launched)
 
 EVALUATION CRITERIA (in order of importance):
 1. WORKS: Runs without errors, solves the stated problem
-2. FAST: Equal or faster than original code (if modifying existing)
+2. FAST: Equal or faster than original (MUST benchmark with `time` command)
 3. LIBRARY GLUE: ~90%+ direct library calls, minimal custom logic
 4. BRIEF: Shortest readable code wins
 5. TIE-BREAKER: If line count similar, faster wins
 
 REVIEW PROCESS:
-1. For each candidate, cd into directory and run the code as user would
-2. Check DONE.md for their summary and verification steps
-3. Evaluate against criteria above
-4. Do NOT edit any code - only evaluate
+1. For each candidate, cd into directory and run the code
+2. BENCHMARK: Run `time python file.py` or `time ./script` to get ACTUAL execution time
+3. Check DONE.md for their summary and verification steps
+4. Count lines with `wc -l` for accurate line counts
+5. Do NOT edit any code - only evaluate
 
 CREATE REVIEW.md with:
 # Overnight Review Results
@@ -3738,11 +3749,15 @@ CREATE REVIEW.md with:
 - Recommendation: [winner]
 
 ## Evaluation Matrix
-| Candidate | Works | Speed | Library% | Lines | Score |
-|-----------|-------|-------|----------|-------|-------|
+| Candidate | Works | Time (real) | Library% | Lines | Score |
+|-----------|-------|-------------|----------|-------|-------|
+| c0        | YES   | 0.42s       | 85%      | 106   | 3/5   |
+
+IMPORTANT: Speed column MUST show actual `time` output (e.g., "0.42s", "1.2s"), not subjective words like "Good" or "Fast".
 
 ## Detailed Analysis
 ### [candidate]: [PASS/FAIL]
+- Benchmark: `time [command]` → real Xs, user Xs, sys Xs
 - Verification: [commands run and results]
 - Strengths: ...
 - Issues: ...
@@ -3771,7 +3786,14 @@ sleep 2
 claude --dangerously-skip-permissions {review_prompt_escaped}'''
 
     sp.run(['tmux', 'new-window', '-t', session_name, '-n', '📋review', '-c', candidates_dir, f'bash -c {shlex.quote(wait_script)}'], env=env)
-    sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:📋review', '-c', candidates_dir], env=env)
+    # Right pane: watch for REVIEW.md and auto-open in editor when complete
+    editor = os.environ.get('EDITOR', 'nvim')
+    review_watcher = f'''echo "📄 Waiting for REVIEW.md..."
+while [ ! -f "{candidates_dir}/REVIEW.md" ]; do sleep 2; done
+echo "✅ Review complete! Opening..."
+sleep 1
+{editor} "{candidates_dir}/REVIEW.md"'''
+    sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:📋review', '-c', candidates_dir, f'bash -c {shlex.quote(review_watcher)}'], env=env)
 
     # Select monitor window first
     sp.run(['tmux', 'select-window', '-t', f'{session_name}:📊monitor'], capture_output=True)
