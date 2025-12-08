@@ -2565,14 +2565,17 @@ elif arg == 'diff':
     import re; sp.run(['git', 'fetch', 'origin'], capture_output=True)
     b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
     diff = sp.run(['git', 'diff', f'origin/{b}'], capture_output=True, text=True).stdout
-    if not diff: print("No changes"); sys.exit(0)
-    print(sp.run(['git', 'diff', f'origin/{b}', '--shortstat'], capture_output=True, text=True).stdout.strip() + "\n")
-    G, R, X = '\033[32m', '\033[31m', '\033[0m'
-    for L in diff.split('\n'):
-        if L.startswith('diff --git'): print(f"\n{L.split(' b/')[-1]}")
-        elif L.startswith('@@'): print(f"  Line {re.search(r'\+(\d+)', L).group(1)}:")
-        elif L.startswith('+') and not L.startswith('+++'): print(f"    {G}+ {L[1:]}{X}")
-        elif L.startswith('-') and not L.startswith('---'): print(f"    {R}- {L[1:]}{X}")
+    untracked = sp.run(['git', 'ls-files', '--others', '--exclude-standard'], capture_output=True, text=True).stdout.strip()
+    if not diff and not untracked: print("No changes"); sys.exit(0)
+    G, R, X, f = '\033[48;2;26;84;42m', '\033[48;2;117;34;27m', '\033[0m', ''
+    if diff:
+        print(sp.run(['git', 'diff', f'origin/{b}', '--shortstat'], capture_output=True, text=True).stdout.strip() + "\n")
+        for L in diff.split('\n'):
+            if L.startswith('diff --git'): f = L.split(' b/')[-1]
+            elif L.startswith('@@'): print(f"\n{f} line {re.search(r'\+(\d+)', L).group(1)}:")
+            elif L.startswith('+') and not L.startswith('+++'): print(f"  {G}+ {L[1:]}{X}")
+            elif L.startswith('-') and not L.startswith('---'): print(f"  {R}- {L[1:]}{X}")
+    if untracked: print(f"\nUntracked files:\n" + '\n'.join(f"  {G}+ {u}{X}" for u in untracked.split('\n')))
 elif arg == 'update':
     # Explicitly update aio from git repository
     manual_update()
