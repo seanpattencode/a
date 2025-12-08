@@ -2249,8 +2249,8 @@ if arg and arg.isdigit() and not work_dir_arg:
         sys.exit(1)
 
 
-# Handle worktree commands (but not 'watch')
-if arg and arg.startswith('w') and arg != 'watch':
+# Handle worktree commands (but not 'watch' or existing files like 'webgpu-walk.html')
+if arg and arg.startswith('w') and arg != 'watch' and not os.path.isfile(arg):
     if arg == 'w':
         # List worktrees
         list_worktrees()
@@ -2322,6 +2322,10 @@ MULTI-AGENT:
   aio multi c:3 "task"      Launch 3 codex with custom task
   aio multi c:2 l:1         Mixed: 2 codex + 1 claude
   aio multi 0 c:2 "task"    Launch in project 0
+OVERNIGHT (autonomous):
+  aio overnight             Read aio.md, run agents, auto-review
+  aio on                    Shortcut for overnight
+  aio on c:3 l:2            Custom agent mix (max 5 default)
 GIT:
   aio push src/ msg      Push folder with message
   aio pull               Sync with server
@@ -2383,6 +2387,23 @@ AGENT SELECTION (optional, default=claude):
   aio bug c "task"       Use codex for bug fix
   aio feat l "task"      Use claude for feature
   aio auto g             Use gemini for auto-improve
+═══════════════════════════════════════════════════════════════════════════════
+OVERNIGHT MODE (autonomous work sessions)
+═══════════════════════════════════════════════════════════════════════════════
+  aio overnight          Read aio.md, launch agents, auto-review when done
+  aio on                 Shortcut for overnight
+  aio on c:3 l:2         Custom agent mix
+  aio on 0               Run overnight on project 0
+SETUP:
+  1. Create aio.md in project root with requirements
+  2. Run: aio overnight
+  3. Detach (Ctrl+Q) and check tomorrow
+FEATURES:
+  • 📊 Live monitor shows diff progress
+  • 📋 Auto-review with eval matrix when all agents done
+  • Human review steps suggested in REVIEW.md
+  • Max 5 candidates (change: aio config overnight_max N)
+  • Default agents: c:2 l:1 (change: aio config overnight_agents 'c:3')
 ═══════════════════════════════════════════════════════════════════════════════
 WORKTREE MANAGEMENT
 ═══════════════════════════════════════════════════════════════════════════════
@@ -3464,6 +3485,307 @@ claude --dangerously-skip-permissions {shlex.quote(REVIEWER_PROMPT)}'''
 
     if "TMUX" in os.environ:
         print(f"   Attach: tmux switch-client -t {session_name}")
+    else:
+        os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
+elif arg == 'overnight' or arg == 'on':
+    # Overnight autonomous work session with planning doc, live monitoring, and review
+    # Usage: aio overnight [project#] - reads aio.md for requirements
+    import json, re
+
+    # Config: max candidates (default 5)
+    max_candidates = int(config.get('overnight_max', '5'))
+
+    # Determine project
+    if work_dir_arg and work_dir_arg.isdigit():
+        project_path = PROJECTS[int(work_dir_arg)] if int(work_dir_arg) < len(PROJECTS) else None
+        if not project_path: print(f"✗ Invalid project index"); sys.exit(1)
+    else:
+        project_path = os.getcwd()
+
+    # Find and read aio.md planning document
+    aio_md = os.path.join(project_path, 'aio.md')
+    if not os.path.exists(aio_md):
+        print(f"📝 No aio.md found. Describe what you want the agents to build:")
+        print(f"   (Be specific: what feature, what file, how to verify it works)")
+        print()
+        try:
+            requirements = input("Requirements: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n✗ Cancelled"); sys.exit(0)
+        if not requirements:
+            print("✗ No requirements entered"); sys.exit(1)
+        with open(aio_md, 'w') as f:
+            f.write(f"# Requirements\n\n{requirements}\n")
+        print(f"✓ Created {aio_md}")
+    else:
+        with open(aio_md) as f:
+            requirements = f.read().strip()
+        if not requirements:
+            print(f"✗ aio.md is empty. Add your requirements.")
+            sys.exit(1)
+
+    # Parse agent specs from command line or use default
+    agent_specs, _, _ = parse_agent_specs_and_prompt(sys.argv, 3 if work_dir_arg and work_dir_arg.isdigit() else 2)
+    if not agent_specs:
+        default_specs = config.get('overnight_agents', 'c:2 l:1')
+        agent_specs, _, _ = parse_agent_specs_and_prompt([''] + default_specs.split(), 1)
+        print(f"Using agents: {default_specs}  (change: aio config overnight_agents 'c:3 l:2')")
+
+    total = min(sum(c for _, c in agent_specs), max_candidates)
+    if total < sum(c for _, c in agent_specs):
+        print(f"⚠ Limiting to {max_candidates} candidates (change: aio config overnight_max N)")
+        # Trim agent_specs to fit
+        new_specs, count = [], 0
+        for k, c in agent_specs:
+            take = min(c, max_candidates - count)
+            if take > 0: new_specs.append((k, take))
+            count += take
+            if count >= max_candidates: break
+        agent_specs = new_specs
+
+    repo_name = os.path.basename(project_path)
+    run_id = datetime.now().strftime('%Y%m%d-%H%M%S')
+    session_name = f"{repo_name}-overnight-{run_id}"
+
+    # Create run directory structure
+    run_dir = os.path.join(WORKTREES_DIR, repo_name, f"overnight-{run_id}")
+    candidates_dir = os.path.join(run_dir, "candidates")
+    os.makedirs(candidates_dir, exist_ok=True)
+
+    # Build comprehensive prompt from aio.md
+    overnight_prompt = f"""You are working on an overnight autonomous session. Read and follow these requirements exactly:
+
+{requirements}
+
+WORKFLOW:
+1. Read project files and understand the codebase
+2. Run the project exactly as a user would to understand current behavior
+3. Implement the requirements using library glue pattern (direct library calls, minimal custom logic)
+4. Test thoroughly - run and verify output manually
+5. Keep changes minimal and focused
+
+CONSTRAINTS:
+- Minimize line count while maintaining readability
+- Use direct library calls (90%+ of code should be library calls)
+- No polling - use event-based patterns only
+- Set aggressive timeouts on all commands
+
+When done, create DONE.md with:
+- Summary of changes made
+- Files modified
+- How to verify: specific commands to run and expected output
+- Any issues encountered"""
+
+    # Save run info
+    run_info = {"requirements": requirements, "prompt": overnight_prompt, "agents": [f"{k}:{c}" for k, c in agent_specs],
+                "created": run_id, "repo": project_path, "max_candidates": max_candidates}
+    with open(os.path.join(run_dir, "run.json"), "w") as f:
+        json.dump(run_info, f, indent=2)
+
+    # Copy aio.md to run directory for reference
+    shutil.copy(aio_md, os.path.join(run_dir, "aio.md"))
+
+    with WALManager(DB_PATH) as conn:
+        conn.execute("INSERT OR REPLACE INTO multi_runs VALUES (?, ?, ?, ?, 'overnight', CURRENT_TIMESTAMP, NULL)",
+                    (f"overnight-{run_id}", project_path, requirements[:200], json.dumps([f"{k}:{c}" for k, c in agent_specs])))
+        conn.commit()
+
+    print(f"🌙 Starting overnight session: {repo_name}")
+    print(f"   Requirements from: aio.md")
+    print(f"   Candidates: {total} (max {max_candidates})")
+    print(f"   Run dir: {run_dir}")
+
+    env = get_noninteractive_git_env()
+    launched = []
+    agent_num = {}
+    first_window = True
+    escaped_prompt = shlex.quote(overnight_prompt)
+
+    for agent_key, count in agent_specs:
+        base_name, base_cmd = sessions.get(agent_key, (None, None))
+        if not base_name: continue
+
+        for i in range(count):
+            agent_num[base_name] = agent_num.get(base_name, 0) + 1
+            window_name = f"{base_name}-{agent_num[base_name]}"
+            attempt_name = f"{agent_key}{i}"
+            wt_path = os.path.join(candidates_dir, attempt_name)
+
+            # Create worktree
+            branch_name = f"wt-overnight-{repo_name}-{run_id}-{attempt_name}"
+            sp.run(['git', '-C', project_path, 'worktree', 'add', '-b', branch_name, wt_path], capture_output=True, env=env)
+            if not os.path.exists(wt_path): continue
+
+            # Copy aio.md to worktree
+            shutil.copy(aio_md, os.path.join(wt_path, 'aio.md'))
+
+            # Signal setup: send signal after command completes (simpler and more reliable than trap)
+            signal_name = f"{session_name}-{window_name}"
+            agent_prompt = claude_prefix_prompt(overnight_prompt, base_name == 'claude')
+            escaped_agent_prompt = shlex.quote(agent_prompt)
+            # Run command then signal completion - no trap needed, works reliably
+            full_cmd = f'{base_cmd} {escaped_agent_prompt}; tmux wait-for -S {signal_name}'
+
+            if first_window:
+                sp.run(['tmux', 'new-session', '-d', '-s', session_name, '-n', window_name, '-c', wt_path, f'bash -c {shlex.quote(full_cmd)}'], env=env)
+                first_window = False
+            else:
+                sp.run(['tmux', 'new-window', '-t', session_name, '-n', window_name, '-c', wt_path, f'bash -c {shlex.quote(full_cmd)}'], env=env)
+
+            # Split: agent left, bash right for manual intervention
+            sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:{window_name}', '-c', wt_path], env=env)
+            sp.run(['tmux', 'select-pane', '-t', f'{session_name}:{window_name}.0'], env=env)
+            sp.run(['tmux', 'set-option', '-t', f'{session_name}:{window_name}', 'monitor-silence', '2'], env=env)
+
+            launched.append((window_name, base_name, wt_path, signal_name))
+            print(f"✓ {window_name} → {attempt_name}/")
+
+    if not launched:
+        print("✗ No agents created"); sys.exit(1)
+
+    # Create signal watcher: sends tmux signals when DONE.md files appear
+    signal_map = ' '.join(f'{os.path.basename(p)}:{s}' for _, _, p, s in launched)
+    watcher_script = f'''#!/bin/bash
+# Watch for DONE.md files and send completion signals
+declare -A sent
+while true; do
+    for pair in {signal_map}; do
+        name="${{pair%%:*}}"
+        signal="${{pair#*:}}"
+        done_file="{candidates_dir}/$name/DONE.md"
+        if [ -f "$done_file" ] && [ -z "${{sent[$name]}}" ]; then
+            tmux wait-for -S "$signal" 2>/dev/null
+            sent[$name]=1
+            echo "$(date '+%H:%M:%S') ✓ Signaled: $name"
+        fi
+    done
+    # Check if all done
+    all_done=1
+    for pair in {signal_map}; do
+        name="${{pair%%:*}}"
+        [ -z "${{sent[$name]}}" ] && all_done=0 && break
+    done
+    [ "$all_done" = "1" ] && echo "$(date '+%H:%M:%S') All candidates complete!" && exit 0
+    sleep 5
+done'''
+    sp.run(['tmux', 'new-window', '-t', session_name, '-n', 'watcher', '-c', candidates_dir, f'bash -c {shlex.quote(watcher_script)}'], env=env)
+
+    # Create monitor window showing live diffs with actual code changes
+    monitor_script = f'''#!/bin/bash
+G=$'\\033[48;2;26;84;42m'; R=$'\\033[48;2;117;34;27m'; X=$'\\033[0m'
+while true; do
+    clear
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🌙 OVERNIGHT MONITOR - $(date '+%H:%M:%S')"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    for d in {candidates_dir}/*/; do
+        [ -d "$d" ] || continue
+        name=$(basename "$d")
+        done_file="$d/DONE.md"
+        if [ -f "$done_file" ]; then
+            echo "✅ $name: DONE"
+            head -3 "$done_file" | sed 's/^/   /'
+        else
+            echo "🔄 $name:"
+            cd "$d" 2>/dev/null || continue
+            # Show changed files
+            changed=$(git diff --name-only HEAD~1 2>/dev/null | head -3 | tr '\\n' ' ')
+            [ -n "$changed" ] && echo "   files: $changed"
+            # Show actual diff lines (max 6 per candidate)
+            git diff HEAD~1 2>/dev/null | while IFS= read -r line; do
+                case "$line" in
+                    +*) [[ "$line" != "+++"* ]] && echo "   $G+${{line:1:70}}$X" ;;
+                    -*) [[ "$line" != "---"* ]] && echo "   $R-${{line:1:70}}$X" ;;
+                esac
+            done | head -6
+            more=$(git diff --stat HEAD~1 2>/dev/null | tail -1 | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | tr '\\n' ' ')
+            [ -n "$more" ] && echo "   ...$more"
+        fi
+        echo ""
+    done
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    sleep 8
+done'''
+    sp.run(['tmux', 'new-window', '-t', session_name, '-n', '📊monitor', '-c', candidates_dir, f'bash -c {shlex.quote(monitor_script)}'], env=env)
+
+    # Create review window (waits for all agents)
+    review_prompt = f"""You are reviewing overnight work implementations.
+
+TASK REQUIREMENTS (from aio.md):
+{requirements}
+
+CANDIDATES TO REVIEW: {', '.join(os.path.basename(p) for _, _, p, _ in launched)}
+
+EVALUATION CRITERIA (in order of importance):
+1. WORKS: Runs without errors, solves the stated problem
+2. FAST: Equal or faster than original code (if modifying existing)
+3. LIBRARY GLUE: ~90%+ direct library calls, minimal custom logic
+4. BRIEF: Shortest readable code wins
+5. TIE-BREAKER: If line count similar, faster wins
+
+REVIEW PROCESS:
+1. For each candidate, cd into directory and run the code as user would
+2. Check DONE.md for their summary and verification steps
+3. Evaluate against criteria above
+4. Do NOT edit any code - only evaluate
+
+CREATE REVIEW.md with:
+# Overnight Review Results
+
+## Summary
+- Task: [brief description]
+- Candidates evaluated: N
+- Recommendation: [winner]
+
+## Evaluation Matrix
+| Candidate | Works | Speed | Library% | Lines | Score |
+|-----------|-------|-------|----------|-------|-------|
+
+## Detailed Analysis
+### [candidate]: [PASS/FAIL]
+- Verification: [commands run and results]
+- Strengths: ...
+- Issues: ...
+
+## Human Review Steps
+Run these commands to verify the winning solution:
+```bash
+cd [winner_dir]
+[specific commands to test]
+# Expected output: [what to look for]
+```
+
+## Recommendation
+[Which candidate to merge and why]
+
+Say REVIEW COMPLETE when done."""
+
+    wait_cmds = '; '.join(f'echo "  ⏳ {w}..."; tmux wait-for {s}; echo "  ✅ {w}"' for w, _, _, s in launched)
+    review_prompt_escaped = shlex.quote(claude_prefix_prompt(review_prompt, True))
+    wait_script = f'''echo "🌙 Overnight Review - Waiting for agents..."
+echo ""
+{wait_cmds}
+echo ""
+echo "✅ All agents complete. Starting review..."
+sleep 2
+claude --dangerously-skip-permissions {review_prompt_escaped}'''
+
+    sp.run(['tmux', 'new-window', '-t', session_name, '-n', '📋review', '-c', candidates_dir, f'bash -c {shlex.quote(wait_script)}'], env=env)
+    sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:📋review', '-c', candidates_dir], env=env)
+
+    # Select monitor window first
+    sp.run(['tmux', 'select-window', '-t', f'{session_name}:📊monitor'], capture_output=True)
+    ensure_tmux_options()
+    sp.run(['tmux', 'set-option', '-t', session_name, 'status-right', '🌙 Overnight | 📊monitor | 📋review auto-starts'], capture_output=True)
+
+    print(f"\n✅ Overnight session started: {session_name}")
+    print(f"   📊 Monitor: live diff view")
+    print(f"   📋 Review: auto-starts when all agents complete")
+    print(f"   💤 Safe to detach (Ctrl+Q) and check tomorrow")
+    print(f"\n   Attach later: aio attach")
+
+    if "TMUX" in os.environ:
+        print(f"   Switch: tmux switch-client -t {session_name}")
     else:
         os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
 elif arg == 'all':
