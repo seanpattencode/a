@@ -452,7 +452,6 @@ Say REVIEW COMPLETE when done."""
 
             # Claude prefix for extended thinking (Ultrathink. increases thinking budget)
             conn.execute("INSERT OR IGNORE INTO config VALUES ('claude_prefix', 'Ultrathink. ')")
-            conn.execute("INSERT OR IGNORE INTO config VALUES ('reddot_idle', '4')")  # Seconds before red dot shows
 
             # Check if projects exist
             cursor = conn.execute("SELECT COUNT(*) FROM projects")
@@ -674,7 +673,6 @@ CODEX_PROMPT = config.get('codex_prompt', DEFAULT_PROMPT)
 GEMINI_PROMPT = config.get('gemini_prompt', DEFAULT_PROMPT)
 # Claude prefix for extended thinking (e.g., "Ultrathink. " increases thinking budget)
 CLAUDE_PREFIX = config.get('claude_prefix', 'Ultrathink. ')
-REDDOT_IDLE = int(config.get('reddot_idle', 4))  # Seconds before red dot shows (idle threshold)
 
 # Get working directory, fallback to home if current dir is invalid
 try:
@@ -713,26 +711,20 @@ def _write_tmux_conf():
     config, so each user must run aio once to set up their tmux environment.
     The config persists across tmux/terminal restarts automatically.
     """
-    # Show 🔴 when window_silence_flag=1 (no output for monitor-silence seconds), * when active
-    line0 = '#[align=left][#S]#[align=centre]#{W:#[range=window|#{window_index}]#I:#W#{?window_active,*,#{?window_silence_flag,🔴,}}#[norange] }'
+    line0 = '#[align=left][#S]#[align=centre]#{W:#[range=window|#{window_index}]#I:#W#{?window_active,*,}#[norange] }'
     sh_full = '#[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Detach#[norange]'
     sh_min = '#[range=user|new]New#[norange] #[range=user|close]Close#[norange] #[range=user|edit]Edit#[norange] #[range=user|kill]Kill#[norange] #[range=user|detach]Quit#[norange]'
     line1 = '#{?#{e|<:#{client_width},50},' + sh_min + ',' + sh_full + '}'
-    # Line 2: Esc (left) and Keyboard (centre) buttons for Termux
     line2 = '#[align=left]#[range=user|esc]⎋ Esc#[norange]#[align=centre]#[range=user|kbd]⌨ Keyboard#[norange]'
-    # Get clipboard command for mouse copy-on-selection
     clip_cmd = _get_clipboard_cmd()
     conf = f'''{_AIO_MARKER}
 set -g mouse on
 set -g focus-events on
 set -g set-titles on
-set -g set-titles-string "#{{?#{{session_silence_flag}},🔴 ,}}#S:#W"
+set -g set-titles-string "#S:#W"
 set -s set-clipboard off
 set -g visual-bell off
 set -g bell-action any
-set -g activity-action none
-set -g silence-action other
-set-hook -g alert-silence 'refresh-client -S'
 set -g status-position bottom
 set -g status 3
 set -g status-right ""
@@ -796,8 +788,8 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-bh', '-t', session_name, '-c', work_dir], capture_output=True)
         sp.run(['tmux', 'select-pane', '-t', session_name, '-R'], capture_output=True)
-        # Idle monitor: uses window_activity timestamp (cursor tracking fails for TUI apps like Claude). 🔴 idle, 🟢 active
-        sp.Popen(['bash', '-c', f's="";while tmux has-session -t {shlex.quote(session_name)} 2>/dev/null;do a=$(tmux display-message -t {shlex.quote(session_name)} -p "#{{window_activity}}");printf -v n "%(%s)T" -1;d=$((n-a));if [ $d -gt {REDDOT_IDLE} ];then [ "$s" != r ]&&tmux set-option -t {shlex.quote(session_name)} set-titles-string "🔴 #S:#W";s=r;else [ "$s" != g ]&&tmux set-option -t {shlex.quote(session_name)} set-titles-string "🟢 #S:#W";s=g;fi;sleep .2;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        # Activity monitor: compare pane text hash every 5s. Green=changed, Red=unchanged
+        sp.Popen(['bash', '-c', f'h="";while tmux has-session -t {shlex.quote(session_name)} 2>/dev/null;do n=$(tmux capture-pane -p -t {shlex.quote(session_name)} 2>/dev/null|cksum);if [ "$h" != "$n" ];then h="$n";tmux set-option -t {shlex.quote(session_name)} set-titles-string "🟢 #S:#W";else tmux set-option -t {shlex.quote(session_name)} set-titles-string "🔴 #S:#W";fi;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     return result
 
 def detect_terminal():
@@ -3452,8 +3444,6 @@ elif arg == 'multi':
             target = f'{session_name}:{window_name}'
             prompt_detector = f'''sh -c 's=0;while IFS= read -r l;do [ $s -eq 1 ]&&continue;c=$(printf "%%s" "$l"|sed "s/\\x1b\\[[0-9;]*[a-zA-Z]//g");case "$c" in *"› "*|*"context left"*|*"> Type"*) tmux wait-for -S {signal_name};s=1;;esac;done' '''
             sp.run(['tmux', 'pipe-pane', '-t', f'{target}.0', prompt_detector], env=env)
-            # Enable silence detection: window_silence_flag set automatically after 2s
-            sp.run(['tmux', 'set-option', '-t', target, 'monitor-silence', '2'], env=env)
 
             launched.append((window_name, base_name, wt_path))
             print(f"✓ {window_name}")
@@ -3481,9 +3471,6 @@ echo "✓ All agents done. Starting review..."
 claude --dangerously-skip-permissions {shlex.quote(REVIEWER_PROMPT)}'''
     sp.run(['tmux', 'new-window', '-t', session_name, '-n', '📋review', '-c', candidates_dir, f'bash -c {shlex.quote(wait_script)}'], env=env)
     sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:📋review', '-c', candidates_dir], env=env)
-    # Enable silence detection: window_silence_flag set automatically after 2s
-    review_target = f'{session_name}:📋review'
-    sp.run(['tmux', 'set-option', '-t', review_target, 'monitor-silence', '2'], env=env)
     print("✓ 📋review (auto-starts when agents finish)")
 
     # Select first agent window
@@ -3657,7 +3644,6 @@ When done, create DONE.md with:
             # Split: agent left, bash right for manual intervention
             sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:{window_name}', '-c', wt_path], env=env)
             sp.run(['tmux', 'select-pane', '-t', f'{session_name}:{window_name}.0'], env=env)
-            sp.run(['tmux', 'set-option', '-t', f'{session_name}:{window_name}', 'monitor-silence', '2'], env=env)
 
             launched.append((window_name, base_name, wt_path, signal_name))
             print(f"✓ {window_name} → {attempt_name}/")
@@ -3669,25 +3655,20 @@ When done, create DONE.md with:
     # Map: candidate_dir:signal:window_name
     signal_map = ' '.join(f'{os.path.basename(p)}:{s}:{w}' for w, _, p, s in launched)
     watcher_script = f'''#!/bin/bash
-# Watch for DONE.md files, send completion signals, disable notifications
+# Watch for DONE.md files and send completion signals
 declare -A sent
 while true; do
     for triple in {signal_map}; do
         name="${{triple%%:*}}"
         rest="${{triple#*:}}"
         signal="${{rest%%:*}}"
-        window="${{rest#*:}}"
         done_file="{candidates_dir}/$name/DONE.md"
         if [ -f "$done_file" ] && [ -z "${{sent[$name]}}" ]; then
-            # Disable silence monitoring to stop notification sounds
-            tmux set-option -t "{session_name}:$window" monitor-silence 0 2>/dev/null
-            tmux set-option -t "{session_name}:$window" monitor-activity off 2>/dev/null
             tmux wait-for -S "$signal" 2>/dev/null
             sent[$name]=1
-            echo "$(date '+%H:%M:%S') ✓ $name done (notifications off)"
+            echo "$(date '+%H:%M:%S') ✓ $name done"
         fi
     done
-    # Check if all done
     all_done=1
     for triple in {signal_map}; do
         name="${{triple%%:*}}"
@@ -4063,23 +4044,20 @@ elif arg == 'jobs':
     running_only = '--running' in sys.argv or '-r' in sys.argv
     list_jobs(running_only=running_only)
 elif arg == 'reddot':
-    # Red dot diagnostic: show idle status for all agent sessions, optionally start monitors
-    print("🔴 Red Dot Status\n")
-    now = int(time.time())
+    # Red dot diagnostic: show status for all sessions, optionally start monitors
+    print("🔴 Red Dot Status (text-change detection)\n")
     for session in sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True).stdout.strip().split('\n'):
         if not session: continue
-        act = sp.run(['tmux', 'display-message', '-t', session, '-p', '#{window_activity}'], capture_output=True, text=True).stdout.strip()
         title = sp.run(['tmux', 'show-options', '-t', session, '-v', 'set-titles-string'], capture_output=True, text=True).stdout.strip() or '(global)'
-        age = now - int(act) if act.isdigit() else 0
-        has_monitor = '🔴' in title or sp.run(['pgrep', '-f', f'tmux has-session.*{session}'], capture_output=True).returncode == 0
-        status = '🔴 IDLE' if age > REDDOT_IDLE else '✓ active'
-        print(f"  {session}: {status} ({age}s) monitor={'yes' if has_monitor else 'no'} title='{title}'")
+        has_monitor = sp.run(['pgrep', '-f', f'tmux has-session.*{session}'], capture_output=True).returncode == 0
+        status = '🟢' if '🟢' in title else ('🔴' if '🔴' in title else '○')
+        print(f"  {session}: {status} monitor={'yes' if has_monitor else 'no'} title='{title}'")
     if '--start' in sys.argv:
         print("\nStarting monitors for agent sessions without one...")
         for session in sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True).stdout.strip().split('\n'):
             if not session or not any(a in session for a in ['codex', 'claude', 'gemini']): continue
             if sp.run(['pgrep', '-f', f'tmux has-session.*{session}'], capture_output=True).returncode != 0:
-                sp.Popen(['bash', '-c', f's="";while tmux has-session -t {shlex.quote(session)} 2>/dev/null;do a=$(tmux display-message -t {shlex.quote(session)} -p "#{{window_activity}}");printf -v n "%(%s)T" -1;d=$((n-a));if [ $d -gt {REDDOT_IDLE} ];then [ "$s" != r ]&&tmux set-option -t {shlex.quote(session)} set-titles-string "🔴 #S:#W";s=r;else [ "$s" != g ]&&tmux set-option -t {shlex.quote(session)} set-titles-string "🟢 #S:#W";s=g;fi;sleep .2;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+                sp.Popen(['bash', '-c', f'h="";while tmux has-session -t {shlex.quote(session)} 2>/dev/null;do n=$(tmux capture-pane -p -t {shlex.quote(session)} 2>/dev/null|cksum);if [ "$h" != "$n" ];then h="$n";tmux set-option -t {shlex.quote(session)} set-titles-string "🟢 #S:#W";else tmux set-option -t {shlex.quote(session)} set-titles-string "🔴 #S:#W";fi;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
                 print(f"  ✓ Started monitor for {session}")
 elif arg == 'attach':
     # Attach to session associated with current directory or run_id
