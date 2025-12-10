@@ -788,8 +788,8 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-bh', '-t', session_name, '-c', work_dir], capture_output=True)
         sp.run(['tmux', 'select-pane', '-t', session_name, '-R'], capture_output=True)
-        # Activity monitor: compare pane text hash every 5s. Green=changed, Red=unchanged
-        sp.Popen(['bash', '-c', f'h="";while tmux has-session -t {shlex.quote(session_name)} 2>/dev/null;do n=$(tmux capture-pane -p -t {shlex.quote(session_name)} 2>/dev/null|cksum);if [ "$h" != "$n" ];then h="$n";tmux set-option -t {shlex.quote(session_name)} set-titles-string "🟢 #S:#W";else tmux set-option -t {shlex.quote(session_name)} set-titles-string "🔴 #S:#W";fi;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        # Activity monitor: green=streaming+text changed, red=no streaming+no change, else keep previous
+        sp.Popen(['bash', '-c', f'h="";while tmux has-session -t {shlex.quote(session_name)} 2>/dev/null;do n=$(tmux capture-pane -p -t {shlex.quote(session_name)}|cksum);p=$(tmux display-message -t {shlex.quote(session_name)} -p \'#{{pane_pid}}\');d=$(pstree -p $p 2>/dev/null|grep -oP \'\\(\\K\\d+(?=\\))\'|paste -sd\'|\');s=0;[ -n "$d" ]&&s=$(ss -tnp 2>/dev/null|grep -E "pid=($d)"|awk \'$2>0||$3>0{{c++}}END{{print c+0}}\');[ "$s" -gt 0 -a "$h" != "$n" ]&&tmux set-option -t {shlex.quote(session_name)} set-titles-string "🟢 #S:#W";[ "$s" -eq 0 -a "$h" = "$n" ]&&tmux set-option -t {shlex.quote(session_name)} set-titles-string "🔴 #S:#W";[ "$h" != "$n" ]&&h=$n;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     return result
 
 def detect_terminal():
@@ -4057,7 +4057,7 @@ elif arg == 'reddot':
         for session in sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True).stdout.strip().split('\n'):
             if not session or not any(a in session for a in ['codex', 'claude', 'gemini']): continue
             if sp.run(['pgrep', '-f', f'tmux has-session.*{session}'], capture_output=True).returncode != 0:
-                sp.Popen(['bash', '-c', f'h="";while tmux has-session -t {shlex.quote(session)} 2>/dev/null;do n=$(tmux capture-pane -p -t {shlex.quote(session)} 2>/dev/null|cksum);if [ "$h" != "$n" ];then h="$n";tmux set-option -t {shlex.quote(session)} set-titles-string "🟢 #S:#W";else tmux set-option -t {shlex.quote(session)} set-titles-string "🔴 #S:#W";fi;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+                sp.Popen(['bash', '-c', f'h="";while tmux has-session -t {shlex.quote(session)} 2>/dev/null;do n=$(tmux capture-pane -p -t {shlex.quote(session)}|cksum);p=$(tmux display-message -t {shlex.quote(session)} -p \'#{{pane_pid}}\');d=$(pstree -p $p 2>/dev/null|grep -oP \'\\(\\K\\d+(?=\\))\'|paste -sd\'|\');s=0;[ -n "$d" ]&&s=$(ss -tnp 2>/dev/null|grep -E "pid=($d)"|awk \'$2>0||$3>0{{c++}}END{{print c+0}}\');[ "$s" -gt 0 -a "$h" != "$n" ]&&tmux set-option -t {shlex.quote(session)} set-titles-string "🟢 #S:#W";[ "$s" -eq 0 -a "$h" = "$n" ]&&tmux set-option -t {shlex.quote(session)} set-titles-string "🔴 #S:#W";[ "$h" != "$n" ]&&h=$n;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
                 print(f"  ✓ Started monitor for {session}")
 elif arg == 'attach':
     # Attach to session associated with current directory or run_id
