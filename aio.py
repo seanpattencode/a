@@ -4689,6 +4689,9 @@ elif arg == 'push':
         # Push to main branch
         # Use non-interactive environment to prevent GUI dialogs
         env = get_noninteractive_git_env()
+        sp.run(['git', '-C', cwd, 'fetch', 'origin'], capture_output=True, env=env)
+        ahead = sp.run(['git', '-C', cwd, 'rev-list', '--count', f'HEAD..origin/{main_branch}'], capture_output=True, text=True).stdout.strip()
+        if ahead and int(ahead) > 0 and not _confirm(f"⚠️  Remote is {ahead} commit(s) ahead. Push anyway?"): sys.exit(1)
         result = sp.run(['git', '-C', cwd, 'push', 'origin', main_branch], capture_output=True, text=True, env=env)
         if result.returncode == 0:
             print(f"✓ Pushed to {main_branch}")
