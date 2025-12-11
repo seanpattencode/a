@@ -1,16 +1,30 @@
 #!/usr/bin/env python3
-import os, sys, subprocess as sp, json
-import sqlite3
+import os, sys, subprocess as sp, json, sqlite3, shlex, shutil, time, atexit
 from datetime import datetime
 from pathlib import Path
-import shlex
-import shutil
-import time
 
-# Lazy-loaded optional dependencies (import on first use for fast startup)
-# prompt_toolkit (~50ms) and pexpect (~5ms) are only imported when actually needed
-# Note: Background thread preloading was tested but adds overhead without benefit
-# because aio startup (~30ms) is faster than import time (~50ms)
+_START = time.time()
+_CMD = ' '.join(sys.argv[1:3]) if len(sys.argv) > 1 else 'help'
+
+def _save_timing():
+    try:
+        d = os.path.expanduser("~/.local/share/aios")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "timing.jsonl"), "a") as f:
+            f.write(json.dumps({"cmd": _CMD, "ms": int((time.time() - _START) * 1000), "ts": datetime.now().isoformat()}) + "\n")
+    except: pass
+
+atexit.register(_save_timing)
+
+# Helpers for common patterns
+def _git(args, cwd=None, env=None): return sp.run(['git'] + (['-C', cwd] if cwd else []) + args, capture_output=True, text=True, env=env)
+def _tmux(args): return sp.run(['tmux'] + args, capture_output=True, text=True)
+def _ok(msg): print(f"✓ {msg}")
+def _err(msg): print(f"✗ {msg}")
+def _die(msg, code=1): _err(msg); sys.exit(code)
+def _confirm(msg): return input(f"{msg} (y/n): ").strip().lower() in ['y', 'yes']
+
+# Lazy-loaded optional dependencies
 _pexpect = None
 _prompt_toolkit = None
 
@@ -401,7 +415,6 @@ Make line count as minimal as possible while doing exactly the same things, use 
 If rewriting existing sections of code with no features added, each change must be readable and follow all program readability conventions, run as fast or faster than previous code, be lower in line count or equal to original, use the same or greater number of direct library calls, reduce the number of states the program could be in or keep it equal, and make it simpler or keep the same complexity than before.
 Specific practices:
 No polling whatsoever, only event based.
-
 
 Step 3:
 After you make edits, run manually exactly as the user would, and check the output manually, if applicable inspect screenshots. Set an aggressive timeout on any terminal command. Don't add any features just make sure everything works and fix any issues according to library glue principles."""
@@ -2247,7 +2260,6 @@ if arg and arg.isdigit() and not work_dir_arg:
         print(f"   Projects: 0-{len(PROJECTS)-1}, Apps: {len(PROJECTS)}-{len(PROJECTS) + len(APPS) - 1}")
         sys.exit(1)
 
-
 # Handle worktree commands (but not 'watch' or existing files like 'webgpu-walk.html')
 if arg and arg.startswith('w') and arg != 'watch' and not os.path.isfile(arg):
     if arg == 'w':
@@ -2354,220 +2366,36 @@ Run 'aio help' for all commands""")
                 cmd_display = format_app_command(app_cmd)
                 print(f"  {len(PROJECTS) + i}. {app_name} → {cmd_display}")
 elif arg == 'help' or arg == '--help' or arg == '-h':
-    print(f"""aio - AI agent session manager (DETAILED HELP)
-═══════════════════════════════════════════════════════════════════════════════
-SESSION MANAGEMENT
-═══════════════════════════════════════════════════════════════════════════════
-Sessions: c=codex  l=claude  g=gemini  h=htop  t=top
-BASIC:
-  aio <key>              Attach to session (create if needed)
-  aio <key> <#>          Start in saved project # (0-{len(PROJECTS)-1})
-  aio <key> <dir>        Start in custom directory
-  aio +<key>             Create NEW timestamped instance
-  aio <key> -w           Launch in new window
-  aio <key> -t           Launch session + separate terminal
-PROMPTS (insert vs auto-run):
-  aio cp/lp/gp           Insert default prompt (can edit before running)
-  aio cpp/lpp/gpp        Auto-execute default prompt immediately
-  aio <key> "custom"     Start and send custom prompt
-WORKTREES (isolated git branches):
-  aio <key>--            New worktree in current directory
-  aio <key>-- <#>        New worktree in saved project #
-  aio <key>-- -t         New worktree + terminal window
-═══════════════════════════════════════════════════════════════════════════════
-CUSTOM PROMPTS (predefined workflows)
-═══════════════════════════════════════════════════════════════════════════════
-  aio fix                Autonomous: find/fix issues (11-step protocol)
-  aio bug "task"         Fix bug: read, run, research best practices, fix
-  aio feat "task"        Add feature: library glue pattern, minimal code
-  aio auto               Auto-improve: find pain, simplify, rewrite better
-  aio del                Deletion: delete aggressively, add back only essentials
-AGENT SELECTION (optional, default=claude):
-  aio bug c "task"       Use codex for bug fix
-  aio feat l "task"      Use claude for feature
-  aio auto g             Use gemini for auto-improve
-═══════════════════════════════════════════════════════════════════════════════
-OVERNIGHT MODE (autonomous work sessions)
-═══════════════════════════════════════════════════════════════════════════════
-  aio overnight          Read aio.md, launch agents, auto-review when done
-  aio on                 Shortcut for overnight
-  aio on c:3 l:2         Custom agent mix
-  aio on 0               Run overnight on project 0
-SETUP:
-  1. Create aio.md in project root with requirements
-  2. Run: aio overnight
-  3. Detach (Ctrl+Q) and check tomorrow
-FEATURES:
-  • 📊 Live monitor shows diff progress
-  • 📋 Auto-review with eval matrix when all agents done
-  • Human review steps suggested in REVIEW.md
-  • Max 5 candidates (change: aio config overnight_max N)
-  • Default agents: c:2 l:1 (change: aio config overnight_agents 'c:3')
-═══════════════════════════════════════════════════════════════════════════════
-WORKTREE MANAGEMENT
-═══════════════════════════════════════════════════════════════════════════════
-  aio w                  List all worktrees
-  aio w<#/name>          Open worktree by index or name
-  aio w<#> -w            Open worktree in new window
-  aio w<#/name>-         Remove worktree (no git push)
-  aio w<#>- -y           Remove without confirmation
-  aio w<#/name>--        Remove, merge to main, and push
-  aio w<#>-- --yes       Remove and push (skip confirmation)
-  aio w<#>-- "message"   Remove and push with custom commit message
-═══════════════════════════════════════════════════════════════════════════════
-PROJECT & APP MANAGEMENT
-═══════════════════════════════════════════════════════════════════════════════
-  aio p                  List all saved projects & apps (unified numbering)
-  aio <#>                Open project # or run app # (e.g., aio 0, aio 10)
-  aio -w <#>             Open project # in new window
-  aio add [path]         Add project (defaults to current dir)
-  aio add-app <name> <command>  Add executable app
-  aio remove <#>         Remove project from saved list
-  aio remove-app <#>     Remove app from saved list
-Note: Projects (0-9) = directories to cd into. Apps (10+) = commands to execute.
-═══════════════════════════════════════════════════════════════════════════════
-MONITORING & AUTOMATION
-═══════════════════════════════════════════════════════════════════════════════
-  aio jobs               Show all active work with status
-  aio jobs --running     Show only running jobs (filter out review)
-  aio jobs -r            Same as --running (short form)
-  aio review             Review & clean up finished worktrees 🆕
-                        - Opens each worktree in tmux (Ctrl+B D to detach)
-                        - Quick inspect: l=ls g=git d=diff h=log
-                        - Actions: 1=push+delete 2=delete 3=keep 4=stop
-                        - Terminal-first workflow (no GUI needed)
-  aio cleanup            Delete all worktrees (with confirmation)
-  aio cleanup --yes      Delete all worktrees (skip confirmation)
-  aio ls                 List all tmux sessions
-  aio attach             Reconnect to multi-agent session
-  aio killall            Kill all tmux sessions (keeps current if inside tmux)
-  aio watch <session>    Auto-respond to prompts (watch once)
-  aio watch <session> 60 Auto-respond for 60 seconds
-  aio send <sess> "text" Send prompt to existing session
-  aio send <sess> "text" --wait  Send and wait for completion
-MULTI-AGENT PARALLEL:
-  aio multi <#> c:3 g:1 "prompt"  Run 3 codex + 1 gemini in parallel
-  aio multi <#> c:2 l:1 "prompt"  Run 2 codex + 1 claude in parallel
-═══════════════════════════════════════════════════════════════════════════════
-GIT OPERATIONS
-═══════════════════════════════════════════════════════════════════════════════
-  aio setup <url>        Initialize repo and add remote
-  aio push                     Commit all and push
-  aio push fixed login bug     With message (no quotes needed)
-  aio push auth.py             Only auth.py
-  aio push utils/              Only utils/ directory
-  aio push auth.py fix auth    auth.py with message
-  aio pull               Replace local with server (destructive, needs confirmation)
-  aio pull -y            Pull without confirmation
-  aio revert             Undo last commit
-  aio revert 3           Undo last 3 commits
-Note: Works in any git directory, not just worktrees
-═══════════════════════════════════════════════════════════════════════════════
-SETUP & CONFIGURATION
-═══════════════════════════════════════════════════════════════════════════════
-  aio install            Install as global 'aio' command
-  aio deps               Install dependencies (node, codex, claude, gemini)
-  aio update             Update aio to latest version from git
-  aio font [+|-|SIZE]    Adjust terminal font size (Termux/Kitty/Alacritty/GNOME)
-  aio config             View all config settings
-  aio config <key>       View single config value
-  aio config <key> <val> Set config value
-  aio x                  Kill all tmux sessions
-FLAGS:
-  -w, --new-window       Launch in new terminal window
-  -t, --with-terminal    Launch session + separate terminal
-  -y, --yes              Skip confirmation prompts
-TERMINALS: Auto-detects ptyxis, gnome-terminal, alacritty
-DATABASE: ~/.local/share/aios/aio.db
-WORKTREES: {WORKTREES_DIR}
-═══════════════════════════════════════════════════════════════════════════════
-CLAUDE ULTRATHINK
-═══════════════════════════════════════════════════════════════════════════════
-All Claude sessions (aio l, aio o) automatically prefix prompts with "Ultrathink. "
-This increases Claude's thinking budget for more thorough reasoning.
+    print(f"""aio - AI agent session manager
+SESSIONS: c=codex l=claude g=gemini h=htop t=top
+  aio <key> [#|dir]      Start session (# = project index)
+  aio <key>-- [#]        New worktree  |  aio +<key>  New timestamped
+  aio cp/lp/gp           Insert prompt (edit first)
+  aio cpp/lpp/gpp        Auto-run prompt
+  aio <key> "prompt"     Send custom prompt  |  -w new window  -t +terminal
 
-  aio config claude_prefix           View current prefix
-  aio config claude_prefix ""        Disable prefix (empty string)
-  aio config claude_prefix "Think. " Change prefix
+WORKFLOWS: aio fix|bug|feat|auto|del [agent] ["task"]
+  fix=autonomous  bug=debug  feat=add  auto=improve  del=cleanup
 
-The prefix is:
-• Auto-inserted when starting Claude sessions (aio l, aio o)
-• Auto-applied to prompts in aio fix, bug, feat, auto, del
-• Auto-applied in multi-agent runs (aio multi) for Claude agents
-• Stored in database (persists across restarts)
-═══════════════════════════════════════════════════════════════════════════════
-DATABASE BACKUP & RESTORE
-═══════════════════════════════════════════════════════════════════════════════
-  aio backups            List all database backups with timestamps
-  aio restore <file>     Restore database from backup (with confirmation)
-AUTOMATIC BACKUPS:
-• Backups created automatically every 10 minutes (silent, zero delay)
-• Uses git-style fork: parent continues instantly, child backs up in background
-• Backups stored in: ~/.local/share/aios/aio_auto_YYYYMMDD_HHMMSS.db
-• Protects: projects, sessions, prompts, configuration, worktree history
-MANUAL BACKUP:
-• Create manual backup: Use backup_database("label") in Python
-• Restore from backup: aio restore <filename>
-• Backups use SQLite's .backup() method (safe, atomic, consistent)
-═══════════════════════════════════════════════════════════════════════════════
-APP MANAGEMENT
-═══════════════════════════════════════════════════════════════════════════════
-Apps are custom commands you can run quickly with aio:
-• List apps: aio app
-• Add app: aio app add <name> [command]
-  - Automatically includes current directory (if not in home)
-  - If no command given, prompts interactively
-  - Removes square brackets if accidentally included
-  - Example from ~/projects/myapp: aio app add test 'pytest'
-    Creates: cd ~/projects/myapp && pytest
-  - Example: aio app add server 'python -m http.server 8000'
-• Add globally: aio app add <name> --global <command>
-  - Skips directory context, runs from anywhere
-  - Use for commands that should work everywhere
-  - Example: aio app add docker --global 'docker ps -a'
-• Edit app: aio app edit <#|name>
-  - Can use app number or name
-  - Prompts for new command interactively
-• Remove app: aio app rm <#|name>
-  - Removes app with confirmation
-• Run app: aio <#>
-  - Use the app's number from the list
-═══════════════════════════════════════════════════════════════════════════════
-EXAMPLES
-═══════════════════════════════════════════════════════════════════════════════
-Getting Started:
-  aio install              Make 'aio' globally available
-  aio update               Check for and install updates
-  aio c                    Start codex in current directory
-  aio cp                   Start codex with editable prompt
-  aio cpp                  Start codex with auto-run prompt
-Sessions:
-  aio c 0                  Start codex in project 0
-  aio l -w                 Start claude in new window
-  aio g 2 -t               Start gemini in project 2 + terminal
-Worktrees:
-  aio c++                  Codex in new worktree (current dir)
-  aio c++ 0 -t             Codex in new worktree (project 0) + terminal
-  aio l++ -w               Claude in new worktree in new window
-Management:
-  aio jobs                 View all active work
-  aio review               Review finished worktrees one-by-one
-  aio w                    List worktrees
-  aio w0 -w                Open worktree 0 in new window
-  aio w0-- "Done"          Remove worktree 0 and push to main
-Automation:
-  aio send codex "fix bug" Send prompt to running session
-  aio multi 0 c:3 "task"   Run 3 codex in parallel on task
-  aio push "Fix login"     Quick commit and push
-═══════════════════════════════════════════════════════════════════════════════
-NOTES:
-• Run 'aio update' to pull latest version from git
-• Auto-backup every 10 minutes (silent, zero delay, stored in ~/.local/share/aios)
-• Works in any git directory for push/worktree commands
-• Mouse mode enabled: Hold Shift to select and copy text
-• Database stores: projects, sessions, prompts, configuration
-Working directory: {WORK_DIR}
-""")
+OVERNIGHT: aio on [#] [c:N l:N]  Read aio.md, agents work, auto-review
+
+WORKTREES: aio w  list | w<#>  open | w<#>-  delete | w<#>--  push+delete
+
+PROJECTS: aio p  list | aio <#>  open | add/remove <#>
+
+APPS: aio app [add|edit|rm] <name> [cmd]  Run with: aio <#>
+
+MONITOR: jobs [-r] | review | cleanup | ls | attach | killall
+  multi <#> c:N l:N "task"  Parallel agents
+  send <sess> "text"  |  watch <sess> [sec]
+
+GIT: push [file] [msg] | pull [-y] | revert [N] | setup <url>
+
+CONFIG: install | deps | update | font [+|-|N] | config [key] [val]
+  claude_prefix="Ultrathink. "  (auto-prefixes Claude prompts)
+
+FLAGS: -w new-window  -t with-terminal  -y skip-confirm
+DB: ~/.local/share/aios/aio.db  Worktrees: {WORKTREES_DIR}""")
     if PROJECTS:
         print("📁 PROJECTS (examples: 'aio 0' opens project 0):")
         for i, proj in enumerate(PROJECTS):
@@ -2590,12 +2418,12 @@ elif arg == 'diff':
     print(f"📂 {cwd}")
     print(f"🌿 {b}")
     if not diff and not untracked: print("No changes"); sys.exit(0)
-    G, R, X, f = '\033[48;2;26;84;42m', '\033[48;2;117;34;27m', '\033[0m', ''
+    G, R, X, f, LINE_RE = '\033[48;2;26;84;42m', '\033[48;2;117;34;27m', '\033[0m', '', re.compile(r'\+(\d+)')
     if diff:
         print(sp.run(['git', 'diff', f'origin/{b}', '--shortstat'], capture_output=True, text=True).stdout.strip() + "\n")
         for L in diff.split('\n'):
             if L.startswith('diff --git'): f = L.split(' b/')[-1]
-            elif L.startswith('@@'): print(f"\n{f} line {re.search(r'\+(\d+)', L).group(1)}:")
+            elif L.startswith('@@'): m = LINE_RE.search(L); print(f"\n{f} line {m.group(1)}:" if m else "")
             elif L.startswith('+') and not L.startswith('+++'): print(f"  {G}+ {L[1:]}{X}")
             elif L.startswith('-') and not L.startswith('---'): print(f"  {R}- {L[1:]}{X}")
     if untracked: print(f"\nUntracked files:\n" + '\n'.join(f"  {G}+ {u}{X}" for u in untracked.split('\n')))
@@ -3050,167 +2878,6 @@ Commands:
 
 Purpose: Test 'aio install', 'aio deps', and other global commands
 without affecting your current system installation.""")
-# ═══════════════════════════════════════════════════════════════════════════════
-# LOCAL FILES SERVICE - Commented out for future activation
-# Provides HTTP access to Termux local files for AI agents
-# Activate with: aio files [port]
-# ═══════════════════════════════════════════════════════════════════════════════
-# elif arg == 'files':
-#     # Local files HTTP server for agent access to Termux storage
-#     import http.server
-#     import socketserver
-#     import threading
-#     import urllib.parse
-#
-#     port = int(work_dir_arg) if work_dir_arg and work_dir_arg.isdigit() else 8421
-#
-#     # Paths accessible to agents (Termux storage locations)
-#     ALLOWED_ROOTS = [
-#         os.path.expanduser('~/storage/downloads'),
-#         os.path.expanduser('~/storage/shared'),
-#         os.path.expanduser('~/storage/dcim'),
-#         os.path.expanduser('~/storage/pictures'),
-#         os.path.expanduser('~/storage/music'),
-#         os.path.expanduser('~/storage/movies'),
-#         os.path.expanduser('~'),  # Home directory
-#     ]
-#
-#     class LocalFilesHandler(http.server.BaseHTTPRequestHandler):
-#         """HTTP handler for serving local files to AI agents."""
-#
-#         def log_message(self, format, *args):
-#             print(f"[files] {args[0]}")
-#
-#         def send_cors_headers(self):
-#             self.send_header('Access-Control-Allow-Origin', '*')
-#             self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-#             self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-#
-#         def do_OPTIONS(self):
-#             self.send_response(200)
-#             self.send_cors_headers()
-#             self.end_headers()
-#
-#         def do_GET(self):
-#             # Parse path
-#             parsed = urllib.parse.urlparse(self.path)
-#             path = urllib.parse.unquote(parsed.path)
-#
-#             # List roots at /
-#             if path == '/' or path == '':
-#                 self.send_response(200)
-#                 self.send_header('Content-Type', 'application/json')
-#                 self.send_cors_headers()
-#                 self.end_headers()
-#                 roots = [{'path': r, 'name': os.path.basename(r) or 'home', 'exists': os.path.exists(r)} for r in ALLOWED_ROOTS]
-#                 self.wfile.write(json.dumps({'roots': roots, 'usage': 'GET /path/to/file'}).encode())
-#                 return
-#
-#             # Resolve full path
-#             full_path = None
-#             for root in ALLOWED_ROOTS:
-#                 if path.startswith('/' + os.path.basename(root)):
-#                     # Path starts with root name (e.g., /downloads/file.txt)
-#                     rel = path[len('/' + os.path.basename(root)):]
-#                     candidate = os.path.join(root, rel.lstrip('/'))
-#                     if os.path.exists(candidate):
-#                         full_path = candidate
-#                         break
-#                 elif os.path.exists(root + path):
-#                     full_path = root + path
-#                     break
-#
-#             # Also try absolute path if within allowed roots
-#             if not full_path and path.startswith('/'):
-#                 abs_path = path
-#                 for root in ALLOWED_ROOTS:
-#                     if abs_path.startswith(root) and os.path.exists(abs_path):
-#                         full_path = abs_path
-#                         break
-#
-#             if not full_path or not os.path.exists(full_path):
-#                 self.send_response(404)
-#                 self.send_cors_headers()
-#                 self.end_headers()
-#                 self.wfile.write(b'File not found')
-#                 return
-#
-#             # Security: ensure path is within allowed roots
-#             real_path = os.path.realpath(full_path)
-#             if not any(real_path.startswith(os.path.realpath(r)) for r in ALLOWED_ROOTS):
-#                 self.send_response(403)
-#                 self.send_cors_headers()
-#                 self.end_headers()
-#                 self.wfile.write(b'Access denied')
-#                 return
-#
-#             # Directory listing
-#             if os.path.isdir(full_path):
-#                 self.send_response(200)
-#                 self.send_header('Content-Type', 'application/json')
-#                 self.send_cors_headers()
-#                 self.end_headers()
-#                 entries = []
-#                 for name in sorted(os.listdir(full_path)):
-#                     entry_path = os.path.join(full_path, name)
-#                     entries.append({
-#                         'name': name,
-#                         'type': 'dir' if os.path.isdir(entry_path) else 'file',
-#                         'size': os.path.getsize(entry_path) if os.path.isfile(entry_path) else None
-#                     })
-#                 self.wfile.write(json.dumps({'path': path, 'entries': entries}).encode())
-#                 return
-#
-#             # Serve file
-#             try:
-#                 with open(full_path, 'rb') as f:
-#                     content = f.read()
-#                 self.send_response(200)
-#                 # Guess content type
-#                 ext = os.path.splitext(full_path)[1].lower()
-#                 content_types = {
-#                     '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
-#                     '.py': 'text/x-python', '.js': 'text/javascript', '.html': 'text/html',
-#                     '.css': 'text/css', '.xml': 'application/xml', '.pdf': 'application/pdf',
-#                     '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-#                     '.gif': 'image/gif', '.svg': 'image/svg+xml', '.mp3': 'audio/mpeg',
-#                     '.mp4': 'video/mp4', '.epub': 'application/epub+zip',
-#                 }
-#                 self.send_header('Content-Type', content_types.get(ext, 'application/octet-stream'))
-#                 self.send_header('Content-Length', str(len(content)))
-#                 self.send_cors_headers()
-#                 self.end_headers()
-#                 self.wfile.write(content)
-#             except Exception as e:
-#                 self.send_response(500)
-#                 self.send_cors_headers()
-#                 self.end_headers()
-#                 self.wfile.write(f'Error: {e}'.encode())
-#
-#     print(f"📂 Local Files Server")
-#     print(f"═══════════════════════════════════════════════════")
-#     print(f"URL: http://localhost:{port}")
-#     print(f"")
-#     print(f"Accessible paths:")
-#     for root in ALLOWED_ROOTS:
-#         exists = "✓" if os.path.exists(root) else "✗"
-#         print(f"  {exists} {root}")
-#     print(f"")
-#     print(f"Usage for agents:")
-#     print(f"  curl http://localhost:{port}/downloads/")
-#     print(f"  curl http://localhost:{port}/downloads/file.txt")
-#     print(f"")
-#     print(f"Press Ctrl+C to stop")
-#     print(f"═══════════════════════════════════════════════════")
-#
-#     with socketserver.TCPServer(("", port), LocalFilesHandler) as httpd:
-#         try:
-#             httpd.serve_forever()
-#         except KeyboardInterrupt:
-#             print("\n✓ Server stopped")
-#             sys.exit(0)
-# ═══════════════════════════════════════════════════════════════════════════════
-
 elif arg == 'backups' or arg == 'backup':
     backups = list_backups()
     if not backups:
@@ -3249,15 +2916,7 @@ elif arg == 'restore':
 elif arg == 'watch':
     # Watch a tmux session and auto-respond to patterns
     if not work_dir_arg:
-        print("✗ Usage: aio watch <session_name> [duration_seconds]")
-        print("\nExamples:")
-        print("  aio watch codex          # Watch codex session, respond once and exit")
-        print("  aio watch codex 60       # Watch codex session for 60 seconds")
-        print("\nDefault patterns:")
-        print("  'Are you sure?' -> 'y'")
-        print("  'Continue?' -> 'yes'")
-        print("  '[y/N]' -> 'y'")
-        print("  '[Y/n]' -> 'y'")
+        print("""✗ Usage: aio watch <session_name> [duration_seconds]\n\nExamples:\n  aio watch codex          # Watch codex session, respond once and exit\n  aio watch codex 60       # Watch codex session for 60 seconds\n\nDefault patterns:\n  'Are you sure?' -> 'y'\n  'Continue?' -> 'yes'\n  '[y/N]' -> 'y'\n  '[Y/n]' -> 'y'""")
         sys.exit(1)
 
     session_name = work_dir_arg
@@ -3293,12 +2952,7 @@ elif arg == 'watch':
 elif arg == 'send':
     # Send a prompt to an existing session
     if not work_dir_arg:
-        print("✗ Usage: aio send <session_name> <prompt>")
-        print("\nExamples:")
-        print("  aio send codex 'create a test file'")
-        print("  aio send claude-aios 'explain this code'")
-        print("\nFlags:")
-        print("  --wait    Wait for completion before returning")
+        print("""✗ Usage: aio send <session_name> <prompt>\n\nExamples:\n  aio send codex 'create a test file'\n  aio send claude-aios 'explain this code'\n\nFlags:\n  --wait    Wait for completion before returning""")
         sys.exit(1)
 
     session_name = work_dir_arg
@@ -3831,16 +3485,7 @@ elif arg == 'all':
     agent_specs, prompt, using_default_protocol = parse_agent_specs_and_prompt(sys.argv, 2)
 
     if not agent_specs:
-        print("✗ No agent specifications provided")
-        print("\nUsage: aio all <agent_specs>... <prompt>")
-        print("\nExamples:")
-        print("  aio all c:2 'find all bugs'           # 2 codex per project (parallel)")
-        print("  aio all c:1 l:1 'optimize'            # Mixed agents per project")
-        print("  aio all c:2 --seq 'run tests'         # Sequential (one project at a time)")
-        print("\nAgent specs:")
-        print("  c:N  - N codex instances per project")
-        print("  l:N  - N claude instances per project")
-        print("  g:N  - N gemini instances per project")
+        print("""✗ No agent specifications provided\n\nUsage: aio all <agent_specs>... <prompt>\n\nExamples:\n  aio all c:2 'find all bugs'           # 2 codex per project (parallel)\n  aio all c:1 l:1 'optimize'            # Mixed agents per project\n  aio all c:2 --seq 'run tests'         # Sequential (one project at a time)\n\nAgent specs:\n  c:N  - N codex instances per project\n  l:N  - N claude instances per project\n  g:N  - N gemini instances per project""")
         sys.exit(1)
 
     # Calculate total instances across all projects
@@ -3911,12 +3556,7 @@ elif arg == 'all':
             else:
                 print(f"cd {path} && git remote set-url origin git@github.com:USER/REPO.git")
 
-        print("\n" + "=" * 80)
-        print("ℹ️  WHY SSH IS BETTER:")
-        print("   • No password prompts")
-        print("   • Works with aio's no-dialog approach")
-        print("   • More secure than storing passwords")
-        print("\n✅ After fixing, run 'aio all' again and all projects will work!")
+        print("""\n" + "=\nℹ️  WHY SSH IS BETTER:\n   • No password prompts\n   • Works with aio's no-dialog approach\n   • More secure than storing passwords\n\n✅ After fixing, run 'aio all' again and all projects will work!""")
         sys.exit(1)
 
     print("\n✅ All projects authenticated successfully!")
@@ -4374,7 +4014,6 @@ elif arg == 'app' or arg == 'apps':
             print(f"   aio app edit <#|name>         - Edit app command")
             print(f"   aio app rm <#|name>           - Remove app")
             print(f"   aio <#>                       - Run app by number")
-
     elif subcommand == 'add':
         # Check for --global flag
         is_global = '--global' in sys.argv
@@ -4452,7 +4091,6 @@ elif arg == 'app' or arg == 'apps':
         else:
             print(f"✗ {message}")
             sys.exit(1)
-
     elif subcommand == 'edit':
         # Get app identifier (number or name)
         app_id = sys.argv[3] if len(sys.argv) > 3 else None
@@ -4502,7 +4140,6 @@ elif arg == 'app' or arg == 'apps':
             print(f"   New command: {format_app_command(new_command)}")
         else:
             print("✗ No changes made")
-
     elif subcommand == 'rm' or subcommand == 'remove' or subcommand == 'delete':
         # Get app identifier (number or name)
         app_id = sys.argv[3] if len(sys.argv) > 3 else None
@@ -4549,11 +4186,7 @@ elif arg == 'app' or arg == 'apps':
             print("✗ Cancelled")
     else:
         print(f"✗ Unknown app command: {subcommand}")
-        print("\nAvailable commands:")
-        print("  aio app         - List all apps")
-        print("  aio app add     - Add a new app")
-        print("  aio app edit    - Edit an app")
-        print("  aio app rm      - Remove an app")
+        print("""\nAvailable commands:\n  aio app         - List all apps\n  aio app add     - Add a new app\n  aio app edit    - Edit an app\n  aio app rm      - Remove an app""")
 elif arg == 'add':
     # Add a project to saved list
     if work_dir_arg:
@@ -4966,7 +4599,6 @@ elif arg == 'push':
                              [os.environ.get('SHELL', '/bin/bash')])
                 else:
                     print(f"✓ Worktree deleted successfully")
-
     else:
         # Normal repo - always push to main branch
         # Get current branch
