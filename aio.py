@@ -74,12 +74,16 @@ def ensure_deps():
         sp.run(['pkg', 'install', '-y'] + missing, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         print("✓ Dependencies installed")
 
-    # Install claude-code via npm if missing (requires nodejs)
+    # Install AI CLIs via npm if missing (requires nodejs)
     if shutil.which('npm') and not shutil.which('claude'):
         print("📦 Installing: claude-code")
         sp.run(['npm', 'install', '-g', '@anthropic-ai/claude-code'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         if shutil.which('claude'):
             print("✓ claude-code installed")
+    if shutil.which('npm') and not shutil.which('codex'):
+        sp.run(['npm', 'install', '-g', '@openai/codex'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    if shutil.which('npm') and not shutil.which('gemini'):
+        sp.run(['npm', 'install', '-g', '@google/gemini-cli', '--ignore-scripts'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
 # Install deps on first run
 ensure_deps()
