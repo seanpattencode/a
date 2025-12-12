@@ -2417,14 +2417,15 @@ elif arg == 'diff':
     import re; sp.run(['git', 'fetch', 'origin'], capture_output=True)
     cwd = os.getcwd()
     b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
-    diff = sp.run(['git', 'diff', f'origin/{b}'], capture_output=True, text=True).stdout
+    target = 'origin/main' if b.startswith('wt-') else f'origin/{b}'
+    diff = sp.run(['git', 'diff', target], capture_output=True, text=True).stdout
     untracked = sp.run(['git', 'ls-files', '--others', '--exclude-standard'], capture_output=True, text=True).stdout.strip()
     print(f"📂 {cwd}")
-    print(f"🌿 {b}")
+    print(f"🌿 {b} → {target}")
     if not diff and not untracked: print("No changes"); sys.exit(0)
     G, R, X, f, LINE_RE = '\033[48;2;26;84;42m', '\033[48;2;117;34;27m', '\033[0m', '', re.compile(r'\+(\d+)')
     if diff:
-        print(sp.run(['git', 'diff', f'origin/{b}', '--shortstat'], capture_output=True, text=True).stdout.strip() + "\n")
+        print(sp.run(['git', 'diff', target, '--shortstat'], capture_output=True, text=True).stdout.strip() + "\n")
         for L in diff.split('\n'):
             if L.startswith('diff --git'): f = L.split(' b/')[-1]
             elif L.startswith('@@'): m = LINE_RE.search(L); print(f"\n{f} line {m.group(1)}:" if m else "")
