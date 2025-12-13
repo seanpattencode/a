@@ -1,0 +1,3 @@
+Ai agents executing code pose a security risk, which will only get greater over time. However, it is also a requirement to use something that keeps iteration speed fast as possible and works on all hardware, so heavy vms cannot work. Ubuntu remains the most supported distro for ai agents and so should be the target. The script should remain lightweight, so the target should be even a rasberry pi can run it. So an isolation method must work under this requirement.
+
+Many people might say docker docker docker. Docker's startup time is too slow even with alpine which has nonstandard components.
