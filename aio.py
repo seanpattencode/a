@@ -731,13 +731,13 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     """Create a tmux session with enhanced options. Agent sessions get agent+bash panes."""
     result = sm.new_session(session_name, work_dir, cmd or '', env)
     ensure_tmux_options()  # After session creation so tmux server is running
-    # Status bar configured globally via status-format[1] in ensure_tmux_options()
     # Auto-add bash pane for agent sessions (bash left, agent right)
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-bh', '-t', session_name, '-c', work_dir], capture_output=True)
         sp.run(['tmux', 'select-pane', '-t', session_name, '-R'], capture_output=True)
-        # Activity monitor: green=streaming+text changed OR spinner/working/thinking in last 1000 chars, red=none of those
-        sp.Popen(['bash', '-c', f'h="";tmux set-option -t {shlex.quote(session_name)} set-titles-string "🔴 #S:#W";while tmux has-session -t {shlex.quote(session_name)} 2>/dev/null;do t=$(tmux capture-pane -p -t {shlex.quote(session_name)});n=$(echo "$t"|cksum);p=$(tmux display-message -t {shlex.quote(session_name)} -p \'#{{pane_pid}}\');d=$(pstree -p $p 2>/dev/null|grep -oP \'\\(\\K\\d+(?=\\))\'|paste -sd\'|\');s=0;[ -n "$d" ]&&s=$(ss -tnp 2>/dev/null|grep -E "pid=($d)"|awk \'$2>0||$3>0{{c++}}END{{print c+0}}\');a=0;echo "$t"|tail -c1000|grep -qE \'⠏|working|thinking\'&&a=1;([ "$s" -gt 0 -a "$h" != "$n" ]||[ "$a" -eq 1 ])&&tmux set-option -t {shlex.quote(session_name)} set-titles-string "🟢 #S:#W";[ "$s" -eq 0 -a "$h" = "$n" -a "$a" -eq 0 ]&&tmux set-option -t {shlex.quote(session_name)} set-titles-string "🔴 #S:#W";[ "$h" != "$n" ]&&h=$n;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        # Activity monitor via pipe-pane: green on output, red after 5s silence (no orphan processes)
+        monitor_script = f'''bash -c 's={shlex.quote(session_name)};tmux set -t $s set-titles-string "🔴 #S:#W";while true;do if IFS= read -t5 l;then tmux set -t $s set-titles-string "🟢 #S:#W";elif [[ $? -gt 128 ]];then tmux set -t $s set-titles-string "🔴 #S:#W";else exit;fi;done' '''
+        sp.run(['tmux', 'pipe-pane', '-t', session_name, '-o', monitor_script], capture_output=True)
     return result
 
 def detect_terminal():
@@ -3623,22 +3623,6 @@ elif arg == 'jobs':
     # Check for --running flag
     running_only = '--running' in sys.argv or '-r' in sys.argv
     list_jobs(running_only=running_only)
-elif arg == 'reddot':
-    # Red dot diagnostic: show status for all sessions, optionally start monitors
-    print("🔴 Red Dot Status (text-change detection)\n")
-    for session in sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True).stdout.strip().split('\n'):
-        if not session: continue
-        title = sp.run(['tmux', 'show-options', '-t', session, '-v', 'set-titles-string'], capture_output=True, text=True).stdout.strip() or '(global)'
-        has_monitor = sp.run(['pgrep', '-f', f'tmux has-session.*{session}'], capture_output=True).returncode == 0
-        status = '🟢' if '🟢' in title else ('🔴' if '🔴' in title else '○')
-        print(f"  {session}: {status} monitor={'yes' if has_monitor else 'no'} title='{title}'")
-    if '--start' in sys.argv:
-        print("\nStarting monitors for agent sessions without one...")
-        for session in sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True).stdout.strip().split('\n'):
-            if not session or not any(a in session for a in ['codex', 'claude', 'gemini']): continue
-            if sp.run(['pgrep', '-f', f'tmux has-session.*{session}'], capture_output=True).returncode != 0:
-                sp.Popen(['bash', '-c', f'h="";while tmux has-session -t {shlex.quote(session)} 2>/dev/null;do n=$(tmux capture-pane -p -t {shlex.quote(session)}|cksum);p=$(tmux display-message -t {shlex.quote(session)} -p \'#{{pane_pid}}\');d=$(pstree -p $p 2>/dev/null|grep -oP \'\\(\\K\\d+(?=\\))\'|paste -sd\'|\');s=0;[ -n "$d" ]&&s=$(ss -tnp 2>/dev/null|grep -E "pid=($d)"|awk \'$2>0||$3>0{{c++}}END{{print c+0}}\');[ "$s" -gt 0 -a "$h" != "$n" ]&&tmux set-option -t {shlex.quote(session)} set-titles-string "🟢 #S:#W";[ "$s" -eq 0 -a "$h" = "$n" ]&&tmux set-option -t {shlex.quote(session)} set-titles-string "🔴 #S:#W";[ "$h" != "$n" ]&&h=$n;sleep 5;done'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-                print(f"  ✓ Started monitor for {session}")
 elif arg == 'attach':
     # Attach to session associated with current directory or run_id
     run_id = work_dir_arg
