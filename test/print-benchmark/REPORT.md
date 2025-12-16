@@ -1,5 +1,17 @@
 # Print Benchmark: Sub-20ms Challenge
 
+## Quick Run
+
+```bash
+# Benchmark all methods
+cd ~/aio/test/print-benchmark && ./syscall_bench
+
+# Or one-liner comparison:
+time for i in {1..100}; do echo H >/dev/null; done  # ~2ms = 20μs each
+```
+
+---
+
 Objective: Create the fastest possible "Hello, World!" print across languages, targeting <20ms execution time on Android/Termux (aarch64).
 
 ## Test Environment
