@@ -1,13 +1,9 @@
 # Print Benchmark: Sub-20ms Challenge
 
-## Quick Run
+## Run
 
 ```bash
-# Benchmark all methods
-cd ~/aio/test/print-benchmark && ./syscall_bench
-
-# Or one-liner comparison:
-time for i in {1..100}; do echo H >/dev/null; done  # ~2ms = 20μs each
+~/aio/test/print-benchmark/syscall_bench
 ```
 
 ---
