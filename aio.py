@@ -3773,7 +3773,10 @@ elif arg == 'gdrive':
     if work_dir_arg == 'login':
         if not shutil.which('rclone'):
             print("Installing rclone..."); sp.run('curl https://rclone.org/install.sh | sudo bash', shell=True)
-        if _rclone_configured(): sp.run(['rclone', 'config', 'delete', RCLONE_REMOTE])  # Remove old to re-auth
+        if _rclone_configured():
+            print(f"Already logged in as {_rclone_account() or 'unknown'}")
+            if not _confirm("Switch to different account?"): sys.exit(0)
+            sp.run(['rclone', 'config', 'delete', RCLONE_REMOTE])
         print("Opening Google Drive login..."); sp.run(['rclone', 'config', 'create', RCLONE_REMOTE, 'drive'])
         if _rclone_configured():
             _ok(f"Logged in as {_rclone_account() or 'unknown'}")
