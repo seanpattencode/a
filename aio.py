@@ -2021,14 +2021,24 @@ else:
 
 def format_app_command(app_cmd, max_length=60):
     """Format app command for display, truncating if necessary."""
-    # Simplify home directory paths
     display_cmd = app_cmd.replace(os.path.expanduser('~'), '~')
+    return display_cmd[:max_length-3] + "..." if len(display_cmd) > max_length else display_cmd
 
-    # Truncate if too long
-    if len(display_cmd) > max_length:
-        display_cmd = display_cmd[:max_length-3] + "..."
-
-    return display_cmd
+def list_all_items(show_help=True):
+    """Display projects and apps with unified numbering. Returns (projects, apps)."""
+    projects, apps = load_projects(), load_apps()
+    if projects:
+        print("📁 PROJECTS:")
+        for i, p in enumerate(projects):
+            print(f"  {i}. {'✓' if os.path.exists(p) else '✗'} {p}")
+    if apps:
+        if projects: print()
+        print("⚡ COMMANDS:")
+        for i, (n, c) in enumerate(apps):
+            print(f"  {len(projects)+i}. {n} → {format_app_command(c)}")
+    if show_help and (projects or apps):
+        print(f"\n💡 aio add [path|name cmd]  aio remove <#|name>")
+    return projects, apps
 
 def get_noninteractive_git_env():
     """Get environment for non-interactive git operations (no GUI dialogs)"""
@@ -2281,25 +2291,14 @@ MANAGEMENT:
   aio killall         Kill all tmux sessions
   aio cleanup         Delete all worktrees
   aio prompt [name]   Edit prompts (feat, fix, bug, auto, del)
-  aio add [path]      Add project
-  aio remove <#>      Remove project
-  aio app add <name>  Add app
-  aio app rm <#>      Remove app
+ADD/REMOVE (projects & commands share same list):
+  aio add             Add current dir as project
+  aio add ~/code/foo  Add path as project
+  aio add mycmd "cmd" Add command with shell string
+  aio remove 0        Remove item #0
+  aio remove mycmd    Remove command by name
 Run 'aio help' for all commands""")
-    if PROJECTS or APPS:
-        if PROJECTS:
-            print("📁 PROJECTS (use 'aio <#>' to open):")
-            for i, proj in enumerate(PROJECTS):
-                exists = "✓" if os.path.exists(proj) else "✗"
-                print(f"  {i}. {exists} {proj}")
-
-        if APPS:
-            if PROJECTS:
-                print("")  # Add blank line between sections
-            print("⚡ APPS (use 'aio <#>' to run):")
-            for i, (app_name, app_cmd) in enumerate(APPS):
-                cmd_display = format_app_command(app_cmd)
-                print(f"  {len(PROJECTS) + i}. {app_name} → {cmd_display}")
+    list_all_items(show_help=False)
 elif arg == 'help' or arg == '--help' or arg == '-h':
     print(f"""aio - AI agent session manager
 SESSIONS: c=codex l=claude g=gemini h=htop t=top
@@ -2316,9 +2315,9 @@ OVERNIGHT: aio on [#] [c:N l:N]  Read aio.md, agents work, auto-review
 
 WORKTREES: aio w  list | w<#>  open | w<#>-  delete | w<#>--  push+delete
 
-PROJECTS: aio p  list | aio <#>  open | add/remove <#>
-
-APPS: aio app [add|edit|rm] <name> [cmd]  Run with: aio <#>
+ADD/REMOVE: aio add [path|name "cmd"]  aio remove <#|name>
+  aio add           Add cwd as project  |  aio add mycmd "echo hi"  Add command
+  aio remove 0      Remove by number    |  aio remove mycmd         By name
 
 MONITOR: jobs [-r] | review | cleanup | ls | attach | killall
   multi <#> c:N l:N "task"  Parallel agents
@@ -2331,19 +2330,7 @@ CONFIG: install | deps | update | font [+|-|N] | config [key] [val]
 
 FLAGS: -w new-window  -t with-terminal  -y skip-confirm
 DB: ~/.local/share/aios/aio.db  Worktrees: {WORKTREES_DIR}""")
-    if PROJECTS:
-        print("📁 PROJECTS (examples: 'aio 0' opens project 0):")
-        for i, proj in enumerate(PROJECTS):
-            exists = "✓" if os.path.exists(proj) else "✗"
-            print(f"  {i}. {exists} {proj}")
-
-    if APPS:
-        if PROJECTS:
-            print("")  # Add blank line between sections
-        print("⚡ APPS (examples: 'aio {0}' runs first app):".format(len(PROJECTS)))
-        for i, (app_name, app_cmd) in enumerate(APPS):
-            cmd_display = format_app_command(app_cmd)
-            print(f"  {len(PROJECTS) + i}. {app_name} → {cmd_display}")
+    list_all_items(show_help=False)
 elif arg == 'diff':
     import re; sp.run(['git', 'fetch', 'origin'], capture_output=True)
     cwd = os.getcwd()
@@ -3922,325 +3909,104 @@ elif arg == 'p':
     if APPS:
         if PROJECTS:
             print("")  # Add blank line between sections
-        print("⚡ APPS:")
+        print("⚡ COMMANDS:")
         for i, (app_name, app_cmd) in enumerate(APPS):
             cmd_display = format_app_command(app_cmd)
             print(f"  {len(PROJECTS) + i}. {app_name} → {cmd_display}")
-elif arg == 'app' or arg == 'apps':
-    # App management commands
-    subcommand = work_dir_arg
-
-    if not subcommand or subcommand == 'list':
-        # List all apps
-        if not APPS:
-            print("No apps configured yet.")
-            print("\n💡 Add your first app:")
-            print("   aio app add myapp 'echo Hello World'")
-        else:
-            print("⚡ CONFIGURED APPS:")
-            for i, (app_name, app_cmd) in enumerate(APPS):
-                cmd_display = format_app_command(app_cmd)
-                app_idx = len(PROJECTS) + i
-                print(f"  [{app_idx}] {app_name} → {cmd_display}")
-            print(f"\n💡 Commands:")
-            print(f"   aio app add <name> [command]  - Add new app")
-            print(f"   aio app edit <#|name>         - Edit app command")
-            print(f"   aio app rm <#|name>           - Remove app")
-            print(f"   aio <#>                       - Run app by number")
-    elif subcommand == 'add':
-        # Check for --global flag
-        is_global = '--global' in sys.argv
-        args = [arg for arg in sys.argv[3:] if arg != '--global']
-
-        if not args:
-            print("✗ Usage: aio app add <name> <command>")
-            print("        aio app add <command>  (prompts for name)")
-            sys.exit(1)
-
-        # Check if first arg looks like a command (starts with common interpreters)
-        first_arg = args[0]
-        command_starters = ['python', 'python3', 'node', 'npm', 'ruby', 'perl', 'java', 'go', 'sh', 'bash']
-
-        if first_arg in command_starters or len(args) == 1:
-            # Treat whole thing as command, prompt for name
-            app_command = ' '.join(args)
-            print(f"Command: {format_app_command(app_command)}")
-            app_name = input("Name for this app: ").strip()
-            if not app_name:
-                print("✗ Cancelled")
-                sys.exit(1)
-        else:
-            # First arg is name, rest is command
-            app_name = args[0]
-            app_command = ' '.join(args[1:]) if len(args) > 1 else None
-
-            if not app_command:
-                print(f"Adding app: {app_name}")
-                app_command = input("Command: ").strip()
-                if not app_command:
-                    print("✗ Cancelled")
-                    sys.exit(1)
-
-        # Clean brackets if present
-        if app_command.startswith('[') and app_command.endswith(']'):
-            app_command = app_command[1:-1]
-
-        # Add directory context (unless --global or already has cd)
-        current_dir = os.getcwd()
-        home_dir = os.path.expanduser('~')
-
-        if not is_global and current_dir != home_dir and not app_command.startswith('cd '):
-            rel_path = current_dir.replace(home_dir, '~') if current_dir.startswith(home_dir) else current_dir
-            app_command = f"cd {rel_path} && {app_command}"
-            print(f"📍 Added: {rel_path}")
-
-        # Handle duplicates
-        existing = {name.lower(): name for name, _ in APPS}
-        if app_name.lower() in existing:
-            print(f"✗ '{existing[app_name.lower()]}' exists. (1) rename (2) update (3) cancel")
-            choice = input("> ").strip()
-            if choice == '1':
-                app_name = input("New name: ").strip()
-                if not app_name:
-                    sys.exit(1)
-            elif choice == '2':
-                with WALManager(DB_PATH) as conn:
-                    conn.execute("UPDATE apps SET command = ? WHERE LOWER(name) = LOWER(?)",
-                               (app_command, app_name))
-                print(f"✓ Updated: {app_name}")
-                sys.exit(0)
-            else:
-                sys.exit(1)
-
-        # Add the app
-        success, message = add_app(app_name, app_command)
-        if success:
-            print(f"✓ {message}")
-            auto_backup_check()  # Backup after database modification
-            # Show updated list
-            APPS_NEW = load_apps()
-            for i, (name, cmd) in enumerate(APPS_NEW):
-                print(f"  [{len(PROJECTS) + i}] {name} → {format_app_command(cmd)}")
-        else:
-            print(f"✗ {message}")
-            sys.exit(1)
-    elif subcommand == 'edit':
-        # Get app identifier (number or name)
-        app_id = sys.argv[3] if len(sys.argv) > 3 else None
-
-        if not app_id:
-            print("✗ Usage: aio app edit <#|name>")
-            sys.exit(1)
-
-        # Find the app
-        app_index = None
-        app_name = None
-        app_command = None
-
-        if app_id.isdigit():
-            # User provided global index
-            idx = int(app_id)
-            app_idx = idx - len(PROJECTS)
-            if 0 <= app_idx < len(APPS):
-                app_index = app_idx
-                app_name, app_command = APPS[app_idx]
-        else:
-            # User provided name - search for it
-            for i, (name, cmd) in enumerate(APPS):
-                if name.lower() == app_id.lower():
-                    app_index = i
-                    app_name = name
-                    app_command = cmd
-                    break
-
-        if app_index is None:
-            print(f"✗ App not found: {app_id}")
-            sys.exit(1)
-
-        # Show current command and prompt for new one
-        print(f"Editing app: {app_name}")
-        print(f"Current command: {format_app_command(app_command)}")
-        print("\nEnter new command (or press Enter to keep current):")
-        new_command = input("> ").strip()
-
-        if new_command:
-            # Update the app in database
-            with WALManager(DB_PATH) as conn:
-                with conn:
-                    conn.execute("UPDATE apps SET command = ? WHERE name = ?",
-                               (new_command, app_name))
-            print(f"✓ Updated app: {app_name}")
-            print(f"   New command: {format_app_command(new_command)}")
-        else:
-            print("✗ No changes made")
-    elif subcommand == 'rm' or subcommand == 'remove' or subcommand == 'delete':
-        # Get app identifier (number or name)
-        app_id = sys.argv[3] if len(sys.argv) > 3 else None
-
-        if not app_id:
-            print("✗ Usage: aio app rm <#|name>")
-            sys.exit(1)
-
-        # Find the app
-        app_index = None
-        app_name = None
-
-        if app_id.isdigit():
-            # User provided global index
-            idx = int(app_id)
-            app_idx = idx - len(PROJECTS)
-            if 0 <= app_idx < len(APPS):
-                app_index = app_idx
-                app_name = APPS[app_idx][0]
-        else:
-            # User provided name - search for it
-            for i, (name, cmd) in enumerate(APPS):
-                if name.lower() == app_id.lower():
-                    app_index = i
-                    app_name = name
-                    break
-
-        if app_index is None:
-            print(f"✗ App not found: {app_id}")
-            sys.exit(1)
-
-        # Confirm deletion
-        print(f"Delete app '{app_name}'? (y/n):")
-        response = input("> ").strip().lower()
-
-        if response in ['y', 'yes']:
-            success, message = remove_app(app_index)
-            if success:
-                print(f"✓ {message}")
-                auto_backup_check()  # Backup after database modification
-            else:
-                print(f"✗ {message}")
-        else:
-            print("✗ Cancelled")
-    else:
-        print(f"✗ Unknown app command: {subcommand}")
-        print("""\nAvailable commands:\n  aio app         - List all apps\n  aio app add     - Add a new app\n  aio app edit    - Edit an app\n  aio app rm      - Remove an app""")
 elif arg == 'add':
-    # Add a project to saved list
-    if work_dir_arg:
-        path = work_dir_arg
-    else:
-        path = os.getcwd()
+    # Unified add: project (path) or app (name + command)
+    # aio add             → add cwd as project
+    # aio add ~/path      → add path as project
+    # aio add name "cmd"  → add app
+    args = sys.argv[2:]
+    is_global = '--global' in args
+    args = [a for a in args if a != '--global']
 
-    success, message = add_project(path)
-    if success:
-        print(f"✓ {message}")
-        auto_backup_check()  # Backup after database modification
-        print("\nUpdated project list:")
-        # Reload and display projects
-        updated_projects = load_projects()
-        for i, proj in enumerate(updated_projects):
-            exists = "✓" if os.path.exists(proj) else "✗"
-            print(f"  {i}. {exists} {proj}")
-    else:
-        print(f"✗ {message}")
-        sys.exit(1)
-elif arg == 'remove':
-    # Remove a project from saved list
-    if not work_dir_arg or not work_dir_arg.isdigit():
-        print("✗ Usage: aio remove <project#>")
-        print("\nCurrent projects:")
-        for i, proj in enumerate(PROJECTS):
-            exists = "✓" if os.path.exists(proj) else "✗"
-            print(f"  {i}. {exists} {proj}")
-        sys.exit(1)
+    # Detect app: 2+ args where first isn't a valid directory
+    if len(args) >= 2 and not os.path.isdir(os.path.expanduser(args[0])):
+        app_name, app_cmd = args[0], ' '.join(args[1:])
+        if app_cmd.startswith('[') and app_cmd.endswith(']'): app_cmd = app_cmd[1:-1]
+        cwd, home = os.getcwd(), os.path.expanduser('~')
+        if not is_global and cwd != home and not app_cmd.startswith('cd '):
+            app_cmd = f"cd {cwd.replace(home, '~')} && {app_cmd}"
+            print(f"📍 Context: {cwd.replace(home, '~')}")
+        existing = {n.lower(): n for n, _ in load_apps()}
+        if app_name.lower() in existing:
+            print(f"✗ '{existing[app_name.lower()]}' exists. Use: aio cmd edit {app_name}"); sys.exit(1)
+        ok, msg = add_app(app_name, app_cmd)
+        print(f"{'✓' if ok else '✗'} {msg}")
+        if ok: auto_backup_check(); list_all_items()
+        sys.exit(0 if ok else 1)
 
-    index = int(work_dir_arg)
+    # Adding project
+    path = os.path.abspath(os.path.expanduser(args[0])) if args else os.getcwd()
+    ok, msg = add_project(path)
+    print(f"{'✓' if ok else '✗'} {msg}")
+    if ok: auto_backup_check(); list_all_items()
+    sys.exit(0 if ok else 1)
 
-    # Load current projects and apps to determine which to remove
-    current_projects = load_projects()
-    current_apps = load_apps()
-
-    # Check if index is for a project or an app
-    if index < len(current_projects):
-        # Remove project
-        success, message = remove_project(index)
-        item_type = "project"
-    elif index < len(current_projects) + len(current_apps):
-        # Remove app (adjust index)
-        app_index = index - len(current_projects)
-        success, message = remove_app(app_index)
-        item_type = "app"
-    else:
-        print(f"✗ Invalid index: {index}")
-        sys.exit(1)
-
-    if success:
-        print(f"✓ {message}")
-        auto_backup_check()  # Backup after database modification
-        print(f"\nUpdated {item_type} list:")
-        # Reload and display projects or apps
-        if item_type == "project":
-            updated_projects = load_projects()
-            for i, proj in enumerate(updated_projects):
-                exists = "✓" if os.path.exists(proj) else "✗"
-                print(f"  {i}. {exists} {proj}")
-        else:
-            updated_apps = load_apps()
-            offset = len(load_projects())
-            for i, (name, cmd) in enumerate(updated_apps):
-                print(f"  {i + offset}. {name}: {cmd}")
-    else:
-        print(f"✗ {message}")
-        sys.exit(1)
-elif arg == 'add-app':
-    # Add an app to saved list
-    # Usage: aio add-app <name> <command>
+elif arg == 'remove' or arg == 'rm':
+    # Unified remove: by number or name
+    # aio remove      → show list
+    # aio remove 0    → remove item #0 (project or app by unified index)
+    # aio remove name → remove app by name
     if not work_dir_arg:
-        print("✗ Usage: aio add-app <name> <command>")
-        print("Example: aio add-app vscode \"code ~/projects/myproject\"")
-        sys.exit(1)
+        print("Usage: aio remove <#|name>\n"); list_all_items(); sys.exit(0)
 
-    # Name is first arg, command is everything else
-    app_name = work_dir_arg
-    # Get command from remaining arguments
-    remaining_args = sys.argv[3:] if len(sys.argv) > 3 else []
-    if not remaining_args:
-        print("✗ Usage: aio add-app <name> <command>")
-        print("Example: aio add-app vscode \"code ~/projects/myproject\"")
-        sys.exit(1)
+    projects, apps = load_projects(), load_apps()
+    target = work_dir_arg
 
-    app_command = ' '.join(remaining_args)
-
-    success, message = add_app(app_name, app_command)
-    if success:
-        print(f"✓ {message}")
-        auto_backup_check()  # Backup after database modification
-        print("\nUpdated app list:")
-        # Reload and display apps
-        updated_apps = load_apps()
-        for i, (name, cmd) in enumerate(updated_apps):
-            print(f"  {i}. [APP] {name}: {cmd}")
+    if target.isdigit():
+        idx = int(target)
+        if idx < len(projects):
+            ok, msg = remove_project(idx)
+        elif idx < len(projects) + len(apps):
+            ok, msg = remove_app(idx - len(projects))
+        else:
+            print(f"✗ Invalid index: {idx}"); list_all_items(); sys.exit(1)
     else:
-        print(f"✗ {message}")
-        sys.exit(1)
-elif arg == 'remove-app':
-    # Remove an app from saved list
-    if not work_dir_arg or not work_dir_arg.isdigit():
-        print("✗ Usage: aio remove-app <app#>")
-        print("\nCurrent apps:")
-        for i, (name, cmd) in enumerate(APPS):
-            print(f"  {i}. [APP] {name}: {cmd}")
-        sys.exit(1)
+        # By name (apps only)
+        app_idx = next((i for i, (n, _) in enumerate(apps) if n.lower() == target.lower()), None)
+        if app_idx is None:
+            print(f"✗ Not found: {target}"); list_all_items(); sys.exit(1)
+        ok, msg = remove_app(app_idx)
 
-    index = int(work_dir_arg)
-    success, message = remove_app(index)
-    if success:
-        print(f"✓ {message}")
-        auto_backup_check()  # Backup after database modification
-        print("\nUpdated app list:")
-        # Reload and display apps
-        updated_apps = load_apps()
-        for i, (name, cmd) in enumerate(updated_apps):
-            print(f"  {i}. [APP] {name}: {cmd}")
+    print(f"{'✓' if ok else '✗'} {msg}")
+    if ok: auto_backup_check(); list_all_items()
+    sys.exit(0 if ok else 1)
+
+elif arg in ('cmd', 'command', 'commands', 'app', 'apps'):
+    # Command management (aio cmd [list|add|edit|rm])
+    sub = work_dir_arg
+    if not sub or sub == 'list':
+        list_all_items()
+    elif sub == 'add':
+        os.execvp(sys.executable, [sys.executable, __file__, 'add'] + sys.argv[3:])
+    elif sub in ('rm', 'remove', 'delete'):
+        os.execvp(sys.executable, [sys.executable, __file__, 'remove'] + sys.argv[3:])
+    elif sub == 'edit':
+        cmd_id = sys.argv[3] if len(sys.argv) > 3 else None
+        if not cmd_id: print("✗ Usage: aio cmd edit <#|name>"); sys.exit(1)
+        projects, apps = load_projects(), load_apps()
+        cmd_name = cmd_val = None
+        if cmd_id.isdigit():
+            idx = int(cmd_id) - len(projects)
+            if 0 <= idx < len(apps): cmd_name, cmd_val = apps[idx]
+        else:
+            match = next(((n, c) for n, c in apps if n.lower() == cmd_id.lower()), None)
+            if match: cmd_name, cmd_val = match
+        if not cmd_name: print(f"✗ Command not found: {cmd_id}"); sys.exit(1)
+        print(f"Editing: {cmd_name}\nCurrent: {format_app_command(cmd_val)}")
+        new_cmd = input("New command (Enter=keep): ").strip()
+        if new_cmd:
+            with WALManager(DB_PATH) as conn:
+                conn.execute("UPDATE apps SET command = ? WHERE name = ?", (new_cmd, cmd_name)); conn.commit()
+            print(f"✓ Updated: {cmd_name}"); auto_backup_check()
+        else:
+            print("No changes")
     else:
-        print(f"✗ {message}")
-        sys.exit(1)
+        print(f"✗ Unknown: {sub}\nUse: aio cmd [list|add|edit|rm]")
+
 elif arg == 'ls':
     # List sessions with their directories
     result = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'],
