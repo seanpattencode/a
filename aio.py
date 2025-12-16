@@ -639,7 +639,7 @@ sessions = load_sessions(config)
 # ═══════════════════════════════════════════════════════════════════════════════
 # RCLONE GOOGLE DRIVE SYNC - minimal integration for data backup
 # ═══════════════════════════════════════════════════════════════════════════════
-RCLONE_REMOTE = 'gdrive'
+RCLONE_REMOTE = 'aio-gdrive'
 RCLONE_BACKUP_PATH = 'aio-backup'
 
 def _rclone_configured():
@@ -3769,15 +3769,30 @@ elif arg == 'prompt':
         print("No changes")
 
 elif arg == 'gdrive':
-    # Google Drive backup: aio gdrive [login] - auto-syncs on note save
+    # Google Drive backup: aio gdrive [login|logout]
     if work_dir_arg == 'login':
         if not shutil.which('rclone'):
             print("Installing rclone..."); sp.run('curl https://rclone.org/install.sh | sudo bash', shell=True)
-        print(f"Configure remote named '{RCLONE_REMOTE}' as Google Drive:"); sp.run(['rclone', 'config'])
+        if _rclone_configured(): sp.run(['rclone', 'config', 'delete', RCLONE_REMOTE])  # Remove old to re-auth
+        print("Opening Google Drive login..."); sp.run(['rclone', 'config', 'create', RCLONE_REMOTE, 'drive'])
+        if _rclone_configured():
+            _ok(f"Logged in as {_rclone_account() or 'unknown'}")
+            r = sp.run(['rclone', 'lsf', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'], capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout.strip():
+                print("Found existing backup, pulling..."); _rclone_pull_notes(); _ok("Data restored")
+            else:
+                print("Creating backup folder..."); sp.run(['rclone', 'mkdir', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'], capture_output=True)
+                _rclone_sync_data(wait=True); _ok("Backup initialized")
+        else: _err("Login failed")
+    elif work_dir_arg == 'logout':
+        if _rclone_configured():
+            sp.run(['rclone', 'config', 'delete', RCLONE_REMOTE]); _ok("Logged out")
+        else: print("Not logged in")
     elif _rclone_configured():
         acct = _rclone_account()
         _ok(f"Logged in: {acct}" if acct else f"Configured ({RCLONE_REMOTE}:)")
         if _RCLONE_ERR_FILE.exists(): _err(f"Last sync failed:\n{_RCLONE_ERR_FILE.read_text().strip()}")
+        print("Run 'aio gdrive logout' to switch accounts")
     else: _err("Not logged in. Run: aio gdrive login")
 
 elif arg == 'note':
