@@ -778,8 +778,9 @@ def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=Tr
     if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
         sp.run(['tmux', 'split-window', '-v', '-t', session_name, '-c', work_dir], capture_output=True)
         sp.run(['tmux', 'select-pane', '-t', session_name, '-U'], capture_output=True)
-        # Activity monitor via pipe-pane: green on output, red after 5s silence (no orphan processes)
-        monitor_script = f'''bash -c 's={shlex.quote(session_name)};tmux set -t $s set-titles-string "🔴 #S:#W";while true;do if IFS= read -t5 l;then tmux set -t $s set-titles-string "🟢 #S:#W";elif [[ $? -gt 128 ]];then tmux set -t $s set-titles-string "🔴 #S:#W";else exit;fi;done' '''
+        # Activity monitor: green on output, red after 5s silence, exit on EOF
+        sn = shlex.quote(session_name)
+        monitor_script = f"bash -c 's={sn}; while :; do read -t5 && c=🟢 || (($?>128)) && c=🔴 || exit; tmux set -t $s set-titles-string \"$c #S:#W\"; done'"
         sp.run(['tmux', 'pipe-pane', '-t', session_name, '-o', monitor_script], capture_output=True)
     return result
 
