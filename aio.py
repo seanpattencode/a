@@ -95,7 +95,7 @@ def input_box(prefill="", title="Ctrl+D to run, Ctrl+C to cancel"):
         print(f"[{title}] " if not prefill else f"[{title}]\n{prefill}\n> ", end="", flush=True)
         try:
             return input() if not prefill else prefill
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             print("\nCancelled")
             return None
     kb = pt['KeyBindings']()
@@ -635,6 +635,48 @@ WORKTREES_DIR = config.get('worktrees_dir', os.path.expanduser("~/projects/aiosW
 PROJECTS = load_projects()
 APPS = load_apps()
 sessions = load_sessions(config)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RCLONE GOOGLE DRIVE SYNC - minimal integration for data backup
+# ═══════════════════════════════════════════════════════════════════════════════
+RCLONE_REMOTE = 'gdrive'
+RCLONE_BACKUP_PATH = 'aio-backup'
+
+def _rclone_configured():
+    """Check if rclone gdrive remote is configured."""
+    r = sp.run(['rclone', 'listremotes'], capture_output=True, text=True) if shutil.which('rclone') else None
+    return r and f'{RCLONE_REMOTE}:' in r.stdout
+
+def _rclone_account():
+    """Get Google account email from Drive API. Returns 'Name <email>' or None."""
+    try:
+        r = sp.run(['rclone', 'config', 'dump'], capture_output=True, text=True)
+        token = json.loads(json.loads(r.stdout).get(RCLONE_REMOTE, {}).get('token', '{}')).get('access_token')
+        if not token: return None
+        import urllib.request
+        req = urllib.request.Request('https://www.googleapis.com/drive/v3/about?fields=user', headers={'Authorization': f'Bearer {token}'})
+        user = json.loads(urllib.request.urlopen(req, timeout=5).read()).get('user', {})
+        return f"{user.get('displayName', '')} <{user.get('emailAddress', 'unknown')}>"
+    except: return None
+
+_RCLONE_ERR_FILE = Path(DATA_DIR) / '.rclone_err'
+
+def _rclone_sync_data(wait=False):
+    """Sync data folder to Google Drive. Returns (started, success) if wait, else (started, None)."""
+    if not _rclone_configured(): return False, None
+    def _sync():
+        r = sp.run(['rclone', 'sync', str(Path(SCRIPT_DIR) / 'data'), f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}', '-q'], capture_output=True, text=True)
+        _RCLONE_ERR_FILE.write_text(r.stderr) if r.returncode != 0 else _RCLONE_ERR_FILE.unlink(missing_ok=True)
+        return r.returncode == 0
+    if wait: return True, _sync()
+    __import__('threading').Thread(target=_sync, daemon=True).start()
+    return True, None
+
+def _rclone_pull_notes():
+    """Pull newer notes from Google Drive (non-destructive, only adds/updates)."""
+    if not _rclone_configured(): return False
+    sp.run(['rclone', 'copy', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/notebook', str(Path(SCRIPT_DIR) / 'data' / 'notebook'), '-u', '-q'], capture_output=True)
+    return True
 
 _TMUX_CONF = os.path.expanduser('~/.tmux.conf')
 _AIO_MARKER = '# aio-managed-config'
@@ -2289,12 +2331,11 @@ MANAGEMENT:
   aio killall         Kill all tmux sessions
   aio cleanup         Delete all worktrees
   aio prompt [name]   Edit prompts (feat, fix, bug, auto, del)
-ADD/REMOVE (projects & commands share same list):
-  aio add             Add current dir as project
-  aio add ~/code/foo  Add path as project
-  aio add mycmd "cmd" Add command with shell string
-  aio remove 0        Remove item #0
-  aio remove mycmd    Remove command by name
+NOTES & BACKUP:
+  aio note            List notes, select to view
+  aio note "text"     Create note (first line = name)
+  aio gdrive          Show backup status (auto-syncs)
+  aio gdrive login    Setup Google Drive backup
 Run 'aio help' for all commands""")
     list_all_items(show_help=False)
 elif arg == 'help' or arg == '--help' or arg == '-h':
@@ -2325,6 +2366,12 @@ GIT: push [file] [msg] | pull [-y] | revert [N] | setup <url>
 
 CONFIG: install | deps | update | font [+|-|N] | config [key] [val]
   claude_prefix="Ultrathink. "  (auto-prefixes Claude prompts)
+
+NOTES: note [content] - markdown notes, first line becomes name
+  note          List & select  |  note ls       List only
+  note "hello"  Create note    |  auto-syncs to Google Drive
+
+BACKUP: gdrive [login] - auto-syncs data/ to Google Drive on note save
 
 FLAGS: -w new-window  -t with-terminal  -y skip-confirm
 DB: ~/.local/share/aios/aio.db  Worktrees: {WORKTREES_DIR}""")
@@ -3720,6 +3767,44 @@ elif arg == 'prompt':
         print(f"✓ Saved to {prompt_file}")
     else:
         print("No changes")
+
+elif arg == 'gdrive':
+    # Google Drive backup: aio gdrive [login] - auto-syncs on note save
+    if work_dir_arg == 'login':
+        if not shutil.which('rclone'):
+            print("Installing rclone..."); sp.run('curl https://rclone.org/install.sh | sudo bash', shell=True)
+        print(f"Configure remote named '{RCLONE_REMOTE}' as Google Drive:"); sp.run(['rclone', 'config'])
+    elif _rclone_configured():
+        acct = _rclone_account()
+        _ok(f"Logged in: {acct}" if acct else f"Configured ({RCLONE_REMOTE}:)")
+        if _RCLONE_ERR_FILE.exists(): _err(f"Last sync failed:\n{_RCLONE_ERR_FILE.read_text().strip()}")
+    else: _err("Not logged in. Run: aio gdrive login")
+
+elif arg == 'note':
+    # Notes: aio note [content] - first line becomes filename
+    import re
+    NOTEBOOK_DIR = Path(SCRIPT_DIR) / 'data' / 'notebook'
+    NOTEBOOK_DIR.mkdir(parents=True, exist_ok=True)
+    def _note_slug(s): return re.sub(r'[^\w\-]', '', s.split('\n')[0][:40].lower().replace(' ', '-'))[:30] or 'note'
+    def _note_preview(p): return p.read_text().split('\n')[0][:60]
+    content = ' '.join(sys.argv[2:]) if len(sys.argv) > 2 and sys.argv[2] != 'ls' else None
+    if not content:  # List notes
+        _rclone_pull_notes()
+        notes = sorted(NOTEBOOK_DIR.glob('*.md'), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not notes: print("No notes. Create: aio note <content>"); sys.exit(0)
+        for i, n in enumerate(notes): print(f"{i}. {_note_preview(n)}")
+        if work_dir_arg == 'ls': sys.exit(0)
+        choice = input("View #: ").strip()
+        if choice.isdigit() and int(choice) < len(notes): print(f"\n{notes[int(choice)].read_text()}")
+    else:  # Create note
+        content = content if content.strip() else input_box('', 'Note (Ctrl+D save, Ctrl+C cancel)')
+        if content:
+            note_file = NOTEBOOK_DIR / f"{_note_slug(content)}-{datetime.now().strftime('%m%d%H%M')}.md"
+            note_file.write_text(content); print(f"✓ {_note_preview(note_file)}")
+            started, ok = _rclone_sync_data(wait=True)
+            if started: print("☁ Synced" if ok else "☁ Sync failed")
+            else: print("💡 Run 'aio gdrive login' for cloud backup")
+        else: print("Cancelled")
 
 elif arg == 'r' or arg == 'review':
     # Review mode: add reviewer window to existing session
