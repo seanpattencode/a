@@ -785,9 +785,9 @@ def _ghost_spawn(dir_path, sessions_map):
         _, cmd = sessions_map.get(key, (None, None))
         if cmd:
             create_tmux_session(ghost, dir_path, cmd)  # Normal session with splits
-            if key == 'l':  # Claude: pre-type prefix without Enter
+            if key == 'l':  # Claude: pre-type prefix (unified with normal session flow)
                 prefix = config.get('claude_prefix', 'Ultrathink. ')
-                if prefix: sp.run(['tmux', 'send-keys', '-t', ghost, '-l', prefix], capture_output=True)
+                if prefix: sp.Popen([sys.executable, __file__, 'send', ghost, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     try:
         with open(state_file, 'w') as f: json.dump({'dir': dir_path, 'time': time.time()}, f)
     except: pass
