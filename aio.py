@@ -3248,12 +3248,12 @@ elif arg == 'multi':
         config = load_config()
         default_specs = config.get('multi_default', 'l:3')
         agent_specs, _, _ = parse_agent_specs_and_prompt([''] + default_specs.split(), 1)
-        print(f"Using default: {default_specs}  (change with: aio multi set <specs>)")
+        print(f"Using default: {default_specs}  (aio multi set <specs> | {DB_PATH})")
     feat_template = get_prompt('feat', show_location=True) or '{task}'
     if used_default:
         # No task provided - show full feat prompt template for editing
         initial_prompt = feat_template.format(task="<describe task>")
-        prompt = input_box(initial_prompt, f"Prompt (Ctrl+D to run, Ctrl+C to cancel) | Config: {DB_PATH}")
+        prompt = input_box(initial_prompt, "Prompt (Ctrl+D to run, Ctrl+C to cancel)")
         if prompt is None: sys.exit(0)  # Ctrl+C cancellation
         prompt = prompt.strip()
         if not prompt: sys.exit(1)
