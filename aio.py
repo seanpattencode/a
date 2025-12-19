@@ -408,10 +408,10 @@ def init_database():
                 conn.execute("INSERT INTO config VALUES ('gemini_prompt', ?)", (default_prompt,))
                 conn.execute("INSERT INTO config VALUES ('worktrees_dir', ?)",
                            (os.path.expanduser("~/projects/aiosWorktrees"),))
-                conn.execute("INSERT INTO config VALUES ('multi_default', 'c:3')")
+                conn.execute("INSERT INTO config VALUES ('multi_default', 'l:3')")
 
             # Ensure multi_default exists for existing users
-            conn.execute("INSERT OR IGNORE INTO config VALUES ('multi_default', 'c:3')")
+            conn.execute("INSERT OR IGNORE INTO config VALUES ('multi_default', 'l:3')")
 
             # Claude prefix for extended thinking (Ultrathink. increases thinking budget)
             conn.execute("INSERT OR IGNORE INTO config VALUES ('claude_prefix', 'Ultrathink. ')")
@@ -3246,14 +3246,14 @@ elif arg == 'multi':
     if not agent_specs:
         # Use stored default instead of prompting
         config = load_config()
-        default_specs = config.get('multi_default', 'c:3')
+        default_specs = config.get('multi_default', 'l:3')
         agent_specs, _, _ = parse_agent_specs_and_prompt([''] + default_specs.split(), 1)
         print(f"Using default: {default_specs}  (change with: aio multi set <specs>)")
     feat_template = get_prompt('feat', show_location=True) or '{task}'
     if used_default:
         # No task provided - show full feat prompt template for editing
         initial_prompt = feat_template.format(task="<describe task>")
-        prompt = input_box(initial_prompt, "Prompt (Ctrl+D to run, Ctrl+C to cancel)")
+        prompt = input_box(initial_prompt, f"Prompt (Ctrl+D to run, Ctrl+C to cancel) | Config: {DB_PATH}")
         if prompt is None: sys.exit(0)  # Ctrl+C cancellation
         prompt = prompt.strip()
         if not prompt: sys.exit(1)
