@@ -850,6 +850,15 @@ def _rclone_pull_notes():
     sp.run(['rclone', 'copy', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/notebook', str(Path(SCRIPT_DIR) / 'data' / 'notebook'), '-u', '-q'], capture_output=True)
     return True
 
+_AGENT_DIRS = {'claude': Path.home()/'.claude', 'codex': Path.home()/'.codex', 'gemini': Path.home()/'.gemini'}
+
+def _rclone_sync_agents(wait=False):
+    """Backup claude/codex/gemini configs to Google Drive."""
+    if not _rclone_configured(): return False, None
+    def _sync(): return all(sp.run(['rclone', 'copy', str(p), f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/agents/{n}', '-u', '-q'], capture_output=True).returncode == 0 for n, p in _AGENT_DIRS.items() if p.exists())
+    if wait: return True, _sync()
+    __import__('threading').Thread(target=_sync, daemon=True).start(); return True, None
+
 _TMUX_CONF = os.path.expanduser('~/.tmux.conf')
 _AIO_MARKER = '# aio-managed-config'
 
@@ -4094,6 +4103,13 @@ elif arg == 'gdrive':
         if _RCLONE_ERR_FILE.exists(): _err(f"Last sync failed:\n{_RCLONE_ERR_FILE.read_text().strip()}")
         print("Run 'aio gdrive logout' to switch accounts")
     else: _err("Not logged in. Run: aio gdrive login")
+
+elif arg == 'sync':
+    # Sync to gdrive: aio sync [agents|data|all]
+    what = work_dir_arg or 'all'
+    if not _rclone_configured(): _die("Not logged in. Run: aio gdrive login")
+    if what in ('agents', 'all'): _rclone_sync_agents(); print("☁ Syncing agents: ~/.claude ~/.codex ~/.gemini")
+    if what in ('data', 'all'): _rclone_sync_data(); print(f"☁ Syncing data: {SCRIPT_DIR}/data")
 
 elif arg == 'note':
     # Notes: aio note [#|content] - number opens note, text creates note
