@@ -2,7 +2,7 @@ import sys, asyncio, os, pty, subprocess; from aiohttp import web
 sys.path.extend(['/home/seanpatten/projects/AIOS', '/home/seanpatten/projects/AIOS/core'])
 
 async def page(r): return web.FileResponse('templates/index.html') # Serve Main UI
-async def run(r): d=await r.json(); return web.json_response({'out': subprocess.getoutput(d['cmd'])}) # Universal Command Runner
+async def run(r): d=await r.json(); return web.json_response({'out': subprocess.getoutput(f"source ~/.bashrc 2>/dev/null && {d['cmd']}")}) # Universal Command Runner
 
 async def term(r):
     ws = web.WebSocketResponse(); await ws.prepare(r); m, s = pty.openpty()

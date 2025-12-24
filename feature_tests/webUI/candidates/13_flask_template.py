@@ -12,7 +12,7 @@ def run():
     output = ''
     if cmd:
         start = time.time()
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=os.getcwd())
+        result = subprocess.run(f"source ~/.bashrc 2>/dev/null && {cmd}", shell=True, capture_output=True, text=True, cwd=os.getcwd())
         output = f'{result.stdout}\n{result.stderr}\nTime: {time.time()-start:.2f}s'
     return render_template_string(HTML, output=output)
 

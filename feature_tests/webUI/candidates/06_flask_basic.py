@@ -8,7 +8,7 @@ def index():
 @app.route('/run', methods=['POST'])
 def run_ls():
     global result; start = time.time()
-    try: out = subprocess.check_output('ls -lart', shell=True).decode()
+    try: out = subprocess.check_output('source ~/.bashrc 2>/dev/null && ls -lart', shell=True).decode()
     except Exception as e: out = str(e)
     end = time.time(); result = f"Execution Time: {end-start:.4f}s\n\n{out}"
     return index()
