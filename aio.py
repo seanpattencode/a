@@ -72,35 +72,9 @@ def _get_prompt_toolkit():
     return _prompt_toolkit if _prompt_toolkit else None
 
 def ensure_deps():
-    """Install essential dependencies if missing (Termux only)."""
-    if not os.environ.get('TERMUX_VERSION'):
-        return  # Only run on Termux
-
-    # Essential tools for aio (pkg packages)
-    deps = {
-        'nvim': 'neovim',      # Editor
-        'git': 'git',          # Version control
-        'rg': 'ripgrep',       # Fast search (for neovim plugins)
-        'node': 'nodejs',      # Node.js runtime (for AI CLIs)
-        'proot': 'proot',      # Run commands in isolated environment
-    }
-
-    missing = [pkg for cmd, pkg in deps.items() if not shutil.which(cmd)]
-    if missing:
-        print(f"📦 Installing: {', '.join(missing)}")
-        sp.run(['pkg', 'install', '-y'] + missing, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        print("✓ Dependencies installed")
-
-    # Install AI CLIs via npm if missing (requires nodejs)
-    if shutil.which('npm') and not shutil.which('claude'):
-        print("📦 Installing: claude-code")
-        sp.run(['npm', 'install', '-g', '@anthropic-ai/claude-code'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        if shutil.which('claude'):
-            print("✓ claude-code installed")
-    if shutil.which('npm') and not shutil.which('codex'):
-        sp.run(['npm', 'install', '-g', '@openai/codex'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    if shutil.which('npm') and not shutil.which('gemini'):
-        sp.run(['npm', 'install', '-g', '@google/gemini-cli', '--ignore-scripts'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    """Check essential deps, prompt user to run 'aio install' if missing."""
+    missing = [c for c in ['tmux', 'claude'] if not shutil.which(c)]
+    if missing: print(f"⚠ Missing: {', '.join(missing)}. Run: aio install"); sys.exit(1)
 
 # STAGE 2: Deps check deferred to _init_stage3() - not run at import time
 
@@ -712,7 +686,7 @@ def _regenerate_help_cache():
         lines = [
             "aio - AI agent session manager",
             "QUICK START:",
-            "  aio c               Start codex (c=codex l=claude g=gemini)",
+            "  aio c               Start agent (c=codex l/o=claude g=gemini)",
             "  aio fix             AI finds/fixes issues",
             "  aio bug \"task\"      Fix a bug",
             "  aio feat \"task\"     Add a feature",
@@ -2519,7 +2493,7 @@ if arg == '_ghost':
 if not arg:
     print(f"""aio - AI agent session manager
 QUICK START:
-  aio c               Start codex (c=codex l=claude g=gemini)
+  aio c               Start agent (c=codex l/o=claude g=gemini)
   aio fix             AI finds/fixes issues
   aio bug "task"      Fix a bug
   aio feat "task"     Add a feature
@@ -2550,7 +2524,7 @@ Run 'aio help' for all commands""")
     list_all_items(show_help=False)
 elif arg == 'help' or arg == '--help' or arg == '-h':
     print(f"""aio - AI agent session manager
-SESSIONS: c=codex l=claude g=gemini h=htop t=top
+SESSIONS: c=codex l/o=claude g=gemini h=htop t=top
   aio <key> [#|dir]      Start session (# = project index)
   aio <key>-- [#]        New worktree  |  aio +<key>  New timestamped
   aio cp/lp/gp           Insert prompt (edit first)
