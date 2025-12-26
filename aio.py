@@ -3999,34 +3999,8 @@ elif arg == 'attach':
     print("No session found")
 
 elif arg == 'killall':
-    # Kill all tmux sessions (except current if inside tmux)
-    sessions_out = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True)
-    if sessions_out.returncode != 0:
-        print("No tmux sessions running"); sys.exit(0)
-    all_sessions = [s for s in sessions_out.stdout.strip().split('\n') if s]
-    if not all_sessions:
-        print("No tmux sessions running"); sys.exit(0)
-
-    current = os.environ.get('TMUX', '').split(',')[0].split('/')[-1] if 'TMUX' in os.environ else None
-    if current:
-        # Get current session name
-        current = sp.run(['tmux', 'display-message', '-p', '#{session_name}'], capture_output=True, text=True).stdout.strip()
-        to_kill = [s for s in all_sessions if s != current]
-        msg = f"Kill {len(to_kill)} sessions (keeping '{current}')?"
-    else:
-        to_kill = all_sessions
-        msg = f"Kill all {len(to_kill)} tmux sessions?"
-
-    if not to_kill:
-        print("No other sessions to kill"); sys.exit(0)
-
-    print(f"Sessions to kill: {', '.join(to_kill)}")
-    if input(f"{msg} (y/n): ").strip().lower() in ['y', 'yes']:
-        for s in to_kill:
-            sp.run(['tmux', 'kill-session', '-t', s], capture_output=True)
-        print(f"✓ Killed {len(to_kill)} sessions")
-    else:
-        print("Cancelled")
+    if input("Kill all tmux sessions? (y/n): ").lower() in ['y', 'yes']:
+        sp.run(['pkill', '-9', 'tmux']); print("✓ Killed all tmux")
 
 elif arg == 'config':
     # View/edit config: aio config [key] [value]
