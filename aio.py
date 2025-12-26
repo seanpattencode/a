@@ -757,6 +757,7 @@ def _ghost_spawn(dir_path, sessions_map):
             for k in ['c', 'l', 'g']: sp.run(['tmux', 'kill-session', '-t', f'{_GHOST_PREFIX}{k}'], capture_output=True)
     except: pass
     # Spawn ghosts - normal sessions with prefix pre-typed (not executed)
+    agent_names = {'c': 'codex', 'l': 'claude', 'g': 'gemini'}
     for key in ['c', 'l', 'g']:
         ghost = f'{_GHOST_PREFIX}{key}'
         if sm.has_session(ghost):
@@ -766,9 +767,8 @@ def _ghost_spawn(dir_path, sessions_map):
         _, cmd = sessions_map.get(key, (None, None))
         if cmd:
             create_tmux_session(ghost, dir_path, cmd)  # Normal session with splits
-            if key == 'l':  # Claude: pre-type prefix (unified with normal session flow)
-                prefix = config.get('claude_prefix', 'Ultrathink. ')
-                if prefix: sp.Popen([sys.executable, __file__, 'send', ghost, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            prefix = get_agent_prefix(agent_names[key], dir_path)
+            if prefix: sp.Popen([sys.executable, __file__, 'send', ghost, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     try:
         with open(state_file, 'w') as f: json.dump({'dir': dir_path, 'time': time.time()}, f)
     except: pass
@@ -1555,16 +1555,16 @@ def is_claude_session(session_name):
     """Check if a session is a Claude session (l, lp, o keys map to claude)."""
     return 'claude' in session_name.lower()
 
-def claude_prefix_prompt(prompt, is_claude):
-    """Add Claude prefix (from DB config 'claude_prefix') to prompts for Claude sessions.
+def get_agent_prefix(agent, work_dir=None):
+    """Get prefix to pre-type for agent (Ultrathink for claude + AGENTS.md for all)."""
+    prefix = config.get('claude_prefix', 'Ultrathink. ') if 'claude' in agent else ''
+    agents = Path(work_dir or os.getcwd()) / 'AGENTS.md'
+    return prefix + (agents.read_text().strip() + ' ' if agents.exists() else '')
 
-    Default prefix 'Ultrathink. ' increases Claude's thinking budget.
-    Change via: aio config claude_prefix "your prefix"
-    """
-    prefix = config.get('claude_prefix', 'Ultrathink. ')
-    if is_claude and prefix and not prompt.startswith(prefix.strip()):
-        return prefix + prompt
-    return prompt
+def enhance_prompt(prompt, agent='', work_dir=None):
+    """Add agent prefix and AGENTS.md to prompts."""
+    prefix = get_agent_prefix(agent, work_dir)
+    return (prefix if prefix and not prompt.startswith(prefix.strip()) else '') + prompt
 
 def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None, wait_for_ready=True, send_enter=True):
     """Send a prompt to a tmux session.
@@ -1600,7 +1600,7 @@ def send_prompt_to_session(session_name, prompt, wait_for_completion=False, time
             print(" (timeout, sending anyway)")
 
     # Add Ultrathink. prefix for Claude sessions (increases thinking budget)
-    prompt = claude_prefix_prompt(prompt, is_claude_session(session_name))
+    prompt = enhance_prompt(prompt, session_name)
 
     # Send the prompt
     # Use session manager to send keys
@@ -2601,8 +2601,7 @@ elif arg in ('fix', 'bug', 'feat', 'auto', 'del'):
     agent_name, cmd = sessions[agent]
     session_name = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"
     print(f"📝 {arg.upper()} [{agent_name}]: {task[:50]}{'...' if len(task) > 50 else ''}")
-    # Add Ultrathink. prefix for Claude agents (increases thinking budget)
-    prompt = claude_prefix_prompt(prompt, agent_name == 'claude')
+    prompt = enhance_prompt(prompt, agent_name)
     create_tmux_session(session_name, os.getcwd(), f"{cmd} {shlex.quote(prompt)}")
     launch_in_new_window(session_name) if 'TMUX' in os.environ else os.execvp(sm.attach(session_name)[0], sm.attach(session_name))
 elif arg == 'install':
@@ -3301,8 +3300,7 @@ elif arg == 'multi':
             signal_name = f"{session_name}-{window_name}"
             # Fallback 1: Signal on agent exit (handles crashes, user quit, completion)
             exit_signal = f'; tmux wait-for -S {signal_name}'
-            # Add Ultrathink. prefix for Claude agents (increases thinking budget)
-            agent_prompt = claude_prefix_prompt(prompt, base_name == 'claude')
+            agent_prompt = enhance_prompt(prompt, base_name, wt_path)
             escaped_agent_prompt = shlex.quote(agent_prompt)
             full_cmd = f'{base_cmd} {escaped_agent_prompt}{exit_signal}'
             if first_window:
@@ -3334,7 +3332,7 @@ elif arg == 'multi':
     prompt_template = get_prompt('reviewer', show_location=True) or "Review {DIRS} for: {TASK}"
     REVIEWER_PROMPT = prompt_template.format(TASK=prompt, AGENTS=agents_str, DIRS=dirs_str)
     # Add Ultrathink. prefix for Claude reviewer (increases thinking budget)
-    REVIEWER_PROMPT = claude_prefix_prompt(REVIEWER_PROMPT, True)
+    REVIEWER_PROMPT = enhance_prompt(REVIEWER_PROMPT, 'claude')
 
     # Add reviewer window (event-driven: waits for all agent signals, then auto-starts)
     # Review runs in candidates/ folder so it can see all candidate dirs
@@ -3507,7 +3505,7 @@ When done, create DONE.md with:
 
             # Signal setup: send signal after command completes (simpler and more reliable than trap)
             signal_name = f"{session_name}-{window_name}"
-            agent_prompt = claude_prefix_prompt(overnight_prompt, base_name == 'claude')
+            agent_prompt = enhance_prompt(overnight_prompt, base_name, wt_path)
             escaped_agent_prompt = shlex.quote(agent_prompt)
             # Run command then signal completion - no trap needed, works reliably
             full_cmd = f'{base_cmd} {escaped_agent_prompt}; tmux wait-for -S {signal_name}'
@@ -3652,7 +3650,7 @@ cd [winner_dir]
 Say REVIEW COMPLETE when done."""
 
     wait_cmds = '; '.join(f'echo "  ⏳ {w}..."; tmux wait-for {s}; echo "  ✅ {w}"' for w, _, _, s in launched)
-    review_prompt_escaped = shlex.quote(claude_prefix_prompt(review_prompt, True))
+    review_prompt_escaped = shlex.quote(enhance_prompt(review_prompt, 'claude'))
     wait_script = f'''echo "🌙 Overnight Review - Waiting for agents..."
 echo ""
 {wait_cmds}
@@ -3875,8 +3873,7 @@ elif arg == 'all':
                     projects_using_local.append(project_name)
 
                 # Construct full command with prompt baked in (like lpp/gpp/cpp)
-                # Add Ultrathink. prefix for Claude agents (increases thinking budget)
-                agent_prompt = claude_prefix_prompt(prompt, base_name == 'claude')
+                agent_prompt = enhance_prompt(prompt, base_name, worktree_path)
                 escaped_agent_prompt = shlex.quote(agent_prompt)
                 full_cmd = f'{base_cmd} {escaped_agent_prompt}'
 
@@ -4204,7 +4201,7 @@ elif arg == 'r' or arg == 'review':
     prompt_template = get_prompt('reviewer', show_location=True) or "Review the code in {DIRS} for task: {TASK}"
     REVIEWER_PROMPT = prompt_template.format(TASK=task, AGENTS=agents, DIRS=dirs)
     # Add Ultrathink. prefix for Claude reviewer (increases thinking budget)
-    REVIEWER_PROMPT = claude_prefix_prompt(REVIEWER_PROMPT, True)
+    REVIEWER_PROMPT = enhance_prompt(REVIEWER_PROMPT, 'claude')
     print(f"📋 Reviewing: {task[:60]}...")
     print(f"   Agents: {agents} | Dirs: {dirs}")
 
@@ -5106,11 +5103,10 @@ elif arg.endswith('++') and not arg.startswith('w'):
             env = get_noninteractive_git_env()
             create_tmux_session(session_name, worktree_path, cmd, env=env, capture_output=False)
 
-            # For Claude sessions, send the prefix in background (user can continue typing)
-            if key in ('l', 'o'):
-                prefix = config.get('claude_prefix', 'Ultrathink. ')
-                if prefix:
-                    sp.Popen([sys.executable, __file__, 'send', session_name, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            # Send agent prefix in background (user can continue typing)
+            prefix = get_agent_prefix(base_name, worktree_path)
+            if prefix:
+                sp.Popen([sys.executable, __file__, 'send', session_name, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
             if new_window:
                 launch_in_new_window(session_name)
@@ -5154,14 +5150,12 @@ else:
 
     # If inside tmux and arg is simple agent key (c/l/g), create pane instead of session
     if 'TMUX' in os.environ and arg in sessions and len(arg) == 1:
-        _, cmd = sessions[arg]
+        agent_name, cmd = sessions[arg]
         sp.run(['tmux', 'split-window', '-bv', '-c', work_dir, cmd])
-        # For Claude sessions, send the prefix to the new pane
-        if arg in ('l', 'o'):
+        prefix = get_agent_prefix(agent_name, work_dir)
+        if prefix:
             time.sleep(0.5)  # Wait for pane to initialize
-            prefix = config.get('claude_prefix', 'Ultrathink. ')
-            if prefix:
-                sp.run(['tmux', 'send-keys', '-t', '!', '-l', prefix])
+            sp.run(['tmux', 'send-keys', '-t', '!', '-l', prefix])
         sys.exit(0)
 
     # Try directory-based session logic first
@@ -5204,9 +5198,6 @@ else:
         if sys.argv[i] not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']:
             prompt_parts.append(sys.argv[i])
 
-    # Check if this is a Claude session (l, lp, o)
-    is_claude = arg in ('l', 'lp', 'o') or (session_name and 'claude' in session_name.lower())
-
     if prompt_parts:
         # Custom prompt provided - spawn aio send in background (non-blocking)
         prompt = ' '.join(prompt_parts)
@@ -5222,9 +5213,10 @@ else:
         if default_prompt:
             print(f"📝 Prompt queued (inserting when agent ready)")
             sp.Popen([sys.executable, __file__, 'send', session_name, default_prompt, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    elif is_claude:
-        # Claude session without prompt - insert just the prefix (user can continue typing)
-        prefix = config.get('claude_prefix', 'Ultrathink. ')
+    elif arg in sessions:
+        # Session without prompt - insert agent prefix (user can continue typing)
+        agent_name = sessions[arg][0]
+        prefix = get_agent_prefix(agent_name, work_dir)
         if prefix:
             sp.Popen([sys.executable, __file__, 'send', session_name, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
