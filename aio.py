@@ -3935,6 +3935,12 @@ elif arg == 'all':
     print(f"\n✓ Portfolio operation complete! All agents launched {mode_msg}.")
     if not sequential:
         print(f"💤 Good time to sleep/step away! Agents working overnight.")
+elif arg == 'dash':
+    sn = 'dash'
+    if not sm.has_session(sn):
+        sp.run(['tmux', 'new-session', '-d', '-s', sn, '-c', work_dir])
+        sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', work_dir])
+    os.execvp('tmux', ['tmux', 'attach', '-t', sn] if 'TMUX' not in os.environ else ['tmux', 'switch-client', '-t', sn])
 elif arg == 'jobs':
     # Check for --running flag
     running_only = '--running' in sys.argv or '-r' in sys.argv
