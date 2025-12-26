@@ -686,7 +686,8 @@ def _regenerate_help_cache():
         lines = [
             "aio - AI agent session manager",
             "QUICK START:",
-            "  aio c               Start agent (c=codex l/o=claude g=gemini)",
+            "  aio o               Start agent (o/l=claude c=codex g=gemini)",
+            "  aio dash            Dashboard with jobs monitor",
             "  aio fix             AI finds/fixes issues",
             "  aio bug \"task\"      Fix a bug",
             "  aio feat \"task\"     Add a feature",
@@ -2496,6 +2497,7 @@ if not arg:
     print(f"""aio - AI agent session manager
 QUICK START:
   aio c               Start agent (c=codex l/o=claude g=gemini)
+  aio dash            Dashboard with jobs monitor
   aio fix             AI finds/fixes issues
   aio bug "task"      Fix a bug
   aio feat "task"     Add a feature
