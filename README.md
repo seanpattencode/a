@@ -15,6 +15,18 @@ cd aio
 pkg install python
 (python aio.py install, fails if Claude tmux not installed)
 
+#ubuntu install
+(TBA)
+#Windows install
+(TBA)
+#mac isntall
+(TBA)
+
+##Candidate internal rules
+the most complex command should be
+aio push "message"
+there should never be more parameters than 3 as above and one should be custom
+no main parameter should be more than 4 characters ex aio dash not aio dashboard
 
 
 

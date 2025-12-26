@@ -1555,6 +1555,14 @@ def is_claude_session(session_name):
     """Check if a session is a Claude session (l, lp, o keys map to claude)."""
     return 'claude' in session_name.lower()
 
+def is_worktree_merged(path):
+    """Check if worktree has no diff from origin/main and no untracked files."""
+    sp.run(['git', '-C', path, 'fetch', 'origin'], capture_output=True)
+    diff = sp.run(['git', '-C', path, 'diff', 'origin/main'], capture_output=True, text=True)
+    if diff.returncode != 0: return False  # No origin/main, keep worktree
+    untracked = sp.run(['git', '-C', path, 'ls-files', '--others', '--exclude-standard'], capture_output=True, text=True).stdout.strip()
+    return not diff.stdout and not untracked
+
 def get_agent_prefix(agent, work_dir=None):
     """Get prefix to pre-type for agent (Ultrathink for claude + AGENTS.md for all)."""
     prefix = config.get('claude_prefix', 'Ultrathink. ') if 'claude' in agent else ''
@@ -1731,14 +1739,15 @@ def list_jobs(running_only=False):
     # First pass: collect job info with timestamps
     jobs_with_metadata = []
 
-    for job_path in jobs_by_path.keys():
+    for job_path in list(jobs_by_path.keys()):
         # Skip deleted directories
         if not os.path.exists(job_path):
-            # Kill orphaned tmux sessions for deleted directories
-            sessions_in_job = jobs_by_path[job_path]
-            for session in sessions_in_job:
-                sp.run(['tmux', 'kill-session', '-t', session],
-                      capture_output=True)
+            for s in jobs_by_path[job_path]: sp.run(['tmux', 'kill-session', '-t', s], capture_output=True)
+            continue
+        # Auto-cleanup merged worktrees (no diff from main, no untracked, no active session)
+        if job_path.startswith(WORKTREES_DIR) and not jobs_by_path[job_path] and is_worktree_merged(job_path):
+            sp.run(['git', 'worktree', 'remove', '--force', job_path], capture_output=True)
+            print(f"🧹 Auto-cleaned merged worktree: {os.path.basename(job_path)}")
             continue
 
         sessions_in_job = jobs_by_path[job_path]
@@ -1841,8 +1850,15 @@ def list_jobs(running_only=False):
         # Add worktree indicator and creation time
         type_indicator = " [worktree]" if is_worktree else ""
         time_indicator = f" ({creation_display})" if creation_display else ""
+        # Get diff stats
+        import re
+        diff_stat = sp.run(['git', '-C', job_path, 'diff', 'origin/main', '--shortstat'], capture_output=True, text=True)
+        diff_info = ""
+        if diff_stat.returncode == 0 and diff_stat.stdout.strip():
+            m = re.search(r'(\d+) insertion.*?(\d+) deletion|(\d+) insertion|(\d+) deletion', diff_stat.stdout)
+            if m: diff_info = f" ({'+' + (m.group(1) or m.group(3) or '0')}/{'-' + (m.group(2) or m.group(4) or '0')} vs origin)"
 
-        print(f"  {status_display}  {job_name}{type_indicator}{time_indicator}")
+        print(f"  {status_display}  {job_name}{type_indicator}{time_indicator}{diff_info}")
         print(f"           {session_info}")
         print(f"           {job_path}")
 
@@ -3939,7 +3955,7 @@ elif arg == 'dash':
     sn = 'dash'
     if not sm.has_session(sn):
         sp.run(['tmux', 'new-session', '-d', '-s', sn, '-c', work_dir])
-        sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', work_dir])
+        sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', work_dir, 'bash -c "aio jobs; exec bash"'])
     os.execvp('tmux', ['tmux', 'attach', '-t', sn] if 'TMUX' not in os.environ else ['tmux', 'switch-client', '-t', sn])
 elif arg == 'jobs':
     # Check for --running flag
