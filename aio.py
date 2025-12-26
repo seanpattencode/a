@@ -1870,7 +1870,7 @@ def list_jobs(running_only=False):
                 diff_info = " (=origin)"
 
         print(f"  {status_display}  {job_name}{type_indicator}{time_indicator}{diff_info}")
-        print(f"           cd {job_path.replace(os.path.expanduser('~'), '~')}")
+        print(f"           aio {job_path.replace(os.path.expanduser('~'), '~')}")
         for s in sessions_in_job: print(f"           tmux attach -t {s}")
         print()
 
@@ -2563,6 +2563,9 @@ BACKUP: gdrive [login] - auto-syncs data/ to Google Drive on note save
 FLAGS: -w new-window  -t with-terminal  -y skip-confirm
 DB: ~/.local/share/aios/aio.db  Worktrees: {WORKTREES_DIR}""")
     list_all_items(show_help=False)
+elif arg == 'dir' or (arg and os.path.isdir(os.path.expanduser(arg))) or (arg and arg.startswith('/projects/') and os.path.isdir(os.path.expanduser('~' + arg))):
+    d = os.path.expanduser('~' + arg) if arg.startswith('/projects/') else (os.path.expanduser(arg) if arg != 'dir' else os.getcwd())
+    print(f"📂 {d}", flush=True); sp.run(['ls', d]); print(f"cd {d.replace(os.path.expanduser('~'), '~')}")
 elif arg == 'diff':
     import re; sp.run(['git', 'fetch', 'origin'], capture_output=True)
     cwd = os.getcwd()
