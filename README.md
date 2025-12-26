@@ -14,6 +14,8 @@ gh repo clone seanpattencode/aio
 cd aio
 pkg install python
 (python aio.py install, fails if Claude tmux not installed)
+pkg install nodejs
+npm install -g @anthropic-ai/claude-code
 
 #ubuntu install
 (TBA)
