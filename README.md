@@ -3,26 +3,11 @@
 Ultra-fast, event-driven task execution system with git-inspired design, strict performance enforcement, and automatic updates.
 
 
-This is a work in progress. The below may not be accurate.
+## Install
 
-Recommended install on Android:
-Install termux (Fdroid recommended)
-pkg install git
-pkg install gh
-gh auth login
-gh repo clone seanpattencode/aio
-cd aio
-pkg install python
-(python aio.py install, fails if Claude tmux not installed)
-pkg install nodejs
-npm install -g @anthropic-ai/claude-code
+**Termux (Android):** `pkg install git python && git clone https://github.com/seanpattencode/aio && cd aio && python aio.py install`
 
-#ubuntu install
-(TBA)
-#Windows install
-(TBA)
-#mac isntall
-(TBA)
+**Ubuntu/Mac/Windows:** Clone repo, run `python aio.py install` (installs all deps automatically)
 
 ##Candidate internal rules
 the most complex command should be

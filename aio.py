@@ -71,8 +71,10 @@ def _get_prompt_toolkit():
             _prompt_toolkit = False
     return _prompt_toolkit if _prompt_toolkit else None
 
-def ensure_deps():
+def ensure_deps(skip_check=False):
     """Check essential deps, prompt user to run 'aio install' if missing."""
+    if skip_check:
+        return
     missing = [c for c in ['tmux', 'claude'] if not shutil.which(c)]
     if missing: print(f"⚠ Missing: {', '.join(missing)}. Run: aio install"); sys.exit(1)
 
@@ -619,7 +621,7 @@ PROJECTS = []
 APPS = []
 sessions = {}
 
-def _init_stage3():
+def _init_stage3(skip_deps_check=False):
     """Initialize heavy engine: database, config, background tasks. Called once on first use."""
     global _stage3_initialized, config, DEFAULT_PROMPT, CLAUDE_PROMPT, CODEX_PROMPT
     global GEMINI_PROMPT, CLAUDE_PREFIX, WORK_DIR, WORKTREES_DIR, PROJECTS, APPS, sessions
@@ -655,7 +657,7 @@ def _init_stage3():
     sessions = load_sessions(config)
 
     # Background tasks (forked processes, non-blocking)
-    ensure_deps()  # Check/install deps on Termux
+    ensure_deps(skip_check=skip_deps_check)  # Check/install deps (skip for install/deps commands)
     _maybe_update_tmux()  # Update tmux if needed
     try:
         check_for_updates_warning()  # Check git for updates
@@ -2181,7 +2183,8 @@ if _stage2_ms > _STAGE2_MAX_MS:
 
 # Initialize Stage 3 (heavy engine) - this is where the ~200ms cost goes
 # Called once, caches result for subsequent calls
-_init_stage3()
+# Skip deps check for install/deps commands so they can bootstrap without blocking
+_init_stage3(skip_deps_check=(arg in ('install', 'deps')))
 
 # Show update warning if available (non-blocking check was done at import time)
 show_update_warning()
