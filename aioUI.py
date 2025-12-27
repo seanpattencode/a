@@ -1,4 +1,4 @@
-import sys, asyncio, os, pty, subprocess; from aiohttp import web
+import sys, asyncio, os, pty, subprocess, webbrowser; from aiohttp import web
 
 HTML = '''<!doctype html>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.min.css">
@@ -22,4 +22,4 @@ async def term(r):
     return ws
 
 app = web.Application(); app.add_routes([web.get('/', page), web.post('/exec', run), web.get('/ws', term)])
-if __name__ == '__main__': web.run_app(app, port=int(sys.argv[1]) if len(sys.argv)>1 else 8080)
+if __name__ == '__main__': p=int(sys.argv[1]) if len(sys.argv)>1 else 8080; webbrowser.open(f'http://localhost:{p}'); web.run_app(app, port=p)
