@@ -237,30 +237,15 @@ def show_update_warning():
     """Show warning if updates are available (called at startup)."""
     marker = os.path.join(os.path.expanduser('~/.local/share/aios'), '.update_available')
     if os.path.exists(marker):
-        result = sp.run(['git', '-C', SCRIPT_DIR, 'status', '-uno'], capture_output=True, text=True)
-        if 'Your branch is behind' in result.stdout: print("⚠️  Update available! Run 'aio update' to get latest version")
+        # Verify still behind by checking status
+        result = sp.run(['git', '-C', SCRIPT_DIR, 'status', '-uno'],
+                       capture_output=True, text=True)
+        if 'Your branch is behind' in result.stdout:
+            print("⚠️  Update available! Run 'aio update' to get latest version")
         else:
+            # No longer behind, remove marker
             try: os.remove(marker)
             except: pass
-
-# Git helpers for common operations
-def _git(path, *args, **kw): return sp.run(['git', '-C', path] + list(args), capture_output=True, text=True, **kw)
-def _git_main(path):
-    r = _git(path, 'symbolic-ref', 'refs/remotes/origin/HEAD')
-    return r.stdout.strip().replace('refs/remotes/origin/', '') if r.returncode == 0 else ('main' if _git(path, 'rev-parse', '--verify', 'main').returncode == 0 else 'master')
-def _git_push(path, branch, env, force=False):
-    r = _git(path, 'push', '--force' if force else '', 'origin', branch, env=env) if force else _git(path, 'push', 'origin', branch, env=env)
-    if r.returncode == 0: print(f"✓ Pushed to {branch}"); return True
-    err = r.stderr.strip() or r.stdout.strip()
-    if 'rejected' in err and 'non-fast-forward' in err and input("⚠️  Force push? (y/n): ").strip().lower() in ['y', 'yes']:
-        _git(path, 'fetch', 'origin', env=env); return _git_push(path, branch, env, force=True)
-    print(f"✗ Push failed: {err}"); return False
-def _git_commit(path, msg, target=None):
-    _git(path, 'add', target) if target else _git(path, 'add', '-A')
-    r = _git(path, 'commit', '-m', msg)
-    if r.returncode == 0: print(f"✓ Committed: {msg}"); return True
-    if 'nothing to commit' in r.stdout: print("ℹ No changes"); return None
-    print(f"✗ Commit failed: {r.stderr.strip() or r.stdout.strip()}"); return False
 
 # STAGE 2: Update check deferred to _init_stage3() - not run at import time
 
@@ -964,56 +949,294 @@ def detect_terminal():
             return term
     return None
 
-# Font size controller - data-driven approach
-import re as _re
-_FONT_CFG = {'termux': {'env': 'TERMUX_VERSION', 'help': '📱 Pinch zoom | Ctrl+Alt++/-'},
-    'kitty': {'env': 'KITTY_WINDOW_ID', 'help': 'Ctrl+Shift+= / Ctrl+Shift+-'},
-    'alacritty': {'env': 'ALACRITTY_WINDOW_ID', 'help': 'Ctrl+= / Ctrl+-'},
-    'gnome': {'env': ['GNOME_TERMINAL_SCREEN', 'VTE_VERSION'], 'req': 'gsettings', 'help': 'Ctrl+Shift++ / Ctrl+-'}}
-def _font_detect():
-    for n, c in _FONT_CFG.items():
-        envs = c['env'] if isinstance(c['env'], list) else [c['env']]
-        if any(os.environ.get(e) for e in envs) and (not c.get('req') or shutil.which(c['req'])): return n, c
-    return None, None
-def _font_get(n, c):
-    if n == 'kitty':
-        r = sp.run(['kitty', '@', 'get-colors'], capture_output=True, text=True)
-        return next((int(float(l.split()[-1])) for l in r.stdout.split('\n') if 'font_size' in l), None) if r.returncode == 0 else None
-    if n == 'gnome':
+# Font size controller - generic architecture with terminal-specific implementations
+class FontController:
+    """Base class for terminal font size control."""
+    name = "unknown"
+
+    @classmethod
+    def detect(cls) -> bool:
+        """Return True if this terminal is detected."""
+        return False
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        """Get current font size, or None if unavailable."""
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        """Set font size. Returns True on success."""
+        return False
+
+    @classmethod
+    def adjust(cls, delta: int) -> bool:
+        """Adjust font size by delta. Returns True on success."""
+        current = cls.get_size()
+        if current is not None:
+            return cls.set_size(current + delta)
+        return False
+
+    @classmethod
+    def show_help(cls):
+        """Show help for manual font adjustment."""
+        print("Font size control not available for this terminal.")
+
+class TermuxFont(FontController):
+    """Termux font controller - provides guidance since no API exists."""
+    name = "termux"
+
+    @classmethod
+    def detect(cls) -> bool:
+        return os.environ.get('TERMUX_VERSION') is not None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        # Termux doesn't expose current font size
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        # No programmatic control available
+        print(f"⚠️  Termux doesn't support programmatic font size control.")
+        cls.show_help()
+        return False
+
+    @classmethod
+    def adjust(cls, delta: int) -> bool:
+        direction = "larger" if delta > 0 else "smaller"
+        print(f"To make text {direction}:")
+        cls.show_help()
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("""
+╔═══════════════════════════════════════════════════════╗
+║  TERMUX FONT SIZE                                     ║
+╠═══════════════════════════════════════════════════════╣
+║  📱 Touch: Pinch to zoom in/out                       ║
+║  ⌨️  Keys:  Ctrl+Alt++ (larger) Ctrl+Alt+- (smaller)  ║
+║  💡 Tip:   Volume keys may also work on some devices  ║
+╚═══════════════════════════════════════════════════════╝""")
+
+class GnomeTerminalFont(FontController):
+    """GNOME Terminal font controller using gsettings."""
+    name = "gnome-terminal"
+
+    @classmethod
+    def detect(cls) -> bool:
+        return (os.environ.get('GNOME_TERMINAL_SCREEN') is not None or
+                os.environ.get('VTE_VERSION') is not None) and shutil.which('gsettings')
+
+    @classmethod
+    def _get_profile(cls) -> str | None:
+        """Get the default profile UUID."""
         try:
-            p = sp.run(['gsettings', 'get', 'org.gnome.Terminal.ProfilesList', 'default'], capture_output=True, text=True).stdout.strip().strip("'")
-            return int(sp.run(['gsettings', 'get', f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{p}/', 'font'], capture_output=True, text=True).stdout.strip().strip("'").split()[-1])
-        except: return None
-    if n == 'alacritty':
-        for p in [os.path.expanduser(x) for x in ['~/.config/alacritty/alacritty.toml', '~/.config/alacritty/alacritty.yml', '~/.alacritty.toml']]:
-            if os.path.exists(p) and (m := _re.search(r'size\s*[=:]\s*(\d+(?:\.\d+)?)', Path(p).read_text())): return int(float(m.group(1)))
+            result = sp.run(['gsettings', 'get', 'org.gnome.Terminal.ProfilesList', 'default'],
+                          capture_output=True, text=True)
+            if result.returncode == 0:
+                return result.stdout.strip().strip("'")
+        except: pass
+        return None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        profile = cls._get_profile()
+        if not profile:
+            return None
+        try:
+            result = sp.run(['gsettings', 'get',
+                           f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{profile}/',
+                           'font'], capture_output=True, text=True)
+            if result.returncode == 0:
+                # Font string like "'Monospace 12'"
+                font = result.stdout.strip().strip("'")
+                size = int(font.split()[-1])
+                return size
+        except: pass
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        profile = cls._get_profile()
+        if not profile:
+            return False
+        try:
+            # Get current font name
+            result = sp.run(['gsettings', 'get',
+                           f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{profile}/',
+                           'font'], capture_output=True, text=True)
+            if result.returncode == 0:
+                font = result.stdout.strip().strip("'")
+                font_name = ' '.join(font.split()[:-1])
+                new_font = f"{font_name} {size}"
+                sp.run(['gsettings', 'set',
+                       f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{profile}/',
+                       'font', new_font], capture_output=True)
+                print(f"✓ Font size set to {size}")
+                return True
+        except: pass
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("GNOME Terminal: Use Ctrl+Shift++ / Ctrl+- or Edit → Preferences → Profiles")
+
+class AlacrittyFont(FontController):
+    """Alacritty font controller using config file."""
+    name = "alacritty"
+    config_paths = [
+        os.path.expanduser("~/.config/alacritty/alacritty.toml"),
+        os.path.expanduser("~/.config/alacritty/alacritty.yml"),
+        os.path.expanduser("~/.alacritty.toml"),
+        os.path.expanduser("~/.alacritty.yml"),
+    ]
+
+    @classmethod
+    def detect(cls) -> bool:
+        return os.environ.get('ALACRITTY_WINDOW_ID') is not None
+
+    @classmethod
+    def _get_config_path(cls) -> str | None:
+        for path in cls.config_paths:
+            if os.path.exists(path):
+                return path
+        return None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        config = cls._get_config_path()
+        if not config:
+            return None
+        try:
+            with open(config) as f:
+                content = f.read()
+            # Simple regex for size in TOML or YAML
+            import re
+            match = re.search(r'size\s*[=:]\s*(\d+(?:\.\d+)?)', content)
+            if match:
+                return int(float(match.group(1)))
+        except: pass
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        config = cls._get_config_path()
+        if not config:
+            # Create default config
+            config = cls.config_paths[0]
+            os.makedirs(os.path.dirname(config), exist_ok=True)
+            with open(config, 'w') as f:
+                f.write(f'[font]\nsize = {size}\n')
+            print(f"✓ Created {config} with font size {size}")
+            return True
+        try:
+            with open(config) as f:
+                content = f.read()
+            import re
+            if re.search(r'size\s*[=:]\s*\d+', content):
+                new_content = re.sub(r'(size\s*[=:]\s*)\d+(?:\.\d+)?', f'\\g<1>{size}', content)
+            else:
+                # Add font size section
+                if config.endswith('.toml'):
+                    new_content = content + f'\n[font]\nsize = {size}\n'
+                else:
+                    new_content = content + f'\nfont:\n  size: {size}\n'
+            with open(config, 'w') as f:
+                f.write(new_content)
+            print(f"✓ Font size set to {size} (Alacritty auto-reloads)")
+            return True
+        except Exception as e:
+            print(f"✗ Failed: {e}")
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("Alacritty: Use Ctrl+= / Ctrl+- or edit ~/.config/alacritty/alacritty.toml")
+
+class KittyFont(FontController):
+    """Kitty font controller using remote control."""
+    name = "kitty"
+
+    @classmethod
+    def detect(cls) -> bool:
+        return os.environ.get('KITTY_WINDOW_ID') is not None
+
+    @classmethod
+    def get_size(cls) -> int | None:
+        try:
+            result = sp.run(['kitty', '@', 'get-colors'], capture_output=True, text=True)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'font_size' in line:
+                        return int(float(line.split()[-1]))
+        except: pass
+        return None
+
+    @classmethod
+    def set_size(cls, size: int) -> bool:
+        try:
+            result = sp.run(['kitty', '@', 'set-font-size', str(size)], capture_output=True)
+            if result.returncode == 0:
+                print(f"✓ Font size set to {size}")
+                return True
+        except: pass
+        return False
+
+    @classmethod
+    def show_help(cls):
+        print("Kitty: Use Ctrl+Shift+= / Ctrl+Shift+- or 'kitty @ set-font-size SIZE'")
+
+# Ordered list of font controllers (checked in order)
+FONT_CONTROLLERS = [TermuxFont, KittyFont, AlacrittyFont, GnomeTerminalFont]
+
+def get_font_controller() -> FontController | None:
+    """Detect and return the appropriate font controller."""
+    for controller in FONT_CONTROLLERS:
+        if controller.detect():
+            return controller
     return None
-def _font_set(n, c, sz):
-    if n == 'termux': print(f"⚠️ Termux: {c['help']}"); return False
-    if n == 'kitty' and sp.run(['kitty', '@', 'set-font-size', str(sz)], capture_output=True).returncode == 0: print(f"✓ Font size set to {sz}"); return True
-    if n == 'gnome':
-        try:
-            p = sp.run(['gsettings', 'get', 'org.gnome.Terminal.ProfilesList', 'default'], capture_output=True, text=True).stdout.strip().strip("'")
-            f = sp.run(['gsettings', 'get', f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{p}/', 'font'], capture_output=True, text=True).stdout.strip().strip("'")
-            sp.run(['gsettings', 'set', f'org.gnome.Terminal.Legacy.Profile:/org/gnome/terminal/legacy/profiles:/:{p}/', 'font', f"{' '.join(f.split()[:-1])} {sz}"], capture_output=True); print(f"✓ Font size set to {sz}"); return True
-        except: return False
-    if n == 'alacritty':
-        cp = next((os.path.expanduser(x) for x in ['~/.config/alacritty/alacritty.toml', '~/.config/alacritty/alacritty.yml'] if os.path.exists(os.path.expanduser(x))), os.path.expanduser('~/.config/alacritty/alacritty.toml'))
-        os.makedirs(os.path.dirname(cp), exist_ok=True)
-        if not os.path.exists(cp): Path(cp).write_text(f'[font]\nsize = {sz}\n'); print(f"✓ Created {cp}"); return True
-        t = Path(cp).read_text(); Path(cp).write_text(_re.sub(r'(size\s*[=:]\s*)\d+(?:\.\d+)?', f'\\g<1>{sz}', t) if _re.search(r'size\s*[=:]\s*\d+', t) else t + f'\n[font]\nsize = {sz}\n'); print(f"✓ Font size set to {sz}"); return True
-    return False
-def handle_font_command(args):
-    n, c = _font_detect()
-    if not n: print("✗ Unknown terminal"); return
-    print(f"Terminal: {n}")
-    if not args: sz = _font_get(n, c); print(f"Current font size: {sz}" if sz else c['help']); return
-    a = args[0]; d = int(args[1]) if len(args) > 1 else 2
-    if a in ['+', 'up', 'bigger'] and (sz := _font_get(n, c)): _font_set(n, c, sz + d)
-    elif a in ['-', 'down', 'smaller'] and (sz := _font_get(n, c)): _font_set(n, c, sz - d)
-    elif a.isdigit(): _font_set(n, c, int(a))
-    elif a == 'help': print(c['help'])
-    else: print("Usage: aio font [+|-|SIZE|help]")
+
+def handle_font_command(args: list):
+    """Handle 'aio font' command."""
+    controller = get_font_controller()
+
+    if not controller:
+        print("✗ Unknown terminal. Supported: Termux, Kitty, Alacritty, GNOME Terminal")
+        return
+
+    print(f"Terminal: {controller.name}")
+
+    if not args:
+        # Show current size or help
+        size = controller.get_size()
+        if size:
+            print(f"Current font size: {size}")
+        else:
+            controller.show_help()
+        return
+
+    arg = args[0]
+
+    if arg == '+' or arg == 'up' or arg == 'bigger':
+        delta = int(args[1]) if len(args) > 1 else 2
+        controller.adjust(delta)
+    elif arg == '-' or arg == 'down' or arg == 'smaller':
+        delta = int(args[1]) if len(args) > 1 else 2
+        controller.adjust(-delta)
+    elif arg.isdigit():
+        controller.set_size(int(arg))
+    elif arg == 'help':
+        controller.show_help()
+    else:
+        print(f"Usage: aio font [+|-|SIZE|help]")
+        print(f"  aio font        Show current size or help")
+        print(f"  aio font +      Increase by 2")
+        print(f"  aio font -      Decrease by 2")
+        print(f"  aio font + 4    Increase by 4")
+        print(f"  aio font 16     Set to size 16")
+        print(f"  aio font help   Show terminal-specific help")
 
 def launch_in_new_window(session_name, terminal=None):
     """Launch tmux session in new terminal window"""
@@ -2066,35 +2289,98 @@ def get_noninteractive_git_env():
     return env
 
 def create_worktree(project_path, session_name, check_only=False):
-    """Create git worktree. Returns (path, used_local) or (auth_ok, fix_cmd) if check_only."""
-    check_only or os.makedirs(WORKTREES_DIR, exist_ok=True)
-    proj_name = os.path.basename(project_path)
-    branch = _git(project_path, 'branch', '--show-current').stdout.strip() or 'main'
-    print(f"{'   Checking auth...' if check_only else '⬇️  Fetching...'}", end='', flush=True)
-    env = get_noninteractive_git_env()
-    r = _git(project_path, 'fetch', 'origin', env=env)
-    if r.returncode == 0:
-        print(" ✓");
-        if check_only: return (True, None)
-        fetch_ok = True
+    """Create git worktree in central ~/projects/aiosWorktrees/
+
+    Args:
+        project_path: Path to the project
+        session_name: Name for the worktree/session
+        check_only: If True, only check authentication, don't create worktree
+
+    Returns:
+        If check_only=True: (auth_succeeded, error_msg)
+        If check_only=False: (worktree_path, used_local_version)
+    """
+    if not check_only:
+        os.makedirs(WORKTREES_DIR, exist_ok=True)
+
+    project_name = os.path.basename(project_path)
+
+    # Get current branch
+    result = sp.run(['git', '-C', project_path, 'branch', '--show-current'],
+                    capture_output=True, text=True)
+    branch = result.stdout.strip() or 'main'
+
+    # Fetch from GitHub to get latest server version
+    if check_only:
+        print(f"   Checking authentication...", end='', flush=True)
     else:
-        err = r.stderr.strip()
-        if any(x in err for x in ['Authentication', 'Username', 'Permission']):
-            print(" ❌")
-            url = _git(project_path, 'remote', 'get-url', 'origin').stdout.strip()
-            fix = f"cd {project_path} && git remote set-url origin {url.replace('https://github.com/', 'git@github.com:')}" if 'https://github.com/' in url else None
-            if check_only: return (False, fix)
-            print(f"⚠️ Using LOCAL (fix: switch to SSH)"); fetch_ok = False
+        print(f"⬇️  Fetching latest from GitHub...", end='', flush=True)
+
+    # Use non-interactive environment to prevent GUI dialogs
+    env = get_noninteractive_git_env()
+    result = sp.run(['git', '-C', project_path, 'fetch', 'origin'],
+                    capture_output=True, text=True, env=env)
+
+    if result.returncode == 0:
+        print(" ✓")
+        if check_only:
+            return (True, None)
+        fetch_succeeded = True
+    else:
+        error_msg = result.stderr.strip()
+        if 'Authentication failed' in error_msg or 'could not read Username' in error_msg or 'Permission denied' in error_msg:
+            print(" ❌ FAILED")
+            # Get current remote URL to provide exact fix command
+            remote_result = sp.run(['git', '-C', project_path, 'remote', 'get-url', 'origin'],
+                                  capture_output=True, text=True)
+            fix_cmd = None
+            if remote_result.returncode == 0 and 'https://github.com/' in remote_result.stdout:
+                # Convert https://github.com/user/repo.git to git@github.com:user/repo.git
+                https_url = remote_result.stdout.strip()
+                ssh_url = https_url.replace('https://github.com/', 'git@github.com:').replace('.git\n', '.git')
+                fix_cmd = f"cd {project_path} && git remote set-url origin {ssh_url}"
+
+            if check_only:
+                return (False, fix_cmd)
+
+            # For normal operation, print error and continue with local
+            print(f"\n⚠️  Authentication failed - will use LOCAL version (may be outdated!)")
+            if fix_cmd:
+                print(f"   Fix: {fix_cmd}")
+            else:
+                print(f"   Fix: Convert to SSH: git remote set-url origin git@github.com:USER/REPO.git")
+            fetch_succeeded = False
         else:
-            print(f" ⚠️");
-            if check_only: return (True, None)
-            fetch_ok = True
-    if check_only: return (True, None)
-    wt_name, wt_path = f"{proj_name}-{session_name}", os.path.join(WORKTREES_DIR, f"{proj_name}-{session_name}")
-    src = f"origin/{branch}" if fetch_ok else branch
-    r = _git(project_path, 'worktree', 'add', '-b', f"wt-{wt_name}", wt_path, src)
-    print("✓" if r.returncode == 0 else f"✗ {r.stderr.strip()}")
-    return (wt_path if r.returncode == 0 else None, not fetch_ok)
+            print(f"\n⚠️  Fetch warning: {error_msg}")
+            if check_only:
+                return (True, None)  # Non-auth errors are OK
+            fetch_succeeded = True
+
+    # If check_only, we're done
+    if check_only:
+        return (True, None)
+
+    # Create worktree from either server or local version
+    worktree_name = f"{project_name}-{session_name}"
+    worktree_path = os.path.join(WORKTREES_DIR, worktree_name)
+
+    if fetch_succeeded:
+        print(f"🌱 Creating worktree from origin/{branch}...", end='', flush=True)
+        source = f"origin/{branch}"
+    else:
+        print(f"⚠️  Creating worktree from LOCAL {branch} (NOT synced with server!)...", end='', flush=True)
+        source = branch  # Use local branch instead of origin/branch
+
+    result = sp.run(['git', '-C', project_path, 'worktree', 'add', '-b', f"wt-{worktree_name}", worktree_path, source],
+                    capture_output=True, text=True)
+
+    if result.returncode == 0:
+        print(" ✓")
+        # Return tuple: (worktree_path, used_local_version)
+        return (worktree_path, not fetch_succeeded)
+    else:
+        print(f"\n✗ Failed to create worktree: {result.stderr.strip()}")
+        return (None, False)
 
 def parse_agent_specs_and_prompt(argv, start_idx):
     """Parse agent specifications and prompt from command line arguments.
@@ -2329,182 +2615,724 @@ elif arg in ('fix', 'bug', 'feat', 'auto', 'del'):
     create_tmux_session(session_name, os.getcwd(), f"{cmd} {shlex.quote(prompt)}")
     launch_in_new_window(session_name) if 'TMUX' in os.environ else os.execvp(sm.attach(session_name)[0], sm.attach(session_name))
 elif arg == 'install':
-    bin_dir, script_path = os.path.expanduser("~/.local/bin"), os.path.realpath(__file__)
-    os.makedirs(bin_dir, exist_ok=True)
+    # Install aio as a global command
+    bin_dir = os.path.expanduser("~/.local/bin")
     aio_link = os.path.join(bin_dir, "aio")
-    if os.path.islink(aio_link): os.remove(aio_link)
-    elif os.path.exists(aio_link): _die(f"✗ {aio_link} exists but is not a symlink")
-    os.symlink(script_path, aio_link); print(f"✓ Symlink: {aio_link}")
+    script_path = os.path.realpath(__file__)  # realpath follows symlinks
+
+    # Create bin directory if needed
+    os.makedirs(bin_dir, exist_ok=True)
+
+    # Remove existing symlink if present
+    if os.path.exists(aio_link):
+        if os.path.islink(aio_link):
+            os.remove(aio_link)
+            print(f"✓ Removed existing symlink: {aio_link}")
+        else:
+            print(f"✗ {aio_link} exists but is not a symlink. Please remove it manually.")
+            sys.exit(1)
+
+    # Create symlink
+    os.symlink(script_path, aio_link)
+    print(f"✓ Created symlink: {aio_link} -> {script_path}")
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # STAGE 1 SHELL FUNCTION: Instant perceived startup (0ms)
+    # This shell function prints immediately before Python loads, achieving
+    # perceived 0ms startup. The actual Python execution happens in background.
+    # ═══════════════════════════════════════════════════════════════════════════
     shell = os.environ.get('SHELL', '/bin/bash')
-    rc = os.path.expanduser('~/.config/fish/config.fish' if 'fish' in shell else ('~/.zshrc' if 'zsh' in shell else '~/.bashrc'))
-    func = '''# aio instant startup (Stage 1: true 0ms) - Added by aio install
+    if 'zsh' in shell:
+        rc_file = os.path.expanduser('~/.zshrc')
+    elif 'fish' in shell:
+        rc_file = os.path.expanduser('~/.config/fish/config.fish')
+    else:
+        rc_file = os.path.expanduser('~/.bashrc')
+
+    # Define the instant shell function (different syntax for fish)
+    # TRUE 0ms: For no-arg/help, serve from cache WITHOUT calling Python
+    # Cache is regenerated by Python in background after real commands
+    if 'fish' in shell:
+        shell_func = '''
+# aio instant startup (Stage 1: true 0ms) - Added by aio install
 function aio
-    cat ~/.local/share/aios/help_cache.txt 2>/dev/null; or command python3 ~/.local/bin/aio $argv
-end''' if 'fish' in shell else '''# aio instant startup (Stage 1: true 0ms) - Added by aio install
+    set -l cache ~/.local/share/aios/help_cache.txt
+    if test -z "$argv"; or test "$argv[1]" = "help"; or test "$argv[1]" = "-h"
+        cat $cache 2>/dev/null; or command python3 ~/.local/bin/aio $argv
+    else
+        command python3 ~/.local/bin/aio $argv
+    end
+end'''
+    else:
+        shell_func = '''
+# aio instant startup (Stage 1: true 0ms) - Added by aio install
 aio() {
     local cache=~/.local/share/aios/help_cache.txt projects=~/.local/share/aios/projects.txt
-    if [[ "$1" =~ ^[0-9]+$ ]]; then local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null); [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; return; }; fi
+    if [[ "$1" =~ ^[0-9]+$ ]]; then
+        local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null)
+        [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; ( python3 ~/.local/bin/aio _ghost "$dir" & ) &>/dev/null; return; }
+    fi
     local d="${1/#~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"; [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; ls; return; }
-    [[ -z "$1" || "$1" == "help" || "$1" == "-h" ]] && { cat "$cache" 2>/dev/null || command python3 ~/.local/bin/aio "$@"; return; }
+    [[ -z "$1" || "$1" == "help" || "$1" == "-h" || "$1" == "--help" ]] && { cat "$cache" 2>/dev/null || command python3 ~/.local/bin/aio "$@"; return; }
     command python3 ~/.local/bin/aio "$@"
 }'''
-    if 'aio instant startup' not in (Path(rc).read_text() if os.path.exists(rc) else ''):
+
+    # Check if already installed
+    aio_func_marker = "aio instant startup"
+    func_installed = False
+    if os.path.exists(rc_file):
+        with open(rc_file, 'r') as f:
+            func_installed = aio_func_marker in f.read()
+
+    if func_installed:
+        print(f"\n✓ Stage 1 instant shell function already in {rc_file}")
+    else:
+        print(f"\n⚡ INSTANT STARTUP: Add shell function for 0ms perceived startup?")
+        print(f"   This makes 'aio' print instantly before Python loads.")
         try:
-            if input(f"Add instant startup to {rc}? [Y/n]: ").strip().lower() != 'n':
-                Path(rc).open('a').write(func + '\n'); print(f"✓ Added to {rc}")
-        except: pass
+            answer = input(f"Add to {rc_file}? [Y/n]: ").strip().lower()
+            if answer != 'n':
+                with open(rc_file, 'a') as f:
+                    f.write(shell_func + '\n')
+                print(f"✓ Added Stage 1 instant shell function to {rc_file}")
+                print(f"  Restart your terminal or run: source {rc_file}")
+            else:
+                print(f"To add manually, put this in {rc_file}:")
+                print(shell_func)
+        except (EOFError, KeyboardInterrupt):
+            print(f"\nTo add manually, put this in {rc_file}:")
+            print(shell_func)
+
+    # Login shells (tmux/SSH) source .bash_profile not .bashrc. Without chain: 50ms (Python startup). With chain: 2ms (cat cache). 25x faster.
     if 'bash' in shell:
         bp = os.path.expanduser('~/.bash_profile')
-        if not os.path.exists(bp) or 'bashrc' not in Path(bp).read_text(): Path(bp).open('a').write('source ~/.bashrc\n')
-    if bin_dir not in os.environ.get('PATH', '') and '.local/bin' not in (Path(rc).read_text() if os.path.exists(rc) else ''):
+        if not os.path.exists(bp) or 'bashrc' not in open(bp).read():
+            open(bp, 'a').write('source ~/.bashrc\n')
+            print(f"✓ {bp} → .bashrc chain (aio now fast in tmux/SSH)")
+
+    # Check if ~/.local/bin is in PATH
+    user_path = os.environ.get('PATH', '')
+    if bin_dir not in user_path:
+        # Detect shell RC file
+        shell = os.environ.get('SHELL', '/bin/bash')
+        if 'zsh' in shell:
+            rc_file = os.path.expanduser('~/.zshrc')
+        elif 'fish' in shell:
+            rc_file = os.path.expanduser('~/.config/fish/config.fish')
+        else:
+            rc_file = os.path.expanduser('~/.bashrc')
+
+        path_line = 'export PATH="$HOME/.local/bin:$PATH"'
+        # Check if already in RC file
+        already_in_rc = False
+        if os.path.exists(rc_file):
+            with open(rc_file, 'r') as f:
+                already_in_rc = '.local/bin' in f.read()
+
+        if already_in_rc:
+            print(f"\n✓ PATH already configured in {rc_file}")
+            print(f"  Restart your terminal or run: source {rc_file}")
+        else:
+            print(f"\n⚠ {bin_dir} is not in your PATH")
+            try:
+                answer = input(f"Add to {rc_file}? [Y/n]: ").strip().lower()
+                if answer != 'n':
+                    with open(rc_file, 'a') as f:
+                        f.write(f'\n# Added by aio install\n{path_line}\n')
+                    print(f"✓ Added PATH to {rc_file}")
+                    print(f"  Restart your terminal or run: source {rc_file}")
+                else:
+                    print(f"Add this line to {rc_file} manually:")
+                    print(f'  {path_line}')
+            except (EOFError, KeyboardInterrupt):
+                print(f"\nAdd this line to {rc_file} manually:")
+                print(f'  {path_line}')
+    else:
+        print(f"\n✓ {bin_dir} is in your PATH")
+        print(f"✓ You can now run 'aio' from anywhere!")
+
+    # Check dependencies and offer to install
+    print(f"\n{'─'*60}")
+    print("Checking dependencies...")
+    missing = []
+    installed = []
+
+    # Python packages
+    for pkg, import_name in [('pexpect', 'pexpect'), ('prompt_toolkit', 'prompt_toolkit')]:
         try:
-            if input(f"Add ~/.local/bin to PATH in {rc}? [Y/n]: ").strip().lower() != 'n':
-                Path(rc).open('a').write('\nexport PATH="$HOME/.local/bin:$PATH"\n'); print(f"✓ Added PATH")
-        except: pass
-    ok = [p for p in ['pexpect', 'prompt_toolkit', 'tmux', 'npm', 'codex', 'claude', 'gemini'] if (shutil.which(p) if p in ['tmux', 'npm', 'codex', 'claude', 'gemini'] else __import__(p, globals(), locals(), [], 0) and True)]
-    print(f"✓ Have: {', '.join(ok)}")
-    missing = [p for p in ['pexpect', 'prompt_toolkit', 'tmux', 'npm', 'codex', 'claude', 'gemini'] if p not in ok]
-    if missing: print(f"⚠ Missing: {', '.join(missing)} - run 'aio deps'")
+            __import__(import_name)
+            installed.append(pkg)
+        except ImportError:
+            missing.append(f"{pkg} (Python package for interactive sessions)")
+
+    # tmux
+    if shutil.which('tmux'):
+        installed.append('tmux')
+    else:
+        missing.append("tmux (terminal multiplexer - install via apt/pkg)")
+
+    # Node.js/npm
+    node_dir = os.path.expanduser('~/.local/node')
+    npm_path = os.path.join(node_dir, 'bin', 'npm')
+    if shutil.which('npm') or os.path.exists(npm_path):
+        installed.append('node/npm')
+    else:
+        missing.append("node/npm (Node.js runtime, ~30MB download)")
+
+    # AI CLI tools
+    for cmd, desc in [('codex', 'OpenAI Codex CLI'), ('claude', 'Anthropic Claude CLI'), ('gemini', 'Google Gemini CLI')]:
+        if shutil.which(cmd):
+            installed.append(cmd)
+        else:
+            missing.append(f"{cmd} ({desc})")
+
+    if installed:
+        print(f"✓ Installed: {', '.join(installed)}")
+
+    if missing:
+        print(f"\n⚠ Missing dependencies:")
+        for dep in missing:
+            print(f"  • {dep}")
+        print(f"\n'aio deps' will install: pip packages, node/npm binary, and AI CLIs via npm")
+        try:
+            answer = input("\nInstall dependencies now? [y/N]: ").strip().lower()
+            if answer == 'y':
+                print()
+                os.execvp(sys.executable, [sys.executable, script_path, 'deps'])
+        except (EOFError, KeyboardInterrupt):
+            print()
+    else:
+        print("✓ All dependencies installed!")
+
+    print(f"\nRun 'aio update' to check for and pull updates from git.")
 elif arg == 'deps':
+    # Install dependencies: python packages, node/npm, codex, claude, gemini
     import platform, urllib.request, tarfile, lzma
-    _w, bin_dir = shutil.which, os.path.expanduser('~/.local/bin'); os.makedirs(bin_dir, exist_ok=True)
-    def _install(pkg, apt_pkg=None):
-        try: __import__(pkg); print(f"✓ {pkg}"); return True
-        except: pass
-        if sp.run([sys.executable, '-m', 'pip', 'install', '--user', pkg], capture_output=True).returncode == 0: print(f"✓ {pkg}"); return True
-        if apt_pkg and _w('apt-get') and sp.run(['sudo', 'apt-get', 'install', '-y', apt_pkg], capture_output=True).returncode == 0: print(f"✓ {pkg}"); return True
-        if _w('pkg') and sp.run(['pkg', 'install', '-y', pkg], capture_output=True).returncode == 0: print(f"✓ {pkg}"); return True
-        print(f"✗ {pkg}"); return False
-    print("📦 Installing deps...\n")
-    _install('pexpect', 'python3-pexpect'); _install('prompt_toolkit', 'python3-prompt-toolkit')
-    if not _w('tmux'):
-        cmds = [['brew', 'install', 'tmux']] if sys.platform == 'darwin' else ([['sudo', 'apt-get', 'install', '-y', 'tmux']] if _w('apt-get') else [['pkg', 'install', '-y', 'tmux']])
-        any(sp.run(c, capture_output=True).returncode == 0 for c in cmds) and print("✓ tmux") or print("✗ tmux")
-    else: print("✓ tmux")
-    node_dir, node_bin = os.path.expanduser('~/.local/node'), os.path.expanduser('~/.local/node/bin')
-    npm_path = os.path.join(node_bin, 'npm')
-    if not _w('npm') and not os.path.exists(npm_path):
-        arch, plat = 'x64' if platform.machine() in ('x86_64', 'AMD64') else 'arm64', 'darwin' if sys.platform == 'darwin' else 'linux'
+    def _which(cmd): return shutil.which(cmd) is not None
+    bin_dir = os.path.expanduser('~/.local/bin')
+    os.makedirs(bin_dir, exist_ok=True)
+    print("📦 Installing dependencies...\n")
+    # Python packages (pexpect, prompt_toolkit)
+    # pkg_name -> (import_name, apt_package_name)
+    pip_deps = [('pexpect', 'pexpect', 'python3-pexpect'), ('prompt_toolkit', 'prompt_toolkit', 'python3-prompt-toolkit')]
+    for pkg, import_name, apt_pkg in pip_deps:
         try:
-            urllib.request.urlretrieve(f'https://nodejs.org/dist/v22.11.0/node-v22.11.0-{plat}-{arch}.tar.xz', '/tmp/node.tar.xz')
-            with lzma.open('/tmp/node.tar.xz') as xz: tarfile.open(fileobj=xz).extractall(os.path.expanduser('~/.local'), filter='data')
-            os.rename(os.path.expanduser(f'~/.local/node-v22.11.0-{plat}-{arch}'), node_dir); os.remove('/tmp/node.tar.xz')
-            for c in ['node', 'npm', 'npx']: os.path.exists(f := os.path.join(bin_dir, c)) and os.remove(f); os.symlink(os.path.join(node_bin, c), os.path.join(bin_dir, c))
-            print("✓ node/npm")
-        except Exception as e: print(f"✗ node: {e}")
-    else: print("✓ node/npm")
+            __import__(import_name)
+            print(f"✓ {pkg}")
+        except ImportError:
+            print(f"⬇️  {pkg}: installing...")
+            installed = False
+            # Try pip first
+            try:
+                result = sp.run([sys.executable, '-m', 'pip', 'install', '--user', pkg], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"✓ {pkg} installed (pip)")
+                    installed = True
+            except: pass
+            # Try apt-get (Ubuntu/Debian) - update cache first if needed
+            if not installed and _which('apt-get'):
+                try:
+                    # Check if we need sudo
+                    need_sudo = os.geteuid() != 0 if hasattr(os, 'geteuid') else False
+                    apt_cmd = ['sudo', 'apt-get'] if need_sudo else ['apt-get']
+                    # Try install, if fails with "Unable to locate", run update first
+                    result = sp.run(apt_cmd + ['install', '-y', apt_pkg], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print(f"✓ {pkg} installed (apt)")
+                        installed = True
+                    elif 'unable to locate' in result.stderr.lower():
+                        # Update package cache and retry
+                        sp.run(apt_cmd + ['update'], capture_output=True, text=True)
+                        result = sp.run(apt_cmd + ['install', '-y', apt_pkg], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            print(f"✓ {pkg} installed (apt)")
+                            installed = True
+                except: pass
+            # Try pkg (Termux)
+            if not installed and _which('pkg'):
+                try:
+                    result = sp.run(['pkg', 'install', '-y', import_name], capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print(f"✓ {pkg} installed (pkg)")
+                        installed = True
+                except: pass
+            if not installed:
+                print(f"✗ {pkg} - install manually: pip install {pkg} OR apt install {apt_pkg}")
+    # Check/install tmux
+    if not _which('tmux'):
+        installed_tmux = False
+        # Try brew (macOS)
+        if sys.platform == 'darwin' and _which('brew'):
+            print("⬇️  tmux: installing via brew...")
+            try:
+                result = sp.run(['brew', 'install', 'tmux'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("✓ tmux installed (brew)")
+                    installed_tmux = True
+            except: pass
+        # Try apt (Linux)
+        if not installed_tmux and _which('apt-get'):
+            print("⬇️  tmux: installing via apt...")
+            try:
+                need_sudo = os.geteuid() != 0 if hasattr(os, 'geteuid') else False
+                apt_cmd = ['sudo', 'apt-get'] if need_sudo else ['apt-get']
+                result = sp.run(apt_cmd + ['install', '-y', 'tmux'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("✓ tmux installed (apt)")
+                    installed_tmux = True
+            except: pass
+        # Try pkg (Termux)
+        if not installed_tmux and _which('pkg'):
+            print("⬇️  tmux: installing via pkg...")
+            try:
+                result = sp.run(['pkg', 'install', '-y', 'tmux'], capture_output=True, text=True)
+                if result.returncode == 0:
+                    print("✓ tmux installed (pkg)")
+                    installed_tmux = True
+            except: pass
+        if not installed_tmux:
+            if sys.platform == 'darwin':
+                print("⚠ tmux not found - install via: brew install tmux")
+            else:
+                print("⚠ tmux not found - install via: apt install tmux (Linux) or pkg install tmux (Termux)")
+    else:
+        print("✓ tmux")
+    # Node.js/npm (binary)
+    node_dir = os.path.expanduser('~/.local/node')
+    node_bin = os.path.join(node_dir, 'bin')
+    npm_path = os.path.join(node_bin, 'npm')
+    if not _which('npm') and not os.path.exists(npm_path):
+        arch = 'x64' if platform.machine() in ('x86_64', 'AMD64') else 'arm64'
+        plat = 'darwin' if sys.platform == 'darwin' else 'linux'
+        url = f'https://nodejs.org/dist/v22.11.0/node-v22.11.0-{plat}-{arch}.tar.xz'
+        print(f"⬇️  node/npm: downloading...")
+        try:
+            xz_path = '/tmp/node.tar.xz'
+            urllib.request.urlretrieve(url, xz_path)
+            with lzma.open(xz_path) as xz:
+                with tarfile.open(fileobj=xz) as tar:
+                    tar.extractall(os.path.expanduser('~/.local'), filter='data')
+            os.rename(os.path.expanduser(f'~/.local/node-v22.11.0-{plat}-{arch}'), node_dir)
+            os.remove(xz_path)
+            # Symlink npm and node to bin_dir
+            for cmd in ['node', 'npm', 'npx']:
+                src, dst = os.path.join(node_bin, cmd), os.path.join(bin_dir, cmd)
+                if os.path.exists(dst): os.remove(dst)
+                os.symlink(src, dst)
+            print("✓ node/npm installed")
+        except Exception as e:
+            print(f"✗ node/npm failed: {e}")
+    else:
+        print("✓ node/npm")
+    # npm packages (codex, claude, gemini)
     npm_cmd = npm_path if os.path.exists(npm_path) else 'npm'
-    for cmd, pkg in [('codex', '@openai/codex'), ('claude', '@anthropic-ai/claude-code'), ('gemini', '@google/gemini-cli')]:
-        if not _w(cmd):
-            try: sp.run([npm_cmd, 'install', '-g', pkg], check=True, capture_output=True); print(f"✓ {cmd}")
-            except: print(f"✗ {cmd}")
+    npm_deps = [('codex', '@openai/codex'), ('claude', '@anthropic-ai/claude-code'), ('gemini', '@google/gemini-cli')]
+    for cmd, pkg in npm_deps:
+        if not _which(cmd):
+            print(f"⬇️  {cmd}: installing...")
+            try:
+                sp.run([npm_cmd, 'install', '-g', pkg], check=True, capture_output=True)
+                print(f"✓ {cmd} installed")
+            except Exception as e:
+                print(f"✗ {cmd} failed: {e}")
         else:
             print(f"✓ {cmd}")
     print("\n✅ Done! Restart terminal or run: export PATH=\"$HOME/.local/bin:$PATH\"")
-# PROOT ISOLATED ENVIRONMENT - Test aio commands without affecting host
+# ═══════════════════════════════════════════════════════════════════════════════
+# PROOT ISOLATED ENVIRONMENT
+# Test aio global commands (install, deps, etc.) without affecting host system.
+# Creates isolated Ubuntu environment via proot - no root required.
+# Usage: aio proot [check|install|setup|test|shell|teardown]
+# ═══════════════════════════════════════════════════════════════════════════════
 elif arg == 'proot':
     import platform as _platform
-    _termux = os.environ.get('TERMUX_VERSION') is not None
+    _is_termux = os.environ.get('TERMUX_VERSION') is not None
     _proot_run = lambda cmd: sp.run(cmd, shell=True, capture_output=True, text=True)
-    if _termux:
-        _UDIR = '/data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu'
-        _check = lambda: shutil.which("proot-distro") is not None
-        _ready = lambda: os.path.isdir(_UDIR)
-        _install = lambda: _check() or sp.run(['pkg', 'install', '-y', 'proot-distro'], capture_output=True).returncode == 0
-        _setup = lambda: _ready() or (print("⬇️  Installing Ubuntu...") or sp.run(['proot-distro', 'install', 'ubuntu'], capture_output=True).returncode == 0)
-        _test = lambda: (r := sp.run(['proot-distro', 'login', 'ubuntu', '--', 'cat', '/etc/os-release'], capture_output=True, text=True)) and r.returncode == 0 and "Ubuntu" in r.stdout
-        _teardown = lambda: sp.run(['proot-distro', 'remove', 'ubuntu'], capture_output=True).returncode == 0
-        _shell_cmd = ["proot-distro", "login", "ubuntu"]
-        _run_cmd = lambda args: ["proot-distro", "login", "ubuntu", "--"] + args
+
+    if _is_termux:
+        # Termux: use proot-distro for proper Linux distro support
+        def _proot_check():
+            return shutil.which("proot-distro") is not None
+
+        def _proot_install():
+            if _proot_check(): return True
+            result = sp.run(['pkg', 'install', '-y', 'proot-distro'], capture_output=True, text=True)
+            return result.returncode == 0
+
+        def _proot_setup():
+            # Check if ubuntu is already installed
+            ubuntu_dir = '/data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu'
+            if os.path.isdir(ubuntu_dir):
+                return True
+            print("⬇️  Installing Ubuntu via proot-distro...")
+            result = sp.run(['proot-distro', 'install', 'ubuntu'], capture_output=True, text=True)
+            return result.returncode == 0
+
+        def _proot_test():
+            r = sp.run(['proot-distro', 'login', 'ubuntu', '--', 'cat', '/etc/os-release'],
+                      capture_output=True, text=True)
+            return r.returncode == 0 and "Ubuntu" in r.stdout
+
+        def _proot_teardown():
+            result = sp.run(['proot-distro', 'remove', 'ubuntu'], capture_output=True, text=True)
+            return result.returncode == 0
+
+        def _ubuntu_installed():
+            # Check if ubuntu rootfs directory exists
+            ubuntu_dir = '/data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu'
+            return os.path.isdir(ubuntu_dir)
+
+        sub = work_dir_arg or "check"
+        if sub == "check":
+            print(f"proot-distro: {'✓ installed' if _proot_check() else '✗ not found'}")
+            print(f"ubuntu distro: {'✓ ready' if _ubuntu_installed() else '✗ not setup'}")
+        elif sub == "install":
+            print("OK" if _proot_install() else "FAILED")
+        elif sub == "setup":
+            if not _proot_check():
+                print("Installing proot-distro first...")
+                if not _proot_install(): print("✗ Failed to install proot-distro"); sys.exit(1)
+            print("OK" if _proot_setup() else "FAILED")
+        elif sub == "test":
+            print("OK" if _proot_test() else "FAILED")
+        elif sub == "shell":
+            if not _proot_check():
+                print("✗ Run 'aio proot install' first"); sys.exit(1)
+            if not _ubuntu_installed():
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            print("🐧 Entering Ubuntu via proot-distro...")
+            print("   Test 'aio install' and global commands here without affecting host.")
+            print("   Type 'exit' to leave.\n")
+            os.execvp("proot-distro", ["proot-distro", "login", "ubuntu"])
+        elif sub == "run":
+            # Run a command inside Ubuntu: aio proot run <command...>
+            if not _proot_check():
+                print("✗ Run 'aio proot install' first"); sys.exit(1)
+            if not _ubuntu_installed():
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            # Get command from remaining args (everything after 'aio proot run')
+            cmd_args = sys.argv[3:] if len(sys.argv) > 3 else []
+            if not cmd_args:
+                print("Usage: aio proot run <command>")
+                print("Example: aio proot run apt update")
+                sys.exit(1)
+            os.execvp("proot-distro", ["proot-distro", "login", "ubuntu", "--"] + cmd_args)
+        elif sub == "teardown":
+            print("OK" if _proot_teardown() else "NOTHING TO REMOVE")
+        else:
+            print(f"""aio proot - Isolated Ubuntu environment for testing (Termux)
+Usage: aio proot [command]
+
+Commands:
+  check     Check if proot-distro and ubuntu are installed
+  install   Install proot-distro package
+  setup     Install Ubuntu distro via proot-distro
+  test      Verify proot environment works
+  shell     Enter Ubuntu shell (test aio commands safely)
+  run       Run command in Ubuntu (aio proot run apt update)
+  teardown  Remove Ubuntu distro
+
+Purpose: Test 'aio install', 'aio deps', and other global commands
+without affecting your Termux installation.""")
     else:
-        _DIR, _FS = os.path.expanduser("~/.local/share/proot-ubuntu"), os.path.expanduser("~/.local/share/proot-ubuntu/rootfs")
-        _check = lambda: shutil.which("proot") is not None
-        _ready = lambda: os.path.exists(os.path.join(_FS, "bin/sh"))
-        def _install():
-            if _check(): return True
-            bd = os.path.expanduser("~/.local/bin"); os.makedirs(bd, exist_ok=True); pb = os.path.join(bd, "proot")
-            _proot_run(f"curl -sL https://proot.gitlab.io/proot/bin/proot -o {pb} && chmod +x {pb}"); return os.path.exists(pb)
-        def _setup():
-            os.makedirs(_FS, exist_ok=True)
-            if _ready(): return True
+        # Non-Termux: use standard proot with Ubuntu rootfs
+        PROOT_DIR = os.path.expanduser("~/.local/share/proot-ubuntu")
+        PROOT_ROOTFS = os.path.join(PROOT_DIR, "rootfs")
+
+        def _proot_check(): return shutil.which("proot") is not None
+
+        def _proot_install():
+            if _proot_check(): return True
+            bin_dir = os.path.expanduser("~/.local/bin")
+            os.makedirs(bin_dir, exist_ok=True)
+            proot_bin = os.path.join(bin_dir, "proot")
+            _proot_run(f"curl -sL https://proot.gitlab.io/proot/bin/proot -o {proot_bin} && chmod +x {proot_bin}")
+            return os.path.exists(proot_bin) and os.access(proot_bin, os.X_OK)
+
+        def _proot_setup():
+            os.makedirs(PROOT_ROOTFS, exist_ok=True)
+            if os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")): return True
             arch = "amd64" if _platform.machine() in ("x86_64", "AMD64") else "arm64"
-            print(f"⬇️  Downloading Ubuntu 22.04 ({arch})..."); _proot_run(f"curl -sL https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-{arch}.tar.gz | tar xz -C {_FS}"); return _ready()
-        _test = lambda: (r := _proot_run(f"proot -r {_FS} -0 /bin/cat /etc/os-release")) and r.returncode == 0 and "Ubuntu" in r.stdout
-        _teardown = lambda: os.path.exists(_DIR) and (shutil.rmtree(_DIR) or True)
-        _shell_cmd = ["proot", "-r", _FS, "-0", "-w", "/root", "/bin/bash"]
-        _run_cmd = lambda args: ["proot", "-r", _FS, "-0", "-w", "/root"] + args
-    sub = work_dir_arg or "check"
-    if sub == "check": print(f"proot: {'✓' if _check() else '✗'}  ubuntu: {'✓' if _ready() else '✗'}")
-    elif sub == "install": print("OK" if _install() else "FAILED")
-    elif sub == "setup": _check() or (_install() or _die("Install failed")); print("OK" if _setup() else "FAILED")
-    elif sub == "test": print("OK" if _test() else "FAILED")
-    elif sub == "shell": _ready() or _die("Run 'aio proot setup' first"); print("🐧 Entering Ubuntu...\n"); os.execvp(_shell_cmd[0], _shell_cmd)
-    elif sub == "run":
-        _ready() or _die("Run 'aio proot setup' first"); cmd_args = sys.argv[3:] if len(sys.argv) > 3 else []
-        cmd_args or _die("Usage: aio proot run <command>"); os.execvp(_run_cmd(cmd_args)[0], _run_cmd(cmd_args))
-    elif sub == "teardown": print("OK" if _teardown() else "NOTHING")
-    else: print("aio proot [check|install|setup|test|shell|run|teardown] - Isolated Ubuntu for testing")
-elif arg in ('backups', 'backup'):
-    if not (backups := list_backups()): print("No backups found.")
+            url = f"https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release/ubuntu-base-22.04-base-{arch}.tar.gz"
+            print(f"⬇️  Downloading Ubuntu 22.04 ({arch})...")
+            _proot_run(f"curl -sL {url} | tar xz -C {PROOT_ROOTFS}")
+            return os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh"))
+
+        def _proot_test():
+            r = _proot_run(f"proot -r {PROOT_ROOTFS} -0 /bin/cat /etc/os-release")
+            return r.returncode == 0 and "Ubuntu" in r.stdout
+
+        def _proot_teardown():
+            if os.path.exists(PROOT_DIR): shutil.rmtree(PROOT_DIR); return True
+            return False
+
+        sub = work_dir_arg or "check"
+        if sub == "check":
+            print(f"proot binary: {'✓ installed' if _proot_check() else '✗ not found'}")
+            print(f"ubuntu rootfs: {'✓ ready' if os.path.exists(os.path.join(PROOT_ROOTFS, 'bin/sh')) else '✗ not setup'}")
+        elif sub == "install":
+            print("OK" if _proot_install() else "FAILED")
+        elif sub == "setup":
+            if not _proot_check():
+                print("Installing proot first...")
+                if not _proot_install(): print("✗ Failed to install proot"); sys.exit(1)
+            print("OK" if _proot_setup() else "FAILED")
+        elif sub == "test":
+            print("OK" if _proot_test() else "FAILED")
+        elif sub == "shell":
+            if not os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")):
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            print("🐧 Entering isolated Ubuntu environment...")
+            print("   Test 'aio install' and global commands here without affecting host.")
+            print("   Type 'exit' to leave.\n")
+            os.execvp("proot", ["proot", "-r", PROOT_ROOTFS, "-0", "-w", "/root", "/bin/bash"])
+        elif sub == "run":
+            # Run a command inside Ubuntu: aio proot run <command...>
+            if not os.path.exists(os.path.join(PROOT_ROOTFS, "bin/sh")):
+                print("✗ Run 'aio proot setup' first"); sys.exit(1)
+            cmd_args = sys.argv[3:] if len(sys.argv) > 3 else []
+            if not cmd_args:
+                print("Usage: aio proot run <command>")
+                print("Example: aio proot run apt update")
+                sys.exit(1)
+            os.execvp("proot", ["proot", "-r", PROOT_ROOTFS, "-0", "-w", "/root"] + cmd_args)
+        elif sub == "teardown":
+            print("OK" if _proot_teardown() else "NOTHING TO REMOVE")
+        else:
+            print(f"""aio proot - Isolated Ubuntu environment for testing
+Usage: aio proot [command]
+
+Commands:
+  check     Check if proot and rootfs are installed
+  install   Download proot binary (~5MB, no root needed)
+  setup     Download Ubuntu 22.04 rootfs (~28MB)
+  test      Verify proot environment works
+  shell     Enter isolated Ubuntu shell (test aio commands safely)
+  run       Run command in Ubuntu (aio proot run apt update)
+  teardown  Remove proot Ubuntu installation
+
+Purpose: Test 'aio install', 'aio deps', and other global commands
+without affecting your current system installation.""")
+elif arg == 'backups' or arg == 'backup':
+    backups = list_backups()
+    if not backups:
+        print("No backups found.")
     else:
-        print(f"\n📦 Database Backups ({len(backups)} total)\n" + "━" * 70)
-        [print(f"{i:2}. {os.path.basename(p)}\n    {s:,} bytes | {datetime.fromtimestamp(m).strftime('%Y-%m-%d %H:%M:%S')}") for i, (p, s, m) in enumerate(backups[-10:], 1)]
-        print(f"\n📁 Location: {DATA_DIR}\n   Restore: aio restore <filename>")
+        print(f"\n📦 Database Backups ({len(backups)} total)")
+        print("━" * 70)
+        for i, (path, size, mtime) in enumerate(backups[-10:], 1):
+            name = os.path.basename(path)
+            age = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"{i:2}. {name}")
+            print(f"    {size:,} bytes | {age}")
+        print(f"\n📁 Location: {DATA_DIR}")
+        print(f"   Restore: aio restore <filename>")
 elif arg == 'restore':
-    if not work_dir_arg: print("Usage: aio restore <backup_filename>"); [print(f"  {os.path.basename(p)}") for p, _, _ in (list_backups() or [])[-5:]]; sys.exit(1)
-    bp = os.path.join(DATA_DIR, work_dir_arg) if not os.path.isabs(work_dir_arg) else work_dir_arg
-    if not os.path.exists(bp): _die(f"Backup not found: {bp}")
-    if input(f"⚠️  Overwrite DB from {os.path.basename(bp)}? [y/N]: ").lower() != 'y': sys.exit(0)
-    restore_database(bp); print("✅ Restored!")
+    if not work_dir_arg:
+        print("Usage: aio restore <backup_filename>")
+        backups = list_backups()
+        if backups:
+            print(f"\nAvailable backups:")
+            for i, (path, size, mtime) in enumerate(backups[-5:], 1):
+                print(f"  {os.path.basename(path)}")
+        sys.exit(1)
+    backup_path = os.path.join(DATA_DIR, work_dir_arg) if not os.path.isabs(work_dir_arg) else work_dir_arg
+    if not os.path.exists(backup_path):
+        print(f"✗ Backup not found: {backup_path}")
+        sys.exit(1)
+    print(f"⚠️  WARNING: This will overwrite current database!")
+    print(f"   Restoring from: {os.path.basename(backup_path)}")
+    response = input("   Continue? [y/N]: ")
+    if response.lower() != 'y':
+        print("Cancelled.")
+        sys.exit(0)
+    restore_database(backup_path)
+    print(f"✅ Database restored successfully!")
 elif arg == 'watch':
-    work_dir_arg or _die("Usage: aio watch <session> [duration]\nPatterns: 'Are you sure?' -> y, 'Continue?' -> yes, '[y/N]' -> y")
-    dur = int(sys.argv[3]) if len(sys.argv) > 3 else None
-    print(f"👁 Watching '{work_dir_arg}'" + (f" for {dur}s" if dur else " (once)"))
-    watch_tmux_session(work_dir_arg, {r'Are you sure\?': 'y', r'Continue\?': 'yes', r'\[y/N\]': 'y', r'\[Y/n\]': 'y'}, dur) or sys.exit(1)
+    # Watch a tmux session and auto-respond to patterns
+    if not work_dir_arg:
+        print("""✗ Usage: aio watch <session_name> [duration_seconds]\n\nExamples:\n  aio watch codex          # Watch codex session, respond once and exit\n  aio watch codex 60       # Watch codex session for 60 seconds\n\nDefault patterns:\n  'Are you sure?' -> 'y'\n  'Continue?' -> 'yes'\n  '[y/N]' -> 'y'\n  '[Y/n]' -> 'y'""")
+        sys.exit(1)
+
+    session_name = work_dir_arg
+    duration = None
+
+    # Check if duration provided
+    if len(sys.argv) > 3:
+        try:
+            duration = int(sys.argv[3])
+        except ValueError:
+            print(f"✗ Invalid duration: {sys.argv[3]}")
+            sys.exit(1)
+
+    # Default expectations
+    default_expectations = {
+        r'Are you sure\?': 'y',
+        r'Continue\?': 'yes',
+        r'\[y/N\]': 'y',
+        r'\[Y/n\]': 'y',
+    }
+
+    print(f"👁 Watching session '{session_name}'...")
+    if duration:
+        print(f"   Duration: {duration} seconds")
+    else:
+        print(f"   Mode: Auto-respond once and exit")
+
+    result = watch_tmux_session(session_name, default_expectations, duration)
+    if result:
+        print("✓ Watch completed")
+    else:
+        sys.exit(1)
 elif arg == 'send':
-    work_dir_arg or _die("Usage: aio send <session> <prompt> [--wait] [--no-enter]")
-    prompt = ' '.join(a for a in sys.argv[3:] if a not in ('--wait', '--no-enter'))
-    prompt or _die("No prompt provided")
-    send_prompt_to_session(work_dir_arg, prompt, wait_for_completion='--wait' in sys.argv, timeout=60, send_enter='--no-enter' not in sys.argv) or sys.exit(1)
+    # Send a prompt to an existing session
+    if not work_dir_arg:
+        print("""✗ Usage: aio send <session_name> <prompt>\n\nExamples:\n  aio send codex 'create a test file'\n  aio send claude-aios 'explain this code'\n\nFlags:\n  --wait    Wait for completion before returning""")
+        sys.exit(1)
+
+    session_name = work_dir_arg
+    wait = '--wait' in sys.argv
+    no_enter = '--no-enter' in sys.argv
+
+    # Get prompt from remaining args
+    prompt_parts = []
+    for i in range(3, len(sys.argv)):
+        if sys.argv[i] in ('--wait', '--no-enter'):
+            continue
+        prompt_parts.append(sys.argv[i])
+
+    if not prompt_parts:
+        print("✗ No prompt provided")
+        sys.exit(1)
+
+    prompt = ' '.join(prompt_parts)
+
+    # Send the prompt
+    result = send_prompt_to_session(session_name, prompt, wait_for_completion=wait, timeout=60, send_enter=not no_enter)
+    if not result:
+        sys.exit(1)
 elif arg == 'multi':
+    # Run multiple agents in ONE tmux session with tabs, each in its own worktree
+    # Structure: WORKTREES_DIR/repo_name/run_id/attempt_N
     import json
-    if work_dir_arg == 'set':  # aio multi set c:2 l:1
-        ns = ' '.join(sys.argv[3:]) if len(sys.argv) > 3 else ''
-        if not ns: print(f"Current: {load_config().get('multi_default', 'c:3')}"); sys.exit(0)
-        if not parse_agent_specs_and_prompt([''] + ns.split(), 1)[0]: _die(f"Invalid: {ns}  Format: c:N l:N g:N")
-        with WALManager(DB_PATH) as c: c.execute("INSERT OR REPLACE INTO config VALUES ('multi_default', ?)", (ns,)); c.commit()
-        print(f"✓ Default: {ns}"); sys.exit(0)
-    project_path, start = (PROJECTS[int(work_dir_arg)], 3) if work_dir_arg and work_dir_arg.isdigit() and int(work_dir_arg) < len(PROJECTS) else (os.getcwd(), 2)
-    agent_specs, task, used_default = parse_agent_specs_and_prompt(sys.argv, start)
+
+    # Handle 'aio multi set c:2 l:1' to change default
+    if work_dir_arg == 'set':
+        new_specs = ' '.join(sys.argv[3:]) if len(sys.argv) > 3 else ''
+        if not new_specs:
+            config = load_config()
+            print(f"Current default: {config.get('multi_default', 'c:3')}")
+            sys.exit(0)
+        # Validate specs
+        test_specs, _, _ = parse_agent_specs_and_prompt([''] + new_specs.split(), 1)
+        if not test_specs:
+            print(f"✗ Invalid specs: {new_specs}")
+            print("  Format: c:N l:N g:N (e.g., c:3 or c:2 l:1)")
+            sys.exit(1)
+        with WALManager(DB_PATH) as conn:
+            conn.execute("INSERT OR REPLACE INTO config VALUES ('multi_default', ?)", (new_specs,))
+            conn.commit()
+        print(f"✓ Default set to: {new_specs}")
+        sys.exit(0)
+
+    if work_dir_arg and work_dir_arg.isdigit():
+        project_path = PROJECTS[int(work_dir_arg)] if int(work_dir_arg) < len(PROJECTS) else None
+        if not project_path:
+            print(f"✗ Invalid project index"); sys.exit(1)
+        start_parse_at = 3
+    else:
+        project_path = os.getcwd()
+        start_parse_at = 2
+
+    agent_specs, task, used_default = parse_agent_specs_and_prompt(sys.argv, start_parse_at)
     if not agent_specs:
-        ds = load_config().get('multi_default', 'l:3'); agent_specs, _, _ = parse_agent_specs_and_prompt([''] + ds.split(), 1)
-        print(f"Using: {ds}  (aio multi set <specs>)")
+        # Use stored default instead of prompting
+        config = load_config()
+        default_specs = config.get('multi_default', 'l:3')
+        agent_specs, _, _ = parse_agent_specs_and_prompt([''] + default_specs.split(), 1)
+        print(f"Using default: {default_specs}  (aio multi set <specs> | {DB_PATH})")
     feat_template = get_prompt('feat', show_location=True) or '{task}'
     if used_default:
-        prompt = input_box(feat_template.format(task="<describe task>"), "Prompt (Ctrl+D run, Ctrl+C cancel)")
-        if not (prompt := (prompt or '').strip()): sys.exit(0)
-        task = prompt
-    else: prompt = feat_template.format(task=task)
+        # No task provided - show full feat prompt template for editing
+        initial_prompt = feat_template.format(task="<describe task>")
+        prompt = input_box(initial_prompt, "Prompt (Ctrl+D to run, Ctrl+C to cancel)")
+        if prompt is None: sys.exit(0)  # Ctrl+C cancellation
+        prompt = prompt.strip()
+        if not prompt: sys.exit(1)
+        task = prompt  # Store final prompt for run_info
+    else:
+        # Task provided on command line - wrap and execute directly
+        prompt = feat_template.format(task=task)
 
-    total, repo_name, run_id = sum(c for _, c in agent_specs), os.path.basename(project_path), datetime.now().strftime('%Y%m%d-%H%M%S')
-    session_name, run_dir = f"{repo_name}-{run_id}", os.path.join(WORKTREES_DIR, repo_name, run_id)
-    candidates_dir = os.path.join(run_dir, "candidates"); os.makedirs(candidates_dir, exist_ok=True)
-    with open(os.path.join(run_dir, "run.json"), "w") as f: json.dump({"task": task, "prompt": prompt, "agents": [f"{k}:{c}" for k, c in agent_specs], "created": run_id, "repo": project_path}, f, indent=2)
-    with WALManager(DB_PATH) as c: c.execute("INSERT OR REPLACE INTO multi_runs VALUES (?, ?, ?, ?, 'running', CURRENT_TIMESTAMP, NULL)", (run_id, project_path, task, json.dumps([f"{k}:{c}" for k, c in agent_specs]))); c.commit()
-    print(f"🚀 {total} agents + reviewer in {repo_name}/{run_id}..."); env, launched, agent_num, first = get_noninteractive_git_env(), [], {}, True
-    for ak, cnt in agent_specs:
-        bn, bc = sessions.get(ak, (None, None))
-        if not bn: continue
-        for i in range(cnt):
-            agent_num[bn] = agent_num.get(bn, 0) + 1; wn, an = f"{bn}-{agent_num[bn]}", f"{ak}{i}"
-            wt = os.path.join(candidates_dir, an); sp.run(['git', '-C', project_path, 'worktree', 'add', '-b', f'wt-{repo_name}-{run_id}-{an}', wt], capture_output=True, env=env)
-            if not os.path.exists(wt): continue
-            sig, exit_signal = f"{session_name}-{wn}", f'; tmux wait-for -S {session_name}-{wn}'
-            full_cmd = f'{bc} {shlex.quote(enhance_prompt(prompt, bn, wt))}{exit_signal}'
-            sp.run(['tmux', 'new-session', '-d', '-s', session_name, '-n', wn, '-c', wt, full_cmd] if first else ['tmux', 'new-window', '-t', session_name, '-n', wn, '-c', wt, full_cmd], env=env); first = False
-            sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:{wn}', '-c', wt], env=env); sp.run(['tmux', 'select-pane', '-t', f'{session_name}:{wn}.0'], env=env)
-            sp.run(['tmux', 'pipe-pane', '-t', f'{session_name}:{wn}.0', f'''sh -c 's=0;while IFS= read -r l;do [ $s -eq 1 ]&&continue;c=$(printf "%%s" "$l"|sed "s/\\x1b\\[[0-9;]*[a-zA-Z]//g");case "$c" in *"› "*|*"context left"*|*"> Type"*) tmux wait-for -S {sig};s=1;;esac;done' '''], env=env)
-            launched.append((wn, bn, wt)); print(f"✓ {wn}")
+    total = sum(count for _, count in agent_specs)
+    repo_name = os.path.basename(project_path)
+    run_id = datetime.now().strftime('%Y%m%d-%H%M%S')
+    session_name = f"{repo_name}-{run_id}"
+
+    # Create run directory: WORKTREES_DIR/repo_name/run_id/candidates/
+    run_dir = os.path.join(WORKTREES_DIR, repo_name, run_id)
+    candidates_dir = os.path.join(run_dir, "candidates")
+    os.makedirs(candidates_dir, exist_ok=True)
+
+    # Save to JSON and DB (store task for display, prompt is the full formatted version)
+    run_info = {"task": task, "prompt": prompt, "agents": [f"{k}:{c}" for k, c in agent_specs], "created": run_id, "repo": project_path}
+    with open(os.path.join(run_dir, "run.json"), "w") as f:
+        json.dump(run_info, f, indent=2)
+
+    with WALManager(DB_PATH) as conn:
+        conn.execute("INSERT OR REPLACE INTO multi_runs VALUES (?, ?, ?, ?, 'running', CURRENT_TIMESTAMP, NULL)",
+                    (run_id, project_path, task, json.dumps([f"{k}:{c}" for k, c in agent_specs])))
+        conn.commit()
+
+    print(f"🚀 Starting {total} agents + reviewer in {repo_name}/{run_id}...")
+    escaped_prompt = shlex.quote(prompt)
+    env = get_noninteractive_git_env()
+    launched = []
+    agent_num = {}  # Track count per agent type for naming
+
+    first_window = True
+    for agent_key, count in agent_specs:
+        base_name, base_cmd = sessions.get(agent_key, (None, None))
+        if not base_name: continue
+
+        for i in range(count):
+            # Better window name: codex-1, claude-2, etc.
+            agent_num[base_name] = agent_num.get(base_name, 0) + 1
+            window_name = f"{base_name}-{agent_num[base_name]}"
+            attempt_name = f"{agent_key}{i}"
+            # Put worktree in candidates folder: repo/runid/candidates/c0
+            wt_path = os.path.join(candidates_dir, attempt_name)
+
+            # Create git worktree
+            branch_name = f"wt-{repo_name}-{run_id}-{attempt_name}"
+            sp.run(['git', '-C', project_path, 'worktree', 'add', '-b', branch_name, wt_path], capture_output=True, env=env)
+            if not os.path.exists(wt_path): continue
+
+            signal_name = f"{session_name}-{window_name}"
+            # Fallback 1: Signal on agent exit (handles crashes, user quit, completion)
+            exit_signal = f'; tmux wait-for -S {signal_name}'
+            agent_prompt = enhance_prompt(prompt, base_name, wt_path)
+            escaped_agent_prompt = shlex.quote(agent_prompt)
+            full_cmd = f'{base_cmd} {escaped_agent_prompt}{exit_signal}'
+            if first_window:
+                sp.run(['tmux', 'new-session', '-d', '-s', session_name, '-n', window_name, '-c', wt_path, full_cmd], env=env)
+                first_window = False
+            else:
+                sp.run(['tmux', 'new-window', '-t', session_name, '-n', window_name, '-c', wt_path, full_cmd], env=env)
+
+            # Split: agent left, bash right
+            sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:{window_name}', '-c', wt_path], env=env)
+            sp.run(['tmux', 'select-pane', '-t', f'{session_name}:{window_name}.0'], env=env)
+
+            # Signal review window when agent shows prompt (for coordination)
+            # Uses pipe-pane to detect prompt patterns and send signal once
+            # Note: %% escapes % since tmux does format expansion on pipe-pane commands
+            target = f'{session_name}:{window_name}'
+            prompt_detector = f'''sh -c 's=0;while IFS= read -r l;do [ $s -eq 1 ]&&continue;c=$(printf "%%s" "$l"|sed "s/\\x1b\\[[0-9;]*[a-zA-Z]//g");case "$c" in *"› "*|*"context left"*|*"> Type"*) tmux wait-for -S {signal_name};s=1;;esac;done' '''
+            sp.run(['tmux', 'pipe-pane', '-t', f'{target}.0', prompt_detector], env=env)
+
+            launched.append((window_name, base_name, wt_path))
+            print(f"✓ {window_name}")
 
     if not launched:
         print("✗ No agents created"); sys.exit(1)
@@ -2908,47 +3736,216 @@ elif arg == 'idea':
     print(f"📄 {issues_file}")
     os.execvp('tmux', ['tmux', 'attach', '-t', session_name]) if "TMUX" not in os.environ else print(f"tmux switch-client -t {session_name}")
 elif arg == 'all':
+    # Run agents across ALL saved projects (portfolio-level operation)
+    # Usage: aio all c:2 "prompt" (parallel) OR aio all c:2 --seq "prompt" (sequential)
+
+    # Check for sequential flag
     sequential = '--seq' in sys.argv or '--sequential' in sys.argv
-    agent_specs, prompt, using_default = parse_agent_specs_and_prompt(sys.argv, 2)
-    agent_specs or _die("Usage: aio all c:N l:N 'prompt'")
-    total = sum(c for _, c in agent_specs) * len(PROJECTS)
-    print(f"🌍 {total} agents across {len(PROJECTS)} projects {'(seq)' if sequential else '(parallel)'}")
-    # Check auth for all projects
-    auth_fails = []
-    for i, p in enumerate(PROJECTS):
-        if not os.path.exists(p) or _git(p, 'rev-parse', '--git-dir').returncode != 0: continue
-        ok, fix = create_worktree(p, "", check_only=True)
-        if not ok: auth_fails.append((i, os.path.basename(p), p, fix))
-    if auth_fails:
-        print(f"❌ Auth failed for {len(auth_fails)} projects:")
-        for i, n, p, fix in auth_fails: print(f"  {n}: {fix or f'cd {p} && git remote set-url origin git@...'}")
+
+    # Parse agent specifications and prompt using helper function
+    agent_specs, prompt, using_default_protocol = parse_agent_specs_and_prompt(sys.argv, 2)
+
+    if not agent_specs:
+        print("""✗ No agent specifications provided\n\nUsage: aio all <agent_specs>... <prompt>\n\nExamples:\n  aio all c:2 'find all bugs'           # 2 codex per project (parallel)\n  aio all c:1 l:1 'optimize'            # Mixed agents per project\n  aio all c:2 --seq 'run tests'         # Sequential (one project at a time)\n\nAgent specs:\n  c:N  - N codex instances per project\n  l:N  - N claude instances per project\n  g:N  - N gemini instances per project""")
+        sys.exit(1)
+
+    # Calculate total instances across all projects
+    agents_per_project = sum(count for _, count in agent_specs)
+    total_projects = len(PROJECTS)
+    total_agents = agents_per_project * total_projects
+
+    mode = "sequentially (one project at a time)" if sequential else "in parallel (all at once)"
+    print(f"🌍 Portfolio Operation: {total_agents} agents across {total_projects} projects {mode}")
+    print(f"   Agents per project: {', '.join(f'{key}×{count}' for key, count in agent_specs)}")
+    if using_default_protocol:
+        print(f"   Task: 🔬 DEFAULT - Execute 11-step optimization protocol")
+        print(f"         (Ultrathink → Run → Find pain → Research → Simplify → Rewrite → Debug → Delete → Optimize → Debug → Report)")
+    else:
+        print(f"   Prompt: {prompt}")
+    if sequential:
+        print(f"   Mode: Sequential - complete each project before starting next")
+    print()
+
+    # STEP 1: Check authentication for ALL projects first
+    print("🔐 Checking authentication for all projects...")
+    print("=" * 80)
+
+    auth_failures = []  # List of (project_idx, project_name, project_path, fix_cmd)
+
+    for project_idx, project_path in enumerate(PROJECTS):
+        project_name = os.path.basename(project_path)
+        print(f"Project {project_idx}: {project_name:<30}", end='')
+
+        # Check if project exists
+        if not os.path.exists(project_path):
+            print("⚠️  SKIPPED (does not exist)")
+            continue
+
+        # Check if it's a git repository
+        result = sp.run(['git', '-C', project_path, 'rev-parse', '--git-dir'],
+                       capture_output=True)
+        if result.returncode != 0:
+            print("⚠️  SKIPPED (not a git repository)")
+            continue
+
+        # Check authentication
+        auth_ok, fix_cmd = create_worktree(project_path, "", check_only=True)
+
+        if not auth_ok:
+            auth_failures.append((project_idx, project_name, project_path, fix_cmd))
+
+    # If any authentication failures, stop and show how to fix
+    if auth_failures:
+        print("\n" + "=" * 80)
+        print("❌ AUTHENTICATION FAILED for the following projects:")
+        print("=" * 80)
+
+        for idx, name, path, fix_cmd in auth_failures:
+            print(f"\nProject {idx}: {name}")
+            print(f"Path: {path}")
+            if fix_cmd:
+                print(f"Fix:  {fix_cmd}")
+            else:
+                print(f"Fix:  cd {path} && git remote set-url origin git@github.com:USER/REPO.git")
+
+        print("\n" + "=" * 80)
+        print("🔧 TO FIX ALL AT ONCE, run these commands:")
+        print("-" * 80)
+        for idx, name, path, fix_cmd in auth_failures:
+            if fix_cmd:
+                print(fix_cmd)
+            else:
+                print(f"cd {path} && git remote set-url origin git@github.com:USER/REPO.git")
+
         print("""
-ℹ️  Fix: Switch remotes to SSH.
+================================================================================
+ℹ️  WHY SSH IS BETTER:
+   • No password prompts
    • Works with aio's no-dialog approach
    • More secure than storing passwords
 
 ✅ After fixing, run 'aio all' again and all projects will work!""")
         sys.exit(1)
-    print("✅ Auth OK\n")
-    all_sess, proj_res, env = [], [], get_noninteractive_git_env()
-    for pi, pp in enumerate(PROJECTS):
-        pn = os.path.basename(pp)
-        if not os.path.exists(pp): continue
-        psess = []
-        for ak, c in agent_specs:
-            bn, bc = sessions.get(ak, (None, None))
-            if not bn: continue
-            for j in range(c):
-                wn = f"{bn}-{datetime.now().strftime('%Y%m%d%H%M%S')}-p{pi}-{j}"
-                wr = create_worktree(pp, wn)
-                wp = wr[0] if wr else None
-                if not wp: continue
-                cmd = f'{bc} {shlex.quote(enhance_prompt(prompt, bn, wp))}'
-                sn = os.path.basename(wp)
-                create_tmux_session(sn, wp, cmd, env=env)
-                psess.append((sn, bn, j+1, pn, wp)); print(f"✓ {bn}{j+1} {sn}")
-        psess and all_sess.extend(psess) and proj_res.append((pi, pn, "LAUNCHED", psess))
-    print(f"\n🎯 Launched {len(all_sess)} agents. Monitor: aio jobs")
+
+    print("\n✅ All projects authenticated successfully!")
+    print()
+
+    # Track all launched sessions across all projects
+    all_launched_sessions = []
+    project_results = []
+    projects_using_local = []  # Track projects that couldn't fetch latest
+
+    # Escape prompt for shell usage using stdlib
+    escaped_prompt = shlex.quote(prompt)
+
+    # STEP 2: Now create worktrees and launch agents
+    for project_idx, project_path in enumerate(PROJECTS):
+        project_name = os.path.basename(project_path)
+        print(f"\n{'='*80}")
+        print(f"📁 Project {project_idx}: {project_name}")
+        print(f"   Path: {project_path}")
+        print(f"{'='*80}")
+
+        # Check if project exists
+        if not os.path.exists(project_path):
+            print(f"⚠️  Project does not exist, skipping...")
+            project_results.append((project_idx, project_name, "SKIPPED", []))
+            continue
+
+        # Create worktrees and launch sessions for this project
+        project_sessions = []
+
+        for agent_key, count in agent_specs:
+            base_name, base_cmd = sessions.get(agent_key, (None, None))
+
+            if not base_name:
+                print(f"✗ Unknown agent key: {agent_key}")
+                continue
+
+            for instance_num in range(count):
+                # Create unique worktree name with project index for uniqueness
+                import time
+                date_str = datetime.now().strftime('%Y%m%d')
+                time_str = datetime.now().strftime('%H%M%S')
+                # Include project index to guarantee uniqueness across projects
+                worktree_name = f"{base_name}-{date_str}-{time_str}-all-p{project_idx}-{instance_num}"
+
+                # Create worktree
+                worktree_result = create_worktree(project_path, worktree_name)
+                worktree_path = worktree_result[0] if worktree_result else None
+                used_local = worktree_result[1] if worktree_result else False
+
+                if not worktree_path:
+                    print(f"✗ Failed to create worktree for {base_name} instance {instance_num+1}")
+                    continue
+
+                # Track if this project is using local code
+                if used_local and project_name not in projects_using_local:
+                    projects_using_local.append(project_name)
+
+                # Construct full command with prompt baked in (like lpp/gpp/cpp)
+                agent_prompt = enhance_prompt(prompt, base_name, worktree_path)
+                escaped_agent_prompt = shlex.quote(agent_prompt)
+                full_cmd = f'{base_cmd} {escaped_agent_prompt}'
+
+                # Create tmux session in worktree with prompt already included
+                # IMPORTANT: Use clean environment to prevent GUI dialogs in the agent session
+                # Use the full worktree name (with project prefix) as session name
+                session_name = os.path.basename(worktree_path)
+                env = get_noninteractive_git_env()
+                result = create_tmux_session(session_name, worktree_path, full_cmd, env=env)
+                if result.returncode != 0:
+                    print(f"✗ Failed to create tmux session: {result.stderr}")
+                    print(f"  Command was: tmux new-session -d -s {session_name} -c {worktree_path} {full_cmd[:100]}...")
+
+                project_sessions.append((session_name, base_name, instance_num+1, project_name, worktree_path))
+                print(f"✓ Created {base_name} instance {instance_num+1}: {session_name}")
+
+        if not project_sessions:
+            print(f"✗ No sessions created for this project")
+            project_results.append((project_idx, project_name, "FAILED", []))
+            continue
+
+        # No need to send prompts separately - they're already baked into the commands
+        print(f"\n✓ Launched {len(project_sessions)} agents for {project_name} with prompts!")
+
+        all_launched_sessions.extend(project_sessions)
+        project_results.append((project_idx, project_name, "LAUNCHED", project_sessions))
+
+        if sequential:
+            print(f"\n✓ Completed project {project_idx}: {project_name}")
+        else:
+            print(f"\n✓ Launched agents for project {project_idx}: {project_name}")
+
+    # Summary
+    print(f"\n{'='*80}")
+    print(f"🎯 PORTFOLIO OPERATION SUMMARY")
+    print(f"{'='*80}")
+    print(f"Total agents launched: {len(all_launched_sessions)}")
+    print(f"Projects processed: {len([r for r in project_results if r[2] == 'LAUNCHED'])}/{total_projects}")
+
+    print(f"\n📊 Monitor all agents:")
+    print(f"   aio jobs")
+
+    print(f"\n📁 Projects and their agents:")
+    for proj_idx, proj_name, status, sessions in project_results:
+        if status == "LAUNCHED":
+            print(f"\n   Project {proj_idx}: {proj_name} ({len(sessions)} agents)")
+            print(f"   📂 Open directories:")
+            for session_name, agent_name, instance_num, _, worktree_path in sessions:
+                print(f"      aio -w {worktree_path}  # {agent_name} #{instance_num}")
+            print(f"   🔗 Attach to agents:")
+            for session_name, agent_name, instance_num, _, worktree_path in sessions:
+                print(f"      tmux attach -t {session_name}  # {agent_name} #{instance_num}")
+        elif status == "SKIPPED":
+            print(f"\n   Project {proj_idx}: {proj_name} (SKIPPED - does not exist)")
+        elif status == "FAILED":
+            print(f"\n   Project {proj_idx}: {proj_name} (FAILED - no agents created)")
+
+    mode_msg = "sequentially" if sequential else "in parallel"
+    print(f"\n✓ Portfolio operation complete! All agents launched {mode_msg}.")
+    if not sequential:
+        print(f"💤 Good time to sleep/step away! Agents working overnight.")
 elif arg == 'dash':
     sn = 'dash'
     if not sm.has_session(sn):
@@ -2960,17 +3957,41 @@ elif arg == 'jobs':
     running_only = '--running' in sys.argv or '-r' in sys.argv
     list_jobs(running_only=running_only)
 elif arg == 'attach':
+    # Attach to session associated with current directory or run_id
+    run_id = work_dir_arg
     cwd = os.getcwd()
-    def _attach(s): os.execvp('tmux', ['tmux', 'switch-client' if 'TMUX' in os.environ else 'attach', '-t', s])
+
+    # If in a worktree, find its session
     if WORKTREES_DIR in cwd:
-        p = cwd.replace(WORKTREES_DIR + '/', '').split('/')
-        if len(p) >= 2 and sm.has_session(s := f"{p[0]}-{p[1]}"): _attach(s)
-    with WALManager(DB_PATH) as c: runs = c.execute("SELECT id, repo FROM multi_runs ORDER BY created_at DESC LIMIT 10").fetchall()
+        parts = cwd.replace(WORKTREES_DIR + '/', '').split('/')
+        if len(parts) >= 2:
+            repo_name, run_id = parts[0], parts[1]
+            session_name = f"{repo_name}-{run_id}"
+            if sm.has_session(session_name):
+                print(f"Attaching to {session_name}...")
+                if "TMUX" in os.environ:
+                    os.execvp('tmux', ['tmux', 'switch-client', '-t', session_name])
+                else:
+                    os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
+
+    # Otherwise list recent sessions
+    with WALManager(DB_PATH) as conn:
+        runs = conn.execute("SELECT id, repo FROM multi_runs ORDER BY created_at DESC LIMIT 10").fetchall()
     if runs:
-        for i, (rid, repo) in enumerate(runs): print(f"{i}. {'●' if sm.has_session(f'{os.path.basename(repo)}-{rid}') else '○'} {os.path.basename(repo)}-{rid}")
-        ch = input("Select #: ").strip()
-        if ch.isdigit() and int(ch) < len(runs): _attach(f"{os.path.basename(runs[int(ch)][1])}-{runs[int(ch)][0]}")
-    print("No session")
+        print("Recent sessions:")
+        for i, (rid, repo) in enumerate(runs):
+            sname = f"{os.path.basename(repo)}-{rid}"
+            status = "●" if sm.has_session(sname) else "○"
+            print(f"  {i}. {status} {sname}")
+        choice = input("Select #: ").strip()
+        if choice.isdigit() and int(choice) < len(runs):
+            rid, repo = runs[int(choice)]
+            session_name = f"{os.path.basename(repo)}-{rid}"
+            if "TMUX" in os.environ:
+                os.execvp('tmux', ['tmux', 'switch-client', '-t', session_name])
+            else:
+                os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
+    print("No session found")
 
 elif arg in ['kill', 'killall']:
     if input("Kill all tmux sessions? (y/n): ").lower() in ['y', 'yes']:
@@ -2978,12 +3999,31 @@ elif arg in ['kill', 'killall']:
         sp.run(['pkill', '-9', 'tmux']); print("✓ Killed all tmux")
 
 elif arg == 'config':
-    key, val = work_dir_arg, ' '.join(sys.argv[3:]) if len(sys.argv) > 3 else None
-    if not key: [print(f"  {k}: {v[:50]}{'...' if len(v)>50 else ''}") for k, v in sorted(config.items())]
-    elif val:
-        with WALManager(DB_PATH) as c: c.execute("INSERT OR REPLACE INTO config VALUES (?, ?)", (key, val)); c.commit()
-        print(f"✓ {key}={val}")
-    else: print(f"{key}: {config.get(key, '(not set)')}")
+    # View/edit config: aio config [key] [value]
+    key = work_dir_arg
+    value = ' '.join(sys.argv[3:]) if len(sys.argv) > 3 else None
+
+    if not key:
+        # Show all config
+        print("Configuration (stored in ~/.local/share/aios/aio.db):\n")
+        for k, v in sorted(config.items()):
+            display_v = v[:50] + '...' if len(v) > 50 else v
+            print(f"  {k}: {display_v}")
+        print(f"\nUsage: aio config <key> [new_value]")
+    elif value is not None:
+        # Set config value
+        with WALManager(DB_PATH) as conn:
+            conn.execute("INSERT OR REPLACE INTO config VALUES (?, ?)", (key, value))
+            conn.commit()
+        print(f"✓ Set {key} = {value}")
+    else:
+        # Show single config value
+        val = config.get(key)
+        if val:
+            print(f"{key}: {val}")
+        else:
+            print(f"Config '{key}' not found")
+            print(f"Available: {', '.join(config.keys())}")
 
 elif arg == 'prompt':
     # Edit prompts: aio prompt [name]
@@ -3190,17 +4230,66 @@ elif arg == 'cleanup':
     # Delete all worktrees - simple approach: rm -rf + git worktree prune
     import shutil
 
-    wts = [d for d in os.listdir(WORKTREES_DIR) if os.path.isdir(os.path.join(WORKTREES_DIR, d))] if os.path.exists(WORKTREES_DIR) else []
-    with WALManager(DB_PATH) as c: db_cnt = c.execute("SELECT COUNT(*) FROM multi_runs").fetchone()[0]
-    if not wts and not db_cnt: print("Nothing to clean"); sys.exit(0)
-    print(f"Will delete: {len(wts)} dirs, {db_cnt} db entries")
-    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").strip().lower() in ['y', 'yes']) or _die("✗")
-    for wt in wts:
-        try: shutil.rmtree(os.path.join(WORKTREES_DIR, wt)); print(f"✓ {wt}")
-        except: pass
-    for p in PROJECTS: os.path.exists(p) and _git(p, 'worktree', 'prune')
-    with WALManager(DB_PATH) as c: c.execute("DELETE FROM multi_runs"); c.commit()
-    print("✓ Cleaned")
+    worktrees = []
+    if os.path.exists(WORKTREES_DIR):
+        worktrees = [d for d in os.listdir(WORKTREES_DIR)
+                     if os.path.isdir(os.path.join(WORKTREES_DIR, d))]
+
+    # Check if there's anything to clean (directories or db entries)
+    with WALManager(DB_PATH) as conn:
+        db_count = conn.execute("SELECT COUNT(*) FROM multi_runs").fetchone()[0]
+
+    if not worktrees and db_count == 0:
+        print("Nothing to clean")
+        sys.exit(0)
+
+    if worktrees:
+        print(f"Found {len(worktrees)} directories:\n")
+        for wt in worktrees:
+            print(f"  • {wt}")
+    if db_count:
+        print(f"\n{db_count} run entries in database")
+
+    print(f"\n⚠️  This will:")
+    if worktrees:
+        print(f"   • Delete {len(worktrees)} directories")
+    print(f"   • Prune stale worktree refs from projects")
+    if db_count:
+        print(f"   • Clear {db_count} run history entries")
+
+    skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
+    if not skip_confirm:
+        if input("\nContinue? (y/n): ").strip().lower() not in ['y', 'yes']:
+            print("✗ Cancelled"); sys.exit(0)
+
+    # Step 1: Delete all directories
+    deleted = 0
+    if worktrees:
+        print("\n🗑️  Deleting directories...")
+        for wt in worktrees:
+            path = os.path.join(WORKTREES_DIR, wt)
+            try:
+                shutil.rmtree(path)
+                print(f"  ✓ {wt}")
+                deleted += 1
+            except Exception as e:
+                print(f"  ✗ {wt}: {e}")
+
+    # Step 2: Prune stale worktree refs from all known projects
+    print("\n🧹 Pruning stale refs from projects...")
+    for proj in PROJECTS:
+        if os.path.exists(proj):
+            result = sp.run(['git', '-C', proj, 'worktree', 'prune'], capture_output=True)
+            if result.returncode == 0:
+                print(f"  ✓ {os.path.basename(proj)}")
+
+    # Step 3: Clear multi_runs database table
+    with WALManager(DB_PATH) as conn:
+        conn.execute("DELETE FROM multi_runs")
+        conn.commit()
+    print("  ✓ Cleared run history")
+
+    print(f"\n✓ Cleanup complete" + (f" ({deleted} directories)" if deleted else ""))
 elif arg == 'p':
     if PROJECTS:
         print("📁 PROJECTS:")
@@ -3365,101 +4454,618 @@ elif arg == 'x':
     sp.run(['tmux', 'kill-server'])
     print("✓ All sessions killed")
 elif arg == 'push':
-    cwd = os.getcwd(); ensure_git_config(); skip = '--yes' in sys.argv or '-y' in sys.argv
-    r = _git(cwd, 'rev-parse', '--git-dir')
-    r.returncode == 0 or _die("✗ Not a git repository")
-    is_wt = '.git/worktrees/' in r.stdout.strip() or cwd.startswith(WORKTREES_DIR)
-    args = [a for a in sys.argv[2:] if a not in ['--yes', '-y']]
-    target = args[0] if args and os.path.exists(os.path.join(cwd, args[0])) else None
-    if target: args = args[1:]
-    msg = ' '.join(args) if args else (f"Update {target}" if target else f"Update {os.path.basename(cwd)}")
-    env = get_noninteractive_git_env()
-
-    if is_wt:
-        wt_name, proj = os.path.basename(cwd), get_project_for_worktree(cwd)
-        proj or _die(f"✗ Could not find project for {wt_name}")
-        wt_branch = _git(cwd, 'branch', '--show-current').stdout.strip()
-        print(f"\n📍 Worktree: {wt_name} | Branch: {wt_branch} | Msg: {msg}")
-        to_main = skip or input("Push to: 1=main 2=branch [1]: ").strip() != '2'
-        _git(cwd, 'add', target) if target else _git(cwd, 'add', '-A')
-        r = _git(cwd, 'commit', '-m', msg)
-        r.returncode == 0 and print(f"✓ Committed: {msg}")
-        if to_main:
-            main = _git_main(proj)
-            _git(proj, 'checkout', main).returncode == 0 or _die(f"✗ Checkout {main} failed")
-            _git(proj, 'merge', wt_branch, '--no-edit', '-X', 'theirs').returncode == 0 or _die("✗ Merge failed")
-            print(f"✓ Merged {wt_branch} → {main}")
-            _git_push(proj, main, env) or sys.exit(1)
-            _git(proj, 'fetch', 'origin', env=env); _git(proj, 'reset', '--hard', f'origin/{main}')
-            if not skip and input(f"\nDelete worktree '{wt_name}'? (y/n): ").strip().lower() in ['y', 'yes']:
-                _git(proj, 'worktree', 'remove', '--force', cwd); _git(proj, 'branch', '-D', f'wt-{wt_name}')
-                os.path.exists(cwd) and shutil.rmtree(cwd); print("✓ Cleaned up worktree")
-                os.chdir(proj); os.execvp(os.environ.get('SHELL', 'bash'), [os.environ.get('SHELL', 'bash')])
-        else:
-            r = _git(cwd, 'push', '-u', 'origin', wt_branch, env=env)
-            print(f"✓ Pushed to {wt_branch}") if r.returncode == 0 else _die(f"✗ Push failed: {r.stderr.strip()}")
-    else:
-        cur = _git(cwd, 'branch', '--show-current').stdout.strip()
-        main = _git_main(cwd)
-        _git(cwd, 'add', target) if target else _git(cwd, 'add', '-A')
-        r = _git(cwd, 'commit', '-m', msg)
-        if r.returncode == 0: print(f"✓ Committed: {msg}")
-        elif 'nothing to commit' in r.stdout:
-            if work_dir_arg and _git(cwd, 'commit', '--allow-empty', '-m', msg).returncode == 0: print(f"✓ Empty commit: {msg}")
-            else: print("ℹ No changes"); sys.exit(0)
-        else: _die(f"✗ Commit failed: {r.stderr.strip() or r.stdout.strip()}")
-        if cur != main:
-            _git(cwd, 'checkout', main).returncode == 0 or _die(f"✗ Checkout failed")
-            _git(cwd, 'merge', cur, '--no-edit', '-X', 'theirs').returncode == 0 or _die("✗ Merge failed")
-            print(f"✓ Merged {cur} → {main}")
-        _git(cwd, 'fetch', 'origin', env=env)
-        _git_push(cwd, main, env) or sys.exit(1)
-elif arg == 'pull':
-    cwd = os.getcwd(); _git(cwd, 'rev-parse', '--git-dir').returncode == 0 or _die("✗ Not a git repo")
-    env = get_noninteractive_git_env(); _git(cwd, 'fetch', 'origin', env=env)
-    ref = 'origin/main' if _git(cwd, 'rev-parse', '--verify', 'origin/main').returncode == 0 else 'origin/master'
-    info = _git(cwd, 'log', '-1', '--format=%h %s', ref).stdout.strip()
-    print(f"⚠ DELETE local changes → {info}")
-    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").strip().lower() in ['y', 'yes']) or _die("✗ Cancelled")
-    _git(cwd, 'reset', '--hard', ref); _git(cwd, 'clean', '-f', '-d'); print(f"✓ Synced: {info}")
-elif arg == 'revert':
-    cwd = os.getcwd(); _git(cwd, 'rev-parse', '--git-dir').returncode == 0 or _die("✗ Not a git repo")
-    n = int(work_dir_arg) if work_dir_arg and work_dir_arg.isdigit() else 1
-    r = _git(cwd, 'revert', 'HEAD', '--no-edit') if n == 1 else _git(cwd, 'revert', f'HEAD~{n}..HEAD', '--no-edit')
-    print(f"✓ Reverted {n} commit(s)") if r.returncode == 0 else _die(f"✗ Revert failed: {r.stderr.strip()}")
-elif arg == 'setup':
+    # Quick commit and push in current directory
     cwd = os.getcwd()
-    if not os.path.isdir(os.path.join(cwd, '.git')): _git(cwd, 'init', '-b', 'main'); print("✓ Initialized")
-    else: print("ℹ Already a git repo")
-    if _git(cwd, 'rev-parse', 'HEAD').returncode != 0:
-        _git(cwd, 'add', '-A')
-        if _git(cwd, 'diff', '--cached', '--quiet').returncode == 0:
-            Path(os.path.join(cwd, '.gitignore')).touch(); _git(cwd, 'add', '.gitignore')
-        _git(cwd, 'commit', '-m', 'Initial commit'); print("✓ Initial commit")
-    _git(cwd, 'branch', '-M', 'main')
-    has_remote = _git(cwd, 'remote', 'get-url', 'origin').returncode == 0
-    url = work_dir_arg
-    if not url and not has_remote and shutil.which('gh'):
-        name = os.path.basename(cwd)
-        resp = input(f"🚀 Create GitHub repo '{name}'? (y/n/private): ").strip().lower()
-        if resp in ['y', 'yes', 'p', 'private']:
-            vis = '--private' if resp in ['p', 'private'] else '--public'
-            r = sp.run(['gh', 'repo', 'create', name, vis], capture_output=True, text=True, timeout=30)
-            if r.returncode != 0 and 'already exists' in r.stderr.lower():
-                input("Repo exists. Connect? (y/n): ").strip().lower() in ['y', 'yes'] or _die("✗ Cancelled")
-            user = sp.run(['gh', 'api', 'user', '-q', '.login'], capture_output=True, text=True).stdout.strip()
-            url = r.stdout.strip() or f"https://github.com/{user}/{name}.git"
-            print("✓ Created/connected repo")
-        else: _die("✗ Cancelled")
-    if not url and not has_remote:
-        url = input("Enter remote URL (Enter to skip): ").strip()
-        if not url: print("Add later: git remote add origin <url>"); sys.exit(0)
-    if url:
-        _git(cwd, 'remote', 'set-url' if has_remote else 'remote', 'add', 'origin', url) if has_remote else _git(cwd, 'remote', 'add', 'origin', url)
-        print(f"✓ Remote: {url}")
+
+    # Auto-configure git user from GitHub if needed
+    ensure_git_config()
+
+    # Check if git repo
+    result = sp.run(['git', '-C', cwd, 'rev-parse', '--git-dir'], capture_output=True, text=True)
+    if result.returncode != 0:
+        # Auto-fix stale .git files pointing to non-existent worktrees
+        if '.git/worktrees/' in result.stderr:
+            stale = sp.run(f"find {cwd} -name .git -type f 2>/dev/null | xargs grep -l 'worktrees/worktree[0-9]' 2>/dev/null",
+                          shell=True, capture_output=True, text=True).stdout.strip().split('\n')
+            stale = [f for f in stale if f]
+            if stale and input(f"⚠️  Found {len(stale)} stale .git files. Remove? (y/n): ").strip().lower() in ['y', 'yes']:
+                for f in stale:
+                    os.remove(f)
+                print(f"✓ Removed. Continuing...")
+                result = sp.run(['git', '-C', cwd, 'rev-parse', '--git-dir'], capture_output=True, text=True)
+        if result.returncode != 0:
+            print("✗ Not a git repository")
+            sys.exit(1)
+
+    # Check if we're in a worktree
+    git_dir = result.stdout.strip()
+    is_worktree = '.git/worktrees/' in git_dir or cwd.startswith(WORKTREES_DIR)
+
+    # Parse args: check if first arg is a file/directory to push specifically
+    remaining_args = [a for a in sys.argv[2:] if a not in ['--yes', '-y']]
+    target_path = None
+    if remaining_args:
+        potential = remaining_args[0]
+        full_path = os.path.join(cwd, potential)
+        if os.path.exists(full_path):
+            target_path = potential
+            remaining_args = remaining_args[1:]
+            # Warn if pushing file in new directory
+            if '/' in potential:
+                dir_part = os.path.dirname(potential)
+                result = sp.run(['git', '-C', cwd, 'ls-files', dir_part], capture_output=True, text=True)
+                if not result.stdout.strip():
+                    print(f"⚠️  Will also add directory: {dir_part}/")
+
+    # Build commit message
+    if remaining_args:
+        commit_msg = ' '.join(remaining_args)
+    elif target_path:
+        commit_msg = f"Update {target_path}"
+    else:
+        commit_msg = f"Update {os.path.basename(cwd)}"
+
+    if is_worktree:
+        # We're in a worktree
+        worktree_name = os.path.basename(cwd)
+        project_path = get_project_for_worktree(cwd)
+
+        if not project_path:
+            print(f"✗ Could not determine main project for worktree: {worktree_name}")
+            print(f"  Worktree: {cwd}")
+            sys.exit(1)
+
+        # Get the current branch name in worktree
+        result = sp.run(['git', '-C', cwd, 'branch', '--show-current'],
+                        capture_output=True, text=True)
+        worktree_branch = result.stdout.strip()
+
+        # Show options
+        print(f"\n📍 Worktree: {worktree_name}")
+        print(f"   Branch: {worktree_branch}")
+        print(f"   Project: {project_path}")
+        print(f"   Message: {commit_msg}")
+
+        skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
+        push_to_main = True  # default
+
+        if not skip_confirm:
+            print(f"\nPush to:")
+            print(f"  1. main (merge & push to main, optionally delete worktree)")
+            print(f"  2. branch (push to {worktree_branch} only)")
+            choice = input("Choice [1]: ").strip()
+            if choice == '2':
+                push_to_main = False
+            elif choice and choice != '1':
+                print("✗ Cancelled")
+                sys.exit(0)
+
+        # Add changes (specific file/dir or all)
+        if target_path:
+            sp.run(['git', '-C', cwd, 'add', target_path])
+        else:
+            sp.run(['git', '-C', cwd, 'add', '-A'])
+        result = sp.run(['git', '-C', cwd, 'commit', '-m', commit_msg],
+                        capture_output=True, text=True)
+
+        if result.returncode == 0:
+            print(f"✓ Committed in worktree: {commit_msg}")
+        elif 'nothing to commit' in result.stdout or 'no changes added to commit' in result.stdout:
+            print("ℹ No changes to commit in worktree")
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip()
+            if '.git/worktrees/' in error_msg:
+                stale = sp.run(f"find {cwd} -name .git -type f 2>/dev/null | xargs grep -l 'worktrees/worktree[0-9]' 2>/dev/null",
+                              shell=True, capture_output=True, text=True).stdout.strip().split('\n')
+                stale = [f for f in stale if f]
+                if stale and input(f"⚠️  Found {len(stale)} stale .git files. Remove? (y/n): ").strip().lower() in ['y', 'yes']:
+                    for f in stale:
+                        os.remove(f)
+                    print(f"✓ Removed {len(stale)} stale .git files. Run 'aio push' again.")
+                    sys.exit(0)
+            print(f"✗ Commit failed: {error_msg}")
+            sys.exit(1)
+
+        if push_to_main:
+            # Detect main branch name
+            result = sp.run(['git', '-C', project_path, 'symbolic-ref', 'refs/remotes/origin/HEAD'],
+                            capture_output=True, text=True)
+            if result.returncode == 0:
+                main_branch = result.stdout.strip().replace('refs/remotes/origin/', '')
+            else:
+                result = sp.run(['git', '-C', project_path, 'rev-parse', '--verify', 'main'],
+                               capture_output=True)
+                main_branch = 'main' if result.returncode == 0 else 'master'
+
+            print(f"→ Switching main project to {main_branch}...")
+
+            # Switch to main branch
+            result = sp.run(['git', '-C', project_path, 'checkout', main_branch],
+                            capture_output=True, text=True)
+
+            if result.returncode != 0:
+                print(f"✗ Failed to switch to {main_branch}: {result.stderr.strip()}")
+                sys.exit(1)
+
+            print(f"✓ Switched to {main_branch}")
+
+            # Merge worktree branch into main (auto-resolve conflicts using worktree version)
+            print(f"→ Merging {worktree_branch} into {main_branch}...")
+            result = sp.run(['git', '-C', project_path, 'merge', worktree_branch, '--no-edit', '-X', 'theirs'],
+                            capture_output=True, text=True)
+
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                print(f"✗ Merge failed: {error_msg}")
+                sys.exit(1)
+
+            print(f"✓ Merged {worktree_branch} into {main_branch} (conflicts auto-resolved)")
+
+            # Push to main
+            env = get_noninteractive_git_env()
+            result = sp.run(['git', '-C', project_path, 'push', 'origin', main_branch],
+                            capture_output=True, text=True, env=env)
+
+            if result.returncode == 0:
+                print(f"✓ Pushed to {main_branch}")
+            else:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                if 'rejected' in error_msg and 'non-fast-forward' in error_msg:
+                    confirm = input("⚠️  Push rejected - remote has diverged. Force push? (y/n): ").strip().lower()
+                    if confirm not in ['y', 'yes']:
+                        print("✗ Cancelled"); sys.exit(1)
+                    sp.run(['git', '-C', project_path, 'fetch', 'origin'], capture_output=True, env=env)
+                    result = sp.run(['git', '-C', project_path, 'push', '--force', 'origin', main_branch],
+                                    capture_output=True, text=True, env=env)
+                    if result.returncode == 0:
+                        print(f"✓ Force pushed to {main_branch} (remote was overwritten)")
+                    else:
+                        print(f"✗ Force push failed: {result.stderr.strip()}")
+                        sys.exit(1)
+                else:
+                    print(f"✗ Push failed: {error_msg}")
+                    sys.exit(1)
+
+            # Auto-pull to sync main project with remote
+            print(f"→ Syncing main project with remote...")
+            env = get_noninteractive_git_env()
+            fetch_result = sp.run(['git', '-C', project_path, 'fetch', 'origin'],
+                                  capture_output=True, text=True, env=env)
+            if fetch_result.returncode == 0:
+                reset_result = sp.run(['git', '-C', project_path, 'reset', '--hard', f'origin/{main_branch}'],
+                                      capture_output=True, text=True)
+                if reset_result.returncode == 0:
+                    print(f"✓ Synced main project with remote")
+                else:
+                    print(f"⚠ Sync warning: {reset_result.stderr.strip()}")
+            else:
+                print(f"⚠ Fetch warning: {fetch_result.stderr.strip()}")
+        else:
+            # Push to branch only
+            env = get_noninteractive_git_env()
+            result = sp.run(['git', '-C', cwd, 'push', '-u', 'origin', worktree_branch],
+                            capture_output=True, text=True, env=env)
+            if result.returncode == 0:
+                print(f"✓ Pushed to branch: {worktree_branch}")
+            else:
+                err = result.stderr.strip()
+                if 'Permission denied' in err or 'Authentication' in err:
+                    remote_url = sp.run(['git', '-C', cwd, 'remote', 'get-url', 'origin'], capture_output=True, text=True).stdout.strip()
+                    if remote_url.startswith('git@') and sp.run(['gh', 'config', 'get', 'git_protocol'], capture_output=True, text=True).stdout.strip() == 'https':
+                        if _confirm("⚠️  Remote uses SSH but gh uses HTTPS. Switch to HTTPS?"):
+                            sp.run(['git', '-C', cwd, 'remote', 'set-url', 'origin', remote_url.replace('git@github.com:', 'https://github.com/').replace('.git', '')])
+                            result = sp.run(['git', '-C', cwd, 'push', '-u', 'origin', worktree_branch], capture_output=True, text=True, env=env)
+                            if result.returncode == 0: print(f"✓ Pushed to branch: {worktree_branch}"); sys.exit(0)
+                print(f"✗ Push failed: {err}"); sys.exit(1)
+            sys.exit(0)  # Done - don't ask about deleting worktree
+
+        # Ask if user wants to delete the worktree
+        if not skip_confirm:
+            response = input(f"\nDelete worktree '{worktree_name}'? (y/n): ").strip().lower()
+            if response in ['y', 'yes']:
+                print(f"\n→ Removing worktree: {worktree_name}")
+
+                # Check if we're currently in the worktree being deleted
+                try:
+                    current_dir = os.getcwd()
+                    worktree_path_abs = os.path.abspath(cwd)
+                    current_dir_abs = os.path.abspath(current_dir)
+                    in_worktree = (current_dir_abs == worktree_path_abs or
+                                   current_dir_abs.startswith(worktree_path_abs + os.sep))
+                except (FileNotFoundError, OSError):
+                    in_worktree = True  # Assume we're in it if we can't determine
+
+                # Remove worktree
+                result = sp.run(['git', '-C', project_path, 'worktree', 'remove', '--force', cwd],
+                                capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"✓ Removed worktree")
+                else:
+                    print(f"✗ Failed to remove worktree: {result.stderr.strip()}")
+                    sys.exit(1)
+
+                # Delete branch
+                branch_name = f"wt-{worktree_name}"
+                result = sp.run(['git', '-C', project_path, 'branch', '-D', branch_name],
+                                capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"✓ Deleted branch: {branch_name}")
+
+                # Remove directory if still exists
+                if os.path.exists(cwd):
+                    import shutil
+                    shutil.rmtree(cwd)
+                    print(f"✓ Deleted directory")
+
+                # If we were in the worktree, spawn a new shell in the safe directory
+                if in_worktree:
+                    print(f"\n📂 Opening shell in: {project_path}")
+                    os.chdir(project_path)
+                    os.execvp(os.environ.get('SHELL', '/bin/bash'),
+                             [os.environ.get('SHELL', '/bin/bash')])
+                else:
+                    print(f"✓ Worktree deleted successfully")
+    else:
+        # Normal repo - always push to main branch
+        # Get current branch
+        result = sp.run(['git', '-C', cwd, 'branch', '--show-current'],
+                        capture_output=True, text=True)
+        current_branch = result.stdout.strip()
+
+        # Detect main branch name
+        result = sp.run(['git', '-C', cwd, 'symbolic-ref', 'refs/remotes/origin/HEAD'],
+                        capture_output=True, text=True)
+        if result.returncode == 0:
+            main_branch = result.stdout.strip().replace('refs/remotes/origin/', '')
+        else:
+            result = sp.run(['git', '-C', cwd, 'rev-parse', '--verify', 'main'],
+                           capture_output=True)
+            main_branch = 'main' if result.returncode == 0 else 'master'
+
+        # Add changes (specific file/dir or all)
+        if target_path:
+            sp.run(['git', '-C', cwd, 'add', target_path])
+        else:
+            sp.run(['git', '-C', cwd, 'add', '-A'])
+
+        # Commit
+        result = sp.run(['git', '-C', cwd, 'commit', '-m', commit_msg],
+                        capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✓ Committed: {commit_msg}")
+        elif 'nothing to commit' in result.stdout:
+            # Check if user provided a custom message (not the default)
+            if work_dir_arg:  # User provided a message
+                # Create empty clarification commit
+                result = sp.run(['git', '-C', cwd, 'commit', '--allow-empty', '-m', commit_msg],
+                                capture_output=True, text=True)
+                if result.returncode == 0:
+                    print(f"✓ Created clarification commit: {commit_msg}")
+                    # Continue to push below
+                else:
+                    print("ℹ No changes to send")
+                    sys.exit(0)
+            else:
+                print("ℹ No changes to send")
+                sys.exit(0)
+        elif 'no changes added to commit' in result.stdout:
+            print("ℹ No changes to send")
+            print("  (Some files may be ignored or in submodules)")
+            sys.exit(0)
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip()
+            if '.git/worktrees/' in error_msg:
+                # Find and remove stale .git files in subdirectories pointing to bad worktrees
+                stale = sp.run(f"find {cwd} -name .git -type f 2>/dev/null | xargs grep -l 'worktrees/worktree[0-9]' 2>/dev/null",
+                              shell=True, capture_output=True, text=True).stdout.strip().split('\n')
+                stale = [f for f in stale if f]
+                if stale and input(f"⚠️  Found {len(stale)} stale .git files. Remove? (y/n): ").strip().lower() in ['y', 'yes']:
+                    for f in stale:
+                        os.remove(f)
+                    print(f"✓ Removed {len(stale)} stale .git files. Run 'aio push' again.")
+                    sys.exit(0)
+            print(f"✗ Commit failed: {error_msg}")
+            sys.exit(1)
+
+        # If we're not on main, switch to it and merge current branch
+        if current_branch != main_branch:
+            print(f"→ Switching to {main_branch} and merging {current_branch}...")
+
+            # Switch to main branch
+            result = sp.run(['git', '-C', cwd, 'checkout', main_branch],
+                            capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"✗ Failed to switch to {main_branch}: {result.stderr.strip()}")
+                sys.exit(1)
+
+            # Merge current branch into main
+            result = sp.run(['git', '-C', cwd, 'merge', current_branch, '--no-edit', '-X', 'theirs'],
+                            capture_output=True, text=True)
+            if result.returncode != 0:
+                error_msg = result.stderr.strip() or result.stdout.strip()
+                print(f"✗ Merge failed: {error_msg}")
+                sys.exit(1)
+
+            print(f"✓ Merged {current_branch} into {main_branch}")
+
+        # Push to main branch
+        # Use non-interactive environment to prevent GUI dialogs
+        env = get_noninteractive_git_env()
+        sp.run(['git', '-C', cwd, 'fetch', 'origin'], capture_output=True, env=env)
+        ahead = sp.run(['git', '-C', cwd, 'rev-list', '--count', f'HEAD..origin/{main_branch}'], capture_output=True, text=True).stdout.strip()
+        if ahead and int(ahead) > 0 and not _confirm(f"⚠️  Remote is {ahead} commit(s) ahead. Push anyway?"): sys.exit(1)
+        result = sp.run(['git', '-C', cwd, 'push', 'origin', main_branch], capture_output=True, text=True, env=env)
+        if result.returncode == 0:
+            print(f"✓ Pushed to {main_branch}")
+        else:
+            error_msg = result.stderr.strip() or result.stdout.strip()
+            if 'rejected' in error_msg and 'non-fast-forward' in error_msg:
+                confirm = input("⚠️  Push rejected - remote has diverged. Force push? (y/n): ").strip().lower()
+                if confirm not in ['y', 'yes']:
+                    print("✗ Cancelled"); sys.exit(1)
+                sp.run(['git', '-C', cwd, 'fetch', 'origin'], capture_output=True, env=env)
+                result = sp.run(['git', '-C', cwd, 'push', '--force', 'origin', main_branch],
+                                capture_output=True, text=True, env=env)
+                if result.returncode == 0:
+                    print(f"✓ Force pushed to {main_branch} (remote was overwritten)")
+                else:
+                    print(f"✗ Force push failed: {result.stderr.strip()}")
+                    sys.exit(1)
+            elif 'Authentication failed' in error_msg or 'could not read Username' in error_msg or 'Permission denied' in error_msg:
+                # Check if SSH URL but gh uses HTTPS - offer to switch
+                remote_url = sp.run(['git', '-C', cwd, 'remote', 'get-url', 'origin'], capture_output=True, text=True).stdout.strip()
+                gh_proto = sp.run(['gh', 'config', 'get', 'git_protocol'], capture_output=True, text=True).stdout.strip()
+                if remote_url.startswith('git@') and gh_proto == 'https':
+                    if _confirm("⚠️  Remote uses SSH but gh uses HTTPS. Switch to HTTPS?"):
+                        https_url = remote_url.replace('git@github.com:', 'https://github.com/').replace('.git', '')
+                        sp.run(['git', '-C', cwd, 'remote', 'set-url', 'origin', https_url])
+                        result = sp.run(['git', '-C', cwd, 'push', 'origin', main_branch], capture_output=True, text=True, env=env)
+                        if result.returncode == 0: print(f"✓ Pushed to {main_branch}"); sys.exit(0)
+                print(f"❌ Authentication failed. Run 'git push' manually or set up SSH keys.")
+            else:
+                print(f"✗ Push failed: {error_msg}")
+            sys.exit(1)
+elif arg == 'pull':
+    # Replace local with server version (destructive)
+    cwd = os.getcwd()
+    result = sp.run(['git', '-C', cwd, 'rev-parse', '--git-dir'], capture_output=True)
+    if result.returncode != 0:
+        print("✗ Not a git repository")
+        sys.exit(1)
+
+    # Fetch first to show what we'll sync to
     env = get_noninteractive_git_env()
-    r = _git(cwd, 'push', '-u', 'origin', 'main', env=env)
-    print("✓ Pushed" if r.returncode == 0 else "ℹ Push skipped")
+    fetch_result = sp.run(['git', '-C', cwd, 'fetch', 'origin'], capture_output=True, text=True, env=env)
+    if fetch_result.returncode != 0:
+        error_msg = fetch_result.stderr.strip()
+        if 'Authentication failed' in error_msg or 'could not read Username' in error_msg or 'Permission denied' in error_msg:
+            print(f"❌ Authentication failed. Please set up git credentials:")
+            print(f"   • For SSH: Add SSH key to your Git provider")
+            print(f"   • For HTTPS: Run 'git config --global credential.helper cache'")
+            print(f"   • Then manually 'git fetch' once to save credentials")
+            sys.exit(1)
+
+    # Get target commit info (try main, then master)
+    target_ref = 'origin/main'
+    target_commit = sp.run(['git', '-C', cwd, 'log', '-1', '--format=%h %s', target_ref], capture_output=True, text=True)
+    if target_commit.returncode != 0:
+        target_ref = 'origin/master'
+        target_commit = sp.run(['git', '-C', cwd, 'log', '-1', '--format=%h %s', target_ref], capture_output=True, text=True)
+
+    print("⚠ WARNING: This will DELETE all local changes and replace with server version!")
+    if target_commit.returncode == 0:
+        print(f"   Target: {target_commit.stdout.strip()}")
+    skip_confirm = '--yes' in sys.argv or '-y' in sys.argv
+    if not skip_confirm:
+        response = input("Are you sure? (y/n): ").strip().lower()
+        if response not in ['y', 'yes']:
+            print("✗ Cancelled")
+            sys.exit(0)
+
+    result = sp.run(['git', '-C', cwd, 'reset', '--hard', target_ref], capture_output=True, text=True)
+    sp.run(['git', '-C', cwd, 'clean', '-f', '-d'], capture_output=True)
+    print(f"✓ Synced with server: {target_commit.stdout.strip()}" if target_commit.returncode == 0 else "✓ Local changes removed. Synced with server.")
+elif arg == 'revert':
+    # Undo N commits using git revert
+    cwd = os.getcwd()
+    result = sp.run(['git', '-C', cwd, 'rev-parse', '--git-dir'], capture_output=True)
+    if result.returncode != 0:
+        print("✗ Not a git repository")
+        sys.exit(1)
+
+    num = int(work_dir_arg) if work_dir_arg and work_dir_arg.isdigit() else 1
+
+    # Revert last N commits
+    if num == 1:
+        # Revert just HEAD
+        result = sp.run(['git', '-C', cwd, 'revert', 'HEAD', '--no-edit'],
+                       capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✓ Reverted last commit")
+        else:
+            error = result.stderr.strip() or result.stdout.strip()
+            print(f"✗ Revert failed: {error}")
+            sys.exit(1)
+    else:
+        # Revert multiple commits: HEAD~(num-1), HEAD~(num-2), ..., HEAD
+        result = sp.run(['git', '-C', cwd, 'revert', f'HEAD~{num}..HEAD', '--no-edit'],
+                       capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✓ Reverted last {num} commits")
+        else:
+            error = result.stderr.strip() or result.stdout.strip()
+            print(f"✗ Revert failed: {error}")
+            sys.exit(1)
+elif arg == 'setup':
+    # Initialize git repo with remote
+    cwd = os.getcwd()
+
+    # Check if .git exists in THIS directory (not parent)
+    git_dir = os.path.join(cwd, '.git')
+    if os.path.isdir(git_dir):
+        print("ℹ Already a git repository")
+    else:
+        # Initialize with main as default branch
+        sp.run(['git', '-C', cwd, 'init', '-b', 'main'], capture_output=True)
+        print("✓ Initialized git repository")
+
+    # Ensure we have an initial commit
+    result = sp.run(['git', '-C', cwd, 'rev-parse', 'HEAD'], capture_output=True)
+    if result.returncode != 0:
+        # No commits yet - create one
+        sp.run(['git', '-C', cwd, 'add', '-A'], capture_output=True)
+        # Check if anything was staged
+        staged = sp.run(['git', '-C', cwd, 'diff', '--cached', '--quiet'], capture_output=True)
+        if staged.returncode == 0:
+            # Nothing staged - create .gitignore so we have something to commit
+            gitignore_path = os.path.join(cwd, '.gitignore')
+            if not os.path.exists(gitignore_path):
+                with open(gitignore_path, 'w') as f:
+                    f.write('')
+                sp.run(['git', '-C', cwd, 'add', '.gitignore'], capture_output=True)
+        commit_result = sp.run(['git', '-C', cwd, 'commit', '-m', 'Initial commit'], capture_output=True)
+        if commit_result.returncode == 0:
+            print("✓ Created initial commit")
+        else:
+            print("✗ Failed to create initial commit")
+            sys.exit(1)
+
+    # Ensure main branch
+    sp.run(['git', '-C', cwd, 'branch', '-M', 'main'], capture_output=True)
+
+    # Check if remote exists
+    result = sp.run(['git', '-C', cwd, 'remote', 'get-url', 'origin'], capture_output=True)
+    has_remote = result.returncode == 0
+
+    # Get remote URL from user if provided as second arg
+    remote_url = work_dir_arg
+
+    # If no URL provided and no remote exists, try to help
+    if not remote_url and not has_remote:
+        # Try using GitHub CLI to create repo automatically
+        if shutil.which('gh'):
+            repo_name = os.path.basename(cwd)
+            print(f"🚀 Create GitHub repository '{repo_name}'? (y/n/private): ", end='', flush=True)
+            response = input().strip().lower()
+
+            if response in ['y', 'yes', 'private', 'p']:
+                visibility = '--private' if response in ['private', 'p'] else '--public'
+
+                # Create repo (without --source/--push, more reliable)
+                result = sp.run(['gh', 'repo', 'create', repo_name, visibility],
+                              capture_output=True, text=True, timeout=30)
+
+                if result.returncode != 0:
+                    error_msg = result.stderr.strip() or result.stdout.strip()
+                    if 'already exists' in error_msg.lower():
+                        # Repo exists - offer to connect to it
+                        print(f"ℹ Repository '{repo_name}' already exists. Connect to it? (y/n): ", end='', flush=True)
+                        connect = input().strip().lower()
+                        if connect not in ['y', 'yes']:
+                            print("✗ Cancelled")
+                            sys.exit(1)
+                        # Get user and construct URL
+                        gh_user = sp.run(['gh', 'api', 'user', '-q', '.login'], capture_output=True, text=True)
+                        if gh_user.returncode == 0:
+                            repo_url = f"https://github.com/{gh_user.stdout.strip()}/{repo_name}.git"
+                        else:
+                            print("✗ Could not determine repository URL")
+                            sys.exit(1)
+                        print(f"✓ Connecting to existing repository")
+                    else:
+                        print(f"✗ Failed to create repository: {error_msg}")
+                        sys.exit(1)
+                else:
+                    # Get the repo URL from stdout (gh prints it)
+                    repo_url = result.stdout.strip()
+                    if not repo_url:
+                        # Fallback: construct URL
+                        gh_user = sp.run(['gh', 'api', 'user', '-q', '.login'], capture_output=True, text=True)
+                        if gh_user.returncode == 0:
+                            repo_url = f"https://github.com/{gh_user.stdout.strip()}/{repo_name}.git"
+                        else:
+                            print("✗ Could not determine repository URL")
+                            sys.exit(1)
+                    print(f"✓ Created GitHub repository")
+
+                # Add remote
+                sp.run(['git', '-C', cwd, 'remote', 'add', 'origin', repo_url], capture_output=True)
+                print(f"✓ Added remote origin")
+
+                # Push
+                env = get_noninteractive_git_env()
+                push_result = sp.run(['git', '-C', cwd, 'push', '-u', 'origin', 'main'],
+                                    capture_output=True, text=True, env=env)
+                if push_result.returncode == 0:
+                    print("✓ Pushed to remote")
+                elif 'rejected' in push_result.stderr or 'fetch first' in push_result.stderr:
+                    # Histories diverged - offer force push for new projects
+                    print("⚠ Remote has different history. Force push? (y/n): ", end='', flush=True)
+                    force = input().strip().lower()
+                    if force in ['y', 'yes']:
+                        force_result = sp.run(['git', '-C', cwd, 'push', '-u', 'origin', 'main', '--force'],
+                                            capture_output=True, text=True, env=env)
+                        if force_result.returncode == 0:
+                            print("✓ Force pushed to remote")
+                        else:
+                            print(f"✗ Force push failed: {force_result.stderr.strip()}")
+                    else:
+                        print("✗ Push cancelled. You may need to pull and merge first.")
+                else:
+                    print(f"✗ Push failed: {push_result.stderr.strip()}")
+                sys.exit(0)
+            else:
+                print("✗ Cancelled")
+                sys.exit(0)
+
+        # No gh CLI or user wants manual setup - prompt for URL
+        print("\n💡 To push your code, add a remote repository:")
+        remote_url = input("   Enter remote URL (or press Enter to skip): ").strip()
+        if not remote_url:
+            print("\n📝 You can add a remote later with:")
+            print("   git remote add origin <url>")
+            print("   git push -u origin main")
+            sys.exit(0)
+
+    if remote_url:
+        # Check if remote exists
+        result = sp.run(['git', '-C', cwd, 'remote', 'get-url', 'origin'], capture_output=True)
+        if result.returncode == 0:
+            sp.run(['git', '-C', cwd, 'remote', 'set-url', 'origin', remote_url], capture_output=True)
+            print(f"✓ Updated remote origin: {remote_url}")
+        else:
+            sp.run(['git', '-C', cwd, 'remote', 'add', 'origin', remote_url], capture_output=True)
+            print(f"✓ Added remote origin: {remote_url}")
+
+        # Create initial commit if needed
+        result = sp.run(['git', '-C', cwd, 'rev-parse', 'HEAD'], capture_output=True)
+        if result.returncode != 0:
+            sp.run(['git', '-C', cwd, 'add', '-A'], capture_output=True)
+            sp.run(['git', '-C', cwd, 'commit', '-m', 'Initial commit'], capture_output=True)
+            print("✓ Created initial commit")
+
+        # Set main as default branch and push
+        sp.run(['git', '-C', cwd, 'branch', '-M', 'main'], capture_output=True)
+        env = get_noninteractive_git_env()
+        result = sp.run(['git', '-C', cwd, 'push', '-u', 'origin', 'main'], capture_output=True, text=True, env=env)
+        if result.returncode == 0:
+            print("✓ Pushed to remote")
+        else:
+            print("✗ Push failed - you may need to pull first or check permissions")
+    elif has_remote:
+        # Has remote but no URL provided - just ensure everything is set up
+        print("✓ Remote already configured")
+
+        # Create initial commit if needed
+        result = sp.run(['git', '-C', cwd, 'rev-parse', 'HEAD'], capture_output=True)
+        if result.returncode != 0:
+            sp.run(['git', '-C', cwd, 'add', '-A'], capture_output=True)
+            sp.run(['git', '-C', cwd, 'commit', '-m', 'Initial commit'], capture_output=True)
+            print("✓ Created initial commit")
+
+        # Set main as default branch
+        sp.run(['git', '-C', cwd, 'branch', '-M', 'main'], capture_output=True)
+        print("✓ Ready to push with: git push -u origin main")
 elif arg.endswith('++') and not arg.startswith('w'):
     key = arg[:-2]
     if key in sessions:
