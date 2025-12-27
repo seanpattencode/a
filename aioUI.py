@@ -5,6 +5,7 @@ HTML = '''<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
+<button onclick="ws.send('aio note\\n')" style="position:fixed;top:5px;right:5px;z-index:9">aio note</button>
 <script>
   const term = new Terminal(), fit = new (FitAddon.FitAddon||FitAddon)(), ws = new WebSocket("ws://"+location.host+"/ws");
   term.loadAddon(fit); term.open(document.body); fit.fit();
