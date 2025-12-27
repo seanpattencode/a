@@ -23,4 +23,5 @@ async def term(r):
     return ws
 
 app = web.Application(); app.add_routes([web.get('/', page), web.post('/exec', run), web.get('/ws', term)])
+if '--install' in sys.argv: os.makedirs(os.path.expanduser('~/.config/autostart'), exist_ok=True); open(os.path.expanduser('~/.config/autostart/aioUI.desktop'),'w').write(f'[Desktop Entry]\nType=Application\nExec=python3 {os.path.abspath(__file__)}\nName=aioUI'); sys.exit()
 if __name__ == '__main__': p=int(sys.argv[1]) if len(sys.argv)>1 else 8080; webbrowser.open(f'http://localhost:{p}'); web.run_app(app, port=p)
