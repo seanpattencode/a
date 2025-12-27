@@ -3005,27 +3005,32 @@ elif arg == 'prompt':
         print("No changes")
 
 elif arg == 'gdrive':
-    # Google Drive backup: aio gdrive [login|logout]
+    _rclone = shutil.which('rclone') or next((p for p in ['/usr/bin/rclone', '/usr/local/bin/rclone', os.path.expanduser('~/.local/bin/rclone')] if os.path.isfile(p)), None)
+    if not _rclone and work_dir_arg == 'login':
+        import platform; bd, arch = os.path.expanduser('~/.local/bin'), 'amd64' if platform.machine() in ('x86_64', 'AMD64') else 'arm64'
+        print(f"Installing rclone to {bd}..."); os.makedirs(bd, exist_ok=True)
+        if sp.run(f'curl -sL https://downloads.rclone.org/rclone-current-linux-{arch}.zip -o /tmp/rclone.zip && unzip -qjo /tmp/rclone.zip "*/rclone" -d {bd} && chmod +x {bd}/rclone && rm /tmp/rclone.zip', shell=True).returncode == 0:
+            _rclone = f'{bd}/rclone'; print(f"✓ Installed {_rclone}")
+        else: _die("rclone install failed")
     if work_dir_arg == 'login':
-        if not shutil.which('rclone'):
-            print("Installing rclone..."); sp.run(['pkg', 'install', '-y', 'rclone'] if os.environ.get('TERMUX_VERSION') else ['sh', '-c', 'curl https://rclone.org/install.sh | sudo bash'])
+        _rclone or _die("rclone not found")
         if _rclone_configured():
             print(f"Already logged in as {_rclone_account() or 'unknown'}")
             if not _confirm("Switch to different account?"): sys.exit(0)
-            sp.run(['rclone', 'config', 'delete', RCLONE_REMOTE])
-        print("Opening Google Drive login..."); sp.run(['rclone', 'config', 'create', RCLONE_REMOTE, 'drive'])
+            sp.run([_rclone, 'config', 'delete', RCLONE_REMOTE])
+        print("Opening Google Drive login..."); sp.run([_rclone, 'config', 'create', RCLONE_REMOTE, 'drive'])
         if _rclone_configured():
             _ok(f"Logged in as {_rclone_account() or 'unknown'}")
-            r = sp.run(['rclone', 'lsf', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'], capture_output=True, text=True)
+            r = sp.run([_rclone, 'lsf', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'], capture_output=True, text=True)
             if r.returncode == 0 and r.stdout.strip():
                 print("Found existing backup, pulling..."); _rclone_pull_notes(); _ok("Data restored")
             else:
-                print("Creating backup folder..."); sp.run(['rclone', 'mkdir', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'], capture_output=True)
+                print("Creating backup folder..."); sp.run([_rclone, 'mkdir', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'], capture_output=True)
                 _rclone_sync_data(wait=True); _ok("Backup initialized")
         else: _err("Login failed")
     elif work_dir_arg == 'logout':
         if _rclone_configured():
-            sp.run(['rclone', 'config', 'delete', RCLONE_REMOTE]); _ok("Logged out")
+            sp.run([_rclone, 'config', 'delete', RCLONE_REMOTE]); _ok("Logged out")
         else: print("Not logged in")
     elif _rclone_configured():
         acct = _rclone_account()
