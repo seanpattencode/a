@@ -673,15 +673,10 @@ def format_app_command(app_cmd, max_length=60):
     display_cmd = app_cmd.replace(os.path.expanduser('~'), '~')
     return display_cmd[:max_length-3] + "..." if len(display_cmd) > max_length else display_cmd
 
-def list_all_items(show_help=True):
-    projects, apps = load_projects(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(projects) + '\n'); [os.remove(f) for f in [os.path.join(DATA_DIR, 'help_cache.txt')] if os.path.exists(f)]
-    if projects:
-        print("📁 PROJECTS:")
-        for i, p in enumerate(projects): print(f"  {i}. {'✓' if os.path.exists(p) else '✗'} {p}")
-    if apps:
-        if projects: print()
-        print("⚡ COMMANDS:")
-        for i, (n, c) in enumerate(apps): print(f"  {len(projects)+i}. {n} → {format_app_command(c)}")
+def list_all_items(show_help=True, update_cache=True):
+    projects, apps = load_projects(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(projects) + '\n')
+    lines = ([f"📁 PROJECTS:"] + [f"  {i}. {'✓' if os.path.exists(p) else '✗'} {p}" for i, p in enumerate(projects)] if projects else []) + ([f"\n⚡ COMMANDS:"] + [f"  {len(projects)+i}. {n} → {format_app_command(c)}" for i, (n, c) in enumerate(apps)] if apps else [])
+    if lines: print('\n'.join(lines).replace('\n\n', '\n')); update_cache and Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + '\n'.join(lines).replace('\n\n', '\n') + '\n')
     if show_help and (projects or apps): print(f"\n💡 aio add [path|name cmd]  aio remove <#|name>")
     return projects, apps
 
