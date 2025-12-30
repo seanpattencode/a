@@ -437,8 +437,8 @@ def get_or_create_directory_session(session_key, target_dir):
     if r.returncode == 0:
         for session in [s for s in r.stdout.strip().split('\n') if s]:
             if not (session == base_name or session.startswith(base_name + '-')): continue
-            path_r = sp.run(['tmux', 'display-message', '-p', '-t', session, '#{pane_current_path}'], capture_output=True, text=True)
-            if path_r.returncode == 0 and path_r.stdout.strip() == target_dir: return session
+            path_r = sp.run(['tmux', 'display-message', '-p', '-t', session, '#{pane_dead}:#{pane_current_path}'], capture_output=True, text=True)
+            if path_r.returncode == 0 and path_r.stdout.strip().startswith('0:') and path_r.stdout.strip()[2:] == target_dir: return session
     dir_name, session_name = os.path.basename(target_dir), f"{base_name}-{os.path.basename(target_dir)}"
     attempt, final = 0, session_name
     while sm.has_session(final): attempt += 1; final = f"{session_name}-{attempt}"
