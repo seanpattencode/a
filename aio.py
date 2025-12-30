@@ -857,14 +857,11 @@ _AIO_MARKER = '# aio-managed-config'
 def _get_clipboard_cmd():
     """Detect platform-appropriate clipboard command for tmux copy."""
     import sys
-    if os.environ.get('TERMUX_VERSION'):
-        return 'termux-clipboard-set'
-    elif sys.platform == 'darwin':
-        return 'pbcopy'
-    elif shutil.which('xclip'):
-        return 'xclip -selection clipboard -i'
-    elif shutil.which('xsel'):
-        return 'xsel --clipboard --input'
+    if os.environ.get('TERMUX_VERSION'): return 'termux-clipboard-set'
+    if sys.platform == 'darwin': return 'pbcopy'
+    if shutil.which('wl-copy'): return 'wl-copy'
+    if shutil.which('xclip'): return 'xclip -selection clipboard -i'
+    if shutil.which('xsel'): return 'xsel --clipboard --input'
     return None
 
 def _write_tmux_conf():
@@ -885,7 +882,7 @@ set -g mouse on
 set -g focus-events on
 set -g set-titles on
 set -g set-titles-string "#S:#W"
-set -s set-clipboard off
+set -s set-clipboard on
 set -g visual-bell off
 set -g bell-action any
 set -g status-position bottom
@@ -902,10 +899,9 @@ bind-key -n C-x confirm-before -p "Kill session? (y/n)" kill-session
 bind-key -n C-e split-window "nvim ."
 bind-key -T root MouseDown1Status if -F '#{{==:#{{mouse_status_range}},window}}' {{ select-window }} {{ run-shell 'r="#{{mouse_status_range}}"; case "$r" in sess) tmux new-window;; new) tmux split-window;; close) tmux kill-pane;; edit) tmux split-window nvim;; kill) tmux confirm-before -p "Kill?" kill-session;; detach) tmux detach;; esc) tmux send-keys Escape;; kbd) tmux set -g mouse off; tmux display-message "Tap terminal - mouse restores in 3s"; (sleep 3; tmux set -g mouse on) &;; esac' }}
 '''
-    # Add mouse copy-on-selection (copies to clipboard when mouse selection ends)
+    # Mouse select auto-copies to clipboard (copy-command for tmux 3.2+, bindings for older)
     if clip_cmd:
-        conf += f'bind-key -T copy-mode MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "{clip_cmd}"\n'
-        conf += f'bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-pipe-and-cancel "{clip_cmd}"\n'
+        conf += f'set -s copy-command "{clip_cmd}"\nbind -T copy-mode MouseDragEnd1Pane send -X copy-pipe-and-cancel\nbind -T copy-mode-vi MouseDragEnd1Pane send -X copy-pipe-and-cancel\n'
     if sm.version >= '3.6':
         conf += 'set -g pane-scrollbars on\nset -g pane-scrollbars-position right\n'
 
@@ -2361,10 +2357,10 @@ aio() {
             if input(f"Add ~/.local/bin to PATH in {rc}? [Y/n]: ").strip().lower() != 'n':
                 Path(rc).open('a').write('\nexport PATH="$HOME/.local/bin:$PATH"\n'); print(f"✓ Added PATH")
         except: pass
-    def _ok(p):
-        try: return bool(shutil.which(p)) if p in 'tmux npm codex claude gemini'.split() else (__import__(p), True)[1]
+    def _ok(p):  # Check if pkg installed (binary or python module)
+        try: return bool(shutil.which(p)) if p in 'tmux wl-copy npm codex claude gemini'.split() else (__import__(p), True)[1]
         except: return False
-    _a, _n = {'pexpect': 'python3-pexpect', 'prompt_toolkit': 'python3-prompt-toolkit', 'tmux': 'tmux'}, {'codex': '@openai/codex', 'claude': '@anthropic-ai/claude-code', 'gemini': '@google/gemini-cli'}
+    _a, _n = {'pexpect': 'python3-pexpect', 'prompt_toolkit': 'python3-prompt-toolkit', 'tmux': 'tmux', 'wl-copy': 'wl-clipboard'}, {'codex': '@openai/codex', 'claude': '@anthropic-ai/claude-code', 'gemini': '@google/gemini-cli'}  # wl-clipboard: tmux mouse-select auto-copy
     ok, am, nm = [p for p in list(_a)+list(_n)+['npm'] if _ok(p)], ' '.join(_a[p] for p in _a if not _ok(p)), ' '.join(_n[p] for p in _n if not _ok(p))
     ok and print(f"✓ Have: {', '.join(ok)}")
     cmds = [f"sudo apt install {am}" for _ in [1] if am and shutil.which('apt-get')] + [f"sudo npm install -g {nm}" for _ in [1] if nm]
