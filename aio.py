@@ -863,8 +863,8 @@ def cmd_install():
     if os.path.islink(aio_link): os.remove(aio_link)
     elif os.path.exists(aio_link): _die(f"✗ {aio_link} exists but is not a symlink")
     os.symlink(script_path, aio_link); print(f"✓ Symlink: {aio_link}")
-    nv = sp.run(['node', '--version'], capture_output=True, text=True); nv = int(nv.stdout.strip().lstrip('v').split('.')[0]) if nv.returncode == 0 else 0
-    if nv < 25: print(f"⚠️  Node.js v{nv} is old - known V8 crashes occur. Upgrade: sudo npm i -g n && sudo n 25")
+    nv = int(sp.run(['node','-v'], capture_output=True, text=True).stdout.strip().lstrip('v').split('.')[0]) if shutil.which('node') else 0
+    if nv < 25: print(f"⚠️  Node.js {'v'+str(nv) if nv else 'missing'} - run 'aio deps' (fixes Claude V8 crashes)")
     shell = os.environ.get('SHELL', '/bin/bash')
     rc = os.path.expanduser('~/.config/fish/config.fish' if 'fish' in shell else ('~/.zshrc' if 'zsh' in shell else '~/.bashrc'))
     func = '''# aio instant startup
@@ -883,39 +883,26 @@ aio() { local d="${1/#~/$HOME}"; [[ -d "$d" ]] && { cd "$d"; ls; return; }; comm
     cmds and print(f"\n📦 Run:\n  {' && '.join(cmds)}")
 
 def cmd_deps():
-    import platform, urllib.request, tarfile, lzma
-    bin_dir = os.path.expanduser('~/.local/bin'); os.makedirs(bin_dir, exist_ok=True)
-    def _i(p, a=None):
-        try: __import__(p); print(f"✓ {p}"); return True
-        except: pass
-        if a and shutil.which('apt-get') and sp.run(['sudo','apt-get','install','-y',a], capture_output=True).returncode == 0: print(f"✓ {p}"); return True
-        for brk in [[], ['--break-system-packages']]:
-            if sp.run([sys.executable,'-m','pip','install','--user']+brk+[p], capture_output=True).returncode == 0: print(f"✓ {p}"); return True
-        print(f"✗ {p}"); return False
     print("📦 Installing deps...\n")
-    _i('pexpect', 'python3-pexpect'); _i('prompt_toolkit', 'python3-prompt-toolkit')
-    if not shutil.which('tmux'):
-        cmds = [['brew', 'install', 'tmux']] if sys.platform == 'darwin' else ([['sudo', 'apt-get', 'install', '-y', 'tmux']] if shutil.which('apt-get') else [['pkg', 'install', '-y', 'tmux']])
-        any(sp.run(c, capture_output=True).returncode == 0 for c in cmds) and print("✓ tmux") or print("✗ tmux")
-    else: print("✓ tmux")
-    node_dir, node_bin = os.path.expanduser('~/.local/node'), os.path.expanduser('~/.local/node/bin')
-    npm_path = os.path.join(node_bin, 'npm')
-    if not shutil.which('npm') and not os.path.exists(npm_path):
-        arch, plat = 'x64' if platform.machine() in ('x86_64', 'AMD64') else 'arm64', 'darwin' if sys.platform == 'darwin' else 'linux'
-        try:
-            urllib.request.urlretrieve(f'https://nodejs.org/dist/v22.11.0/node-v22.11.0-{plat}-{arch}.tar.xz', '/tmp/node.tar.xz')
-            with lzma.open('/tmp/node.tar.xz') as xz: tarfile.open(fileobj=xz).extractall(os.path.expanduser('~/.local'), filter='data')
-            os.rename(os.path.expanduser(f'~/.local/node-v22.11.0-{plat}-{arch}'), node_dir); os.remove('/tmp/node.tar.xz')
-            for c in ['node', 'npm', 'npx']: os.path.exists(f := os.path.join(bin_dir, c)) and os.remove(f); os.symlink(os.path.join(node_bin, c), os.path.join(bin_dir, c))
-            print("✓ node/npm")
-        except Exception as e: print(f"✗ node: {e}")
-    else: print("✓ node/npm")
-    npm_cmd = npm_path if os.path.exists(npm_path) else 'npm'
-    for cmd, pkg in [('codex', '@openai/codex'), ('claude', '@anthropic-ai/claude-code'), ('gemini', '@google/gemini-cli')]:
-        if not shutil.which(cmd):
-            try: sp.run([npm_cmd, 'install', '-g', pkg], check=True, capture_output=True); print(f"✓ {cmd}")
-            except: print(f"✗ {cmd}")
-        else: print(f"✓ {cmd}")
+    _run = lambda c: sp.run(c, shell=True, capture_output=True).returncode == 0
+    _sudo = '' if os.environ.get('TERMUX_VERSION') or os.path.exists('/data/data/com.termux') else 'sudo '
+    # Python deps
+    for p, apt in [('pexpect', 'python3-pexpect'), ('prompt_toolkit', 'python3-prompt-toolkit')]:
+        try: __import__(p); ok = True
+        except: ok = _run(f'{_sudo}apt-get install -y {apt}') or _run(f'{sys.executable} -m pip install --user {p}')
+        print(f"{'✓' if ok else '✗'} {p}")
+    # tmux
+    ok = shutil.which('tmux') or _run(f'{_sudo}apt-get install -y tmux') or _run('brew install tmux') or _run('pkg install -y tmux')
+    print(f"{'✓' if shutil.which('tmux') else '✗'} tmux")
+    # Node.js via n - bootstrap if needed, upgrade if < 25
+    shutil.which('npm') or _run(f'{_sudo}apt-get install -y nodejs npm') or _run('brew install node') or _run('pkg install -y nodejs')
+    nv = int(sp.run(['node','-v'], capture_output=True, text=True).stdout.strip().lstrip('v').split('.')[0]) if shutil.which('node') else 0
+    if nv < 25: print(f"⚠️  Node v{nv} → latest..."); print(f"{'✓' if _run(f'{_sudo}npm i -g n && {_sudo}n latest') else '✗'} node")
+    else: print(f"✓ node v{nv}")
+    # AI agents
+    for cmd, pkg in [('codex','@openai/codex'), ('claude','@anthropic-ai/claude-code'), ('gemini','@google/gemini-cli')]:
+        shutil.which(cmd) or _run(f'{_sudo}npm i -g {pkg}')
+        print(f"{'✓' if shutil.which(cmd) else '✗'} {cmd}")
     print("\n✅ Done!")
 
 def cmd_prompt():
