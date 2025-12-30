@@ -7,7 +7,7 @@ Ultra-fast, event-driven task execution system with git-inspired design, strict 
 
 **Termux (Android):** `pkg install git python && git clone https://github.com/seanpattencode/aio && cd aio && python aio.py install`
 
-**Ubuntu/Mac/Windows:** Clone repo, run `python aio.py install` (installs all deps automatically)
+**Ubuntu/Mac/Windows:** Clone repo, run `python3 aio.py install` (installs all deps automatically)
 
 ##Candidate internal rules
 the most complex command should be

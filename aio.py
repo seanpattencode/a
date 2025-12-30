@@ -2367,8 +2367,8 @@ aio() {
     _a, _n = {'pexpect': 'python3-pexpect', 'prompt_toolkit': 'python3-prompt-toolkit', 'tmux': 'tmux'}, {'codex': '@openai/codex', 'claude': '@anthropic-ai/claude-code', 'gemini': '@google/gemini-cli'}
     ok, am, nm = [p for p in list(_a)+list(_n)+['npm'] if _ok(p)], ' '.join(_a[p] for p in _a if not _ok(p)), ' '.join(_n[p] for p in _n if not _ok(p))
     ok and print(f"✓ Have: {', '.join(ok)}")
-    am and shutil.which('apt-get') and (print(f"\n📦 Run: sudo apt install {am}\n"), input("Press Enter when done..."))
-    nm and print(f"\n📦 Run: {'npm' if shutil.which('npm') else 'Install Node.js, then: npm'} install -g {nm}")
+    cmds = [f"sudo apt install {am}" for _ in [1] if am and shutil.which('apt-get')] + [f"sudo npm install -g {nm}" for _ in [1] if nm]
+    cmds and print(f"\n📦 Run:\n  {' && '.join(cmds)}")
 elif arg == 'deps':
     import platform, urllib.request, tarfile, lzma
     _w, bin_dir = shutil.which, os.path.expanduser('~/.local/bin'); os.makedirs(bin_dir, exist_ok=True)
