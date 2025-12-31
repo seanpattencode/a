@@ -92,11 +92,11 @@ def _git_main(path):
     return r.stdout.strip().replace('refs/remotes/origin/', '') if r.returncode == 0 else ('main' if _git(path, 'rev-parse', '--verify', 'main').returncode == 0 else 'master')
 
 def _git_push(path, branch, env, force=False):
-    r = _git(path, 'push', '--force' if force else '', 'origin', branch, env=env) if force else _git(path, 'push', 'origin', branch, env=env)
+    r = _git(path, 'push', *(['--force'] if force else []), 'origin', branch, env=env)
     if r.returncode == 0: print(f"✓ Pushed to {branch}"); return True
     err = r.stderr.strip() or r.stdout.strip()
-    if 'rejected' in err and 'non-fast-forward' in err and input("⚠️  Force push? (y/n): ").strip().lower() in ['y', 'yes']:
-        _git(path, 'fetch', 'origin', env=env); return _git_push(path, branch, env, force=True)
+    if 'non-fast-forward' in err and input("⚠️  Force push? (y/n): ").lower() in ['y', 'yes']:
+        _git(path, 'fetch', 'origin', env=env); return _git_push(path, branch, env, True)
     print(f"✗ Push failed: {err}"); return False
 
 def get_noninteractive_git_env():
@@ -106,41 +106,28 @@ def get_noninteractive_git_env():
     return env
 
 # Update checking
+def _sg(*a, **k): return sp.run(['git', '-C', SCRIPT_DIR] + list(a), capture_output=True, text=True, **k)  # script git
 def manual_update():
-    r = sp.run(['git', '-C', SCRIPT_DIR, 'rev-parse', '--git-dir'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    if r.returncode != 0: print("✗ Not in a git repository"); return False
-    print("🔄 Checking for updates...")
-    before = sp.run(['git', '-C', SCRIPT_DIR, 'rev-parse', 'HEAD'], capture_output=True, text=True)
-    if before.returncode != 0: print("✗ Failed to get current version"); return False
-    before_hash = before.stdout.strip()[:8]
-    if sp.run(['git', '-C', SCRIPT_DIR, 'fetch'], capture_output=True, text=True).returncode != 0: return False
-    status = sp.run(['git', '-C', SCRIPT_DIR, 'status', '-uno'], capture_output=True, text=True)
-    if 'Your branch is behind' not in status.stdout: print(f"✓ Already up to date ({before_hash})"); return True
-    print("⬇️  Downloading updates...")
-    if sp.run(['git', '-C', SCRIPT_DIR, 'pull', '--ff-only'], capture_output=True, text=True).returncode != 0: return False
-    after = sp.run(['git', '-C', SCRIPT_DIR, 'rev-parse', 'HEAD'], capture_output=True, text=True)
-    if after.returncode == 0: print(f"✅ Updated: {before_hash} → {after.stdout.strip()[:8]}")
-    return True
+    if _sg('rev-parse', '--git-dir').returncode != 0: print("✗ Not in a git repository"); return False
+    print("🔄 Checking..."); before = _sg('rev-parse', 'HEAD').stdout.strip()[:8]
+    if not before or _sg('fetch').returncode != 0: return False
+    if 'behind' not in _sg('status', '-uno').stdout: print(f"✓ Up to date ({before})"); return True
+    print("⬇️  Downloading..."); _sg('pull', '--ff-only')
+    after = _sg('rev-parse', 'HEAD'); print(f"✅ {before} → {after.stdout.strip()[:8]}" if after.returncode == 0 else "✓ Done"); return True
 
 def check_for_updates_warning():
-    ts_file = os.path.join(DATA_DIR, '.update_check')
-    if os.path.exists(ts_file) and time.time() - os.path.getmtime(ts_file) < 1800: return
+    ts = os.path.join(DATA_DIR, '.update_check')
+    if os.path.exists(ts) and time.time() - os.path.getmtime(ts) < 1800: return
     if not hasattr(os, 'fork') or os.fork() != 0: return
-    try:
-        Path(ts_file).touch()
-        r = sp.run(['git', '-C', SCRIPT_DIR, 'fetch', '--dry-run'], capture_output=True, text=True, timeout=5)
-        if r.returncode == 0 and r.stderr.strip(): Path(os.path.join(DATA_DIR, '.update_available')).touch()
+    try: Path(ts).touch(); r = _sg('fetch', '--dry-run', timeout=5); r.returncode == 0 and r.stderr.strip() and Path(os.path.join(DATA_DIR, '.update_available')).touch()
     except: pass
     os._exit(0)
 
 def show_update_warning():
-    marker = os.path.join(DATA_DIR, '.update_available')
-    if os.path.exists(marker):
-        r = sp.run(['git', '-C', SCRIPT_DIR, 'status', '-uno'], capture_output=True, text=True)
-        if 'Your branch is behind' in r.stdout: print("⚠️  Update available! Run 'aio update'")
-        else:
-            try: os.remove(marker)
-            except: pass
+    m = os.path.join(DATA_DIR, '.update_available')
+    if os.path.exists(m):
+        if 'behind' in _sg('status', '-uno').stdout: print("⚠️  Update available! Run 'aio update'")
+        else: os.path.exists(m) and os.remove(m)
 
 def ensure_git_config():
     name, email = sp.run(['git', 'config', 'user.name'], capture_output=True, text=True), sp.run(['git', 'config', 'user.email'], capture_output=True, text=True)
@@ -182,8 +169,10 @@ def init_database():
             if conn.execute("SELECT COUNT(*) FROM apps").fetchone()[0] == 0:
                 conn.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", ("testRepo", f"cd {os.path.expanduser('~/projects/testRepoPrivate')} && $SHELL", 0))
             if conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0:
-                for key, name, cmd in [('h', 'htop', 'htop'), ('t', 'top', 'top'), ('g', 'gemini', 'gemini --yolo'), ('gp', 'gemini-p', 'gemini --yolo "{GEMINI_PROMPT}"'), ('c', 'codex', 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox'), ('cp', 'codex-p', 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox "{CODEX_PROMPT}"'), ('l', 'claude', 'claude --dangerously-skip-permissions'), ('lp', 'claude-p', 'claude --dangerously-skip-permissions "{CLAUDE_PROMPT}"'), ('o', 'claude', 'claude --dangerously-skip-permissions')]:
-                    conn.execute("INSERT INTO sessions VALUES (?, ?, ?)", (key, name, cmd))
+                _cdx = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox'
+                _cld = 'claude --dangerously-skip-permissions'
+                for k, n, c in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','codex',_cdx),('cp','codex-p',f'{_cdx} "{{CODEX_PROMPT}}"'),('l','claude',_cld),('lp','claude-p',f'{_cld} "{{CLAUDE_PROMPT}}"'),('o','claude',_cld)]:
+                    conn.execute("INSERT INTO sessions VALUES (?, ?, ?)", (k, n, c))
             conn.execute("INSERT OR IGNORE INTO sessions VALUES ('o', 'claude', 'claude --dangerously-skip-permissions')")
 
 def load_config():
@@ -200,64 +189,50 @@ def load_projects():
     with WALManager(DB_PATH) as conn: return [row[0] for row in conn.execute("SELECT path FROM projects ORDER BY display_order").fetchall()]
 
 def add_project(path):
-    path = os.path.abspath(os.path.expanduser(path))
-    if not os.path.exists(path): return False, f"Path does not exist: {path}"
-    if not os.path.isdir(path): return False, f"Path is not a directory: {path}"
-    with WALManager(DB_PATH) as conn:
-        with conn:
-            if conn.execute("SELECT COUNT(*) FROM projects WHERE path = ?", (path,)).fetchone()[0] > 0: return False, f"Project already exists: {path}"
-            max_order = conn.execute("SELECT MAX(display_order) FROM projects").fetchone()[0]
-            conn.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)", (path, (max_order + 1) if max_order is not None else 0))
-    return True, f"Added project: {path}"
+    p = os.path.abspath(os.path.expanduser(path))
+    if not os.path.isdir(p): return False, f"Not a directory: {p}"
+    with WALManager(DB_PATH) as c:
+        if c.execute("SELECT 1 FROM projects WHERE path=?", (p,)).fetchone(): return False, f"Exists: {p}"
+        m = c.execute("SELECT MAX(display_order) FROM projects").fetchone()[0]
+        c.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)", (p, (m or -1)+1)); c.commit()
+    return True, f"Added: {p}"
 
-def remove_project(index):
-    with WALManager(DB_PATH) as conn:
-        with conn:
-            projects = conn.execute("SELECT id, path FROM projects ORDER BY display_order").fetchall()
-            if index < 0 or index >= len(projects): return False, f"Invalid project index: {index}"
-            project_id, project_path = projects[index]
-            conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-            for i, pid in enumerate([row[0] for row in conn.execute("SELECT id FROM projects ORDER BY display_order").fetchall()]):
-                conn.execute("UPDATE projects SET display_order = ? WHERE id = ?", (i, pid))
-    return True, f"Removed project: {project_path}"
+def remove_project(idx):
+    with WALManager(DB_PATH) as c:
+        rows = c.execute("SELECT id, path FROM projects ORDER BY display_order").fetchall()
+        if idx < 0 or idx >= len(rows): return False, f"Invalid index: {idx}"
+        c.execute("DELETE FROM projects WHERE id=?", (rows[idx][0],))
+        for i, r in enumerate(c.execute("SELECT id FROM projects ORDER BY display_order")): c.execute("UPDATE projects SET display_order=? WHERE id=?", (i, r[0]))
+        c.commit()
+    return True, f"Removed: {rows[idx][1]}"
 
 def load_apps():
-    with WALManager(DB_PATH) as conn: return [(row[0], row[1]) for row in conn.execute("SELECT name, command FROM apps ORDER BY display_order").fetchall()]
+    with WALManager(DB_PATH) as c: return [(r[0], r[1]) for r in c.execute("SELECT name, command FROM apps ORDER BY display_order")]
 
-def add_app(name, command):
-    if not name or not command: return False, "Name and command are required"
-    with WALManager(DB_PATH) as conn:
-        with conn:
-            if conn.execute("SELECT COUNT(*) FROM apps WHERE name = ?", (name,)).fetchone()[0] > 0: return False, f"App already exists: {name}"
-            max_order = conn.execute("SELECT MAX(display_order) FROM apps").fetchone()[0]
-            conn.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", (name, command, (max_order + 1) if max_order is not None else 0))
-    return True, f"Added app: {name}"
+def add_app(name, cmd):
+    if not name or not cmd: return False, "Name and command required"
+    with WALManager(DB_PATH) as c:
+        if c.execute("SELECT 1 FROM apps WHERE name=?", (name,)).fetchone(): return False, f"Exists: {name}"
+        m = c.execute("SELECT MAX(display_order) FROM apps").fetchone()[0]
+        c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", (name, cmd, (m or -1)+1)); c.commit()
+    return True, f"Added: {name}"
 
-def remove_app(index):
-    with WALManager(DB_PATH) as conn:
-        with conn:
-            apps = conn.execute("SELECT id, name FROM apps ORDER BY display_order").fetchall()
-            if index < 0 or index >= len(apps): return False, f"Invalid app index: {index}"
-            app_id, app_name = apps[index]
-            conn.execute("DELETE FROM apps WHERE id = ?", (app_id,))
-            for i, aid in enumerate([row[0] for row in conn.execute("SELECT id FROM apps ORDER BY display_order").fetchall()]):
-                conn.execute("UPDATE apps SET display_order = ? WHERE id = ?", (i, aid))
-    return True, f"Removed app: {app_name}"
+def remove_app(idx):
+    with WALManager(DB_PATH) as c:
+        rows = c.execute("SELECT id, name FROM apps ORDER BY display_order").fetchall()
+        if idx < 0 or idx >= len(rows): return False, f"Invalid index: {idx}"
+        c.execute("DELETE FROM apps WHERE id=?", (rows[idx][0],))
+        for i, r in enumerate(c.execute("SELECT id FROM apps ORDER BY display_order")): c.execute("UPDATE apps SET display_order=? WHERE id=?", (i, r[0]))
+        c.commit()
+    return True, f"Removed: {rows[idx][1]}"
 
-def load_sessions(config):
-    with WALManager(DB_PATH) as conn: sessions_data = conn.execute("SELECT key, name, command_template FROM sessions").fetchall()
-    default_prompt, sessions = get_prompt('default'), {}
-    for key, name, cmd_template in sessions_data:
-        is_single_p = key in ['cp', 'lp', 'gp']
-        claude_prompt = config.get('claude_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
-        codex_prompt = config.get('codex_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
-        gemini_prompt = config.get('gemini_prompt', default_prompt).replace('\n', '\\n').replace('"', '\\"')
-        if is_single_p:
-            cmd = cmd_template.replace(' "{CLAUDE_PROMPT}"', '').replace(' "{CODEX_PROMPT}"', '').replace(' "{GEMINI_PROMPT}"', '')
-        else:
-            cmd = cmd_template.format(CLAUDE_PROMPT=claude_prompt, CODEX_PROMPT=codex_prompt, GEMINI_PROMPT=gemini_prompt)
-        sessions[key] = (name, cmd)
-    return sessions
+def load_sessions(cfg):
+    with WALManager(DB_PATH) as c: data = c.execute("SELECT key, name, command_template FROM sessions").fetchall()
+    dp, s = get_prompt('default'), {}
+    esc = lambda p: cfg.get(p, dp).replace('\n', '\\n').replace('"', '\\"')
+    for k, n, t in data:
+        s[k] = (n, t.replace(' "{CLAUDE_PROMPT}"', '').replace(' "{CODEX_PROMPT}"', '').replace(' "{GEMINI_PROMPT}"', '') if k in ['cp','lp','gp'] else t.format(CLAUDE_PROMPT=esc('claude_prompt'), CODEX_PROMPT=esc('codex_prompt'), GEMINI_PROMPT=esc('gemini_prompt')))
+    return s
 
 # Stage 3 initialization
 _stage3_initialized = False
@@ -331,38 +306,30 @@ def ensure_tmux_options():
     if r.returncode != 0: print(f"⚠ tmux config error: {r.stderr.strip()}"); return
     sp.run(['tmux', 'refresh-client', '-S'], capture_output=True)
 
-def create_tmux_session(session_name, work_dir, cmd, env=None, capture_output=True):
-    if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
-        cmd = f'while :; do {cmd}; e=$?; [ $e -eq 0 ] && break; echo -e "\\n⚠️  Crashed (exit $e). [R]estart / [Q]uit: "; read -n1 k; [[ $k =~ [Rr] ]] || break; done'
-    result = sm.new_session(session_name, work_dir, cmd or '', env)
-    ensure_tmux_options()
-    if cmd and any(a in cmd for a in ['codex', 'claude', 'gemini']):
-        sp.run(['tmux', 'split-window', '-v', '-t', session_name, '-c', work_dir, 'bash -c "ls;exec bash"'], capture_output=True)
-        sp.run(['tmux', 'select-pane', '-t', session_name, '-U'], capture_output=True)
-    return result
+def create_tmux_session(sn, wd, cmd, env=None, capture_output=True):
+    is_ai = cmd and any(a in cmd for a in ['codex', 'claude', 'gemini'])
+    if is_ai: cmd = f'while :; do {cmd}; e=$?; [ $e -eq 0 ] && break; echo -e "\\n⚠️  Crashed (exit $e). [R]estart / [Q]uit: "; read -n1 k; [[ $k =~ [Rr] ]] || break; done'
+    r = sm.new_session(sn, wd, cmd or '', env); ensure_tmux_options()
+    if is_ai: sp.run(['tmux', 'split-window', '-v', '-t', sn, '-c', wd, 'bash -c "ls;exec bash"'], capture_output=True); sp.run(['tmux', 'select-pane', '-t', sn, '-U'], capture_output=True)
+    return r
 
 # Terminal and session helpers
-def detect_terminal():
-    for term in ['ptyxis', 'gnome-terminal', 'alacritty']:
-        if shutil.which(term): return term
-    return None
+def detect_terminal(): return next((t for t in ['ptyxis', 'gnome-terminal', 'alacritty'] if shutil.which(t)), None)
+_TERM_ATTACH = {'ptyxis': ['ptyxis', '--'], 'gnome-terminal': ['gnome-terminal', '--'], 'alacritty': ['alacritty', '-e']}
 
-def launch_in_new_window(session_name, terminal=None):
-    terminal = terminal or detect_terminal()
-    if not terminal: print("✗ No supported terminal found"); return False
-    attach_cmd = sm.attach(session_name)
-    cmd = {'ptyxis': ['ptyxis', '--'], 'gnome-terminal': ['gnome-terminal', '--'], 'alacritty': ['alacritty', '-e']}.get(terminal, []) + attach_cmd
-    try: sp.Popen(cmd); print(f"✓ Launched {terminal} for session: {session_name}"); return True
-    except Exception as e: print(f"✗ Failed to launch terminal: {e}"); return False
+def launch_in_new_window(sn, term=None):
+    term = term or detect_terminal()
+    if not term: print("✗ No terminal"); return False
+    try: sp.Popen(_TERM_ATTACH.get(term, []) + sm.attach(sn)); print(f"✓ Launched {term}: {sn}"); return True
+    except Exception as e: print(f"✗ {e}"); return False
 
-def launch_terminal_in_dir(directory, terminal=None):
-    terminal = terminal or detect_terminal()
-    if not terminal: print("✗ No supported terminal found"); return False
-    directory = os.path.abspath(os.path.expanduser(directory))
-    if not os.path.exists(directory): print(f"✗ Directory does not exist: {directory}"); return False
-    cmd = {'ptyxis': ['ptyxis', '--working-directory', directory], 'gnome-terminal': ['gnome-terminal', f'--working-directory={directory}'], 'alacritty': ['alacritty', '--working-directory', directory]}.get(terminal, [])
-    try: sp.Popen(cmd); print(f"✓ Launched {terminal} in: {directory}"); return True
-    except Exception as e: print(f"✗ Failed to launch terminal: {e}"); return False
+def launch_terminal_in_dir(d, term=None):
+    term, d = term or detect_terminal(), os.path.abspath(os.path.expanduser(d))
+    if not term: print("✗ No terminal"); return False
+    if not os.path.exists(d): print(f"✗ Not found: {d}"); return False
+    cmds = {'ptyxis': ['ptyxis', '--working-directory', d], 'gnome-terminal': ['gnome-terminal', f'--working-directory={d}'], 'alacritty': ['alacritty', '--working-directory', d]}
+    try: sp.Popen(cmds.get(term, [])); print(f"✓ {term}: {d}"); return True
+    except Exception as e: print(f"✗ {e}"); return False
 
 def is_pane_receiving_output(session_name, threshold=10):
     r = sp.run(['tmux', 'display-message', '-p', '-t', session_name, '#{window_activity}'], capture_output=True, text=True)
@@ -370,13 +337,10 @@ def is_pane_receiving_output(session_name, threshold=10):
     try: return int(time.time()) - int(r.stdout.strip()) < threshold
     except: return False
 
-# Worktrees (compact - 12 lines)
-def wt_list():
-    items = sorted([d for d in os.listdir(WORKTREES_DIR) if os.path.isdir(os.path.join(WORKTREES_DIR, d))]) if os.path.exists(WORKTREES_DIR) else []
-    print("Worktrees:") if items else print("No worktrees"); [print(f"  {i}. {d}") for i, d in enumerate(items)]; return items
-def wt_find(p):
-    items = sorted([d for d in os.listdir(WORKTREES_DIR) if os.path.isdir(os.path.join(WORKTREES_DIR, d))]) if os.path.exists(WORKTREES_DIR) else []
-    return os.path.join(WORKTREES_DIR, items[int(p)]) if p.isdigit() and 0 <= int(p) < len(items) else next((os.path.join(WORKTREES_DIR, i) for i in items if p in i), None)
+# Worktrees (compact)
+def _wt_items(): return sorted([d for d in os.listdir(WORKTREES_DIR) if os.path.isdir(os.path.join(WORKTREES_DIR, d))]) if os.path.exists(WORKTREES_DIR) else []
+def wt_list(): items = _wt_items(); print("Worktrees:" if items else "No worktrees"); [print(f"  {i}. {d}") for i, d in enumerate(items)]; return items
+def wt_find(p): items = _wt_items(); return os.path.join(WORKTREES_DIR, items[int(p)]) if p.isdigit() and 0 <= int(p) < len(items) else next((os.path.join(WORKTREES_DIR, i) for i in items if p in i), None)
 def wt_create(proj, name):
     os.makedirs(WORKTREES_DIR, exist_ok=True); wt = os.path.join(WORKTREES_DIR, f"{os.path.basename(proj)}-{name}")
     r = _git(proj, 'worktree', 'add', '-b', f"wt-{os.path.basename(proj)}-{name}", wt, 'HEAD')
@@ -388,131 +352,106 @@ def wt_remove(path, confirm=True):
     _git(proj, 'worktree', 'remove', '--force', path); _git(proj, 'branch', '-D', f"wt-{os.path.basename(path)}")
     os.path.exists(path) and shutil.rmtree(path); print(f"✓ Removed {os.path.basename(path)}"); return True
 
-def wait_for_agent_ready(session_name, timeout=5):
-    ready_patterns = [re.compile(p, re.MULTILINE) for p in [r'›.*\n\n\s+\d+%\s+context left', r'>\s+Type your message', r'gemini-2\.5-pro.*\(\d+%\)', r'──+\s*\n>\s+\w+']]
+_READY_PATTERNS = [re.compile(p, re.MULTILINE) for p in [r'›.*\n\n\s+\d+%\s+context left', r'>\s+Type your message', r'gemini-2\.5-pro.*\(\d+%\)', r'──+\s*\n>\s+\w+']]
+def wait_for_agent_ready(sn, timeout=5):
     start, last = time.time(), ""
     while (time.time() - start) < timeout:
-        r = sp.run(['tmux', 'capture-pane', '-t', session_name, '-p'], capture_output=True, text=True)
+        r = sp.run(['tmux', 'capture-pane', '-t', sn, '-p'], capture_output=True, text=True)
         if r.returncode != 0: return False
-        if r.stdout != last:
-            for p in ready_patterns:
-                if p.search(r.stdout): return True
-            last = r.stdout
-        time.sleep(0.2)
+        if r.stdout != last and any(p.search(r.stdout) for p in _READY_PATTERNS): return True
+        last = r.stdout; time.sleep(0.2)
     return True
 
-def get_agent_prefix(agent, work_dir=None):
-    prefix = config.get('claude_prefix', 'Ultrathink. ') if 'claude' in agent else ''
-    agents = Path(work_dir or os.getcwd()) / 'AGENTS.md'
-    return prefix + (agents.read_text().strip() + ' ' if agents.exists() else '')
+def get_agent_prefix(agent, wd=None):
+    pre = config.get('claude_prefix', 'Ultrathink. ') if 'claude' in agent else ''
+    af = Path(wd or os.getcwd()) / 'AGENTS.md'
+    return pre + (af.read_text().strip() + ' ' if af.exists() else '')
 
-def enhance_prompt(prompt, agent='', work_dir=None):
-    prefix = get_agent_prefix(agent, work_dir)
-    return (prefix if prefix and not prompt.startswith(prefix.strip()) else '') + prompt
+def enhance_prompt(prompt, agent='', wd=None):
+    pre = get_agent_prefix(agent, wd)
+    return (pre if pre and not prompt.startswith(pre.strip()) else '') + prompt
 
-def send_prompt_to_session(session_name, prompt, wait_for_completion=False, timeout=None, wait_for_ready=True, send_enter=True):
-    if not sm.has_session(session_name): print(f"✗ Session {session_name} not found"); return False
-    if wait_for_ready:
-        print(f"⏳ Waiting for agent to be ready...", end='', flush=True)
-        print(" ✓" if wait_for_agent_ready(session_name) else " (timeout, sending anyway)")
-    prompt = enhance_prompt(prompt, session_name)
-    sm.send_keys(session_name, prompt)
-    if send_enter:
-        time.sleep(0.1); sm.send_keys(session_name, '\n'); print(f"✓ Sent prompt to session '{session_name}'")
-    else: print(f"✓ Inserted prompt into session '{session_name}' (ready to edit/run)")
-    if wait_for_completion:
-        print("⏳ Waiting for completion...", end='', flush=True)
-        start, last_active, idle_threshold = time.time(), time.time(), 3
+def send_prompt_to_session(sn, prompt, wait_done=False, timeout=None, wait_ready=True, send_enter=True):
+    if not sm.has_session(sn): print(f"✗ Session {sn} not found"); return False
+    if wait_ready: print("⏳ Waiting...", end='', flush=True); print(" ✓" if wait_for_agent_ready(sn) else " (timeout)")
+    sm.send_keys(sn, enhance_prompt(prompt, sn))
+    if send_enter: time.sleep(0.1); sm.send_keys(sn, '\n'); print(f"✓ Sent to '{sn}'")
+    else: print(f"✓ Inserted into '{sn}'")
+    if wait_done:
+        print("⏳ Waiting...", end='', flush=True); start, last = time.time(), time.time()
         while True:
-            if timeout and (time.time() - start) > timeout: print(f"\n⚠ Timeout ({timeout}s) reached"); return True
-            if is_pane_receiving_output(session_name, threshold=2): last_active = time.time(); print(".", end='', flush=True)
-            elif (time.time() - last_active) > idle_threshold: print("\n✓ Completed (activity stopped)"); return True
+            if timeout and (time.time() - start) > timeout: print(f"\n⚠ Timeout"); return True
+            if is_pane_receiving_output(sn, threshold=2): last = time.time(); print(".", end='', flush=True)
+            elif (time.time() - last) > 3: print("\n✓ Done"); return True
             time.sleep(0.5)
     return True
 
-def get_or_create_directory_session(session_key, target_dir):
-    if session_key not in sessions: return None
-    base_name, cmd_template = sessions[session_key]
-    r = sm.list_sessions()
+def get_or_create_directory_session(key, target_dir):
+    if key not in sessions: return None
+    bn, _ = sessions[key]; r = sm.list_sessions()
     if r.returncode == 0:
-        for session in [s for s in r.stdout.strip().split('\n') if s]:
-            if not (session == base_name or session.startswith(base_name + '-')): continue
-            path_r = sp.run(['tmux', 'display-message', '-p', '-t', session, '#{pane_dead}:#{pane_current_path}'], capture_output=True, text=True)
-            if path_r.returncode == 0 and path_r.stdout.strip().startswith('0:') and path_r.stdout.strip()[2:] == target_dir: return session
-    dir_name, session_name = os.path.basename(target_dir), f"{base_name}-{os.path.basename(target_dir)}"
-    attempt, final = 0, session_name
-    while sm.has_session(final): attempt += 1; final = f"{session_name}-{attempt}"
-    return final
+        for s in [x for x in r.stdout.strip().split('\n') if x]:
+            if not (s == bn or s.startswith(bn + '-')): continue
+            pr = sp.run(['tmux', 'display-message', '-p', '-t', s, '#{pane_dead}:#{pane_current_path}'], capture_output=True, text=True)
+            if pr.returncode == 0 and pr.stdout.strip().startswith('0:') and pr.stdout.strip()[2:] == target_dir: return s
+    sn, i = f"{bn}-{os.path.basename(target_dir)}", 0
+    while sm.has_session(sn if i == 0 else f"{sn}-{i}"): i += 1
+    return sn if i == 0 else f"{sn}-{i}"
 
 # Ghost sessions
-def _ghost_spawn(dir_path, sessions_map):
-    if not os.path.isdir(dir_path) or not shutil.which('tmux'): return
-    state_file = os.path.join(DATA_DIR, 'ghost_state.json')
+def _ghost_spawn(dp, sm_map):
+    if not os.path.isdir(dp) or not shutil.which('tmux'): return
+    sf = os.path.join(DATA_DIR, 'ghost_state.json')
     try:
-        with open(state_file) as f: state = json.load(f)
-        if time.time() - state.get('time', 0) > _GHOST_TIMEOUT:
-            for k in ['c', 'l', 'g']: sp.run(['tmux', 'kill-session', '-t', f'{_GHOST_PREFIX}{k}'], capture_output=True)
+        with open(sf) as f: st = json.load(f)
+        if time.time() - st.get('time', 0) > _GHOST_TIMEOUT: [sp.run(['tmux', 'kill-session', '-t', f'{_GHOST_PREFIX}{k}'], capture_output=True) for k in 'clg']
     except: pass
-    for key in ['c', 'l', 'g']:
-        ghost = f'{_GHOST_PREFIX}{key}'
-        if sm.has_session(ghost):
-            r = sp.run(['tmux', 'display-message', '-p', '-t', ghost, '#{pane_current_path}'], capture_output=True, text=True)
-            if r.returncode == 0 and r.stdout.strip() == dir_path: continue
-            sp.run(['tmux', 'kill-session', '-t', ghost], capture_output=True)
-        _, cmd = sessions_map.get(key, (None, None))
+    for k in 'clg':
+        g = f'{_GHOST_PREFIX}{k}'
+        if sm.has_session(g):
+            r = sp.run(['tmux', 'display-message', '-p', '-t', g, '#{pane_current_path}'], capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout.strip() == dp: continue
+            sp.run(['tmux', 'kill-session', '-t', g], capture_output=True)
+        _, cmd = sm_map.get(k, (None, None))
         if cmd:
-            create_tmux_session(ghost, dir_path, cmd)
-            prefix = get_agent_prefix({'c': 'codex', 'l': 'claude', 'g': 'gemini'}[key], dir_path)
-            if prefix: sp.Popen([sys.executable, __file__, 'send', ghost, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    try:
-        with open(state_file, 'w') as f: json.dump({'dir': dir_path, 'time': time.time()}, f)
+            create_tmux_session(g, dp, cmd); pre = get_agent_prefix({'c': 'codex', 'l': 'claude', 'g': 'gemini'}[k], dp)
+            if pre: sp.Popen([sys.executable, __file__, 'send', g, pre, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    try: Path(sf).write_text(json.dumps({'dir': dp, 'time': time.time()}))
     except: pass
 
-def _ghost_claim(agent_key, target_dir):
-    ghost = f'{_GHOST_PREFIX}{_GHOST_MAP.get(agent_key, agent_key)}'
-    if not sm.has_session(ghost): return None
-    r = sp.run(['tmux', 'display-message', '-p', '-t', ghost, '#{pane_current_path}'], capture_output=True, text=True)
-    if r.returncode != 0 or r.stdout.strip() != target_dir:
-        sp.run(['tmux', 'kill-session', '-t', ghost], capture_output=True); return None
-    return ghost
+def _ghost_claim(ak, td):
+    g = f'{_GHOST_PREFIX}{_GHOST_MAP.get(ak, ak)}'
+    if not sm.has_session(g): return None
+    r = sp.run(['tmux', 'display-message', '-p', '-t', g, '#{pane_current_path}'], capture_output=True, text=True)
+    if r.returncode != 0 or r.stdout.strip() != td: sp.run(['tmux', 'kill-session', '-t', g], capture_output=True); return None
+    return g
 
 # Jobs listing
 def list_jobs(running_only=False):
     r = sp.run(['tmux', 'list-sessions', '-F', '#{session_name}'], capture_output=True, text=True)
-    jobs_by_path = {}
-    if r.returncode == 0:
-        for session in [s for s in r.stdout.strip().split('\n') if s]:
-            path_r = sp.run(['tmux', 'display-message', '-p', '-t', session, '#{pane_current_path}'], capture_output=True, text=True)
-            if path_r.returncode == 0:
-                sess_path = path_r.stdout.strip()
-                jobs_by_path.setdefault(sess_path, []).append(session)
-    if os.path.exists(WORKTREES_DIR):
-        for item in os.listdir(WORKTREES_DIR):
-            wp = os.path.join(WORKTREES_DIR, item)
-            if os.path.isdir(wp) and wp not in jobs_by_path: jobs_by_path[wp] = []
-    if not jobs_by_path: print("No jobs found"); return
+    jbp = {}  # jobs_by_path
+    for s in (r.stdout.strip().split('\n') if r.returncode == 0 else []):
+        if s and (pr := sp.run(['tmux', 'display-message', '-p', '-t', s, '#{pane_current_path}'], capture_output=True, text=True)).returncode == 0:
+            jbp.setdefault(pr.stdout.strip(), []).append(s)
+    for wp in [os.path.join(WORKTREES_DIR, d) for d in (os.listdir(WORKTREES_DIR) if os.path.exists(WORKTREES_DIR) else []) if os.path.isdir(os.path.join(WORKTREES_DIR, d))]:
+        if wp not in jbp: jbp[wp] = []
+    if not jbp: print("No jobs found"); return
     jobs = []
-    for jp in list(jobs_by_path.keys()):
-        if not os.path.exists(jp):
-            for s in jobs_by_path[jp]: sp.run(['tmux', 'kill-session', '-t', s], capture_output=True)
-            continue
-        is_wt = jp.startswith(WORKTREES_DIR)
-        is_active = any(is_pane_receiving_output(s) for s in jobs_by_path[jp]) if jobs_by_path[jp] else False
-        if running_only and not is_active: continue
+    for jp, ss in list(jbp.items()):
+        if not os.path.exists(jp): [sp.run(['tmux', 'kill-session', '-t', s], capture_output=True) for s in ss]; continue
+        active = any(is_pane_receiving_output(s) for s in ss) if ss else False
+        if running_only and not active: continue
         m = re.search(r'-(\d{8})-(\d{6})-', os.path.basename(jp))
         ct = datetime.strptime(f"{m.group(1)}{m.group(2)}", "%Y%m%d%H%M%S") if m else None
         td = (datetime.now() - ct).total_seconds() if ct else 0
-        ct_disp = f"{int(td/60)}m ago" if td < 3600 else f"{int(td/3600)}h ago" if td < 86400 else f"{int(td/86400)}d ago" if ct else ""
-        jobs.append({'path': jp, 'name': os.path.basename(jp), 'sessions': jobs_by_path[jp], 'is_wt': is_wt, 'is_active': is_active, 'ct': ct, 'ct_disp': ct_disp})
-    jobs.sort(key=lambda x: x['ct'] if x['ct'] else datetime.min)
+        ct_d = f"{int(td/60)}m ago" if td < 3600 else f"{int(td/3600)}h ago" if td < 86400 else f"{int(td/86400)}d ago" if ct else ""
+        jobs.append({'p': jp, 'n': os.path.basename(jp), 's': ss, 'wt': jp.startswith(WORKTREES_DIR), 'a': active, 'ct': ct, 'ctd': ct_d})
     print("Jobs:\n")
-    for j in jobs:
-        status = "🏃 RUNNING" if j['is_active'] else "📋 REVIEW"
-        wt = ' [worktree]' if j['is_wt'] else ''
-        ct = f" ({j['ct_disp']})" if j['ct_disp'] else ''
-        print(f"  {status}  {j['name']}{wt}{ct}")
-        print(f"           aio {j['path'].replace(os.path.expanduser('~'), '~')}")
-        for s in j['sessions']: print(f"           tmux attach -t {s}")
+    for j in sorted(jobs, key=lambda x: x['ct'] or datetime.min):
+        ctd = f" ({j['ctd']})" if j['ctd'] else ''
+        print(f"  {'🏃 RUNNING' if j['a'] else '📋 REVIEW'}  {j['n']}{' [worktree]' if j['wt'] else ''}{ctd}")
+        print(f"           aio {j['p'].replace(os.path.expanduser('~'), '~')}")
+        for s in j['s']: print(f"           tmux attach -t {s}")
         print()
 
 def parse_agent_specs_and_prompt(argv, start_idx):
@@ -532,11 +471,12 @@ def format_app_command(app_cmd, max_length=60):
     return display_cmd[:max_length-3] + "..." if len(display_cmd) > max_length else display_cmd
 
 def list_all_items(show_help=True, update_cache=True):
-    projects, apps = load_projects(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(projects) + '\n')
-    lines = ([f"📁 PROJECTS:"] + [f"  {i}. {'✓' if os.path.exists(p) else '✗'} {p}" for i, p in enumerate(projects)] if projects else []) + ([f"\n⚡ COMMANDS:"] + [f"  {len(projects)+i}. {n} → {format_app_command(c)}" for i, (n, c) in enumerate(apps)] if apps else [])
-    if lines: print('\n'.join(lines).replace('\n\n', '\n')); update_cache and Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + '\n'.join(lines).replace('\n\n', '\n') + '\n')
-    if show_help and (projects or apps): print(f"\n💡 aio add [path|name cmd]  aio remove <#|name>")
-    return projects, apps
+    p, a = load_projects(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(p) + '\n')
+    out = ([f"📁 PROJECTS:"] + [f"  {i}. {'✓' if os.path.exists(x) else '✗'} {x}" for i, x in enumerate(p)] if p else [])
+    out += ([f"⚡ COMMANDS:"] + [f"  {len(p)+i}. {n} → {format_app_command(c)}" for i, (n, c) in enumerate(a)] if a else [])
+    if out: txt = '\n'.join(out); print(txt); update_cache and Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
+    if show_help and (p or a): print(f"\n💡 aio add [path|name cmd]  aio remove <#|name>")
+    return p, a
 
 def auto_backup_check():
     if not hasattr(os, 'fork'): return
@@ -666,15 +606,15 @@ def cmd_attach():
     print("No session")
 
 def cmd_cleanup():
-    wts = [d for d in os.listdir(WORKTREES_DIR) if os.path.isdir(os.path.join(WORKTREES_DIR, d))] if os.path.exists(WORKTREES_DIR) else []
+    wts = _wt_items()
     with WALManager(DB_PATH) as c: db_cnt = c.execute("SELECT COUNT(*) FROM multi_runs").fetchone()[0]
     if not wts and not db_cnt: print("Nothing to clean"); sys.exit(0)
     print(f"Will delete: {len(wts)} dirs, {db_cnt} db entries")
-    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").strip().lower() in ['y', 'yes']) or _die("✗")
+    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").lower() in ['y', 'yes']) or _die("✗")
     for wt in wts:
         try: shutil.rmtree(os.path.join(WORKTREES_DIR, wt)); print(f"✓ {wt}")
         except: pass
-    for p in PROJECTS: os.path.exists(p) and _git(p, 'worktree', 'prune')
+    [_git(p, 'worktree', 'prune') for p in PROJECTS if os.path.exists(p)]
     with WALManager(DB_PATH) as c: c.execute("DELETE FROM multi_runs"); c.commit()
     print("✓ Cleaned")
 
@@ -805,25 +745,15 @@ def cmd_setup():
         _git(cwd, 'add', '-A')
         if _git(cwd, 'diff', '--cached', '--quiet').returncode == 0: Path(os.path.join(cwd, '.gitignore')).touch(); _git(cwd, 'add', '.gitignore')
         _git(cwd, 'commit', '-m', 'Initial commit'); print("✓ Initial commit")
-    _git(cwd, 'branch', '-M', 'main')
-    has_remote = _git(cwd, 'remote', 'get-url', 'origin').returncode == 0
-    url = work_dir_arg
+    _git(cwd, 'branch', '-M', 'main'); has_remote = _git(cwd, 'remote', 'get-url', 'origin').returncode == 0; url = work_dir_arg
     if not url and not has_remote and shutil.which('gh'):
-        name = os.path.basename(cwd)
-        resp = input(f"🚀 Create GitHub repo '{name}'? (y/n/private): ").strip().lower()
+        name, resp = os.path.basename(cwd), input(f"🚀 Create GitHub repo? (y/n/private): ").lower()
         if resp in ['y', 'yes', 'p', 'private']:
-            vis = '--private' if resp in ['p', 'private'] else '--public'
-            r = sp.run(['gh', 'repo', 'create', name, vis], capture_output=True, text=True, timeout=30)
-            user = sp.run(['gh', 'api', 'user', '-q', '.login'], capture_output=True, text=True).stdout.strip()
-            url = r.stdout.strip() or f"https://github.com/{user}/{name}.git"
-            print("✓ Created/connected repo")
-    if not url and not has_remote: url = input("Enter remote URL (Enter to skip): ").strip()
-    if url:
-        _git(cwd, 'remote', 'set-url' if has_remote else 'remote', 'add', 'origin', url) if has_remote else _git(cwd, 'remote', 'add', 'origin', url)
-        print(f"✓ Remote: {url}")
-    env = get_noninteractive_git_env()
-    r = _git(cwd, 'push', '-u', 'origin', 'main', env=env)
-    print("✓ Pushed" if r.returncode == 0 else "ℹ Push skipped")
+            r = sp.run(['gh', 'repo', 'create', name, '--private' if resp in ['p', 'private'] else '--public'], capture_output=True, text=True, timeout=30)
+            url = r.stdout.strip() or f"https://github.com/{sp.run(['gh', 'api', 'user', '-q', '.login'], capture_output=True, text=True).stdout.strip()}/{name}.git"; print("✓ Created")
+    if not url and not has_remote: url = input("Remote URL (Enter to skip): ").strip()
+    if url: _git(cwd, 'remote', 'set-url' if has_remote else 'add', 'origin', url); print(f"✓ Remote: {url}")
+    print("✓ Pushed" if _git(cwd, 'push', '-u', 'origin', 'main', env=get_noninteractive_git_env()).returncode == 0 else "ℹ Push skipped")
 
 def cmd_install():
     bin_dir, script_path = os.path.expanduser("~/.local/bin"), os.path.realpath(__file__)
@@ -953,27 +883,18 @@ def cmd_remove():
     sys.exit(0 if ok else 1)
 
 def cmd_dash():
-    sn = 'dash'
-    if not sm.has_session(sn):
-        sp.run(['tmux', 'new-session', '-d', '-s', sn, '-c', work_dir])
-        sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', work_dir, 'bash -c "aio jobs; exec bash"'])
-    os.execvp('tmux', ['tmux', 'attach', '-t', sn] if 'TMUX' not in os.environ else ['tmux', 'switch-client', '-t', sn])
+    if not sm.has_session('dash'): sp.run(['tmux', 'new-session', '-d', '-s', 'dash', '-c', work_dir]); sp.run(['tmux', 'split-window', '-h', '-t', 'dash', '-c', work_dir, 'bash -c "aio jobs; exec bash"'])
+    os.execvp('tmux', ['tmux', 'switch-client' if 'TMUX' in os.environ else 'attach', '-t', 'dash'])
 
 def cmd_fix_bug_feat_auto_del():
-    args = sys.argv[2:]
-    agent = 'l'
-    if args and args[0] in ('c', 'l', 'g'): agent, args = args[0], args[1:]
-    prompt_template = get_prompt(arg, show_location=True) or '{task}'
-    if arg in ('fix', 'auto', 'del'): prompt, task = prompt_template, 'autonomous'
-    else:
-        task = ' '.join(args) if args else input(f"{arg}: ")
-        prompt = prompt_template.format(task=task)
-    agent_name, cmd = sessions[agent]
-    session_name = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"
-    print(f"📝 {arg.upper()} [{agent_name}]: {task[:50]}{'...' if len(task) > 50 else ''}")
-    prompt = enhance_prompt(prompt, agent_name)
-    create_tmux_session(session_name, os.getcwd(), f"{cmd} {shlex.quote(prompt)}")
-    launch_in_new_window(session_name) if 'TMUX' in os.environ else os.execvp(sm.attach(session_name)[0], sm.attach(session_name))
+    args, agent = sys.argv[2:], 'l'
+    if args and args[0] in 'clg': agent, args = args[0], args[1:]
+    pt = get_prompt(arg, show_location=True) or '{task}'
+    task = 'autonomous' if arg in ('fix', 'auto', 'del') else (' '.join(args) if args else input(f"{arg}: "))
+    an, cmd = sessions[agent]; sn = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"
+    print(f"📝 {arg.upper()} [{an}]: {task[:50]}{'...' if len(task) > 50 else ''}")
+    create_tmux_session(sn, os.getcwd(), f"{cmd} {shlex.quote(enhance_prompt(pt if arg in ('fix', 'auto', 'del') else pt.format(task=task), an))}")
+    launch_in_new_window(sn) if 'TMUX' in os.environ else os.execvp(sm.attach(sn)[0], sm.attach(sn))
 
 def cmd_multi():
     if work_dir_arg == 'set':
@@ -1052,53 +973,28 @@ def cmd_dir_or_file():
         elif ext == '.md': os.execvp(os.environ.get('EDITOR', 'nvim'), [os.environ.get('EDITOR', 'nvim'), arg])
 
 def cmd_session():
-    # Ghost claiming - pre-warmed session for instant startup
-    if arg in _GHOST_MAP and not work_dir_arg:
-        ghost = _ghost_claim(arg, work_dir)
-        if ghost:
-            agent_name = sessions[arg][0] if arg in sessions else arg
-            sn = f"{agent_name}-{os.path.basename(work_dir)}"
-            sp.run(['tmux', 'rename-session', '-t', ghost, sn], capture_output=True)
-            print(f"⚡ Ghost claimed: {sn}")
-            if 'TMUX' in os.environ: os.execvp('tmux', ['tmux', 'switch-client', '-t', sn])
-            else: os.execvp(sm.attach(sn)[0], sm.attach(sn))
-        # Ghost not available - fall through to create new session
+    # Ghost claiming
+    if arg in _GHOST_MAP and not work_dir_arg and (g := _ghost_claim(arg, work_dir)):
+        sn = f"{sessions[arg][0] if arg in sessions else arg}-{os.path.basename(work_dir)}"
+        sp.run(['tmux', 'rename-session', '-t', g, sn], capture_output=True); print(f"⚡ Ghost: {sn}")
+        os.execvp('tmux', ['tmux', 'switch-client' if 'TMUX' in os.environ else 'attach', '-t', sn])
     # Inside tmux - create pane
     if 'TMUX' in os.environ and arg in sessions and len(arg) == 1:
-        agent_name, cmd = sessions[arg]
-        sp.run(['tmux', 'split-window', '-bv', '-c', work_dir, cmd])
-        prefix = get_agent_prefix(agent_name, work_dir)
-        if prefix: time.sleep(0.5); sp.run(['tmux', 'send-keys', '-t', '!', '-l', prefix])
+        an, cmd = sessions[arg]; sp.run(['tmux', 'split-window', '-bv', '-c', work_dir, cmd])
+        pre = get_agent_prefix(an, work_dir)
+        if pre: time.sleep(0.5); sp.run(['tmux', 'send-keys', '-t', '!', '-l', pre])
         sys.exit(0)
-    session_name = get_or_create_directory_session(arg, work_dir)
-    if session_name is None:
-        name, cmd = sessions.get(arg, (arg, None))
-        env = get_noninteractive_git_env()
-        create_tmux_session(name, work_dir, cmd or arg, env=env)
-        session_name = name
-    else:
-        if not sm.has_session(session_name):
-            _, cmd = sessions[arg]
-            env = get_noninteractive_git_env()
-            create_tmux_session(session_name, work_dir, cmd, env=env)
-    is_single_p = arg.endswith('p') and not arg.endswith('pp') and len(arg) == 2 and arg in sessions
-    prompt_start_idx = 2 if is_work_dir_a_prompt else (3 if work_dir_arg else 2)
-    prompt_parts = [sys.argv[i] for i in range(prompt_start_idx, len(sys.argv)) if sys.argv[i] not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']]
-    if prompt_parts:
-        prompt = ' '.join(prompt_parts)
-        print(f"📤 Prompt queued")
-        cmd = [sys.executable, __file__, 'send', session_name, prompt]
-        if is_single_p: cmd.append('--no-enter')
-        sp.Popen(cmd, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    elif is_single_p:
-        prompt_map = {'cp': CODEX_PROMPT, 'lp': CLAUDE_PROMPT, 'gp': GEMINI_PROMPT}
-        if prompt_map.get(arg): sp.Popen([sys.executable, __file__, 'send', session_name, prompt_map[arg], '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    elif arg in sessions:
-        prefix = get_agent_prefix(sessions[arg][0], work_dir)
-        if prefix: sp.Popen([sys.executable, __file__, 'send', session_name, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    if new_window: launch_in_new_window(session_name); with_terminal and launch_terminal_in_dir(work_dir)
-    elif "TMUX" in os.environ or not sys.stdout.isatty(): print(f"✓ Session: {session_name}")
-    else: os.execvp(sm.attach(session_name)[0], sm.attach(session_name))
+    sn = get_or_create_directory_session(arg, work_dir); env = get_noninteractive_git_env()
+    if sn is None: n, c = sessions.get(arg, (arg, None)); create_tmux_session(n, work_dir, c or arg, env=env); sn = n
+    elif not sm.has_session(sn): create_tmux_session(sn, work_dir, sessions[arg][1], env=env)
+    is_p = arg.endswith('p') and not arg.endswith('pp') and len(arg) == 2 and arg in sessions
+    pp = [a for a in sys.argv[(2 if is_work_dir_a_prompt else (3 if work_dir_arg else 2)):] if a not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']]
+    if pp: print("📤 Prompt queued"); sp.Popen([sys.executable, __file__, 'send', sn, ' '.join(pp)] + (['--no-enter'] if is_p else []), stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    elif is_p and (pm := {'cp': CODEX_PROMPT, 'lp': CLAUDE_PROMPT, 'gp': GEMINI_PROMPT}.get(arg)): sp.Popen([sys.executable, __file__, 'send', sn, pm, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    elif arg in sessions and (pre := get_agent_prefix(sessions[arg][0], work_dir)): sp.Popen([sys.executable, __file__, 'send', sn, pre, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    if new_window: launch_in_new_window(sn); with_terminal and launch_terminal_in_dir(work_dir)
+    elif "TMUX" in os.environ or not sys.stdout.isatty(): print(f"✓ Session: {sn}")
+    else: os.execvp(sm.attach(sn)[0], sm.attach(sn))
 
 # Command dispatch
 COMMANDS = {
