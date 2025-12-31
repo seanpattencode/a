@@ -773,7 +773,7 @@ def cmd_push():
     r.returncode == 0 or _die("✗ Not a git repository")
     is_wt = '.git/worktrees/' in r.stdout.strip() or cwd.startswith(WORKTREES_DIR)
     args = [a for a in sys.argv[2:] if a not in ['--yes', '-y']]
-    target = args[0] if args and os.path.exists(os.path.join(cwd, args[0])) else None
+    target = args[0] if args and os.path.isfile(os.path.join(cwd, args[0])) else None
     if target: args = args[1:]
     msg = ' '.join(args) if args else (f"Update {target}" if target else f"Update {os.path.basename(cwd)}")
     env = get_noninteractive_git_env()
@@ -806,7 +806,7 @@ def cmd_push():
         r = _git(cwd, 'commit', '-m', msg)
         if r.returncode == 0: print(f"✓ Committed: {msg}")
         elif 'nothing to commit' in r.stdout: print("ℹ No changes"); sys.exit(0)
-        else: _die(f"✗ Commit failed: {r.stderr.strip() or r.stdout.strip()}")
+        else: _die(f"Commit failed: {r.stderr.strip() or r.stdout.strip()}")
         if cur != main:
             _git(cwd, 'checkout', main).returncode == 0 or _die(f"✗ Checkout failed")
             _git(cwd, 'merge', cur, '--no-edit', '-X', 'theirs').returncode == 0 or _die("✗ Merge failed")
@@ -1069,6 +1069,8 @@ def cmd_e():
 
 def cmd_x(): sp.run(['tmux', 'kill-server']); print("✓ All sessions killed")
 def cmd_p(): list_all_items(show_help=False)
+def cmd_copy():
+    L=os.popen('tmux capture-pane -pJ -S -99').read().split('\n') if os.environ.get('TMUX') else []; P=[i for i,l in enumerate(L) if '$'in l and'@'in l]; u=next((i for i in reversed(P) if 'copy'in L[i]),len(L)); p=next((i for i in reversed(P) if i<u),-1); c='\n'.join(L[p+1:u]).strip() if P else ''; t=c.replace('\n',' '); sp.run(_get_clipboard_cmd(),shell=True,input=c,text=True); print(f"✓ {t[:23]+'...'+t[-24:] if len(t)>50 else t}")
 
 def cmd_worktree_plus():
     key = arg[:-2]
@@ -1151,7 +1153,7 @@ COMMANDS = {
     'watch': cmd_watch, 'push': cmd_push, 'pull': cmd_pull, 'revert': cmd_revert, 'setup': cmd_setup,
     'install': cmd_install, 'deps': cmd_deps, 'prompt': cmd_prompt, 'gdrive': cmd_gdrive, 'note': cmd_note,
     'add': cmd_add, 'remove': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'a': cmd_multi, 'all': cmd_multi,
-    'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'dir': lambda: (print(f"📂 {os.getcwd()}"), sp.run(['ls'])),
+    'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'dir': lambda: (print(f"📂 {os.getcwd()}"), sp.run(['ls'])),
     'fix': cmd_fix_bug_feat_auto_del, 'bug': cmd_fix_bug_feat_auto_del, 'feat': cmd_fix_bug_feat_auto_del,
     'auto': cmd_fix_bug_feat_auto_del, 'del': cmd_fix_bug_feat_auto_del,
 }
