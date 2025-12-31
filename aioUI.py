@@ -1,18 +1,19 @@
 import sys, asyncio, os, pty, subprocess, webbrowser, struct, fcntl, termios, json; from aiohttp import web
 
 HTML = '''<!doctype html>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.min.css">
 <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
-<div id=t style="height:calc(100vh - 100px)"></div>
-<div style="position:fixed;bottom:0;left:0;right:0;height:100px;background:#1a1a2e;border-top:2px solid #4a4a6a;display:flex;align-items:center;justify-content:center;gap:20px">
-  <input id=i autofocus placeholder="type command, press Enter" style="flex:1;max-width:500px;padding:15px;font-size:18px;background:#0d0d1a;color:#fff;border:2px solid #4a4a6a;border-radius:8px;outline:none"
+<div id=t style="height:calc(100vh - 140px)"></div>
+<div style="position:fixed;bottom:0;left:0;right:0;height:140px;padding:10px;box-sizing:border-box;background:#1a1a2e;border-top:2px solid #4a4a6a;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px">
+  <input id=i autofocus placeholder="command" style="width:100%;padding:18px;font-size:20px;background:#0d0d1a;color:#fff;border:2px solid #4a4a6a;border-radius:8px;outline:none;box-sizing:border-box"
     onkeydown="if(event.key==='Enter'){ws.send(this.value+'\\n');this.value='';}">
-  <button onclick="ws.send(i.value+'\\n');i.value='';i.focus()" style="padding:15px 30px;font-size:24px">▶</button>
-  <button onclick="ws.send('aio\\n')" style="padding:15px 30px;font-size:24px">aio</button>
-  <button onclick="ws.send('aio note '+i.value+'\\n');i.value='';i.focus()" style="padding:15px 30px;font-size:24px">note</button>
-  <button onclick="fetch('/restart');(c=()=>fetch('/').then(()=>location.reload()).catch(()=>setTimeout(c,50)))()" style="padding:15px 30px;font-size:24px">↻</button>
+  <button onclick="ws.send(i.value+'\\n');i.value='';i.focus()" style="flex:1;padding:18px;font-size:22px;min-width:60px">▶</button>
+  <button onclick="ws.send('aio\\n')" style="flex:1;padding:18px;font-size:22px;min-width:60px">aio</button>
+  <button onclick="ws.send('aio note '+i.value+'\\n');i.value='';i.focus()" style="flex:1;padding:18px;font-size:22px;min-width:60px">note</button>
+  <button onclick="fetch('/restart');(c=()=>fetch('/').then(()=>location.reload()).catch(()=>setTimeout(c,50)))()" style="flex:1;padding:18px;font-size:22px;min-width:60px">↻</button>
 </div>
 <script>
   const term = new Terminal(), fit = new (FitAddon.FitAddon||FitAddon)(), ws = new WebSocket("ws://"+location.host+"/ws");
