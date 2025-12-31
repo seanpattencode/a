@@ -816,19 +816,19 @@ def cmd_prompt():
     else: print("No changes")
 
 def cmd_gdrive():
-    import cloud
-    if work_dir_arg == 'login': cloud.configured() and not _confirm("Already logged in. Switch?") or cloud.login()
-    elif work_dir_arg == 'logout': cloud.logout()
-    else: cloud.status()
+    import aioCloud
+    if work_dir_arg == 'login': aioCloud.configured() and not _confirm("Already logged in. Switch?") or aioCloud.login()
+    elif work_dir_arg == 'logout': aioCloud.logout()
+    else: aioCloud.status()
 
 def cmd_note():
-    import threading, cloud
+    import threading, aioCloud
     NOTEBOOK_DIR = Path(SCRIPT_DIR) / 'data' / 'notebook'; NOTEBOOK_DIR.mkdir(parents=True, exist_ok=True)
     def _slug(s): return re.sub(r'[^\w\-]', '', s.split('\n')[0][:40].lower().replace(' ', '-'))[:30] or 'note'
     def _preview(p): return p.read_text().split('\n')[0][:60]
     raw = ' '.join(sys.argv[2:]) if len(sys.argv) > 2 else None
     notes = sorted(NOTEBOOK_DIR.glob('*.md'), key=lambda p: p.stat().st_mtime, reverse=True)
-    threading.Thread(target=cloud.pull_notes, daemon=True).start()
+    threading.Thread(target=aioCloud.pull_notes, daemon=True).start()
     if not raw or raw == 'ls':
         if not notes: print("No notes. Create: aio note <content>"); sys.exit(0)
         for i, n in enumerate(notes): print(f"{i}. {_preview(n)}")
@@ -843,7 +843,7 @@ def cmd_note():
         if content:
             nf = NOTEBOOK_DIR / f"{_slug(content)}-{datetime.now().strftime('%m%d%H%M')}.md"
             nf.write_text(content); print(f"✓ {_preview(nf)}")
-            started, _ = cloud.sync_data()
+            started, _ = aioCloud.sync_data()
             print("☁ Syncing..." if started else "💡 Run 'aio gdrive login' for cloud backup")
 
 def cmd_add():
