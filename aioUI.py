@@ -6,7 +6,7 @@ HTML = '''<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
 <div id=t style="height:calc(100vh - 100px)"></div>
-<div style="position:fixed;bottom:0;left:0;right:0;height:100px;background:#1a1a2e;border-top:2px solid #4a4a6a;display:flex;align-items:center;justify-content:center;gap:20px"><button onclick="ws.send('aio\\n')" style="padding:15px 30px;font-size:24px">aio</button><button onclick="ws.send('aio note\\n')" style="padding:15px 30px;font-size:24px">aio note</button><button onclick="location.href='/?'+Date.now()" style="padding:15px 30px;font-size:24px">restart</button></div>
+<div style="position:fixed;bottom:0;left:0;right:0;height:100px;background:#1a1a2e;border-top:2px solid #4a4a6a;display:flex;align-items:center;justify-content:center;gap:20px"><input id=i autofocus placeholder="type command, press Enter" onkeydown="if(event.key==='Enter'){ws.send(this.value+'\\n');this.value='';}" style="flex:1;max-width:500px;padding:15px;font-size:18px;background:#0d0d1a;color:#fff;border:2px solid #4a4a6a;border-radius:8px;outline:none"><button onclick="ws.send(i.value+'\\n');i.value='';i.focus()" style="padding:15px 30px;font-size:24px">▶</button><button onclick="ws.send('aio\\n')" style="padding:15px 30px;font-size:24px">aio</button><button onclick="ws.send('aio note\\n')" style="padding:15px 30px;font-size:24px">note</button><button onclick="location.href='/?'+Date.now()" style="padding:15px 30px;font-size:24px">↻</button></div>
 <script>
   const term = new Terminal(), fit = new (FitAddon.FitAddon||FitAddon)(), ws = new WebSocket("ws://"+location.host+"/ws");
   term.loadAddon(fit); term.open(t);
