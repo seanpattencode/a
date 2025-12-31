@@ -11,7 +11,7 @@ HTML = '''<!doctype html>
     onkeydown="if(event.key==='Enter'){ws.send(this.value+'\\n');this.value='';}">
   <button onclick="ws.send(i.value+'\\n');i.value='';i.focus()" style="padding:15px 30px;font-size:24px">▶</button>
   <button onclick="ws.send('aio\\n')" style="padding:15px 30px;font-size:24px">aio</button>
-  <button onclick="ws.send('aio note\\n')" style="padding:15px 30px;font-size:24px">note</button>
+  <button onclick="ws.send('aio note '+i.value+'\\n');i.value='';i.focus()" style="padding:15px 30px;font-size:24px">note</button>
   <button onclick="fetch('/restart');(c=()=>fetch('/').then(()=>location.reload()).catch(()=>setTimeout(c,50)))()" style="padding:15px 30px;font-size:24px">↻</button>
 </div>
 <script>
@@ -44,4 +44,4 @@ async def term(r):
 
 app = web.Application(); app.add_routes([web.get('/', page), web.post('/exec', run), web.get('/ws', term), web.get('/restart', restart)])
 if '--install' in sys.argv: os.makedirs(os.path.expanduser('~/.config/autostart'), exist_ok=True); open(os.path.expanduser('~/.config/autostart/aioUI.desktop'),'w').write(f'[Desktop Entry]\nType=Application\nExec=python3 {os.path.abspath(__file__)}\nName=aioUI'); sys.exit()
-if __name__ == '__main__': p=int(sys.argv[1]) if len(sys.argv)>1 else 8080; webbrowser.open(f'http://localhost:{p}'); web.run_app(app, port=p)
+if __name__ == '__main__': p=int(sys.argv[1]) if len(sys.argv)>1 else 8080; (subprocess.run(['termux-open-url', f'http://localhost:{p}']) if os.environ.get('TERMUX_VERSION') else webbrowser.open(f'http://localhost:{p}')); web.run_app(app, port=p)

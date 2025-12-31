@@ -842,9 +842,8 @@ def cmd_note():
         content = raw if raw.strip() else input_box('', 'Note')
         if content:
             nf = NOTEBOOK_DIR / f"{_slug(content)}-{datetime.now().strftime('%m%d%H%M')}.md"
-            nf.write_text(content); print(f"✓ {_preview(nf)}")
-            started, _ = aioCloud.sync_data()
-            print("☁ Syncing..." if started else "💡 Run 'aio gdrive login' for cloud backup")
+            nf.write_text(content); print(f"✓ saved")
+            aioCloud.sync_data()
 
 def cmd_add():
     args = [a for a in sys.argv[2:] if a != '--global']
