@@ -5,13 +5,14 @@ HTML = '''<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
-<div style="position:fixed;bottom:5px;left:50%;transform:translateX(-50%);z-index:9"><button onclick="ws.send('aio\\n')" style="padding:15px 30px;font-size:24px">aio</button><button onclick="ws.send('aio note\\n')" style="padding:15px 30px;font-size:24px">aio note</button><button onclick="location.href='/?'+Date.now()" style="padding:15px 30px;font-size:24px">restart</button></div>
+<div id=t style="height:calc(100vh - 100px)"></div>
+<div style="position:fixed;bottom:0;left:0;right:0;height:100px;background:#1a1a2e;border-top:2px solid #4a4a6a;display:flex;align-items:center;justify-content:center;gap:20px"><button onclick="ws.send('aio\\n')" style="padding:15px 30px;font-size:24px">aio</button><button onclick="ws.send('aio note\\n')" style="padding:15px 30px;font-size:24px">aio note</button><button onclick="location.href='/?'+Date.now()" style="padding:15px 30px;font-size:24px">restart</button></div>
 <script>
   const term = new Terminal(), fit = new (FitAddon.FitAddon||FitAddon)(), ws = new WebSocket("ws://"+location.host+"/ws");
-  term.loadAddon(fit); term.open(document.body);
+  term.loadAddon(fit); term.open(t);
   const sendSize = () => ws.readyState===1 && ws.send(JSON.stringify({cols:term.cols,rows:term.rows}));
   const doFit = () => { fit.fit(); sendSize(); };
-  new ResizeObserver(doFit).observe(document.body);
+  new ResizeObserver(doFit).observe(t);
   ws.onopen = doFit; term.onData(d => ws.send(d)); ws.onmessage = e => term.write(e.data);
 </script>'''
 
