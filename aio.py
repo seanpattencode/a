@@ -714,7 +714,7 @@ def cmd_push():
         _git(cwd, 'add', target) if target else _git(cwd, 'add', '-A')
         r = _git(cwd, 'commit', '-m', msg)
         if r.returncode == 0: print(f"✓ Committed: {msg}")
-        elif 'nothing to commit' in r.stdout: print("ℹ No changes"); sys.exit(0)
+        elif 'nothing to commit' in r.stdout and _git(cwd, 'rev-list', '--count', f'origin/{main}..HEAD').stdout.strip() == '0': print("ℹ No changes"); sys.exit(0)
         else: _die(f"Commit failed: {r.stderr.strip() or r.stdout.strip()}")
         if cur != main:
             _git(cwd, 'checkout', main).returncode == 0 or _die(f"✗ Checkout failed")
