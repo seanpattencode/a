@@ -84,7 +84,12 @@ DB_PATH = os.path.join(DATA_DIR, "aio.db")
 _GHOST_PREFIX, _GHOST_TIMEOUT = '_aio_ghost_', 300
 _GHOST_MAP = {'c': 'c', 'l': 'l', 'g': 'g', 'o': 'l', 'cp': 'c', 'lp': 'l', 'gp': 'g'}
 _AGENT_DIRS = {'claude': Path.home()/'.claude', 'codex': Path.home()/'.codex', 'gemini': Path.home()/'.gemini'}
-_TMUX_CONF, _AIO_MARKER = os.path.expanduser('~/.tmux.conf'), '# aio-managed-config'
+# Tmux config strategy: write aio config to ~/.aios/tmux.conf, append source-file to user's ~/.tmux.conf
+# Never overwrite user config - only append source line if missing. User can customize their own file.
+_AIO_TMUX_DIR = os.path.expanduser('~/.aios')
+_AIO_TMUX_CONF = os.path.join(_AIO_TMUX_DIR, 'tmux.conf')
+_USER_TMUX_CONF = os.path.expanduser('~/.tmux.conf')
+_AIO_MARKER, _AIO_SOURCE_LINE = '# aio-managed-config', f'source-file ~/.aios/tmux.conf  # aio'
 
 # Git helpers
 def _git_main(path):
@@ -266,6 +271,7 @@ def _get_clipboard_cmd():
     return None
 
 def _write_tmux_conf():
+    # Write aio config to ~/.aios/tmux.conf, append source-file to user's ~/.tmux.conf (never overwrite)
     line0 = '#[align=left][#S]#[align=centre]#{W:#[range=window|#{window_index}]#I:#W#{?window_active,*,}#[norange] }'
     sh_full = '#[range=user|sess]Ctrl+N:Win#[norange] #[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Quit#[norange]'
     sh_min = '#[range=user|sess]Sess#[norange] #[range=user|new]New#[norange] #[range=user|close]Close#[norange] #[range=user|edit]Edit#[norange] #[range=user|kill]Kill#[norange] #[range=user|detach]Quit#[norange]'
@@ -296,13 +302,19 @@ bind-key -T root MouseDown1Status if -F '#{{==:#{{mouse_status_range}},window}}'
 '''
     if clip_cmd: conf += f'set -s copy-command "{clip_cmd}"\nbind -T copy-mode MouseDragEnd1Pane send -X copy-pipe-and-cancel\nbind -T copy-mode-vi MouseDragEnd1Pane send -X copy-pipe-and-cancel\n'
     if sm.version >= '3.6': conf += 'set -g pane-scrollbars on\nset -g pane-scrollbars-position right\n'
-    with open(_TMUX_CONF, 'w') as f: f.write(conf)
+    # Write aio config to ~/.aios/tmux.conf
+    os.makedirs(_AIO_TMUX_DIR, exist_ok=True)
+    with open(_AIO_TMUX_CONF, 'w') as f: f.write(conf)
+    # Append source line to user's ~/.tmux.conf if not present (never overwrite existing content)
+    user_conf = Path(_USER_TMUX_CONF).read_text() if os.path.exists(_USER_TMUX_CONF) else ''
+    if _AIO_SOURCE_LINE not in user_conf and '~/.aios/tmux.conf' not in user_conf:
+        with open(_USER_TMUX_CONF, 'a') as f: f.write(f'\n{_AIO_SOURCE_LINE}\n')
     return True
 
 def ensure_tmux_options():
     if config.get('tmux_conf') != 'y' or not _write_tmux_conf(): return
     if sp.run(['tmux', 'info'], stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode != 0: return
-    r = sp.run(['tmux', 'source-file', _TMUX_CONF], capture_output=True, text=True)
+    r = sp.run(['tmux', 'source-file', _AIO_TMUX_CONF], capture_output=True, text=True)
     if r.returncode != 0: print(f"⚠ tmux config error: {r.stderr.strip()}"); return
     sp.run(['tmux', 'refresh-client', '-S'], capture_output=True)
 
@@ -802,7 +814,7 @@ aio() { local d="${1/#~/$HOME}"; [[ -d "$d" ]] && { cd "$d"; ls; return; }; comm
     cmds and print(f"\n📦 Run:\n  {' && '.join(cmds)}")
     with WALManager(DB_PATH) as c:
         v = (c.execute("SELECT value FROM config WHERE key='tmux_conf'").fetchone() or [''])[0]
-        if v == 'y' or (v != 'n' and input("Override ~/.tmux.conf? [Y/n]: ").strip().lower() != 'n'): _write_tmux_conf(); c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'y')"); c.commit(); print("✓ tmux.conf")
+        if v == 'y' or (v != 'n' and input("Enable aio tmux config? (appends to ~/.tmux.conf) [Y/n]: ").strip().lower() != 'n'): _write_tmux_conf(); c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'y')"); c.commit(); print("✓ ~/.aios/tmux.conf")
         elif v == '': c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'n')"); c.commit()
 
 def cmd_deps():
