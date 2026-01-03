@@ -22,6 +22,8 @@ This ensures that the most important commands work on most systems in least time
 bug fixes and simply improvements should be shorter in total line count, readable, as fast or faster than previous code
 
 
+## Warning:
+the aio command may not work properly if your directory has a . in the front of it.
 
 ## Features
 
