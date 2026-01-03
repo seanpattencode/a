@@ -300,7 +300,7 @@ bind-key -T root MouseDown1Status if -F '#{{==:#{{mouse_status_range}},window}}'
     return True
 
 def ensure_tmux_options():
-    if config.get('tmux_conf') == 'n' or not _write_tmux_conf(): return
+    if config.get('tmux_conf') != 'y' or not _write_tmux_conf(): return
     if sp.run(['tmux', 'info'], stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode != 0: return
     r = sp.run(['tmux', 'source-file', _TMUX_CONF], capture_output=True, text=True)
     if r.returncode != 0: print(f"⚠ tmux config error: {r.stderr.strip()}"); return
