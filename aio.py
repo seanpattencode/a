@@ -1005,11 +1005,11 @@ def cmd_session():
         sn = f"{sessions[arg][0] if arg in sessions else arg}-{os.path.basename(work_dir)}"
         sp.run(['tmux', 'rename-session', '-t', g, sn], capture_output=True); print(f"⚡ Ghost: {sn}")
         os.execvp('tmux', ['tmux', 'switch-client' if 'TMUX' in os.environ else 'attach', '-t', sn])
-    # Inside tmux - create pane
+    # Inside tmux - create pane with shell split
     if 'TMUX' in os.environ and arg in sessions and len(arg) == 1:
-        an, cmd = sessions[arg]; pre = get_agent_prefix(an, work_dir)
-        r = sp.run(['tmux', 'split-window', '-bvP', '-F', '#{pane_id}', '-c', work_dir, cmd], capture_output=True, text=True)
-        if pre and r.stdout.strip(): wait_for_agent_ready(r.stdout.strip()); sp.run(['tmux', 'send-keys', '-t', r.stdout.strip(), '-l', pre])
+        an, cmd = sessions[arg]; pre = get_agent_prefix(an, work_dir); pid = sp.run(['tmux', 'split-window', '-bvP', '-F', '#{pane_id}', '-c', work_dir, cmd], capture_output=True, text=True).stdout.strip()
+        pid and (sp.run(['tmux', 'split-window', '-v', '-t', pid, '-c', work_dir, 'sh -c "ls;exec $SHELL"']), sp.run(['tmux', 'select-pane', '-t', pid]))
+        pre and pid and (wait_for_agent_ready(pid), sp.run(['tmux', 'send-keys', '-t', pid, '-l', pre]))
         sys.exit(0)
     sn = get_or_create_directory_session(arg, work_dir); env = get_noninteractive_git_env(); created = False
     if sn is None: n, c = sessions.get(arg, (arg, None)); create_tmux_session(n, work_dir, c or arg, env=env); sn = n; created = True
