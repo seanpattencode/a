@@ -801,6 +801,10 @@ aio() { local d="${1/#~/$HOME}"; [[ -d "$d" ]] && { cd "$d"; ls; return; }; comm
     ok and print(f"✓ Have: {', '.join(ok)}")
     cmds = [f"sudo apt install {am}" for _ in [1] if am and shutil.which('apt-get')] + [f"sudo npm install -g {nm}" for _ in [1] if nm]
     cmds and print(f"\n📦 Run:\n  {' && '.join(cmds)}")
+    with WALManager(DB_PATH) as c:
+        v = (c.execute("SELECT value FROM config WHERE key='tmux_conf'").fetchone() or [''])[0]
+        if v == 'y' or (v != 'n' and input("Override ~/.tmux.conf? [Y/n]: ").strip().lower() != 'n'): _write_tmux_conf(); c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'y')"); c.commit(); print("✓ tmux.conf")
+        elif v == '': c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'n')"); c.commit()
 
 def cmd_deps():
     print("📦 Installing deps...\n")
