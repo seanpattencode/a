@@ -214,7 +214,7 @@ def add_app(name, cmd):
     with WALManager(DB_PATH) as c:
         if c.execute("SELECT 1 FROM apps WHERE name=?", (name,)).fetchone(): return False, f"Exists: {name}"
         m = c.execute("SELECT MAX(display_order) FROM apps").fetchone()[0]
-        c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", (name, cmd, (m or -1)+1)); c.commit()
+        c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", (name, cmd, 0 if m is None else m+1)); c.commit()
     return True, f"Added: {name}"
 
 def remove_app(idx):
