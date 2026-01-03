@@ -194,7 +194,7 @@ def add_project(path):
     with WALManager(DB_PATH) as c:
         if c.execute("SELECT 1 FROM projects WHERE path=?", (p,)).fetchone(): return False, f"Exists: {p}"
         m = c.execute("SELECT MAX(display_order) FROM projects").fetchone()[0]
-        c.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)", (p, (m or -1)+1)); c.commit()
+        c.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)", (p, 0 if m is None else m+1)); c.commit()
     return True, f"Added: {p}"
 
 def remove_project(idx):
