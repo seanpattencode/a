@@ -102,7 +102,7 @@ def _git_push(path, branch, env, force=False):
 def get_noninteractive_git_env():
     env = os.environ.copy()
     env.pop('DISPLAY', None); env.pop('GPG_AGENT_INFO', None)
-    env['GIT_TERMINAL_PROMPT'], env['SSH_ASKPASS'], env['GIT_ASKPASS'] = '0', '', ''
+    env['GIT_TERMINAL_PROMPT'] = '0'
     return env
 
 # Update checking
