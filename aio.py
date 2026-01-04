@@ -968,6 +968,13 @@ s="{session_name}"; wins=({wins}); while read -ep "all> " cmd; do [ -n "$cmd" ] 
     if "TMUX" in os.environ: print(f"   tmux switch-client -t {session_name}")
     else: os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
 
+def cmd_tree():
+    proj = PROJECTS[int(work_dir_arg)] if work_dir_arg and work_dir_arg.isdigit() and int(work_dir_arg) < len(PROJECTS) else os.getcwd()
+    _git(proj, 'rev-parse', '--git-dir').returncode == 0 or _die("✗ Not a git repo")
+    wp = wt_create(proj, datetime.now().strftime('%Y%m%d-%H%M%S'))
+    wp or sys.exit(1)
+    os.chdir(wp); os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
+
 def cmd_e():
     if 'TMUX' in os.environ: os.execvp('nvim', ['nvim', '.'])
     else:
@@ -1039,7 +1046,7 @@ COMMANDS = {
     'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'setup': cmd_setup, 'set': cmd_settings,
     'install': cmd_install, 'ins': cmd_install, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'not': cmd_note, 'settings': cmd_settings,
     'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'a': cmd_multi, 'all': cmd_multi,
-    'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'dir': lambda: (print(f"📂 {os.getcwd()}"), sp.run(['ls'])),
+    'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"📂 {os.getcwd()}"), sp.run(['ls'])),
     'fix': cmd_fix_bug_feat_auto_del, 'bug': cmd_fix_bug_feat_auto_del, 'feat': cmd_fix_bug_feat_auto_del, 'fea': cmd_fix_bug_feat_auto_del,
     'auto': cmd_fix_bug_feat_auto_del, 'aut': cmd_fix_bug_feat_auto_del, 'del': cmd_fix_bug_feat_auto_del,
 }
