@@ -176,10 +176,10 @@ def init_database():
             if conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0:
                 _cdx = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox'
                 _cld = 'claude --dangerously-skip-permissions'
-                for k, n, c in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','codex',_cdx),('cp','codex-p',f'{_cdx} "{{CODEX_PROMPT}}"'),('l','claude',_cld),('lp','claude-p',f'{_cld} "{{CLAUDE_PROMPT}}"'),('o','claude',_cld),('ai','aider','aider --model ollama_chat/qwen2.5-coder')]:
+                for k, n, c in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','codex',_cdx),('cp','codex-p',f'{_cdx} "{{CODEX_PROMPT}}"'),('l','claude',_cld),('lp','claude-p',f'{_cld} "{{CLAUDE_PROMPT}}"'),('o','claude',_cld),('ai','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
                     conn.execute("INSERT INTO sessions VALUES (?, ?, ?)", (k, n, c))
             conn.execute("INSERT OR IGNORE INTO sessions VALUES ('o', 'claude', 'claude --dangerously-skip-permissions')")
-            conn.execute("INSERT OR IGNORE INTO sessions VALUES ('ai', 'aider', 'aider --model ollama_chat/qwen2.5-coder')")
+            conn.execute("INSERT OR IGNORE INTO sessions VALUES ('ai', 'aider', 'OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')")
 
 def load_config():
     with WALManager(DB_PATH) as conn: return dict(conn.execute("SELECT key, value FROM config").fetchall())
@@ -802,12 +802,12 @@ aio() { local d="${1/#~/$HOME}"; [[ -d "$d" ]] && { cd "$d"; ls; return; }; comm
             if input(f"Add to {rc}? [Y/n]: ").strip().lower() != 'n': Path(rc).open('a').write(func + '\n'); print(f"✓ Added")
         except: pass
     def _ok(p):
-        try: return bool(shutil.which(p)) if p in 'tmux wl-copy npm codex claude gemini'.split() else (__import__(p), True)[1]
+        try: return bool(shutil.which(p)) if p in 'tmux wl-copy npm codex claude gemini aider'.split() else (__import__(p), True)[1]
         except: return False
-    _a, _n = {'pexpect': 'python3-pexpect', 'prompt_toolkit': 'python3-prompt-toolkit', 'tmux': 'tmux', 'wl-copy': 'wl-clipboard'}, {'codex': '@openai/codex', 'claude': '@anthropic-ai/claude-code', 'gemini': '@google/gemini-cli'}
-    ok, am, nm = [p for p in list(_a)+list(_n)+['npm'] if _ok(p)], ' '.join(_a[p] for p in _a if not _ok(p)), ' '.join(_n[p] for p in _n if not _ok(p))
+    _a, _n, _p = {'pexpect': 'python3-pexpect', 'prompt_toolkit': 'python3-prompt-toolkit', 'tmux': 'tmux', 'wl-copy': 'wl-clipboard'}, {'codex': '@openai/codex', 'claude': '@anthropic-ai/claude-code', 'gemini': '@google/gemini-cli'}, {'aider': 'aider-chat'}
+    ok, am, nm, pm = [p for p in list(_a)+list(_n)+list(_p)+['npm'] if _ok(p)], ' '.join(_a[p] for p in _a if not _ok(p)), ' '.join(_n[p] for p in _n if not _ok(p)), ' '.join(_p[p] for p in _p if not _ok(p))
     ok and print(f"✓ Have: {', '.join(ok)}")
-    cmds = [f"sudo apt install {am}" for _ in [1] if am and shutil.which('apt-get')] + [f"sudo npm install -g {nm}" for _ in [1] if nm]
+    cmds = [f"sudo apt install {am}" for _ in [1] if am and shutil.which('apt-get')] + [f"sudo npm install -g {nm}" for _ in [1] if nm] + [f"pip install {pm}" for _ in [1] if pm]
     cmds and print(f"\n📦 Run:\n  {' && '.join(cmds)}")
     with WALManager(DB_PATH) as c:
         v = (c.execute("SELECT value FROM config WHERE key='tmux_conf'").fetchone() or [''])[0]
