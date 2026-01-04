@@ -373,7 +373,8 @@ def send_prefix(sn, agent, wd):
     """Send prefix via background subprocess (survives execvp)."""
     pre = get_agent_prefix(agent, wd)
     if not pre: return
-    script = f'import time,subprocess as s\nfor _ in range(30):\n time.sleep(0.5);r=s.run(["tmux","capture-pane","-t","{sn}","-p"],capture_output=True,text=True)\n if r.returncode!=0 or("%"in r.stdout and"context"in r.stdout.lower()):break\ns.run(["tmux","send-keys","-l","-t","{sn}",{repr(pre)}])'
+    # Detect ready: "context" (old) or "claude"/"opus"/"gemini"/"codex" (new) in output
+    script = f'import time,subprocess as s\nfor _ in range(30):\n time.sleep(0.5);r=s.run(["tmux","capture-pane","-t","{sn}","-p","-S","-50"],capture_output=True,text=True);o=r.stdout.lower()\n if r.returncode!=0 or any(x in o for x in["context","claude","opus","gemini","codex"]):break\ns.run(["tmux","send-keys","-l","-t","{sn}",{repr(pre)}])'
     sp.Popen([sys.executable, '-c', script], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
 def send_prompt_to_session(sn, prompt, wait_done=False, timeout=None, send_enter=True):
