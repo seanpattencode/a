@@ -2,7 +2,8 @@
 
 ## Install
 
-**Termux (Android):** `pkg install git python && git clone https://github.com/seanpattencode/aio && cd aio && python aio.py install`
+**Termux (Android):** 
+`pkg install git python && git clone https://github.com/seanpattencode/aio && cd aio && python aio.py install`
 
 **Windows/Linux/Mac**
 If windows:
@@ -13,7 +14,7 @@ sudo apt update && sudo apt install git python3 -y
 
 then
 
-git clone https://github.com/seanpattencode/aio && cd aio && python3 aio.py install
+`git clone https://github.com/seanpattencode/aio && cd aio && python3 aio.py install`
 
 ## Run
 Type aio
