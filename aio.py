@@ -861,7 +861,8 @@ def cmd_note():
     if raw and raw != 'ls' and not raw.isdigit():  # save note
         slug = re.sub(r'[^\w\-]', '', raw.split('\n')[0][:40].lower().replace(' ', '-'))[:30] or 'note'
         (ND / f"{slug}-{datetime.now().strftime('%m%d%H%M')}.md").write_text(raw); print("✓"); __import__('threading').Thread(target=__import__('aioCloud').sync_data,daemon=True).start(); return
-    import aioCloud, concurrent.futures as cf; notes, last, ex = _notes(), [None], cf.ThreadPoolExecutor(2)
+    import aioCloud, concurrent.futures as cf; ex = cf.ThreadPoolExecutor(2); ex.submit(aioCloud.pull_notes)
+    notes, last = _notes(), [None]
     if not notes: print("No notes. Create: aio note <content>"); return
     if raw == 'ls': [print(f"{i}. {n.read_text().split(chr(10))[0][:60]}") for i, n in enumerate(notes)]; return
     if raw and raw.isdigit() and int(raw) < len(notes): print(notes[int(raw)].read_text()); return

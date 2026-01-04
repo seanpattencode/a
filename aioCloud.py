@@ -33,7 +33,9 @@ def sync_data(wait=False):
 
 def pull_notes():
     if not (rc := get_rclone()) or not configured(): return False
-    sp.run([rc, 'copy', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/notebook', str(Path(SCRIPT_DIR) / 'data' / 'notebook'), '-u', '-q'], capture_output=True); return True
+    nd, ad = Path(SCRIPT_DIR) / 'data' / 'notebook', Path(SCRIPT_DIR) / 'data' / 'notebook' / 'archive'
+    excl = [f'--exclude={f.name}' for f in ad.glob('*.md')] if ad.exists() else []
+    sp.run([rc, 'copy', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/notebook', str(nd), '-u', '-q'] + excl, capture_output=True); return True
 
 def install_rclone():
     import platform

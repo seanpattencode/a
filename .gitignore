@@ -17,3 +17,6 @@ __pycache__/
 
 # Local config
 .local/
+
+# Notebook folders
+/data/notebook/*/
