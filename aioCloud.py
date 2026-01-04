@@ -27,14 +27,16 @@ def account():
 def sync_data(wait=False):
     if not (rc := get_rclone()) or not configured(): return False, None
     local, remote = str(Path(SCRIPT_DIR) / 'data'), f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'
-    cmd = [rc, 'bisync', local, remote, '--create-empty-src-dirs', '--track-renames', '-q']
     def _sync():
-        r = sp.run(cmd, capture_output=True, text=True)
-        if r.returncode != 0: r = sp.run(cmd + ['--resync'], capture_output=True, text=True)  # auto-recover
+        r = sp.run([rc, 'sync', local, remote, '-q'], capture_output=True, text=True)
         _RCLONE_ERR_FILE.write_text(r.stderr) if r.returncode != 0 else _RCLONE_ERR_FILE.unlink(missing_ok=True); return r.returncode == 0
     return (True, _sync()) if wait else (__import__('threading').Thread(target=_sync, daemon=True).start(), (True, None))[1]
 
-def pull_notes(): return sync_data(wait=True)[1]  # bisync handles both directions
+def pull_notes():
+    if not (rc := get_rclone()) or not configured(): return False
+    local, remote = str(Path(SCRIPT_DIR) / 'data'), f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'
+    sp.run([rc, 'sync', remote, local, '-q'], capture_output=True)  # pull = mirror cloud to local
+    return True
 
 def install_rclone():
     import platform
