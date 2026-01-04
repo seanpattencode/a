@@ -582,7 +582,7 @@ WORKFLOWS: aio fix|bug|feat|auto|del [agent] ["task"]
 WORKTREES: aio w  list | w<#>  open | w<#>-  delete | w<#>--  push+delete
 ADD/REMOVE: aio add [path|name "cmd"]  aio remove <#|name>
 MONITOR: jobs [-r] | review | cleanup | ls | attach | kill
-GIT: push [file] [msg] | pull [-y] | revert [N] | setup <url>
+GIT: push [file] [msg] | pull [-y] | revert [N]
 CONFIG: install | deps | update | font [+|-|N] | config [key] [val]
 DB: ~/.local/share/aios/aio.db  Worktrees: {WORKTREES_DIR}"""
 
@@ -680,23 +680,25 @@ def cmd_watch():
         time.sleep(0.1)
 
 def cmd_push():
-    cwd = os.getcwd(); ensure_git_config(); skip = '--yes' in sys.argv or '-y' in sys.argv
-    r = _git(cwd, 'rev-parse', '--git-dir')
-    r.returncode == 0 or _die("x Not a git repository")
-    is_wt = '.git/worktrees/' in r.stdout.strip() or cwd.startswith(WORKTREES_DIR)
-    args = [a for a in sys.argv[2:] if a not in ['--yes', '-y']]
+    cwd, skip = os.getcwd(), '--yes' in sys.argv or '-y' in sys.argv
+    if _git(cwd, 'rev-parse', '--git-dir').returncode != 0:
+        _git(cwd, 'init', '-b', 'main'); Path(os.path.join(cwd, '.gitignore')).touch(); _git(cwd, 'add', '-A'); _git(cwd, 'commit', '-m', 'Initial commit'); print("✓ Initialized")
+        u = sys.argv[2] if len(sys.argv) > 2 and '://' in sys.argv[2] else ('' if skip else (input("y/p[rivate]/URL/skip: ") if shutil.which('gh') else input("URL/skip: ")).strip())
+        if u in 'y p yes private'.split() and sp.run(['gh', 'repo', 'create', os.path.basename(cwd), '--private' if 'p' in u else '--public', '--source', '.', '--push'], timeout=60).returncode == 0: print("✓ Pushed"); return
+        if u and '://' in u: _git(cwd, 'remote', 'add', 'origin', u)
+    ensure_git_config(); r = _git(cwd, 'rev-parse', '--git-dir'); is_wt = '.git/worktrees/' in r.stdout.strip() or cwd.startswith(WORKTREES_DIR)
+    args = [a for a in sys.argv[2:] if a not in ['--yes', '-y'] and '://' not in a]
     target = args[0] if args and os.path.isfile(os.path.join(cwd, args[0])) else None
     if target: args = args[1:]
-    msg = ' '.join(args) if args else (f"Update {target}" if target else f"Update {os.path.basename(cwd)}")
+    msg = ' '.join(args) or (f"Update {target}" if target else f"Update {os.path.basename(cwd)}")
     env = get_noninteractive_git_env()
     if is_wt:
         wt_name = os.path.basename(cwd)
         proj = next((p for p in PROJECTS if wt_name.startswith(os.path.basename(p) + '-')), None) or _die(f"x Could not find project for {wt_name}")
         wt_branch = _git(cwd, 'branch', '--show-current').stdout.strip()
-        print(f"\nWorktree: {wt_name} | Branch: {wt_branch} | Msg: {msg}")
+        print(f"Worktree: {wt_name} | Branch: {wt_branch} | Msg: {msg}")
         to_main = skip or input("Push to: 1=main 2=branch [1]: ").strip() != '2'
-        _git(cwd, 'add', target) if target else _git(cwd, 'add', '-A')
-        r = _git(cwd, 'commit', '-m', msg)
+        _git(cwd, 'add', target or '-A'); r = _git(cwd, 'commit', '-m', msg)
         r.returncode == 0 and print(f"✓ Committed: {msg}")
         if to_main:
             main = _git_main(proj); _git(proj, 'fetch', 'origin', env=env)
@@ -707,29 +709,25 @@ def cmd_push():
                 skip or input(f"{msg} (y/n): ").lower() in ['y', 'yes'] or _die("x Cancelled")
             _git(proj, 'checkout', main).returncode == 0 or _die(f"x Checkout {main} failed")
             _git(proj, 'merge', wt_branch, '--no-edit', '-X', 'theirs').returncode == 0 or _die("x Merge failed")
-            print(f"✓ Merged {wt_branch} -> {main}")
-            _git_push(proj, main, env) or sys.exit(1)
+            print(f"✓ Merged {wt_branch} -> {main}"); _git_push(proj, main, env) or sys.exit(1)
             _git(proj, 'fetch', 'origin', env=env); _git(proj, 'reset', '--hard', f'origin/{main}')
             if not skip and input(f"\nDelete worktree '{wt_name}'? (y/n): ").strip().lower() in ['y', 'yes']:
                 _git(proj, 'worktree', 'remove', '--force', cwd); _git(proj, 'branch', '-D', f'wt-{wt_name}')
                 os.path.exists(cwd) and shutil.rmtree(cwd); print("✓ Cleaned up worktree")
                 os.chdir(proj); os.execvp(os.environ.get('SHELL', 'bash'), [os.environ.get('SHELL', 'bash')])
-        else:
-            r = _git(cwd, 'push', '-u', 'origin', wt_branch, env=env)
-            print(f"✓ Pushed to {wt_branch}") if r.returncode == 0 else _die(f"x Push failed: {r.stderr.strip()}")
+        else: _git(cwd, 'push', '-u', 'origin', wt_branch, env=env) and print(f"✓ Pushed to {wt_branch}")
     else:
         cur, main = _git(cwd, 'branch', '--show-current').stdout.strip(), _git_main(cwd)
-        _git(cwd, 'add', target) if target else _git(cwd, 'add', '-A')
-        r = _git(cwd, 'commit', '-m', msg)
+        _git(cwd, 'add', target or '-A'); r = _git(cwd, 'commit', '-m', msg)
         if r.returncode == 0: print(f"✓ Committed: {msg}")
-        elif 'nothing to commit' in r.stdout and _git(cwd, 'rev-list', '--count', f'origin/{main}..HEAD').stdout.strip() == '0': print("[i] No changes"); sys.exit(0)
+        elif 'nothing to commit' in r.stdout:
+            if _git(cwd, 'remote').stdout.strip() and _git(cwd, 'rev-list', '--count', f'origin/{main}..HEAD').stdout.strip() == '0': print("[i] No changes"); sys.exit(0)
         else: _die(f"Commit failed: {r.stderr.strip() or r.stdout.strip()}")
         if cur != main:
             _git(cwd, 'checkout', main).returncode == 0 or _die(f"x Checkout failed")
-            _git(cwd, 'merge', cur, '--no-edit', '-X', 'theirs').returncode == 0 or _die("x Merge failed")
-            print(f"✓ Merged {cur} -> {main}")
-        _git(cwd, 'fetch', 'origin', env=env)
-        _git_push(cwd, main, env) or sys.exit(1)
+            _git(cwd, 'merge', cur, '--no-edit', '-X', 'theirs').returncode == 0 or _die("x Merge failed"); print(f"✓ Merged {cur} -> {main}")
+        if not _git(cwd, 'remote').stdout.strip(): print("[i] Local only"); return
+        _git(cwd, 'fetch', 'origin', env=env); _git_push(cwd, main, env) or sys.exit(1)
 
 def cmd_pull():
     cwd = os.getcwd(); _git(cwd, 'rev-parse', '--git-dir').returncode == 0 or _die("x Not a git repo")
@@ -745,23 +743,6 @@ def cmd_revert():
     n = int(work_dir_arg) if work_dir_arg and work_dir_arg.isdigit() else 1
     r = _git(cwd, 'revert', 'HEAD', '--no-edit') if n == 1 else _git(cwd, 'revert', f'HEAD~{n}..HEAD', '--no-edit')
     print(f"✓ Reverted {n} commit(s)") if r.returncode == 0 else _die(f"x Revert failed: {r.stderr.strip()}")
-
-def cmd_setup():
-    cwd = os.getcwd()
-    if not os.path.isdir(os.path.join(cwd, '.git')): _git(cwd, 'init', '-b', 'main'); print("✓ Initialized")
-    if _git(cwd, 'rev-parse', 'HEAD').returncode != 0:
-        _git(cwd, 'add', '-A')
-        if _git(cwd, 'diff', '--cached', '--quiet').returncode == 0: Path(os.path.join(cwd, '.gitignore')).touch(); _git(cwd, 'add', '.gitignore')
-        _git(cwd, 'commit', '-m', 'Initial commit'); print("✓ Initial commit")
-    _git(cwd, 'branch', '-M', 'main'); has_remote = _git(cwd, 'remote', 'get-url', 'origin').returncode == 0; url = work_dir_arg
-    if not url and not has_remote and shutil.which('gh'):
-        name, resp = os.path.basename(cwd), input(f"Create GitHub repo? (y/n/private): ").lower()
-        if resp in ['y', 'yes', 'p', 'private']:
-            r = sp.run(['gh', 'repo', 'create', name, '--private' if resp in ['p', 'private'] else '--public'], capture_output=True, text=True, timeout=30)
-            url = r.stdout.strip() or f"https://github.com/{sp.run(['gh', 'api', 'user', '-q', '.login'], capture_output=True, text=True).stdout.strip()}/{name}.git"; print("✓ Created")
-    if not url and not has_remote: url = input("Remote URL (Enter to skip): ").strip()
-    if url: _git(cwd, 'remote', 'set-url' if has_remote else 'add', 'origin', url); print(f"✓ Remote: {url}")
-    print("✓ Pushed" if _git(cwd, 'push', '-u', 'origin', 'main', env=get_noninteractive_git_env()).returncode == 0 else "[i] Push skipped")
 
 def cmd_install():
     bin_dir, script_path = os.path.expanduser("~/.local/bin"), os.path.realpath(__file__)
@@ -1044,7 +1025,7 @@ COMMANDS = {
     None: cmd_help, '': cmd_help, 'help': cmd_help_full, 'hel': cmd_help_full, '--help': cmd_help_full, '-h': cmd_help_full,
     'update': cmd_update, 'upd': cmd_update, 'jobs': cmd_jobs, 'job': cmd_jobs, 'kill': cmd_kill, 'kil': cmd_kill, 'killall': cmd_kill, 'attach': cmd_attach, 'att': cmd_attach,
     'cleanup': cmd_cleanup, 'cle': cmd_cleanup, 'config': cmd_config, 'con': cmd_config, 'ls': cmd_ls, 'diff': cmd_diff, 'dif': cmd_diff, 'send': cmd_send, 'sen': cmd_send,
-    'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'setup': cmd_setup, 'set': cmd_settings,
+    'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'set': cmd_settings,
     'install': cmd_install, 'ins': cmd_install, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'not': cmd_note, 'settings': cmd_settings,
     'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi,
     'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"{os.getcwd()}"), sp.run(['ls'])),
