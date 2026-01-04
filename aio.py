@@ -14,7 +14,7 @@ atexit.register(_save_timing)
 def _git(path, *args, **kw): return sp.run(['git', '-C', path] + list(args), capture_output=True, text=True, **kw)
 def _tmux(args): return sp.run(['tmux'] + args, capture_output=True, text=True)
 def _ok(msg): print(f"✓ {msg}")
-def _err(msg): print(f"✗ {msg}")
+def _err(msg): print(f"x {msg}")
 def _die(msg, code=1): _err(msg); sys.exit(code)
 def _confirm(msg): return input(f"{msg} (y/n): ").strip().lower() in ['y', 'yes']
 
@@ -41,7 +41,7 @@ def _get_prompt_toolkit():
 def ensure_deps(skip_check=False):
     if skip_check: return
     missing = [c for c in ['tmux', 'claude'] if not shutil.which(c)]
-    if missing: print(f"⚠ Missing: {', '.join(missing)}. Run: aio install"); sys.exit(1)
+    if missing: print(f"! Missing: {', '.join(missing)}. Run: aio install"); sys.exit(1)
 
 def input_box(prefill="", title="Ctrl+D to run, Ctrl+C to cancel"):
     pt = _get_prompt_toolkit()
@@ -66,7 +66,7 @@ class TmuxManager:
     def attach(self, n): return ['tmux', 'attach', '-t', n]
     def has_session(self, n):
         try: return sp.run(['tmux', 'has-session', '-t', n], capture_output=True, timeout=2).returncode == 0
-        except sp.TimeoutExpired: return (sp.run(['pkill', '-9', 'tmux']), False)[1] if input("⚠ tmux hung. Kill? (y/n): ").lower() == 'y' else sys.exit(1)
+        except sp.TimeoutExpired: return (sp.run(['pkill', '-9', 'tmux']), False)[1] if input("! tmux hung. Kill? (y/n): ").lower() == 'y' else sys.exit(1)
     def list_sessions(self): return _tmux(['list-sessions', '-F', '#{session_name}'])
     def capture(self, n): return _tmux(['capture-pane', '-p', '-t', n])
     @property
@@ -100,9 +100,9 @@ def _git_push(path, branch, env, force=False):
     r = _git(path, 'push', *(['--force'] if force else []), 'origin', branch, env=env)
     if r.returncode == 0: print(f"✓ Pushed to {branch}"); return True
     err = r.stderr.strip() or r.stdout.strip()
-    if 'non-fast-forward' in err and input("⚠️  Force push? (y/n): ").lower() in ['y', 'yes']:
+    if 'non-fast-forward' in err and input("! Force push? (y/n): ").lower() in ['y', 'yes']:
         _git(path, 'fetch', 'origin', env=env); return _git_push(path, branch, env, True)
-    print(f"✗ Push failed: {err}"); return False
+    print(f"x Push failed: {err}"); return False
 
 def get_noninteractive_git_env():
     env = os.environ.copy()
@@ -113,12 +113,12 @@ def get_noninteractive_git_env():
 # Update checking
 def _sg(*a, **k): return sp.run(['git', '-C', SCRIPT_DIR] + list(a), capture_output=True, text=True, **k)  # script git
 def manual_update():
-    if _sg('rev-parse', '--git-dir').returncode != 0: print("✗ Not in a git repository"); return False
-    print("🔄 Checking..."); before = _sg('rev-parse', 'HEAD').stdout.strip()[:8]
+    if _sg('rev-parse', '--git-dir').returncode != 0: print("x Not in a git repository"); return False
+    print("Checking..."); before = _sg('rev-parse', 'HEAD').stdout.strip()[:8]
     if not before or _sg('fetch').returncode != 0: return False
     if 'behind' not in _sg('status', '-uno').stdout: print(f"✓ Up to date ({before})"); return True
-    print("⬇️  Downloading..."); _sg('pull', '--ff-only')
-    after = _sg('rev-parse', 'HEAD'); print(f"✅ {before} → {after.stdout.strip()[:8]}" if after.returncode == 0 else "✓ Done"); return True
+    print("Downloading..."); _sg('pull', '--ff-only')
+    after = _sg('rev-parse', 'HEAD'); print(f"✓ {before} -> {after.stdout.strip()[:8]}" if after.returncode == 0 else "✓ Done"); return True
 
 def check_for_updates_warning():
     ts = os.path.join(DATA_DIR, '.update_check')
@@ -131,7 +131,7 @@ def check_for_updates_warning():
 def show_update_warning():
     m = os.path.join(DATA_DIR, '.update_available')
     if os.path.exists(m):
-        if 'behind' in _sg('status', '-uno').stdout: print("⚠️  Update available! Run 'aio update'")
+        if 'behind' in _sg('status', '-uno').stdout: print("! Update available! Run 'aio update'")
         else: os.path.exists(m) and os.remove(m)
 
 def ensure_git_config():
@@ -187,7 +187,7 @@ def load_config():
 def get_prompt(name, show_location=False):
     prompt_file = PROMPTS_DIR / f'{name}.txt'
     if prompt_file.exists():
-        if show_location: print(f"📝 Prompt: {prompt_file}")
+        if show_location: print(f"Prompt: {prompt_file}")
         return prompt_file.read_text().strip()
     return None
 
@@ -256,7 +256,7 @@ def _init_stage3(skip_deps_check=False):
     CLAUDE_PROMPT, CODEX_PROMPT, GEMINI_PROMPT = config.get('claude_prompt', DEFAULT_PROMPT), config.get('codex_prompt', DEFAULT_PROMPT), config.get('gemini_prompt', DEFAULT_PROMPT)
     CLAUDE_PREFIX = config.get('claude_prefix', 'Ultrathink. ')
     try: WORK_DIR = os.getcwd()
-    except FileNotFoundError: WORK_DIR = os.path.expanduser("~"); os.chdir(WORK_DIR); print(f"⚠ Current directory was invalid, changed to: {WORK_DIR}")
+    except FileNotFoundError: WORK_DIR = os.path.expanduser("~"); os.chdir(WORK_DIR); print(f"! Current directory was invalid, changed to: {WORK_DIR}")
     WORKTREES_DIR = config.get('worktrees_dir', os.path.expanduser("~/projects/aiosWorktrees"))
     PROJECTS, APPS, sessions = load_projects(), load_apps(), load_sessions(config)
     ensure_deps(skip_check=skip_deps_check)
@@ -277,7 +277,7 @@ def _write_tmux_conf():
     sh_full = '#[range=user|sess]Ctrl+N:Win#[norange] #[range=user|new]Ctrl+T:New#[norange] #[range=user|close]Ctrl+W:Close#[norange] #[range=user|edit]Ctrl+E:Edit#[norange] #[range=user|kill]Ctrl+X:Kill#[norange] #[range=user|detach]Ctrl+Q:Quit#[norange]'
     sh_min = '#[range=user|sess]Sess#[norange] #[range=user|new]New#[norange] #[range=user|close]Close#[norange] #[range=user|edit]Edit#[norange] #[range=user|kill]Kill#[norange] #[range=user|detach]Quit#[norange]'
     line1 = '#{?#{e|<:#{client_width},70},' + sh_min + ',' + sh_full + '}'
-    line2 = '#[align=left]#[range=user|esc]⎋ Esc#[norange]#[align=centre]#[range=user|kbd]⌨ Keyboard#[norange]'
+    line2 = '#[align=left]#[range=user|esc]Esc#[norange]#[align=centre]#[range=user|kbd]Keyboard#[norange]'
     clip_cmd = _get_clipboard_cmd()
     conf = f'''{_AIO_MARKER}
 set -g mouse on
@@ -316,12 +316,12 @@ def ensure_tmux_options():
     if config.get('tmux_conf') != 'y' or not _write_tmux_conf(): return
     if sp.run(['tmux', 'info'], stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode != 0: return
     r = sp.run(['tmux', 'source-file', _AIO_TMUX_CONF], capture_output=True, text=True)
-    if r.returncode != 0: print(f"⚠ tmux config error: {r.stderr.strip()}"); return
+    if r.returncode != 0: print(f"! tmux config error: {r.stderr.strip()}"); return
     sp.run(['tmux', 'refresh-client', '-S'], capture_output=True)
 
 def create_tmux_session(sn, wd, cmd, env=None, capture_output=True):
     is_ai = cmd and any(a in cmd for a in ['codex', 'claude', 'gemini', 'aider'])
-    if is_ai: cmd = f'while :; do {cmd}; e=$?; [ $e -eq 0 ] && break; echo -e "\\n⚠️  Crashed (exit $e). [R]estart / [Q]uit: "; read -n1 k; [[ $k =~ [Rr] ]] || break; done'
+    if is_ai: cmd = f'while :; do {cmd}; e=$?; [ $e -eq 0 ] && break; echo -e "\\n! Crashed (exit $e). [R]estart / [Q]uit: "; read -n1 k; [[ $k =~ [Rr] ]] || break; done'
     r = sm.new_session(sn, wd, cmd or '', env); ensure_tmux_options()
     if is_ai: sp.run(['tmux', 'split-window', '-v', '-t', sn, '-c', wd, 'sh -c "ls;exec $SHELL"'], capture_output=True); sp.run(['tmux', 'select-pane', '-t', sn, '-U'], capture_output=True)
     return r
@@ -332,17 +332,17 @@ _TERM_ATTACH = {'ptyxis': ['ptyxis', '--'], 'gnome-terminal': ['gnome-terminal',
 
 def launch_in_new_window(sn, term=None):
     term = term or detect_terminal()
-    if not term: print("✗ No terminal"); return False
+    if not term: print("x No terminal"); return False
     try: sp.Popen(_TERM_ATTACH.get(term, []) + sm.attach(sn)); print(f"✓ Launched {term}: {sn}"); return True
-    except Exception as e: print(f"✗ {e}"); return False
+    except Exception as e: print(f"x {e}"); return False
 
 def launch_terminal_in_dir(d, term=None):
     term, d = term or detect_terminal(), os.path.abspath(os.path.expanduser(d))
-    if not term: print("✗ No terminal"); return False
-    if not os.path.exists(d): print(f"✗ Not found: {d}"); return False
+    if not term: print("x No terminal"); return False
+    if not os.path.exists(d): print(f"x Not found: {d}"); return False
     cmds = {'ptyxis': ['ptyxis', '--working-directory', d], 'gnome-terminal': ['gnome-terminal', f'--working-directory={d}'], 'alacritty': ['alacritty', '--working-directory', d]}
     try: sp.Popen(cmds.get(term, [])); print(f"✓ {term}: {d}"); return True
-    except Exception as e: print(f"✗ {e}"); return False
+    except Exception as e: print(f"x {e}"); return False
 
 def is_pane_receiving_output(session_name, threshold=10):
     r = sp.run(['tmux', 'display-message', '-p', '-t', session_name, '#{window_activity}'], capture_output=True, text=True)
@@ -357,9 +357,9 @@ def wt_find(p): items = _wt_items(); return os.path.join(WORKTREES_DIR, items[in
 def wt_create(proj, name):
     os.makedirs(WORKTREES_DIR, exist_ok=True); wt = os.path.join(WORKTREES_DIR, f"{os.path.basename(proj)}-{name}")
     r = _git(proj, 'worktree', 'add', '-b', f"wt-{os.path.basename(proj)}-{name}", wt, 'HEAD')
-    return (print(f"✓ {wt}"), wt)[1] if r.returncode == 0 else (print(f"✗ {r.stderr.strip()}"), None)[1]
+    return (print(f"✓ {wt}"), wt)[1] if r.returncode == 0 else (print(f"x {r.stderr.strip()}"), None)[1]
 def wt_remove(path, confirm=True):
-    if not os.path.exists(path): print(f"✗ Not found: {path}"); return False
+    if not os.path.exists(path): print(f"x Not found: {path}"); return False
     proj = next((p for p in PROJECTS if os.path.basename(path).startswith(os.path.basename(p) + '-')), PROJECTS[0] if PROJECTS else None)
     if confirm and input(f"Remove {os.path.basename(path)}? (y/n): ").lower() not in ['y', 'yes']: return False
     _git(proj, 'worktree', 'remove', '--force', path); _git(proj, 'branch', '-D', f"wt-{os.path.basename(path)}")
@@ -379,16 +379,16 @@ def send_prefix(sn, agent, wd):
     sp.Popen([sys.executable, '-c', script], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
 def send_prompt_to_session(sn, prompt, wait_done=False, timeout=None, send_enter=True):
-    if not sm.has_session(sn): print(f"✗ Session {sn} not found"); return False
+    if not sm.has_session(sn): print(f"x Session {sn} not found"); return False
     sm.send_keys(sn, prompt)
     if send_enter: time.sleep(0.1); sm.send_keys(sn, '\n'); print(f"✓ Sent to '{sn}'")
     else: print(f"✓ Inserted into '{sn}'")
     if wait_done:
-        print("⏳ Waiting...", end='', flush=True); start, last = time.time(), time.time()
+        print("Waiting...", end='', flush=True); start, last = time.time(), time.time()
         while True:
-            if timeout and (time.time() - start) > timeout: print(f"\n⚠ Timeout"); return True
+            if timeout and (time.time() - start) > timeout: print(f"\n! Timeout"); return True
             if is_pane_receiving_output(sn, threshold=2): last = time.time(); print(".", end='', flush=True)
-            elif (time.time() - last) > 3: print("\n✓ Done"); return True
+            elif (time.time() - last) > 3: print("\n+ Done"); return True
             time.sleep(0.5)
     return True
 
@@ -453,7 +453,7 @@ def list_jobs(running_only=False):
     print("Jobs:\n")
     for j in sorted(jobs, key=lambda x: x['ct'] or datetime.min):
         ctd = f" ({j['ctd']})" if j['ctd'] else ''
-        print(f"  {'🏃 RUNNING' if j['a'] else '📋 REVIEW'}  {j['n']}{' [worktree]' if j['wt'] else ''}{ctd}")
+        print(f"  {'RUNNING' if j['a'] else 'REVIEW'}  {j['n']}{' [worktree]' if j['wt'] else ''}{ctd}")
         print(f"           aio {j['p'].replace(os.path.expanduser('~'), '~')}")
         for s in j['s']: print(f"           tmux attach -t {s}")
         print()
@@ -476,10 +476,10 @@ def format_app_command(app_cmd, max_length=60):
 
 def list_all_items(show_help=True, update_cache=True):
     p, a = load_projects(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(p) + '\n')
-    out = ([f"📁 PROJECTS:"] + [f"  {i}. {'✓' if os.path.exists(x) else '✗'} {x}" for i, x in enumerate(p)] if p else [])
-    out += ([f"⚡ COMMANDS:"] + [f"  {len(p)+i}. {n} → {format_app_command(c)}" for i, (n, c) in enumerate(a)] if a else [])
+    out = ([f"PROJECTS:"] + [f"  {i}. {'+' if os.path.exists(x) else 'x'} {x}" for i, x in enumerate(p)] if p else [])
+    out += ([f"COMMANDS:"] + [f"  {len(p)+i}. {n} -> {format_app_command(c)}" for i, (n, c) in enumerate(a)] if a else [])
     if out: txt = '\n'.join(out); print(txt); update_cache and Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
-    if show_help and (p or a): print(f"\n💡 aio add [path|name cmd]  aio remove <#|name>")
+    if show_help and (p or a): print(f"\nTip: aio add [path|name cmd]  aio remove <#|name>")
     return p, a
 
 def auto_backup_check():
@@ -497,7 +497,7 @@ def auto_backup_check():
 arg = sys.argv[1] if len(sys.argv) > 1 else None
 _STAGE2_MAX_MS = 50
 _stage2_ms = int((time.time() - _START) * 1000)
-if _stage2_ms > _STAGE2_MAX_MS: print(f"⚠️  PERFORMANCE ERROR: Stage 2 took {_stage2_ms}ms (max {_STAGE2_MAX_MS}ms)"); sys.exit(1)
+if _stage2_ms > _STAGE2_MAX_MS: print(f"! PERFORMANCE ERROR: Stage 2 took {_stage2_ms}ms (max {_STAGE2_MAX_MS}ms)"); sys.exit(1)
 
 _init_stage3(skip_deps_check=(arg in ('install', 'deps')))
 show_update_warning()
@@ -517,7 +517,7 @@ if work_dir_arg and work_dir_arg.isdigit() and arg not in _cmd_keywords:
     if 0 <= idx < len(PROJECTS): work_dir = PROJECTS[idx]
     elif 0 <= idx - len(PROJECTS) < len(APPS):
         app_name, app_command = APPS[idx - len(PROJECTS)]
-        print(f"▶️  Running: {app_name}\n   Command: {app_command}")
+        print(f"> Running: {app_name}\n   Command: {app_command}")
         os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash'), '-c', app_command])
     else: work_dir = WORK_DIR
 elif work_dir_arg and os.path.isdir(os.path.expanduser(work_dir_arg)): work_dir = work_dir_arg
@@ -528,22 +528,22 @@ else: work_dir = WORK_DIR
 if arg and arg.isdigit() and not work_dir_arg:
     idx = int(arg)
     if 0 <= idx < len(PROJECTS):
-        print(f"📂 Opening project {idx}: {PROJECTS[idx]}")
+        print(f"Opening project {idx}: {PROJECTS[idx]}")
         sp.Popen([sys.executable, __file__, '_ghost', PROJECTS[idx]], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         os.chdir(PROJECTS[idx]); os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
     elif 0 <= idx - len(PROJECTS) < len(APPS):
         app_name, app_command = APPS[idx - len(PROJECTS)]
-        print(f"▶️  Running: {app_name}\n   Command: {format_app_command(app_command)}")
+        print(f"> Running: {app_name}\n   Command: {format_app_command(app_command)}")
         os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash'), '-c', app_command])
-    else: print(f"✗ Invalid index: {idx}"); sys.exit(1)
+    else: print(f"x Invalid index: {idx}"); sys.exit(1)
 
 # Worktree commands (compact - 5 lines)
 if arg and arg.startswith('w') and arg != 'watch' and not os.path.isfile(arg):
     if arg == 'w': wt_list(); sys.exit(0)
     wp = wt_find(arg[1:].rstrip('-'))
-    if arg.endswith('-'): wt_remove(wp, confirm='--yes' not in sys.argv and '-y' not in sys.argv) if wp else print(f"✗ Not found"); sys.exit(0)
+    if arg.endswith('-'): wt_remove(wp, confirm='--yes' not in sys.argv and '-y' not in sys.argv) if wp else print(f"x Not found"); sys.exit(0)
     if wp: os.chdir(wp); os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
-    print(f"✗ Not found: {arg[1:]}"); sys.exit(1)
+    print(f"x Not found: {arg[1:]}"); sys.exit(1)
 
 if new_window and not arg: launch_terminal_in_dir(work_dir); sys.exit(0)
 if arg == '_ghost':
@@ -613,7 +613,7 @@ def cmd_cleanup():
     with WALManager(DB_PATH) as c: db_cnt = c.execute("SELECT COUNT(*) FROM multi_runs").fetchone()[0]
     if not wts and not db_cnt: print("Nothing to clean"); sys.exit(0)
     print(f"Will delete: {len(wts)} dirs, {db_cnt} db entries")
-    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").lower() in ['y', 'yes']) or _die("✗")
+    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").lower() in ['y', 'yes']) or _die("x")
     for wt in wts:
         try: shutil.rmtree(os.path.join(WORKTREES_DIR, wt)); print(f"✓ {wt}")
         except: pass
@@ -644,7 +644,7 @@ def cmd_diff():
     b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
     target, diff = 'origin/main' if b.startswith('wt-') else f'origin/{b}', sp.run(['git', 'diff', 'origin/main' if b.startswith('wt-') else f'origin/{b}'], capture_output=True, text=True).stdout
     untracked = sp.run(['git', 'ls-files', '--others', '--exclude-standard'], capture_output=True, text=True).stdout.strip()
-    print(f"📂 {cwd}\n🌿 {b} → {target}")
+    print(f"{cwd}\n{b} -> {target}")
     if not diff and not untracked: print("No changes"); sys.exit(0)
     G, R, X, f = '\033[48;2;26;84;42m', '\033[48;2;117;34;27m', '\033[0m', ''
     for L in diff.split('\n'):
@@ -666,13 +666,13 @@ def cmd_send():
 def cmd_watch():
     work_dir_arg or _die("Usage: aio watch <session> [duration]")
     dur = int(sys.argv[3]) if len(sys.argv) > 3 else None
-    print(f"👁 Watching '{work_dir_arg}'" + (f" for {dur}s" if dur else " (once)"))
+    print(f"Watching '{work_dir_arg}'" + (f" for {dur}s" if dur else " (once)"))
     patterns = {re.compile(p): r for p, r in [(r'Are you sure\?', 'y'), (r'Continue\?', 'yes'), (r'\[y/N\]', 'y'), (r'\[Y/n\]', 'y')]}
     last, start = "", time.time()
     while True:
         if dur and (time.time() - start) > dur: break
         r = sp.run(['tmux', 'capture-pane', '-t', work_dir_arg, '-p'], capture_output=True, text=True)
-        if r.returncode != 0: print(f"✗ Session {work_dir_arg} not found"); sys.exit(1)
+        if r.returncode != 0: print(f"x Session {work_dir_arg} not found"); sys.exit(1)
         if r.stdout != last:
             for p, resp in patterns.items():
                 if p.search(r.stdout): sp.run(['tmux', 'send-keys', '-t', work_dir_arg, resp, 'Enter']); print(f"✓ Auto-responded"); break
@@ -682,7 +682,7 @@ def cmd_watch():
 def cmd_push():
     cwd = os.getcwd(); ensure_git_config(); skip = '--yes' in sys.argv or '-y' in sys.argv
     r = _git(cwd, 'rev-parse', '--git-dir')
-    r.returncode == 0 or _die("✗ Not a git repository")
+    r.returncode == 0 or _die("x Not a git repository")
     is_wt = '.git/worktrees/' in r.stdout.strip() or cwd.startswith(WORKTREES_DIR)
     args = [a for a in sys.argv[2:] if a not in ['--yes', '-y']]
     target = args[0] if args and os.path.isfile(os.path.join(cwd, args[0])) else None
@@ -691,9 +691,9 @@ def cmd_push():
     env = get_noninteractive_git_env()
     if is_wt:
         wt_name = os.path.basename(cwd)
-        proj = next((p for p in PROJECTS if wt_name.startswith(os.path.basename(p) + '-')), None) or _die(f"✗ Could not find project for {wt_name}")
+        proj = next((p for p in PROJECTS if wt_name.startswith(os.path.basename(p) + '-')), None) or _die(f"x Could not find project for {wt_name}")
         wt_branch = _git(cwd, 'branch', '--show-current').stdout.strip()
-        print(f"\n📍 Worktree: {wt_name} | Branch: {wt_branch} | Msg: {msg}")
+        print(f"\nWorktree: {wt_name} | Branch: {wt_branch} | Msg: {msg}")
         to_main = skip or input("Push to: 1=main 2=branch [1]: ").strip() != '2'
         _git(cwd, 'add', target) if target else _git(cwd, 'add', '-A')
         r = _git(cwd, 'commit', '-m', msg)
@@ -703,11 +703,11 @@ def cmd_push():
             ahead = _git(proj, 'rev-list', '--count', f'origin/{main}..{main}').stdout.strip()
             if ahead and int(ahead) > 0:
                 ol = set(_git(cwd, 'diff', '--name-only', f'origin/{main}...HEAD').stdout.split()) & set(_git(proj, 'diff', '--name-only', f'origin/{main}..{main}').stdout.split()) - {''}
-                msg = f"ℹ️  {main} {ahead} ahead (different files)\nMerge?" if not ol else f"⚠️  {main} {ahead} ahead, overlap: {', '.join(ol)}\n{_git(proj, 'log', f'origin/{main}..{main}', '--oneline').stdout.strip()}\nContinue?"
-                skip or input(f"{msg} (y/n): ").lower() in ['y', 'yes'] or _die("✗ Cancelled")
-            _git(proj, 'checkout', main).returncode == 0 or _die(f"✗ Checkout {main} failed")
-            _git(proj, 'merge', wt_branch, '--no-edit', '-X', 'theirs').returncode == 0 or _die("✗ Merge failed")
-            print(f"✓ Merged {wt_branch} → {main}")
+                msg = f"[i] {main} {ahead} ahead (different files)\nMerge?" if not ol else f"! {main} {ahead} ahead, overlap: {', '.join(ol)}\n{_git(proj, 'log', f'origin/{main}..{main}', '--oneline').stdout.strip()}\nContinue?"
+                skip or input(f"{msg} (y/n): ").lower() in ['y', 'yes'] or _die("x Cancelled")
+            _git(proj, 'checkout', main).returncode == 0 or _die(f"x Checkout {main} failed")
+            _git(proj, 'merge', wt_branch, '--no-edit', '-X', 'theirs').returncode == 0 or _die("x Merge failed")
+            print(f"✓ Merged {wt_branch} -> {main}")
             _git_push(proj, main, env) or sys.exit(1)
             _git(proj, 'fetch', 'origin', env=env); _git(proj, 'reset', '--hard', f'origin/{main}')
             if not skip and input(f"\nDelete worktree '{wt_name}'? (y/n): ").strip().lower() in ['y', 'yes']:
@@ -716,35 +716,35 @@ def cmd_push():
                 os.chdir(proj); os.execvp(os.environ.get('SHELL', 'bash'), [os.environ.get('SHELL', 'bash')])
         else:
             r = _git(cwd, 'push', '-u', 'origin', wt_branch, env=env)
-            print(f"✓ Pushed to {wt_branch}") if r.returncode == 0 else _die(f"✗ Push failed: {r.stderr.strip()}")
+            print(f"✓ Pushed to {wt_branch}") if r.returncode == 0 else _die(f"x Push failed: {r.stderr.strip()}")
     else:
         cur, main = _git(cwd, 'branch', '--show-current').stdout.strip(), _git_main(cwd)
         _git(cwd, 'add', target) if target else _git(cwd, 'add', '-A')
         r = _git(cwd, 'commit', '-m', msg)
         if r.returncode == 0: print(f"✓ Committed: {msg}")
-        elif 'nothing to commit' in r.stdout and _git(cwd, 'rev-list', '--count', f'origin/{main}..HEAD').stdout.strip() == '0': print("ℹ No changes"); sys.exit(0)
+        elif 'nothing to commit' in r.stdout and _git(cwd, 'rev-list', '--count', f'origin/{main}..HEAD').stdout.strip() == '0': print("[i] No changes"); sys.exit(0)
         else: _die(f"Commit failed: {r.stderr.strip() or r.stdout.strip()}")
         if cur != main:
-            _git(cwd, 'checkout', main).returncode == 0 or _die(f"✗ Checkout failed")
-            _git(cwd, 'merge', cur, '--no-edit', '-X', 'theirs').returncode == 0 or _die("✗ Merge failed")
-            print(f"✓ Merged {cur} → {main}")
+            _git(cwd, 'checkout', main).returncode == 0 or _die(f"x Checkout failed")
+            _git(cwd, 'merge', cur, '--no-edit', '-X', 'theirs').returncode == 0 or _die("x Merge failed")
+            print(f"✓ Merged {cur} -> {main}")
         _git(cwd, 'fetch', 'origin', env=env)
         _git_push(cwd, main, env) or sys.exit(1)
 
 def cmd_pull():
-    cwd = os.getcwd(); _git(cwd, 'rev-parse', '--git-dir').returncode == 0 or _die("✗ Not a git repo")
+    cwd = os.getcwd(); _git(cwd, 'rev-parse', '--git-dir').returncode == 0 or _die("x Not a git repo")
     env = get_noninteractive_git_env(); _git(cwd, 'fetch', 'origin', env=env)
     ref = 'origin/main' if _git(cwd, 'rev-parse', '--verify', 'origin/main').returncode == 0 else 'origin/master'
     info = _git(cwd, 'log', '-1', '--format=%h %s', ref).stdout.strip()
-    print(f"⚠ DELETE local changes → {info}")
-    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").strip().lower() in ['y', 'yes']) or _die("✗ Cancelled")
+    print(f"! DELETE local changes -> {info}")
+    ('--yes' in sys.argv or '-y' in sys.argv or input("Continue? (y/n): ").strip().lower() in ['y', 'yes']) or _die("x Cancelled")
     _git(cwd, 'reset', '--hard', ref); _git(cwd, 'clean', '-f', '-d'); print(f"✓ Synced: {info}")
 
 def cmd_revert():
-    cwd = os.getcwd(); _git(cwd, 'rev-parse', '--git-dir').returncode == 0 or _die("✗ Not a git repo")
+    cwd = os.getcwd(); _git(cwd, 'rev-parse', '--git-dir').returncode == 0 or _die("x Not a git repo")
     n = int(work_dir_arg) if work_dir_arg and work_dir_arg.isdigit() else 1
     r = _git(cwd, 'revert', 'HEAD', '--no-edit') if n == 1 else _git(cwd, 'revert', f'HEAD~{n}..HEAD', '--no-edit')
-    print(f"✓ Reverted {n} commit(s)") if r.returncode == 0 else _die(f"✗ Revert failed: {r.stderr.strip()}")
+    print(f"✓ Reverted {n} commit(s)") if r.returncode == 0 else _die(f"x Revert failed: {r.stderr.strip()}")
 
 def cmd_setup():
     cwd = os.getcwd()
@@ -755,24 +755,24 @@ def cmd_setup():
         _git(cwd, 'commit', '-m', 'Initial commit'); print("✓ Initial commit")
     _git(cwd, 'branch', '-M', 'main'); has_remote = _git(cwd, 'remote', 'get-url', 'origin').returncode == 0; url = work_dir_arg
     if not url and not has_remote and shutil.which('gh'):
-        name, resp = os.path.basename(cwd), input(f"🚀 Create GitHub repo? (y/n/private): ").lower()
+        name, resp = os.path.basename(cwd), input(f"Create GitHub repo? (y/n/private): ").lower()
         if resp in ['y', 'yes', 'p', 'private']:
             r = sp.run(['gh', 'repo', 'create', name, '--private' if resp in ['p', 'private'] else '--public'], capture_output=True, text=True, timeout=30)
             url = r.stdout.strip() or f"https://github.com/{sp.run(['gh', 'api', 'user', '-q', '.login'], capture_output=True, text=True).stdout.strip()}/{name}.git"; print("✓ Created")
     if not url and not has_remote: url = input("Remote URL (Enter to skip): ").strip()
     if url: _git(cwd, 'remote', 'set-url' if has_remote else 'add', 'origin', url); print(f"✓ Remote: {url}")
-    print("✓ Pushed" if _git(cwd, 'push', '-u', 'origin', 'main', env=get_noninteractive_git_env()).returncode == 0 else "ℹ Push skipped")
+    print("✓ Pushed" if _git(cwd, 'push', '-u', 'origin', 'main', env=get_noninteractive_git_env()).returncode == 0 else "[i] Push skipped")
 
 def cmd_install():
     bin_dir, script_path = os.path.expanduser("~/.local/bin"), os.path.realpath(__file__)
     os.makedirs(bin_dir, exist_ok=True)
     aio_link = os.path.join(bin_dir, "aio")
     if os.path.islink(aio_link): os.remove(aio_link)
-    elif os.path.exists(aio_link): _die(f"✗ {aio_link} exists but is not a symlink")
+    elif os.path.exists(aio_link): _die(f"x {aio_link} exists but is not a symlink")
     os.symlink(script_path, aio_link); print(f"✓ Symlink: {aio_link}")
     # Termux RunCommandService setup
     if os.environ.get('TERMUX_VERSION') or os.path.exists('/data/data/com.termux'):
-        print("\n📱 Termux detected - configuring RunCommandService...")
+        print("\nTermux detected - configuring RunCommandService...")
         termux_dir = os.path.expanduser("~/.termux")
         termux_props = os.path.join(termux_dir, "termux.properties")
         os.makedirs(termux_dir, exist_ok=True)
@@ -785,14 +785,14 @@ def cmd_install():
         else: print("✓ allow-external-apps already configured")
         if shutil.which('termux-reload-settings'):
             sp.run(['termux-reload-settings']); print("✓ Reloaded Termux settings")
-        else: print("⚠ Run: termux-reload-settings")
-        print("\n📋 Android app setup required:")
+        else: print("! Run: termux-reload-settings")
+        print("\nAndroid app setup required:")
         print("   1. Add to AndroidManifest.xml:")
         print('      <uses-permission android:name="com.termux.permission.RUN_COMMAND" />')
         print("   2. Grant permission in Android Settings:")
-        print("      Settings → Apps → Your App → Permissions → Run Termux commands")
+        print("      Settings -> Apps -> Your App -> Permissions -> Run Termux commands")
     nv = int(sp.run(['node','-v'], capture_output=True, text=True).stdout.strip().lstrip('v').split('.')[0]) if shutil.which('node') else 0
-    if nv < 25: print(f"⚠️  Node.js {'v'+str(nv) if nv else 'missing'} - run 'aio deps' (fixes Claude V8 crashes)")
+    if nv < 25: print(f"! Node.js {'v'+str(nv) if nv else 'missing'} - run 'aio deps' (fixes Claude V8 crashes)")
     shell = os.environ.get('SHELL', '/bin/bash')
     rc = os.path.expanduser('~/.config/fish/config.fish' if 'fish' in shell else ('~/.zshrc' if 'zsh' in shell else '~/.bashrc'))
     func = '''# aio instant startup
@@ -808,41 +808,41 @@ aio() { local d="${1/#~/$HOME}"; [[ -d "$d" ]] && { cd "$d"; ls; return; }; comm
     ok, am, nm, pm = [p for p in list(_a)+list(_n)+list(_p)+['npm'] if _ok(p)], ' '.join(_a[p] for p in _a if not _ok(p)), ' '.join(_n[p] for p in _n if not _ok(p)), ' '.join(_p[p] for p in _p if not _ok(p))
     ok and print(f"✓ Have: {', '.join(ok)}")
     cmds = [f"sudo apt install {am}" for _ in [1] if am and shutil.which('apt-get')] + [f"sudo npm install -g {nm}" for _ in [1] if nm] + [f"pip install {pm}" for _ in [1] if pm]
-    cmds and print(f"\n📦 Run:\n  {' && '.join(cmds)}")
+    cmds and print(f"\nRun:\n  {' && '.join(cmds)}")
     with WALManager(DB_PATH) as c:
         v = (c.execute("SELECT value FROM config WHERE key='tmux_conf'").fetchone() or [''])[0]
         if v == 'y' or (v != 'n' and input("Enable aio tmux config? (appends to ~/.tmux.conf) [Y/n]: ").strip().lower() != 'n'): _write_tmux_conf(); c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'y')"); c.commit(); print("✓ ~/.aios/tmux.conf")
         elif v == '': c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'n')"); c.commit()
 
 def cmd_deps():
-    print("📦 Installing deps...\n")
+    print("Installing deps...\n")
     _run = lambda c: sp.run(c, shell=True, capture_output=True).returncode == 0
     _sudo = '' if os.environ.get('TERMUX_VERSION') or os.path.exists('/data/data/com.termux') else 'sudo '
     # Python deps
     for p, apt in [('pexpect', 'python3-pexpect'), ('prompt_toolkit', 'python3-prompt-toolkit')]:
         try: __import__(p); ok = True
         except: ok = _run(f'{_sudo}apt-get install -y {apt}') or _run(f'{sys.executable} -m pip install --user {p}')
-        print(f"{'✓' if ok else '✗'} {p}")
+        print(f"{'✓' if ok else 'x'} {p}")
     # tmux
     ok = shutil.which('tmux') or _run(f'{_sudo}apt-get install -y tmux') or _run('brew install tmux') or _run('pkg install -y tmux')
-    print(f"{'✓' if shutil.which('tmux') else '✗'} tmux")
+    print(f"{'✓' if shutil.which('tmux') else 'x'} tmux")
     # Node.js via n - bootstrap if needed, upgrade if < 25
     shutil.which('npm') or _run(f'{_sudo}apt-get install -y nodejs npm') or _run('brew install node') or _run('pkg install -y nodejs')
     nv = int(sp.run(['node','-v'], capture_output=True, text=True).stdout.strip().lstrip('v').split('.')[0]) if shutil.which('node') else 0
-    if nv < 25: print(f"⚠️  Node v{nv} → latest..."); print(f"{'✓' if _run(f'{_sudo}npm i -g n && {_sudo}n latest') else '✗'} node")
+    if nv < 25: print(f"! Node v{nv} -> latest..."); print(f"{'✓' if _run(f'{_sudo}npm i -g n && {_sudo}n latest') else 'x'} node")
     else: print(f"✓ node v{nv}")
     # AI agents
     for cmd, pkg in [('codex','@openai/codex'), ('claude','@anthropic-ai/claude-code'), ('gemini','@google/gemini-cli')]:
         shutil.which(cmd) or _run(f'{_sudo}npm i -g {pkg}')
-        print(f"{'✓' if shutil.which(cmd) else '✗'} {cmd}")
-    shutil.which('aider') or _run(f'{sys.executable} -m pip install --user aider-chat'); print(f"{'✓' if shutil.which('aider') else '✗'} aider")
-    print("\n✅ Done!")
+        print(f"{'✓' if shutil.which(cmd) else 'x'} {cmd}")
+    shutil.which('aider') or _run(f'{sys.executable} -m pip install --user aider-chat'); print(f"{'✓' if shutil.which('aider') else 'x'} aider")
+    print("\n✓ Done!")
 
 def cmd_prompt():
     name = work_dir_arg or 'feat'
     prompt_file = PROMPTS_DIR / f'{name}.txt'
-    if not prompt_file.exists(): print(f"📝 Prompts dir: {PROMPTS_DIR}\nAvailable: {', '.join(p.stem for p in PROMPTS_DIR.glob('*.txt'))}"); sys.exit(1)
-    print(f"📝 Editing: {prompt_file}")
+    if not prompt_file.exists(): print(f"Prompts dir: {PROMPTS_DIR}\nAvailable: {', '.join(p.stem for p in PROMPTS_DIR.glob('*.txt'))}"); sys.exit(1)
+    print(f"Editing: {prompt_file}")
     current = prompt_file.read_text().strip()
     new_val = input_box(current, f"Edit '{name}' (Ctrl+D to save, Ctrl+C to cancel)")
     if new_val is None: print("Cancelled")
@@ -862,7 +862,7 @@ def cmd_note():
     def _arch(n): AD.mkdir(exist_ok=True); shutil.move(str(n), str(AD / n.name))
     if raw and raw != 'ls' and not raw.isdigit():  # save note
         slug = re.sub(r'[^\w\-]', '', raw.split('\n')[0][:40].lower().replace(' ', '-'))[:30] or 'note'
-        (ND / f"{slug}-{datetime.now().strftime('%m%d%H%M')}.md").write_text(raw); print("✓")
+        (ND / f"{slug}-{datetime.now().strftime('%m%d%H%M')}.md").write_text(raw); print("+")
         sp.Popen([sys.executable, '-c', f'import aioCloud; aioCloud.sync_data(wait=True)'], cwd=SCRIPT_DIR, stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=True); return
     import aioCloud, concurrent.futures as cf; ex = cf.ThreadPoolExecutor(2); aioCloud.pull_notes()
     notes, last = _notes(), [None]
@@ -872,10 +872,10 @@ def cmd_note():
     print(f"─ {len(notes)} notes ─ [a]rchive [u]ndo [enter]next [q]uit"); futs = []
     for n in notes:
         print(f"\n{n.read_text()[:500]}"); ch = input("> ").strip().lower()
-        if ch == 'a': _arch(n); last[0] = n.name; futs.append(ex.submit(aioCloud.sync_data, wait=True)); print("✓")
-        elif ch == 'u' and last[0]: shutil.move(str(AD/last[0]), str(ND/last[0])); futs.append(ex.submit(aioCloud.sync_data, wait=True)); print(f"↩ {last[0][:20]}"); last[0] = None
+        if ch == 'a': _arch(n); last[0] = n.name; futs.append(ex.submit(aioCloud.sync_data, wait=True)); print("+")
+        elif ch == 'u' and last[0]: shutil.move(str(AD/last[0]), str(ND/last[0])); futs.append(ex.submit(aioCloud.sync_data, wait=True)); print(f"<- {last[0][:20]}"); last[0] = None
         elif ch == 'q': break
-    print("synced" if all(f.result()[1] for f in futs) else "⚠ sync failed" if futs else "")
+    print("synced" if all(f.result()[1] for f in futs) else "! sync failed" if futs else "")
 
 def cmd_add():
     args = [a for a in sys.argv[2:] if a != '--global']
@@ -885,15 +885,15 @@ def cmd_add():
         if args[0] in interpreters:
             cmd_val = ' '.join(args); print(f"Command: {cmd_val}")
             cmd_name = input("Name for this command: ").strip()
-            if not cmd_name: print("✗ Cancelled"); sys.exit(1)
+            if not cmd_name: print("x Cancelled"); sys.exit(1)
         else: cmd_name, cmd_val = args[0], ' '.join(args[1:])
         cwd, home = os.getcwd(), os.path.expanduser('~')
         if not is_global and cwd != home and not cmd_val.startswith('cd '): cmd_val = f"cd {cwd.replace(home, '~')} && {cmd_val}"
-        ok, msg = add_app(cmd_name, cmd_val); print(f"{'✓' if ok else '✗'} {msg}")
+        ok, msg = add_app(cmd_name, cmd_val); print(f"{'✓' if ok else 'x'} {msg}")
         if ok: auto_backup_check(); list_all_items()
         sys.exit(0 if ok else 1)
     path = os.path.abspath(os.path.expanduser(args[0])) if args else os.getcwd()
-    ok, msg = add_project(path); print(f"{'✓' if ok else '✗'} {msg}")
+    ok, msg = add_project(path); print(f"{'✓' if ok else 'x'} {msg}")
     if ok: auto_backup_check(); list_all_items()
     sys.exit(0 if ok else 1)
 
@@ -904,12 +904,12 @@ def cmd_remove():
         idx = int(work_dir_arg)
         if idx < len(projects): ok, msg = remove_project(idx)
         elif idx < len(projects) + len(apps): ok, msg = remove_app(idx - len(projects))
-        else: print(f"✗ Invalid index: {idx}"); list_all_items(); sys.exit(1)
+        else: print(f"x Invalid index: {idx}"); list_all_items(); sys.exit(1)
     else:
         app_idx = next((i for i, (n, _) in enumerate(apps) if n.lower() == work_dir_arg.lower()), None)
-        if app_idx is None: print(f"✗ Not found: {work_dir_arg}"); list_all_items(); sys.exit(1)
+        if app_idx is None: print(f"x Not found: {work_dir_arg}"); list_all_items(); sys.exit(1)
         ok, msg = remove_app(app_idx)
-    print(f"{'✓' if ok else '✗'} {msg}")
+    print(f"{'✓' if ok else 'x'} {msg}")
     if ok: auto_backup_check(); list_all_items()
     sys.exit(0 if ok else 1)
 
@@ -924,7 +924,7 @@ def cmd_fix_bug_feat_auto_del():
     task = 'autonomous' if arg in ('fix', 'auto', 'del') else (' '.join(args) if args else input(f"{arg}: "))
     an, cmd = sessions[agent]; sn = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"; prompt = pt if arg in ('fix', 'auto', 'del') else pt.format(task=task)
     pre = get_agent_prefix(an); full_prompt = (pre if pre and not prompt.startswith(pre.strip()) else '') + prompt
-    print(f"📝 {arg.upper()} [{an}]: {task[:50]}{'...' if len(task) > 50 else ''}")
+    print(f"{arg.upper()} [{an}]: {task[:50]}{'...' if len(task) > 50 else ''}")
     create_tmux_session(sn, os.getcwd(), f"{cmd} {shlex.quote(full_prompt)}")
     launch_in_new_window(sn) if 'TMUX' in os.environ else os.execvp(sm.attach(sn)[0], sm.attach(sn))
 
@@ -945,7 +945,7 @@ def cmd_multi():
     candidates_dir = os.path.join(run_dir, "candidates"); os.makedirs(candidates_dir, exist_ok=True)
     with open(os.path.join(run_dir, "run.json"), "w") as f: json.dump({"agents": [f"{k}:{c}" for k, c in agent_specs], "created": run_id, "repo": project_path}, f)
     with WALManager(DB_PATH) as c: c.execute("INSERT OR REPLACE INTO multi_runs VALUES (?, ?, '', ?, 'running', CURRENT_TIMESTAMP, NULL)", (run_id, project_path, json.dumps([f"{k}:{c}" for k, c in agent_specs]))); c.commit()
-    print(f"🚀 {total} agents in {repo_name}/{run_id}..."); env, launched, agent_num, first = get_noninteractive_git_env(), [], {}, True
+    print(f"{total} agents in {repo_name}/{run_id}..."); env, launched, agent_num, first = get_noninteractive_git_env(), [], {}, True
     for ak, cnt in agent_specs:
         bn, bc = sessions.get(ak, (None, None))
         if not bn: continue
@@ -956,22 +956,22 @@ def cmd_multi():
             sp.run(['tmux', 'new-session', '-d', '-s', session_name, '-n', wn, '-c', wt, bc] if first else ['tmux', 'new-window', '-t', session_name, '-n', wn, '-c', wt, bc], env=env); first = False
             sp.run(['tmux', 'split-window', '-h', '-t', f'{session_name}:{wn}', '-c', wt], env=env)
             launched.append((wn, bn, wt)); print(f"✓ {wn}")
-    if not launched: print("✗ No agents created"); sys.exit(1)
+    if not launched: print("x No agents created"); sys.exit(1)
     wins = ' '.join(w for w, _, _ in launched)
-    ctrl = f'''echo -e "\\n  🎮 AIO ALL - {session_name}\\n\\n  Agents: {wins}\\n\\n  Type below to send to ALL agents (Enter to send)\\n  Ctrl+C: exit broadcast | Ctrl+N: switch window\\n"
+    ctrl = f'''echo -e "\\n  ctrl AIO ALL - {session_name}\\n\\n  Agents: {wins}\\n\\n  Type below to send to ALL agents (Enter to send)\\n  Ctrl+C: exit broadcast | Ctrl+N: switch window\\n"
 s="{session_name}"; wins=({wins}); while read -ep "all> " cmd; do [ -n "$cmd" ] && for w in "${{wins[@]}}"; do tmux send-keys -t "$s:$w" "$cmd" Enter; done; done'''
-    sp.run(['tmux', 'new-window', '-t', session_name, '-n', '🎮', '-c', candidates_dir], env=env)
-    sp.run(['tmux', 'send-keys', '-t', f'{session_name}:🎮', ctrl, 'Enter'])
-    sp.run(['tmux', 'split-window', '-v', '-t', f'{session_name}:🎮', '-c', candidates_dir], env=env)
-    sp.run(['tmux', 'select-window', '-t', f'{session_name}:🎮'], capture_output=True)
+    sp.run(['tmux', 'new-window', '-t', session_name, '-n', 'ctrl', '-c', candidates_dir], env=env)
+    sp.run(['tmux', 'send-keys', '-t', f'{session_name}:ctrl', ctrl, 'Enter'])
+    sp.run(['tmux', 'split-window', '-v', '-t', f'{session_name}:ctrl', '-c', candidates_dir], env=env)
+    sp.run(['tmux', 'select-window', '-t', f'{session_name}:ctrl'], capture_output=True)
     ensure_tmux_options()
-    print(f"\n✓ Session '{session_name}': {len(launched)} agents + 🎮 control\n   Type in 🎮 window to broadcast to all agents")
+    print(f"\n+ Session '{session_name}': {len(launched)} agents + ctrl control\n   Type in ctrl window to broadcast to all agents")
     if "TMUX" in os.environ: print(f"   tmux switch-client -t {session_name}")
     else: os.execvp('tmux', ['tmux', 'attach', '-t', session_name])
 
 def cmd_tree():
     proj = PROJECTS[int(work_dir_arg)] if work_dir_arg and work_dir_arg.isdigit() and int(work_dir_arg) < len(PROJECTS) else os.getcwd()
-    _git(proj, 'rev-parse', '--git-dir').returncode == 0 or _die("✗ Not a git repo")
+    _git(proj, 'rev-parse', '--git-dir').returncode == 0 or _die("x Not a git repo")
     wp = wt_create(proj, datetime.now().strftime('%Y%m%d-%H%M%S'))
     wp or sys.exit(1)
     os.chdir(wp); os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
@@ -989,7 +989,7 @@ def cmd_copy():
 
 def cmd_worktree_plus():
     key = arg[:-2]
-    if key not in sessions: print(f"✗ Unknown session key: {key}"); return
+    if key not in sessions: print(f"x Unknown session key: {key}"); return
     proj = PROJECTS[int(work_dir_arg)] if work_dir_arg and work_dir_arg.isdigit() and int(work_dir_arg) < len(PROJECTS) else work_dir
     base_name, cmd = sessions[key]
     wp = wt_create(proj, f"{base_name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
@@ -1003,7 +1003,7 @@ def cmd_worktree_plus():
 def cmd_dir_or_file():
     if os.path.isdir(os.path.expanduser(arg)):
         d = os.path.expanduser('~' + arg) if arg.startswith('/projects/') else os.path.expanduser(arg)
-        print(f"📂 {d}", flush=True); sp.run(['ls', d])
+        print(f"{d}", flush=True); sp.run(['ls', d])
     elif os.path.isfile(arg):
         ext = os.path.splitext(arg)[1].lower()
         if ext == '.py': os.execvp(sys.executable, [sys.executable, arg] + sys.argv[2:])
@@ -1019,13 +1019,13 @@ def cmd_session():
         sys.exit(0)
     # Ghost claiming (outside tmux only - claim pre-warmed session)
     if arg in _GHOST_MAP and not work_dir_arg and (g := _ghost_claim(arg, work_dir)):
-        sn = f"{sessions[arg][0] if arg in sessions else arg}-{os.path.basename(work_dir)}"; sp.run(['tmux', 'rename-session', '-t', g, sn], capture_output=True); print(f"⚡ Ghost: {sn}"); os.execvp('tmux', ['tmux', 'attach', '-t', sn])
+        sn = f"{sessions[arg][0] if arg in sessions else arg}-{os.path.basename(work_dir)}"; sp.run(['tmux', 'rename-session', '-t', g, sn], capture_output=True); print(f"Ghost: {sn}"); os.execvp('tmux', ['tmux', 'attach', '-t', sn])
     sn = get_or_create_directory_session(arg, work_dir); env = get_noninteractive_git_env(); created = False
     if sn is None: n, c = sessions.get(arg, (arg, None)); create_tmux_session(n, work_dir, c or arg, env=env); sn = n; created = True
     elif not sm.has_session(sn): create_tmux_session(sn, work_dir, sessions[arg][1], env=env); created = True
     is_p = arg.endswith('p') and not arg.endswith('pp') and len(arg) == 2 and arg in sessions
     pp = [a for a in sys.argv[(2 if is_work_dir_a_prompt else (3 if work_dir_arg else 2)):] if a not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']]
-    if pp: print("📤 Prompt queued"); sp.Popen([sys.executable, __file__, 'send', sn, ' '.join(pp)] + (['--no-enter'] if is_p else []), stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    if pp: print("Prompt queued"); sp.Popen([sys.executable, __file__, 'send', sn, ' '.join(pp)] + (['--no-enter'] if is_p else []), stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     elif is_p and (pm := {'cp': CODEX_PROMPT, 'lp': CLAUDE_PROMPT, 'gp': GEMINI_PROMPT}.get(arg)): sp.Popen([sys.executable, __file__, 'send', sn, pm, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     elif created and arg in sessions: send_prefix(sn, sessions[arg][0], work_dir)
     if new_window: launch_in_new_window(sn); with_terminal and launch_terminal_in_dir(work_dir)
@@ -1035,8 +1035,8 @@ def cmd_session():
 def cmd_settings():
     f=sys.argv[2]if len(sys.argv)>2 else None;p=Path(DATA_DIR)/f if f else None;v=sys.argv[3]if len(sys.argv)>3 else None
     if not f:s="on"if(Path(DATA_DIR)/'n').exists()else"off";print(f"1. n [{s}] commands without aio prefix\n   aio set n {'off'if s=='on'else'on'}");return
-    if v=='on':p.touch();print(f"✓ on — open new terminal tab")
-    elif v=='off':p.unlink(missing_ok=True);print(f"✓ off — open new terminal tab")
+    if v=='on':p.touch();print(f"✓ on - open new terminal tab")
+    elif v=='off':p.unlink(missing_ok=True);print(f"✓ off - open new terminal tab")
     else:print("on"if p.exists()else"off")
 
 # Command dispatch
@@ -1047,7 +1047,7 @@ COMMANDS = {
     'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'setup': cmd_setup, 'set': cmd_settings,
     'install': cmd_install, 'ins': cmd_install, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'not': cmd_note, 'settings': cmd_settings,
     'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi,
-    'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"📂 {os.getcwd()}"), sp.run(['ls'])),
+    'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"{os.getcwd()}"), sp.run(['ls'])),
     'fix': cmd_fix_bug_feat_auto_del, 'bug': cmd_fix_bug_feat_auto_del, 'feat': cmd_fix_bug_feat_auto_del, 'fea': cmd_fix_bug_feat_auto_del,
     'auto': cmd_fix_bug_feat_auto_del, 'aut': cmd_fix_bug_feat_auto_del, 'del': cmd_fix_bug_feat_auto_del,
 }
