@@ -3,6 +3,7 @@
 ## Install
 
 **Termux (Android):** 
+
 `pkg install git python && git clone https://github.com/seanpattencode/aio && cd aio && python aio.py install`
 
 **Windows/Linux/Mac**
