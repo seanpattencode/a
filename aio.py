@@ -364,29 +364,21 @@ def wt_remove(path, confirm=True):
     _git(proj, 'worktree', 'remove', '--force', path); _git(proj, 'branch', '-D', f"wt-{os.path.basename(path)}")
     os.path.exists(path) and shutil.rmtree(path); print(f"✓ Removed {os.path.basename(path)}"); return True
 
-_READY_PATTERNS = [re.compile(p, re.MULTILINE) for p in [r'›.*\n\n\s+\d+%\s+context left', r'>\s+Type your message', r'gemini-2\.5-pro.*\(\d+%\)', r'──+\s*\n>\s+\w+']]
-def wait_for_agent_ready(sn, timeout=5):
-    start, last = time.time(), ""
-    while (time.time() - start) < timeout:
-        r = sp.run(['tmux', 'capture-pane', '-t', sn, '-p'], capture_output=True, text=True)
-        if r.returncode != 0: return False
-        if r.stdout != last and any(p.search(r.stdout) for p in _READY_PATTERNS): return True
-        last = r.stdout; time.sleep(0.2)
-    return True
-
 def get_agent_prefix(agent, wd=None):
     pre = config.get('claude_prefix', 'Ultrathink. ') if 'claude' in agent else ''
     af = Path(wd or os.getcwd()) / 'AGENTS.md'
     return pre + (af.read_text().strip() + ' ' if af.exists() else '')
 
-def enhance_prompt(prompt, agent='', wd=None):
+def send_prefix(sn, agent, wd):
+    """Send prefix via background subprocess (survives execvp)."""
     pre = get_agent_prefix(agent, wd)
-    return (pre if pre and not prompt.startswith(pre.strip()) else '') + prompt
+    if not pre: return
+    script = f'import time,subprocess as s\nfor _ in range(30):\n time.sleep(0.5);r=s.run(["tmux","capture-pane","-t","{sn}","-p"],capture_output=True,text=True)\n if r.returncode!=0 or("%"in r.stdout and"context"in r.stdout.lower()):break\ns.run(["tmux","send-keys","-l","-t","{sn}",{repr(pre)}])'
+    sp.Popen([sys.executable, '-c', script], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
-def send_prompt_to_session(sn, prompt, wait_done=False, timeout=None, wait_ready=True, send_enter=True):
+def send_prompt_to_session(sn, prompt, wait_done=False, timeout=None, send_enter=True):
     if not sm.has_session(sn): print(f"✗ Session {sn} not found"); return False
-    if wait_ready: print("⏳ Waiting...", end='', flush=True); print(" ✓" if wait_for_agent_ready(sn) else " (timeout)")
-    sm.send_keys(sn, enhance_prompt(prompt, sn))
+    sm.send_keys(sn, prompt)
     if send_enter: time.sleep(0.1); sm.send_keys(sn, '\n'); print(f"✓ Sent to '{sn}'")
     else: print(f"✓ Inserted into '{sn}'")
     if wait_done:
@@ -425,9 +417,7 @@ def _ghost_spawn(dp, sm_map):
             if r.returncode == 0 and r.stdout.strip() == dp: continue
             sp.run(['tmux', 'kill-session', '-t', g], capture_output=True)
         _, cmd = sm_map.get(k, (None, None))
-        if cmd:
-            create_tmux_session(g, dp, cmd); pre = get_agent_prefix({'c': 'codex', 'l': 'claude', 'g': 'gemini'}[k], dp)
-            if pre: sp.Popen([sys.executable, __file__, 'send', g, pre, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        if cmd: create_tmux_session(g, dp, cmd); send_prefix(g, {'c': 'codex', 'l': 'claude', 'g': 'gemini'}[k], dp)
     try: Path(sf).write_text(json.dumps({'dir': dp, 'time': time.time()}))
     except: pass
 
@@ -930,9 +920,10 @@ def cmd_fix_bug_feat_auto_del():
     if args and args[0] in 'clg': agent, args = args[0], args[1:]
     pt = get_prompt(arg, show_location=True) or '{task}'
     task = 'autonomous' if arg in ('fix', 'auto', 'del') else (' '.join(args) if args else input(f"{arg}: "))
-    an, cmd = sessions[agent]; sn = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"
+    an, cmd = sessions[agent]; sn = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"; prompt = pt if arg in ('fix', 'auto', 'del') else pt.format(task=task)
+    pre = get_agent_prefix(an); full_prompt = (pre if pre and not prompt.startswith(pre.strip()) else '') + prompt
     print(f"📝 {arg.upper()} [{an}]: {task[:50]}{'...' if len(task) > 50 else ''}")
-    create_tmux_session(sn, os.getcwd(), f"{cmd} {shlex.quote(enhance_prompt(pt if arg in ('fix', 'auto', 'del') else pt.format(task=task), an))}")
+    create_tmux_session(sn, os.getcwd(), f"{cmd} {shlex.quote(full_prompt)}")
     launch_in_new_window(sn) if 'TMUX' in os.environ else os.execvp(sm.attach(sn)[0], sm.attach(sn))
 
 def cmd_multi():
@@ -995,8 +986,7 @@ def cmd_worktree_plus():
     wp = wt_create(proj, f"{base_name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}")
     if not wp: return
     sn = os.path.basename(wp); create_tmux_session(sn, wp, cmd, env=get_noninteractive_git_env(), capture_output=False)
-    prefix = get_agent_prefix(base_name, wp)
-    if prefix: sp.Popen([sys.executable, __file__, 'send', sn, prefix, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    send_prefix(sn, base_name, wp)
     if new_window: launch_in_new_window(sn)
     elif "TMUX" in os.environ: print(f"✓ Session: {sn}")
     else: os.execvp(sm.attach(sn)[0], sm.attach(sn))
@@ -1014,9 +1004,9 @@ def cmd_dir_or_file():
 def cmd_session():
     # Inside tmux - always create new pane (allows multiple agents in parallel)
     if 'TMUX' in os.environ and arg in sessions and len(arg) == 1:
-        an, cmd = sessions[arg]; pre = get_agent_prefix(an, work_dir); pid = sp.run(['tmux', 'split-window', '-bvP', '-F', '#{pane_id}', '-c', work_dir, cmd], capture_output=True, text=True).stdout.strip()
+        an, cmd = sessions[arg]; pid = sp.run(['tmux', 'split-window', '-bvP', '-F', '#{pane_id}', '-c', work_dir, cmd], capture_output=True, text=True).stdout.strip()
         pid and (sp.run(['tmux', 'split-window', '-v', '-t', pid, '-c', work_dir, 'sh -c "ls;exec $SHELL"']), sp.run(['tmux', 'select-pane', '-t', pid]))
-        pre and pid and (wait_for_agent_ready(pid), sp.run(['tmux', 'send-keys', '-t', pid, '-l', pre]))
+        pid and send_prefix(pid, an, work_dir)
         sys.exit(0)
     # Ghost claiming (outside tmux only - claim pre-warmed session)
     if arg in _GHOST_MAP and not work_dir_arg and (g := _ghost_claim(arg, work_dir)):
@@ -1028,7 +1018,7 @@ def cmd_session():
     pp = [a for a in sys.argv[(2 if is_work_dir_a_prompt else (3 if work_dir_arg else 2)):] if a not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']]
     if pp: print("📤 Prompt queued"); sp.Popen([sys.executable, __file__, 'send', sn, ' '.join(pp)] + (['--no-enter'] if is_p else []), stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     elif is_p and (pm := {'cp': CODEX_PROMPT, 'lp': CLAUDE_PROMPT, 'gp': GEMINI_PROMPT}.get(arg)): sp.Popen([sys.executable, __file__, 'send', sn, pm, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    elif created and arg in sessions and (pre := get_agent_prefix(sessions[arg][0], work_dir)): wait_for_agent_ready(sn); sm.send_keys(sn, pre)
+    elif created and arg in sessions: send_prefix(sn, sessions[arg][0], work_dir)
     if new_window: launch_in_new_window(sn); with_terminal and launch_terminal_in_dir(work_dir)
     elif "TMUX" in os.environ or not sys.stdout.isatty(): print(f"✓ Session: {sn}")
     else: os.execvp(sm.attach(sn)[0], sm.attach(sn))
