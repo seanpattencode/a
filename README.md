@@ -10,9 +10,10 @@
 
 If windows:
 
-Install WSL and a distro:
+Install WSL and a distro (ubuntu recommended):
+
 https://learn.microsoft.com/en-us/windows/wsl/install
-note ubuntu is recommended.
+
 `sudo apt update && sudo apt install git python3 -y`
 
 then
