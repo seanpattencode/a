@@ -837,26 +837,25 @@ def cmd_gdrive():
     else: aioCloud.status()
 
 def cmd_note():
-    ND = Path(SCRIPT_DIR) / 'data' / 'notebook'; ND.mkdir(parents=True, exist_ok=True); AD = ND / 'archive'
+    ND = Path(DATA_DIR) / 'notebook'; ND.mkdir(parents=True, exist_ok=True); AD = ND / 'archive'
+    def _sync(m='update'): _git(ND, 'add', '-A'); _git(ND, 'commit', '-m', m); _git(ND, 'push')
+    if _git(ND, 'rev-parse', '--git-dir').returncode != 0: _git(ND, 'init', '-b', 'main'); sp.run(['gh', 'repo', 'create', 'notebook', '--private', '--source', str(ND), '--push'], timeout=60)
+    _git(ND, 'pull', '--rebase')
     raw = ' '.join(sys.argv[2:]) if len(sys.argv) > 2 else None
     def _notes(): return sorted([n for n in ND.glob('*.md')], key=lambda p: p.name, reverse=True)
-    def _arch(n): AD.mkdir(exist_ok=True); shutil.move(str(n), str(AD / n.name))
-    if raw and raw != 'ls' and not raw.isdigit():  # save note
+    def _arch(n): AD.mkdir(exist_ok=True); shutil.move(str(n), str(AD / n.name)); _sync(f'archive {n.name}')
+    if raw and raw != 'ls' and not raw.isdigit():
         slug = re.sub(r'[^\w\-]', '', raw.split('\n')[0][:40].lower().replace(' ', '-'))[:30] or 'note'
-        (ND / f"{slug}-{datetime.now().strftime('%m%d%H%M')}.md").write_text(raw); print("+")
-        sp.Popen([sys.executable, '-c', f'import aioCloud; aioCloud.sync_data(wait=True)'], cwd=SCRIPT_DIR, stdout=sp.DEVNULL, stderr=sp.DEVNULL, start_new_session=True); return
-    import aioCloud, concurrent.futures as cf; ex = cf.ThreadPoolExecutor(2); aioCloud.pull_notes()
-    notes, last = _notes(), [None]
+        (ND / f"{slug}-{datetime.now().strftime('%m%d%H%M')}.md").write_text(raw); _sync(f'add {slug}'); print("+"); return
+    notes = _notes()
     if not notes: print("No notes. Create: aio note <content>"); return
     if raw == 'ls': [print(f"{i}. {n.read_text().split(chr(10))[0][:60]}") for i, n in enumerate(notes)]; return
     if raw and raw.isdigit() and int(raw) < len(notes): print(notes[int(raw)].read_text()); return
-    print(f"─ {len(notes)} notes ─ [a]rchive [u]ndo [enter]next [q]uit"); futs = []
+    print(f"─ {len(notes)} notes ─ [a]rchive [enter]next [q]uit")
     for n in notes:
         print(f"\n{n.read_text()[:500]}"); ch = input("> ").strip().lower()
-        if ch == 'a': _arch(n); last[0] = n.name; futs.append(ex.submit(aioCloud.sync_data, wait=True)); print("+")
-        elif ch == 'u' and last[0]: shutil.move(str(AD/last[0]), str(ND/last[0])); futs.append(ex.submit(aioCloud.sync_data, wait=True)); print(f"<- {last[0][:20]}"); last[0] = None
+        if ch == 'a': _arch(n); print("+")
         elif ch == 'q': break
-    print("synced" if all(f.result()[1] for f in futs) else "! sync failed" if futs else "")
 
 def cmd_add():
     args = [a for a in sys.argv[2:] if a != '--global']
