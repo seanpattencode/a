@@ -34,8 +34,7 @@ def sync_data(wait=False):
 
 def pull_notes():
     if not (rc := get_rclone()) or not configured(): return False
-    local, remote = str(Path(SCRIPT_DIR) / 'data'), f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'
-    sp.run([rc, 'sync', remote, local, '-q'], capture_output=True)  # pull = mirror cloud to local
+    sp.run([rc, 'sync', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/notebook', os.path.join(DATA_DIR, 'notebook'), '-q'], capture_output=True)
     return True
 
 def install_rclone():
