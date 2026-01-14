@@ -2,7 +2,7 @@
 # aio - AI agent session manager (compact version)
 import sys, os
 if len(sys.argv) > 2 and sys.argv[1] in ('note', 'n'):
-    import sqlite3, subprocess as sp; D = os.path.expanduser("~/.local/share/aios/notebook"); os.makedirs(D, exist_ok=True); db = sqlite3.connect(f"{D}/notes.db"); db.execute("CREATE TABLE IF NOT EXISTS n(id INTEGER PRIMARY KEY,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP)"); db.execute("INSERT INTO n(t) VALUES(?)", (' '.join(sys.argv[2:]),)); db.commit(); sp.Popen(f'cd "{D}" && git add -A && git commit -m n && git push', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL); print("✓"); sys.exit(0)
+    import sqlite3, subprocess as sp; D = os.path.expanduser("~/.local/share/aios/notebook"); os.makedirs(D, exist_ok=True); db = sqlite3.connect(f"{D}/notes.db"); db.execute("CREATE TABLE IF NOT EXISTS n(id INTEGER PRIMARY KEY,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP)"); 'd' in {r[1] for r in db.execute("PRAGMA table_info(n)")} or db.execute("ALTER TABLE n ADD COLUMN d"); db.execute("INSERT INTO n(t) VALUES(?)", (' '.join(sys.argv[2:]),)); db.commit(); sp.Popen(f'cd "{D}" && git add -A && git commit -m n && git push', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL); print("✓"); sys.exit(0)
 import subprocess as sp, json, sqlite3, shlex, shutil, time, atexit, re
 from datetime import datetime
 from pathlib import Path
@@ -794,7 +794,7 @@ def cmd_gdrive():
 
 def cmd_note():  # git=backup/versioning only, non-blocking
     ND = os.path.join(DATA_DIR, "notebook"); os.makedirs(ND, exist_ok=True); DB = os.path.join(ND, "notes.db")
-    db = sqlite3.connect(DB); db.execute("CREATE TABLE IF NOT EXISTS n(id INTEGER PRIMARY KEY,t,s DEFAULT 0,c DEFAULT CURRENT_TIMESTAMP)")
+    db = sqlite3.connect(DB); db.execute("CREATE TABLE IF NOT EXISTS n(id INTEGER PRIMARY KEY,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP)"); 'd' in {r[1] for r in db.execute("PRAGMA table_info(n)")} or db.execute("ALTER TABLE n ADD COLUMN d")
     _sync = lambda: sp.Popen(f'cd "{ND}" && git add -A && git commit -m n && git push', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     raw = ' '.join(sys.argv[2:]) if len(sys.argv) > 2 else None
     if raw: db.execute("INSERT INTO n(t) VALUES(?)", (raw,)); db.commit(); _sync(); print("✓"); return
