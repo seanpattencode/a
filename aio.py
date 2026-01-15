@@ -756,24 +756,19 @@ aio() { local d="${1/#~/$HOME}"; [[ -d "$d" ]] && { cd "$d"; ls; return; }; comm
         elif v == '': c.execute("INSERT OR REPLACE INTO config VALUES ('tmux_conf', 'n')"); c.commit()
 
 def cmd_deps():
-    print("Installing deps...\n")
-    _run = lambda c: sp.run(c, shell=True, capture_output=True).returncode == 0
-    _sudo = '' if os.environ.get('TERMUX_VERSION') or os.path.exists('/data/data/com.termux') else 'sudo '
-    for p, apt in [('pexpect', 'python3-pexpect'), ('prompt_toolkit', 'python3-prompt-toolkit')]:
+    _run = lambda c: sp.run(c, shell=True).returncode == 0
+    sudo = '' if os.environ.get('TERMUX_VERSION') else 'sudo '
+    for p, a in [('pexpect','python3-pexpect'),('prompt_toolkit','python3-prompt-toolkit')]:
         try: __import__(p); ok = True
-        except: ok = _run(f'{_sudo}apt-get install -y {apt}') or _run(f'{sys.executable} -m pip install --user {p}')
+        except: ok = _run(f'{sudo}apt-get install -y {a}') or _run(f'{sys.executable} -m pip install --user {p}')
         print(f"{'✓' if ok else 'x'} {p}")
-    ok = shutil.which('tmux') or _run(f'{_sudo}apt-get install -y tmux') or _run('brew install tmux') or _run('pkg install -y tmux')
-    print(f"{'✓' if shutil.which('tmux') else 'x'} tmux")
-    shutil.which('npm') or _run(f'{_sudo}apt-get install -y nodejs npm') or _run('brew install node') or _run('pkg install -y nodejs')
-    nv = int(sp.run(['node','-v'], capture_output=True, text=True).stdout.strip().lstrip('v').split('.')[0]) if shutil.which('node') else 0
-    if nv < 25: print(f"! Node v{nv} -> latest..."); print(f"{'✓' if _run(f'{_sudo}npm i -g n && {_sudo}n latest') else 'x'} node")
-    else: print(f"✓ node v{nv}")
-    for cmd, pkg in [('codex','@openai/codex'), ('claude','@anthropic-ai/claude-code'), ('gemini','@google/gemini-cli')]:
-        shutil.which(cmd) or _run(f'{_sudo}npm i -g {pkg}')
-        print(f"{'✓' if shutil.which(cmd) else 'x'} {cmd}")
+    shutil.which('tmux') or _run(f'{sudo}apt-get install -y tmux') or _run('brew install tmux'); print(f"{'✓' if shutil.which('tmux') else 'x'} tmux")
+    shutil.which('npm') or _run(f'{sudo}apt-get install -y nodejs npm') or _run('brew install node')
+    nv = int(sp.run(['node','-v'],capture_output=True,text=True).stdout.strip().lstrip('v').split('.')[0]) if shutil.which('node') else 0
+    nv < 25 and _run(f'{sudo}npm i -g n && {sudo}n latest'); print(f"{'✓' if shutil.which('node') else 'x'} node")
+    for c, p in [('codex','@openai/codex'),('claude','@anthropic-ai/claude-code'),('gemini','@google/gemini-cli')]:
+        shutil.which(c) or _run(f'{sudo}npm i -g {p}'); print(f"{'✓' if shutil.which(c) else 'x'} {c}")
     shutil.which('aider') or _run(f'{sys.executable} -m pip install --user aider-chat'); print(f"{'✓' if shutil.which('aider') else 'x'} aider")
-    print("\n✓ Done!")
 
 def cmd_prompt():
     name = wda or 'feat'
