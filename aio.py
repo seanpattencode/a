@@ -764,12 +764,20 @@ def cmd_note():  # git=backup/versioning only, non-blocking
     raw = ' '.join(sys.argv[2:]) if len(sys.argv) > 2 else None
     if raw: db.execute("INSERT INTO n(t) VALUES(?)", (raw,)); db.commit(); _sync(); print("✓"); return
     notes = db.execute("SELECT id,t,d,proj FROM n WHERE s=0 ORDER BY c DESC").fetchall()
-    print(f"sqlite {DB.replace(os.path.expanduser('~'), '~')} | {len(notes)} notes\n[a]ck [e]dit [p]rojects [q]uit | 1/20=due") if notes else print("aio n <text>"); notes or sys.exit()
+    print(f"sqlite {DB.replace(os.path.expanduser('~'), '~')} | {len(notes)} notes\n[a]ck [e]dit [p]rojects [m]ore [q]uit | 1/20=due") if notes else print("aio n <text>"); notes or sys.exit()
     for i,(nid,txt,due,proj) in enumerate(notes):  # idea-to-execution pipeline: attention queue, notes=todos
         print(f"\n[{i+1}/{len(notes)}] {txt}" + (f" @{proj}" if proj else "") + (f" [{due}]" if due else "")); ch = input("> ").strip().lower()
         if ch == 'a': db.execute("UPDATE n SET s=1 WHERE id=?", (nid,)); db.commit(); _sync(); print("✓")
         elif ch == 'e': nv = input("new: "); nv and (db.execute("UPDATE n SET t=? WHERE id=?", (nv, nid)), db.commit(), _sync(), print("✓"))
         elif '/' in ch: from dateutil.parser import parse; d=str(parse(ch,dayfirst=False))[:19].replace(' 00:00:00',''); db.execute("UPDATE n SET d=? WHERE id=?", (d, nid)); db.commit(); _sync(); print(f"✓ {d}")
+        elif ch == 'm':
+            print("\n[a] archive")
+            mc = input("m> ").strip().lower()
+            if mc == 'a':
+                arch = db.execute("SELECT t,proj,c FROM n WHERE s=1 ORDER BY c DESC LIMIT 20").fetchall()
+                print("\n=== Archive (last 20) ===")
+                for t,p,c in arch: print(f"  [{c[:16]}] {t}" + (f" @{p}" if p else ""))
+                input("[enter] back")
         elif ch == 'p':
             while True:
                 print("\n" + "\n".join(f"  {i}. {p}" for i,p in enumerate(projs)) if projs else "\n  (no projects)")
