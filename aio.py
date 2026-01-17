@@ -781,9 +781,10 @@ def cmd_note():  # git=backup/versioning only, non-blocking
         elif ch == 'p':
             while True:
                 print("\n" + "\n".join(f"  {i}. {p}" for i,p in enumerate(projs)) if projs else "\n  (no projects)")
-                print("[#] open  [name] new project  [enter] back")
+                print("[#] open  [name] new  [rm #] del  [enter] back")
                 pc = input("p> ").strip()
                 if not pc: break
+                if pc[:3]=='rm ' and pc[3:].isdigit() and int(pc[3:])<len(projs): n=projs.pop(int(pc[3:])); db.execute("DELETE FROM p WHERE name=?",(n,)); db.commit(); _sync(); print(f"✓ {n}"); continue
                 if pc.isdigit() and int(pc) < len(projs):
                     pname = projs[int(pc)]
                     while True:
