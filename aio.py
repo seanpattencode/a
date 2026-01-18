@@ -557,7 +557,7 @@ def list_all(help=True, cache=True):
 
 def db_sync():
     if not os.path.isdir(f"{DATA_DIR}/.git"): return
-    sp.Popen(f'cd "{DATA_DIR}" && git add -A && git diff --cached --quiet || git commit -m "sync" && git pull --rebase -q && git push -q', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    sp.Popen(f'cd "{DATA_DIR}" && git pull --rebase -q 2>/dev/null; git add -A && git diff --cached --quiet || git commit -m "sync" && git push -q', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', DB_PATH, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
 def cmd_backup():
