@@ -872,6 +872,7 @@ def cmd_gdrive():
     else: cloud_status()
 
 def cmd_note():
+    os.path.isdir(f"{DATA_DIR}/.git") and sp.run(f'cd "{DATA_DIR}" && git pull --rebase -q 2>/dev/null', shell=True, capture_output=True)
     raw = ' '.join(sys.argv[2:]) if len(sys.argv) > 2 else None
     with db() as c:
         if raw: c.execute("INSERT INTO notes(t) VALUES(?)", (raw,)); c.commit(); db_sync(); print("✓"); sys.exit()
