@@ -22,7 +22,7 @@ info "Detected: $OS"
 # Install system packages
 case $OS in
     mac)
-        command -v brew &>/dev/null || die "Install Homebrew first: https://brew.sh"
+        command -v brew &>/dev/null || die "Install Homebrew first: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
         brew install tmux node 2>/dev/null || brew upgrade tmux node 2>/dev/null || true
         ok "tmux + node"
         ;;

@@ -6,6 +6,10 @@
 ```bash
 curl -fsSL https://raw.githubusercontent.com/seanpattencode/aio/main/install.sh | bash
 ```
+**Mac:** Install Homebrew first:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
 
 **Termux (Android):**
 ```bash
