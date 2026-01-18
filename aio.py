@@ -815,8 +815,12 @@ def cmd_install():
     if os.path.exists(script):
         os.execvp("bash", ["bash", script])
     else:
-        url = "https://raw.githubusercontent.com/seanpatten/aio/main/install.sh"
+        url = "https://raw.githubusercontent.com/seanpattencode/aio/main/install.sh"
         os.execvp("bash", ["bash", "-c", f"curl -fsSL {url} | bash"])
+
+def cmd_uninstall():
+    if input("Uninstall aio? (y/n): ").lower() in ['y', 'yes']:
+        import shutil; [os.remove(p) for p in [os.path.expanduser(f"~/.local/bin/{f}") for f in ["aio", "aioUI.py"]] if os.path.exists(p)]; shutil.rmtree(os.path.expanduser("~/.local/share/aios"), ignore_errors=True); print("✓ aio uninstalled"); os._exit(0)
 
 def cmd_deps():
     _run = lambda c: sp.run(c, shell=True).returncode == 0
@@ -1066,7 +1070,7 @@ CMDS = {
     'update': cmd_update, 'upd': cmd_update, 'jobs': cmd_jobs, 'job': cmd_jobs, 'kill': cmd_kill, 'kil': cmd_kill, 'killall': cmd_kill, 'attach': cmd_attach, 'att': cmd_attach,
     'cleanup': cmd_cleanup, 'cle': cmd_cleanup, 'config': cmd_config, 'con': cmd_config, 'ls': cmd_ls, 'diff': cmd_diff, 'dif': cmd_diff, 'send': cmd_send, 'sen': cmd_send,
     'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'set': cmd_set,
-    'install': cmd_install, 'ins': cmd_install, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'n': cmd_note, 'settings': cmd_set,
+    'install': cmd_install, 'ins': cmd_install, 'uninstall': cmd_uninstall, 'uni': cmd_uninstall, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'n': cmd_note, 'settings': cmd_set,
     'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi,
     'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"{os.getcwd()}"), sp.run(['ls'])), 'web': cmd_web, 'ssh': cmd_ssh,
     'fix': cmd_workflow, 'bug': cmd_workflow, 'feat': cmd_workflow, 'fea': cmd_workflow, 'auto': cmd_workflow, 'aut': cmd_workflow, 'del': cmd_workflow,
