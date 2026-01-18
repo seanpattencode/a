@@ -1058,7 +1058,7 @@ def cmd_ssh():
         pw = sys.argv[4] if len(sys.argv) > 4 else None; pw and print("! Password stored in plain text")
         with db() as c: c.execute("INSERT OR REPLACE INTO ssh VALUES(?,?,?)", (wda, sys.argv[3], pw)); c.commit(); print(f"✓ {wda}={sys.argv[3]}"); return
     shutil.which('ssh') or _die("x ssh not installed: pkg install openssh"); hpw = hosts.get(wda,(wda,None)); h,pw = hpw; hp = h.rsplit(':',1); cmd = ['ssh']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0]]
-    if not pw and wda in hosts: pw = input("Save password? (enter to skip): ").strip(); pw and [c.execute("UPDATE ssh SET pw=? WHERE name=?", (pw,wda)) or c.commit() or print("! Saved") for c in [db()]]
+    if not pw and wda in hosts: pw = input("Save password? (enter to skip): ").strip(); pw and [(c.execute("UPDATE ssh SET pw=? WHERE name=?", (pw,wda)), c.commit(), print("! Saved")) for c in [db()]]
     (pw and not shutil.which('sshpass')) and _die("x sshpass not installed: apt install sshpass"); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
 
 # Dispatch
