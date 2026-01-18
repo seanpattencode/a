@@ -558,6 +558,13 @@ def list_all(help=True, cache=True):
 def db_sync():
     if not os.path.isdir(f"{DATA_DIR}/.git"): return
     sp.Popen(f'cd "{DATA_DIR}" && git add -A && git diff --cached --quiet || git commit -m "sync" && git pull --rebase -q && git push -q', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', DB_PATH, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+
+def cmd_backup():
+    lb = sorted(Path(DATA_DIR).glob('aio_auto_*.db')); lt = datetime.fromtimestamp(lb[-1].stat().st_mtime).strftime('%m-%d %H:%M') if lb else 'never'
+    gt = sp.run(f'cd "{DATA_DIR}" && git log -1 --format=%ci', shell=True, capture_output=True, text=True).stdout[:16] if os.path.isdir(f"{DATA_DIR}/.git") else None
+    gd = sp.run([get_rclone(), 'lsf', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], capture_output=True, text=True).stdout.strip() if get_rclone() and cloud_configured() else None
+    print(f"Local:  {len(lb)} backups, last {lt}\nGit:    {'✓ '+gt if gt else 'x not configured'}\nGDrive: {'✓ '+gd.split()[0] if gd else 'x not configured'}")
 
 def auto_backup():
     if not hasattr(os, 'fork'): return
@@ -1065,7 +1072,7 @@ CMDS = {
     'cleanup': cmd_cleanup, 'cle': cmd_cleanup, 'config': cmd_config, 'con': cmd_config, 'ls': cmd_ls, 'diff': cmd_diff, 'dif': cmd_diff, 'send': cmd_send, 'sen': cmd_send,
     'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'set': cmd_set,
     'install': cmd_install, 'ins': cmd_install, 'uninstall': cmd_uninstall, 'uni': cmd_uninstall, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'n': cmd_note, 'settings': cmd_set,
-    'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi,
+    'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi, 'backup': cmd_backup, 'bak': cmd_backup,
     'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"{os.getcwd()}"), sp.run(['ls'])), 'web': cmd_web, 'ssh': cmd_ssh,
     'fix': cmd_workflow, 'bug': cmd_workflow, 'feat': cmd_workflow, 'fea': cmd_workflow, 'auto': cmd_workflow, 'aut': cmd_workflow, 'del': cmd_workflow,
 }
