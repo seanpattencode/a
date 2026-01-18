@@ -2,7 +2,7 @@
 # aio - AI agent session manager (merged with cloud sync)
 import sys, os
 if len(sys.argv) > 2 and sys.argv[1] in ('note', 'n'):
-    import sqlite3, subprocess as sp; dd = os.path.expanduser("~/.local/share/aios"); os.makedirs(dd, exist_ok=True); c = sqlite3.connect(f"{dd}/aio.db"); c.execute("CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP,proj)"); c.execute("INSERT INTO notes(t) VALUES(?)", (' '.join(sys.argv[2:]),)); c.commit(); sp.Popen(f'cd "{dd}" && git add -A && git diff --cached --quiet || git commit -m n && git push -q', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL) if os.path.isdir(f"{dd}/.git") else None; print("✓"); sys.exit(0)
+    import sqlite3, subprocess as sp; dd = os.path.expanduser("~/.local/share/aios"); db = f"{dd}/aio.db"; os.makedirs(dd, exist_ok=True); c = sqlite3.connect(db); c.execute("CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP,proj)"); c.execute("INSERT INTO notes(t) VALUES(?)", (' '.join(sys.argv[2:]),)); c.commit(); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close(); r = sp.run(f'cd "{dd}" && git add -A && git diff --cached --quiet || git commit -m n && git push -q 2>&1', shell=True, capture_output=True, text=True) if os.path.isdir(f"{dd}/.git") else type('R',(),{'returncode':0})(); print("✓" if r.returncode == 0 else f"! {r.stderr.strip()[:40] or 'sync failed'}"); sys.exit(0)
 import subprocess as sp, json, sqlite3, shlex, shutil, time, atexit, re, socket
 from datetime import datetime
 from pathlib import Path
@@ -556,8 +556,10 @@ def list_all(help=True, cache=True):
     return p, a
 
 def db_sync():
-    if not os.path.isdir(f"{DATA_DIR}/.git"): return
-    sp.Popen(f'cd "{DATA_DIR}" && git pull --rebase -q 2>/dev/null; git add -A && git diff --cached --quiet || git commit -m "sync" && git push -q', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    if not os.path.isdir(f"{DATA_DIR}/.git"): return True
+    sqlite3.connect(DB_PATH).execute("PRAGMA wal_checkpoint(TRUNCATE)").close()
+    r = sp.run(f'cd "{DATA_DIR}" && git pull --rebase -q 2>/dev/null; git add -A && git diff --cached --quiet || git commit -m "sync" && git push -q 2>&1', shell=True, capture_output=True, text=True)
+    r.returncode != 0 and r.stderr and print(f"! sync: {r.stderr.strip()[:50]}"); return r.returncode == 0
     (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', DB_PATH, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
 
 def cmd_backup():
