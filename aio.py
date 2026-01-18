@@ -1045,16 +1045,19 @@ def cmd_set():
 # SSH: aio ssh [name] [user@host] - list/add/connect
 def cmd_ssh():
     with db() as c:
-        c.execute("CREATE TABLE IF NOT EXISTS ssh(name TEXT PRIMARY KEY, host TEXT)")
-        hosts = dict(c.execute("SELECT name,host FROM ssh").fetchall())
-    if not wda or wda == 'start': wda == 'start' and os.execvp('sshd', ['sshd']); shutil.which('ssh') or print("! ssh not installed: pkg install openssh"); print("SSH Manager\n  aio ssh key           Show/generate public key\n  aio ssh auth          Add key to this device\n  aio ssh start         Start sshd (Termux)\n  aio ssh <name>        Connect to saved host\n  aio ssh <n> u@h:port  Save host\n  aio ssh rm <name>     Remove host\nSaved:"); [print(f"  {n}: {h}") for n,h in hosts.items()] or print("  (none)"); return
+        c.execute("CREATE TABLE IF NOT EXISTS ssh(name TEXT PRIMARY KEY, host TEXT, pw TEXT)")
+        try: c.execute("ALTER TABLE ssh ADD COLUMN pw TEXT")
+        except: pass
+        hosts = {r[0]: (r[1], r[2] if len(r)>2 else None) for r in c.execute("SELECT name,host,pw FROM ssh").fetchall()}
+    if not wda or wda == 'start': wda == 'start' and os.execvp('sshd', ['sshd']); shutil.which('ssh') or print("! ssh not installed: pkg install openssh"); print("SSH Manager\n  aio ssh key           Show/generate public key\n  aio ssh auth          Add key to this device\n  aio ssh start         Start sshd (Termux)\n  aio ssh <name>        Connect to saved host\n  aio ssh <n> u@h:port [pw]  Save host (pw stored plain!)\n  aio ssh rm <name>     Remove host\nSaved:"); [print(f"  {n}: {h[0]}{' [pw]' if h[1] else ''}") for n,h in hosts.items()] or print("  (none)"); return
     if wda == 'key': kf = Path.home()/'.ssh/id_ed25519'; kf.exists() or sp.run(['ssh-keygen','-t','ed25519','-N','','-f',str(kf)]); print(f"Public key (copy to remote):\n{(kf.with_suffix('.pub')).read_text().strip()}"); return
     if wda == 'auth': d = Path.home()/'.ssh'; d.mkdir(exist_ok=True); af = d/'authorized_keys'; k = input("Paste public key: ").strip(); af.open('a').write(f"\n{k}\n"); af.chmod(0o600); print("✓ Key added"); return
     if wda == 'rm' and len(sys.argv) > 3:
         with db() as c: c.execute("DELETE FROM ssh WHERE name=?", (sys.argv[3],)); c.commit(); print(f"✓ removed {sys.argv[3]}"); return
     if len(sys.argv) > 3:
-        with db() as c: c.execute("INSERT OR REPLACE INTO ssh VALUES(?,?)", (wda, sys.argv[3])); c.commit(); print(f"✓ {wda}={sys.argv[3]}"); return
-    shutil.which('ssh') or _die("x ssh not installed. Run: pkg install openssh"); h = hosts.get(wda) or wda; hp = h.rsplit(':',1); os.execvp('ssh', ['ssh']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0]])
+        pw = sys.argv[4] if len(sys.argv) > 4 else None; pw and print("! Password stored in plain text")
+        with db() as c: c.execute("INSERT OR REPLACE INTO ssh VALUES(?,?,?)", (wda, sys.argv[3], pw)); c.commit(); print(f"✓ {wda}={sys.argv[3]}"); return
+    shutil.which('ssh') or _die("x ssh not installed: pkg install openssh"); hpw = hosts.get(wda,(wda,None)); h,pw = hpw; hp = h.rsplit(':',1); cmd = ['ssh']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0]]; (pw and not shutil.which('sshpass')) and _die("x sshpass not installed: apt install sshpass"); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
 
 # Dispatch
 CMDS = {
