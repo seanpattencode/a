@@ -1070,7 +1070,8 @@ def cmd_ssh():
     pw and not shutil.which('sshpass') and _die("x need sshpass"); print(f"Connecting to {nm}..."); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
 
 def cmd_run():
-    args = sys.argv[2:]; hi = int(args.pop(0)) if args and args[0].isdigit() else next((i for i,(n,h) in enumerate(db().execute("SELECT name,host FROM ssh")) if _up(h)), 0); agent = args.pop(0) if args and args[0] in 'clg' else 'l'
+    args = sys.argv[2:]; hosts = list(db().execute("SELECT name,host FROM ssh")); [print(f"  {i}. {'✓' if _up(h) else 'x'} {n}") for i,(n,h) in enumerate(hosts)] if args and not args[0].isdigit() else None
+    hi = int(args.pop(0)) if args and args[0].isdigit() else int(input("Host #: ").strip()); agent = args.pop(0) if args and args[0] in 'clg' else 'l'
     with db() as c: n,h = list(c.execute("SELECT name,host FROM ssh"))[hi]; hp = h.rsplit(':',1); import keyring; pw = keyring.get_password('aio-ssh',n); task = ' '.join(args); proj = os.path.basename(os.getcwd())
     cmd = f'cd ~/projects/{proj} && aio {agent}++' + (f' && sleep 2 && tmux send-keys -t $(tmux ls -F "#{{session_name}}" | grep "^{proj}" | tail -1) {shlex.quote(task)} Enter' if task else '')
     print(f"→ {n}"); os.execvp('sshpass', ['sshpass','-p',pw,'ssh','-tt','-p',hp[1] if len(hp)>1 else '22',hp[0],cmd])
