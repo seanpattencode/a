@@ -562,9 +562,10 @@ def db_sync():
 
 def cmd_backup():
     lb = sorted(Path(DATA_DIR).glob('aio_auto_*.db')); lt = datetime.fromtimestamp(lb[-1].stat().st_mtime).strftime('%m-%d %H:%M') if lb else 'never'
-    gt = sp.run(f'cd "{DATA_DIR}" && git log -1 --format=%ci', shell=True, capture_output=True, text=True).stdout[:16] if os.path.isdir(f"{DATA_DIR}/.git") else None
+    gu = sp.run(f'cd "{DATA_DIR}" && git remote get-url origin 2>/dev/null', shell=True, capture_output=True, text=True).stdout.strip()
+    gt = sp.run(f'cd "{DATA_DIR}" && git log -1 --format=%ci', shell=True, capture_output=True, text=True).stdout[:16] if gu else None
     gd = sp.run([get_rclone(), 'lsf', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], capture_output=True, text=True).stdout.strip() if get_rclone() and cloud_configured() else None
-    print(f"Local:  {len(lb)} backups, last {lt}\nGit:    {'✓ '+gt if gt else 'x not configured'}\nGDrive: {'✓ '+gd.split()[0] if gd else 'x not configured'}")
+    print(f"Local:  {len(lb)} backups, last {lt} ({DATA_DIR})\nGit:    {'✓ '+gt+' '+gu if gt else 'x not configured'}\nGDrive: {'✓ '+gd.split()[0]+' '+(cloud_account() or RCLONE_REMOTE) if gd else 'x not configured'}\nManual: cd {DATA_DIR} && git add -A && git commit -m bak && git push")
 
 def auto_backup():
     if not hasattr(os, 'fork'): return
