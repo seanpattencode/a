@@ -94,7 +94,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/aio.py" ]]; then
     cp "$SCRIPT_DIR/aio.py" "$BIN/aio" && chmod +x "$BIN/aio" && ok "aio installed (local)"
 else
-    AIO_URL="https://raw.githubusercontent.com/seanpatten/aio/main/aio.py"
+    AIO_URL="https://raw.githubusercontent.com/seanpattencode/aio/main/aio.py"
     curl -fsSL "$AIO_URL" -o "$BIN/aio" && chmod +x "$BIN/aio" && ok "aio installed (remote)"
 fi
 
