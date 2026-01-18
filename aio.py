@@ -1050,7 +1050,7 @@ def cmd_ssh():
     if not wda: shutil.which('ssh') or print("! ssh not installed. Run: pkg install openssh"); [print(f"  {n}: {h}") for n,h in hosts.items()] or print("aio ssh <name> [user@host]"); return
     if len(sys.argv) > 3:
         with db() as c: c.execute("INSERT OR REPLACE INTO ssh VALUES(?,?)", (wda, sys.argv[3])); c.commit(); print(f"✓ {wda}={sys.argv[3]}"); return
-    shutil.which('ssh') or _die("x ssh not installed. Run: pkg install openssh"); host = hosts.get(wda) or wda; os.execvp('ssh', ['ssh', host])
+    shutil.which('ssh') or _die("x ssh not installed. Run: pkg install openssh"); h = hosts.get(wda) or wda; hp = h.rsplit(':',1); os.execvp('ssh', ['ssh']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0]])
 
 # Dispatch
 CMDS = {
