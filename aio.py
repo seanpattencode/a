@@ -177,6 +177,7 @@ def init_db():
 def _migrate_old_dbs():
     # Migrate notes from old notebook/notes.db
     old_notes = os.path.join(NOTE_DIR, "notes.db")
+    if not os.path.exists(old_notes) and os.path.exists(old_notes + ".migrated"): old_notes += ".migrated"
     if os.path.exists(old_notes):
         try:
             with sqlite3.connect(old_notes) as old, db() as c:
@@ -190,6 +191,7 @@ def _migrate_old_dbs():
         except: pass
     # Migrate todos/jobs from old data/aios.db
     old_data = os.path.join(SCRIPT_DIR, "data", "aios.db")
+    if not os.path.exists(old_data) and os.path.exists(old_data + ".migrated"): old_data += ".migrated"
     if os.path.exists(old_data):
         try:
             with sqlite3.connect(old_data) as old, db() as c:
