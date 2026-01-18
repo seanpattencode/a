@@ -161,9 +161,11 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config VALUES ('multi_default', 'l:3')")
         c.execute("INSERT OR IGNORE INTO config VALUES ('claude_prefix', 'Ultrathink. ')")
         if c.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0:
-            c.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)", (os.path.expanduser("~/projects/aio"), 0))
+            for p in [SCRIPT_DIR, os.path.expanduser("~/aio"), os.path.expanduser("~/projects/aio")]:
+                if os.path.isdir(p) and os.path.isdir(os.path.join(p, ".git")): c.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)", (p, 0)); break
         if c.execute("SELECT COUNT(*) FROM apps").fetchone()[0] == 0:
-            c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", ("aioUI", f"python3 {os.path.expanduser('~/.local/bin/aioUI.py')}", 0))
+            ui = next((p for p in [os.path.join(SCRIPT_DIR, "aioUI.py"), os.path.expanduser("~/aio/aioUI.py"), os.path.expanduser("~/.local/bin/aioUI.py")] if os.path.exists(p)), None)
+            if ui: c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", ("aioUI", f"python3 {ui}", 0))
         if c.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0:
             cdx, cld = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox', 'claude --dangerously-skip-permissions'
             for k, n, t in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','codex',cdx),('cp','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('l','claude',cld),('lp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
