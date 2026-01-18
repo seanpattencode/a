@@ -1062,10 +1062,10 @@ def cmd_ssh():
     if wda == 'auth': d = Path.home()/'.ssh'; d.mkdir(exist_ok=True); af = d/'authorized_keys'; k = input("Paste public key: ").strip(); af.open('a').write(f"\n{k}\n"); af.chmod(0o600); print("✓ Added"); return
     if wda == 'rm' and len(sys.argv) > 3: n=sys.argv[3]; _pw(n) and kr and kr.delete_password('aio-ssh',n); (c:=db()).execute("DELETE FROM ssh WHERE name=?",(n,)); c.commit(); print(f"✓ rm {n}"); return
     if len(sys.argv) > 3 and sys.argv[3] not in ('cmd', '--cmd'): pw=sys.argv[4] if len(sys.argv)>4 else None; pw and _pw(wda,pw); (c:=db()).execute("INSERT OR REPLACE INTO ssh(name,host) VALUES(?,?)",(wda,sys.argv[3])); c.commit(); print(f"✓ {wda}={sys.argv[3]}{' [pw]' if pw else ''}"); return
-    nm = hosts[int(wda)][0] if wda.isdigit() and int(wda) < len(hosts) else wda; shutil.which('ssh') or _die("x ssh not installed"); h=hmap.get(nm,nm); pw=_pw(nm); hp=h.rsplit(':',1); cmd=['ssh']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0]]
+    nm = hosts[int(wda)][0] if wda.isdigit() and int(wda) < len(hosts) else wda; shutil.which('ssh') or _die("x ssh not installed"); h=hmap.get(nm,nm); pw=_pw(nm); hp=h.rsplit(':',1); cmd=['ssh','-tt','-o','StrictHostKeyChecking=accept-new']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0]]
     if 'cmd' in sys.argv or '--cmd' in sys.argv: print(' '.join(cmd)); return
     if not pw and nm in hmap: pw=input("Save password? ").strip(); pw and _pw(nm,pw) and print("✓ Saved")
-    (pw and not shutil.which('sshpass')) and _die("x need sshpass"); print(' '.join(cmd)); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
+    pw and not shutil.which('sshpass') and _die("x need sshpass"); print(f"Connecting to {nm}..."); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
 
 # Dispatch
 CMDS = {
