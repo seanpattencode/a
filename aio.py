@@ -21,6 +21,7 @@ def _ok(m): print(f"✓ {m}")
 def _err(m): print(f"x {m}")
 def _die(m, c=1): _err(m); sys.exit(c)
 def _confirm(m): return input(f"{m} (y/n): ").strip().lower() in ['y', 'yes']
+def _up(h): return not (lambda s,hp: s.settimeout(0.5) or s.connect_ex((hp[0].split('@')[-1], int(hp[1]) if len(hp)>1 else 22)))(socket.socket(), h.rsplit(':',1))
 
 _pexpect, _prompt_toolkit = None, None
 def _get_pt():
@@ -1055,7 +1056,6 @@ def cmd_ssh():
     try: import keyring as kr
     except: kr = None
     _pw = lambda n,v=None: (kr.set_password('aio-ssh',n,v),v)[1] if v and kr else kr.get_password('aio-ssh',n) if kr else None
-    _up = lambda h: not (lambda s,hp: s.settimeout(0.5) or s.connect_ex((hp[0].split('@')[-1], int(hp[1]) if len(hp)>1 else 22)))(socket.socket(), h.rsplit(':',1))
     with db() as c:
         c.execute("CREATE TABLE IF NOT EXISTS ssh(name TEXT PRIMARY KEY, host TEXT, pw TEXT)"); hosts = list(c.execute("SELECT name,host FROM ssh")); hmap = {r[0]: r[1] for r in hosts}
         [(c.execute("UPDATE ssh SET pw=NULL WHERE name=?",(n,)), _pw(n,p)) for n,_,p in c.execute("SELECT * FROM ssh WHERE pw IS NOT NULL")]; c.commit()
@@ -1070,6 +1070,12 @@ def cmd_ssh():
     if not pw and nm in hmap: pw=input("Save password? ").strip(); pw and _pw(nm,pw) and print("✓ Saved")
     pw and not shutil.which('sshpass') and _die("x need sshpass"); print(f"Connecting to {nm}..."); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
 
+def cmd_run():
+    args = sys.argv[2:]; hi = int(args.pop(0)) if args and args[0].isdigit() else next((i for i,(n,h) in enumerate(db().execute("SELECT name,host FROM ssh")) if _up(h)), 0); agent = args.pop(0) if args and args[0] in 'clg' else 'l'
+    with db() as c: n,h = list(c.execute("SELECT name,host FROM ssh"))[hi]; hp = h.rsplit(':',1); import keyring; pw = keyring.get_password('aio-ssh',n); task = ' '.join(args); proj = os.path.basename(os.getcwd())
+    cmd = f'cd ~/projects/{proj} && aio {agent}++' + (f' && sleep 2 && tmux send-keys -t $(tmux ls -F "#{{session_name}}" | grep "^{proj}" | tail -1) {shlex.quote(task)} Enter' if task else '')
+    print(f"→ {n}"); os.execvp('sshpass', ['sshpass','-p',pw,'ssh','-tt','-p',hp[1] if len(hp)>1 else '22',hp[0],cmd])
+
 # Dispatch
 CMDS = {
     None: cmd_help, '': cmd_help, 'help': cmd_help_full, 'hel': cmd_help_full, '--help': cmd_help_full, '-h': cmd_help_full,
@@ -1079,7 +1085,7 @@ CMDS = {
     'install': cmd_install, 'ins': cmd_install, 'uninstall': cmd_uninstall, 'uni': cmd_uninstall, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'n': cmd_note, 'settings': cmd_set,
     'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi, 'backup': cmd_backup, 'bak': cmd_backup,
     'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"{os.getcwd()}"), sp.run(['ls'])), 'web': cmd_web, 'ssh': cmd_ssh,
-    'fix': cmd_workflow, 'bug': cmd_workflow, 'feat': cmd_workflow, 'fea': cmd_workflow, 'auto': cmd_workflow, 'aut': cmd_workflow, 'del': cmd_workflow,
+    'fix': cmd_workflow, 'bug': cmd_workflow, 'feat': cmd_workflow, 'fea': cmd_workflow, 'auto': cmd_workflow, 'aut': cmd_workflow, 'del': cmd_workflow, 'run': cmd_run,
 }
 
 if arg in CMDS: CMDS[arg]()
