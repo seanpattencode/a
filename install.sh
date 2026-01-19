@@ -25,14 +25,13 @@ elif sudo -n true 2>/dev/null; then SUDO="sudo"
 else SUDO=""; fi
 info "Detected: $OS ${SUDO:+(sudo)}${SUDO:-"(no root)"}"
 
-# Install node via fnm if no npm
-install_fnm() {
+# Install node to user space if no npm
+install_node() {
     command -v npm &>/dev/null && return 0
-    info "Installing fnm + node (user-level)..."
-    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell --install-dir "$BIN"
-    export PATH="$BIN:$PATH"
-    eval "$("$BIN/fnm" env --shell bash 2>/dev/null)" || true
-    "$BIN/fnm" install --lts && ok "node $(node -v)" || warn "fnm install failed"
+    info "Installing node (user-level)..."
+    ARCH=$(uname -m); [[ "$ARCH" == "x86_64" ]] && ARCH="x64"; [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
+    curl -fsSL "https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-$ARCH.tar.xz" | tar -xJf - -C "$HOME/.local" --strip-components=1
+    command -v node &>/dev/null && ok "node $(node -v)" || warn "node install failed"
 }
 
 # Install system packages
@@ -48,22 +47,19 @@ case $OS in
             $SUDO apt-get update -qq
             $SUDO apt-get install -y -qq tmux git curl nodejs npm python3-pip 2>/dev/null || true
             ok "system packages"
-        else install_fnm; command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; fi
+        else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; fi
         ;;
     arch)
         if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip 2>/dev/null && ok "system packages"
-        else install_fnm; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi
+        else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi
         ;;
     fedora)
         if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip 2>/dev/null && ok "system packages"
-        else install_fnm; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi
+        else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi
         ;;
     termux) pkg update -y && pkg install -y tmux nodejs git python && ok "system packages" ;;
-    *) install_fnm; warn "Unknown OS - install tmux manually" ;;
+    *) install_node; warn "Unknown OS - install tmux manually" ;;
 esac
-
-# Ensure fnm node in PATH
-if [[ -f "$BIN/fnm" ]]; then eval "$("$BIN/fnm" env --shell bash 2>/dev/null)" || true; fi
 
 # Node CLIs
 install_cli() {
@@ -101,6 +97,5 @@ fi
 # PATH setup in shell rc
 RC="$HOME/.bashrc"; [[ -f "$HOME/.zshrc" ]] && RC="$HOME/.zshrc"
 grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
-[[ -f "$BIN/fnm" ]] && grep -q 'fnm env' "$RC" 2>/dev/null || echo 'eval "$(~/.local/bin/fnm env 2>/dev/null)"' >> "$RC"
 
 echo -e "\n${G}Done!${R} Run: source $RC && aio"
