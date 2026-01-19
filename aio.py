@@ -166,7 +166,7 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config VALUES ('claude_prefix', 'Ultrathink. ')")
         if c.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0:
             for p in [SCRIPT_DIR, os.path.expanduser("~/aio"), os.path.expanduser("~/projects/aio")]:
-                if os.path.isdir(p) and os.path.isdir(os.path.join(p, ".git")): c.execute("INSERT INTO projects (path, display_order) VALUES (?, ?)", (p, 0)); break
+                if os.path.isdir(p) and os.path.isdir(os.path.join(p, ".git")): c.execute("INSERT INTO projects (path, display_order, device) VALUES (?, ?, ?)", (p, 0, DEVICE_ID)); break
         if c.execute("SELECT COUNT(*) FROM apps").fetchone()[0] == 0:
             ui = next((p for p in [os.path.join(SCRIPT_DIR, "aioUI.py"), os.path.expanduser("~/aio/aioUI.py"), os.path.expanduser("~/.local/bin/aioUI.py")] if os.path.exists(p)), None)
             if ui: c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", ("aioUI", f"python3 {ui}", 0))
