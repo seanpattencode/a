@@ -99,4 +99,7 @@ fi
 RC="$HOME/.bashrc"; [[ -f "$HOME/.zshrc" ]] && RC="$HOME/.zshrc"
 grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
 
+# Enable aio tmux config if no existing tmux.conf (adds mouse support, status bar)
+[[ ! -s "$HOME/.tmux.conf" ]] && "$BIN/aio" config tmux_conf y 2>/dev/null && ok "tmux config (mouse enabled)"
+
 echo -e "\n${G}Done!${R} Run: source $RC && aio"
