@@ -1051,6 +1051,10 @@ def cmd_set():
     elif v=='off':p.unlink(missing_ok=True);print(f"✓ off - open new terminal tab")
     else:print("on"if p.exists()else"off")
 
+def _sshd_running(): return sp.run(['pgrep', '-x', 'sshd'], capture_output=True).returncode == 0
+def _sshd_ip(): r = sp.run("ifconfig 2>/dev/null | grep -A1 wlan0 | grep inet | awk '{print $2}'", shell=True, capture_output=True, text=True); return r.stdout.strip() or '?'
+def _sshd_port(): return 8022 if os.environ.get('TERMUX_VERSION') else 22
+
 def cmd_ssh():
     try: import keyring as kr
     except: kr = None
@@ -1058,8 +1062,11 @@ def cmd_ssh():
     with db() as c:
         c.execute("CREATE TABLE IF NOT EXISTS ssh(name TEXT PRIMARY KEY, host TEXT, pw TEXT)"); hosts = list(c.execute("SELECT name,host FROM ssh")); hmap = {r[0]: r[1] for r in hosts}
         [(c.execute("UPDATE ssh SET pw=NULL WHERE name=?",(n,)), _pw(n,p)) for n,_,p in c.execute("SELECT * FROM ssh WHERE pw IS NOT NULL")]; c.commit()
-    if not wda or wda == 'start': wda == 'start' and os.execvp('sshd', ['sshd']); shutil.which('ssh') or print("! pkg install openssh"); print("SSH\n  Add:     aio ssh mypc john@192.168.1.5\n  Connect: aio ssh mypc  (or: aio ssh 0)\n  Setup:   aio ssh setup  (make this device connectable)\nHosts:"); [print(f"  {i}. {'✓' if _up(h) else 'x'} {n}: {h}{' [pw]' if _pw(n) else ''}") for i,(n,h) in enumerate(hosts)] or print("  (none - add one above!)"); return
-    if wda == 'setup': ip=sp.run(['hostname','-I'],capture_output=True,text=True).stdout.split()[0]; u=os.environ.get('USER','user'); ok=sp.run(['pgrep','sshd'],capture_output=True).returncode==0; cmd='pkg install -y openssh && sshd' if os.environ.get('TERMUX_VERSION') else 'sudo apt install -y openssh-server && sudo systemctl enable --now ssh'; (not ok and input("SSH not running. Install? (y/n): ").lower() in ['y','yes'] and sp.run(cmd,shell=True)); ok=ok or sp.run(['pgrep','sshd'],capture_output=True).returncode==0; print(f"This: {DEVICE_ID} ({u}@{ip})\nSSH: {'✓ running' if ok else 'x not running'}\n\nTo connect here from another device, run there:\n  aio ssh {DEVICE_ID} {u}@{ip}"); return
+    if wda == 'start': r = sp.run(['sshd'], capture_output=True, text=True); print(f"✓ sshd started (port {_sshd_port()})") if r.returncode == 0 or _sshd_running() else print(f"x sshd failed: {r.stderr.strip()}"); return
+    if wda == 'stop': sp.run(['pkill', '-x', 'sshd']); print("✓ sshd stopped" if not _sshd_running() else "x failed"); return
+    if wda in ('status', 's'): u, ip, p = os.environ.get('USER', 'u0_a'), _sshd_ip(), _sshd_port(); print(f"{'✓ RUNNING' if _sshd_running() else 'x STOPPED'}  ssh {u}@{ip} -p {p}"); return
+    if not wda: u, ip, p = os.environ.get('USER', 'u0_a'), _sshd_ip(), _sshd_port(); shutil.which('ssh') or print("! pkg install openssh"); print(f"SSH {'✓ ON' if _sshd_running() else 'x OFF'}  →  ssh {u}@{ip} -p {p}\n  start/stop/status  server control\n  setup              install & configure\n  <name> <user@host> add remote host\nHosts:"); [print(f"  {i}. {'✓' if _up(h) else 'x'} {n}: {h}{' [pw]' if _pw(n) else ''}") for i,(n,h) in enumerate(hosts)] or print("  (none)"); return
+    if wda == 'setup': ip = _sshd_ip(); u = os.environ.get('USER', 'user'); ok = _sshd_running(); cmd = 'pkg install -y openssh && sshd' if os.environ.get('TERMUX_VERSION') else 'sudo apt install -y openssh-server && sudo systemctl enable --now ssh'; (not ok and input("SSH not running. Install? (y/n): ").lower() in ['y', 'yes'] and sp.run(cmd, shell=True)); ok = ok or _sshd_running(); print(f"This: {DEVICE_ID} ({u}@{ip}:{_sshd_port()})\nSSH: {'✓ running' if ok else 'x not running'}\n\nTo connect here from another device:\n  ssh {u}@{ip} -p {_sshd_port()}"); return
     if wda == 'key': kf = Path.home()/'.ssh/id_ed25519'; kf.exists() or sp.run(['ssh-keygen','-t','ed25519','-N','','-f',str(kf)]); print(f"Public key:\n{(kf.with_suffix('.pub')).read_text().strip()}"); return
     if wda == 'auth': d = Path.home()/'.ssh'; d.mkdir(exist_ok=True); af = d/'authorized_keys'; k = input("Paste public key: ").strip(); af.open('a').write(f"\n{k}\n"); af.chmod(0o600); print("✓ Added"); return
     if wda in ('info','i'): [print(f"{n}: ssh {'-p '+hp[1]+' ' if len(hp:=h.rsplit(':',1))>1 else ''}{hp[0]}") for n,h in hosts]; return
