@@ -19,9 +19,10 @@ elif [[ -f /etc/arch-release ]]; then OS=arch
 elif [[ -f /etc/fedora-release ]]; then OS=fedora
 else OS=unknown; fi
 
-# Check root/sudo access
+# Check root/sudo access (prompt if needed)
 if [[ $EUID -eq 0 ]]; then SUDO=""
 elif sudo -n true 2>/dev/null; then SUDO="sudo"
+elif command -v sudo &>/dev/null && [[ -t 0 ]]; then info "sudo password needed for system packages"; sudo -v && SUDO="sudo" || SUDO=""
 else SUDO=""; fi
 info "Detected: $OS ${SUDO:+(sudo)}${SUDO:-"(no root)"}"
 
