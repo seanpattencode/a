@@ -21,7 +21,7 @@ def _ok(m): print(f"✓ {m}")
 def _err(m): print(f"x {m}")
 def _die(m, c=1): _err(m); sys.exit(c)
 def _confirm(m): return input(f"{m} (y/n): ").strip().lower() in ['y', 'yes']
-def _up(h): return not (lambda s,hp: s.settimeout(0.5) or s.connect_ex((hp[0].split('@')[-1], int(hp[1]) if len(hp)>1 else 22)))(socket.socket(), h.rsplit(':',1))
+def _up(h): return not (lambda s,hp: s.settimeout(0.5) or s.connect_ex((hp[0].split('@')[-1], int(hp[1]) if len(hp)>1 else 22)))(socket.socket(), h.rsplit(':',1))  # only on add, not list (avoids port scan look)
 
 _pexpect, _prompt_toolkit = None, None
 def _get_pt():
@@ -1065,7 +1065,7 @@ def cmd_ssh():
     if wda == 'start': r = sp.run(['sshd'], capture_output=True, text=True) if os.environ.get('TERMUX_VERSION') else sp.run(['sudo', '/usr/sbin/sshd'], capture_output=True, text=True); print(f"✓ sshd started (port {_sshd_port()})") if r.returncode == 0 or _sshd_running() else print(f"x sshd failed: {r.stderr.strip() or 'install openssh-server'}"); return
     if wda == 'stop': sp.run(['pkill', '-x', 'sshd']) if os.environ.get('TERMUX_VERSION') else sp.run(['sudo', 'pkill', '-x', 'sshd']); print("✓ sshd stopped" if not _sshd_running() else "x failed"); return
     if wda in ('status', 's'): u, ip, p = os.environ.get('USER', 'u0_a'), _sshd_ip(), _sshd_port(); print(f"{'✓ RUNNING' if _sshd_running() else 'x STOPPED'}  ssh {u}@{ip} -p {p}"); return
-    if not wda: u, ip, p = os.environ.get('USER', 'u0_a'), _sshd_ip(), _sshd_port(); shutil.which('ssh') or print("! pkg install openssh"); print(f"SSH {'✓ ON' if _sshd_running() else 'x OFF'}  →  ssh {u}@{ip} -p {p}\n  start/stop/status  server control\n  setup              install & configure\n  add/rm <name>      manage hosts\nHosts:"); [print(f"  {i}. {'✓' if _up(h) else 'x'} {n}: {h}{' [pw]' if _pw(n) else ''}") for i,(n,h) in enumerate(hosts)] or print("  (none)"); return
+    if not wda: u, ip, p = os.environ.get('USER', 'u0_a'), _sshd_ip(), _sshd_port(); shutil.which('ssh') or print("! pkg install openssh"); print(f"SSH {'✓ ON' if _sshd_running() else 'x OFF'}  →  ssh {u}@{ip} -p {p}\n  start/stop/status  server control\n  setup              install & configure\n  add/rm <name>      manage hosts\nHosts:"); [print(f"  {i}. {n}: {h}{' [pw]' if _pw(n) else ''}") for i,(n,h) in enumerate(hosts)] or print("  (none)"); return
     if wda == 'setup': ip = _sshd_ip(); u = os.environ.get('USER', 'user'); ok = _sshd_running(); cmd = 'pkg install -y openssh && sshd' if os.environ.get('TERMUX_VERSION') else 'sudo apt install -y openssh-server && sudo systemctl enable --now ssh'; (not ok and input("SSH not running. Install? (y/n): ").lower() in ['y', 'yes'] and sp.run(cmd, shell=True)); ok = ok or _sshd_running(); print(f"This: {DEVICE_ID} ({u}@{ip}:{_sshd_port()})\nSSH: {'✓ running' if ok else 'x not running'}\n\nTo connect here from another device:\n  ssh {u}@{ip} -p {_sshd_port()}"); return
     if wda == 'key': kf = Path.home()/'.ssh/id_ed25519'; kf.exists() or sp.run(['ssh-keygen','-t','ed25519','-N','','-f',str(kf)]); print(f"Public key:\n{(kf.with_suffix('.pub')).read_text().strip()}"); return
     if wda == 'auth': d = Path.home()/'.ssh'; d.mkdir(exist_ok=True); af = d/'authorized_keys'; k = input("Paste public key: ").strip(); af.open('a').write(f"\n{k}\n"); af.chmod(0o600); print("✓ Added"); return
@@ -1078,7 +1078,7 @@ def cmd_ssh():
     pw and not shutil.which('sshpass') and _die("x need sshpass"); print(f"Connecting to {nm}...\n[AI: use 'timeout N aio ssh X' - interactive session needs TTY]", file=sys.stderr, flush=True); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
 
 def cmd_run():
-    args = sys.argv[2:]; hosts = list(db().execute("SELECT name,host FROM ssh")); [print(f"  {i}. {'✓' if _up(h) else 'x'} {n}") for i,(n,h) in enumerate(hosts)] if args and not args[0].isdigit() else None
+    args = sys.argv[2:]; hosts = list(db().execute("SELECT name,host FROM ssh")); [print(f"  {i}. {n}") for i,(n,h) in enumerate(hosts)] if args and not args[0].isdigit() else None
     hi = int(args.pop(0)) if args and args[0].isdigit() else int(input("Host #: ").strip()); agent = args.pop(0) if args and args[0] in 'clg' else 'l'
     with db() as c: n,h = list(c.execute("SELECT name,host FROM ssh"))[hi]; hp = h.rsplit(':',1); import keyring; pw = keyring.get_password('aio-ssh',n); task = ' '.join(args); proj = os.path.basename(os.getcwd())
     cmd = f'cd ~/projects/{proj} && aio {agent}++' + (f' && sleep 2 && tmux send-keys -t $(tmux ls -F "#{{session_name}}" | grep "^{proj}" | tail -1) {shlex.quote(task)} Enter' if task else '')
