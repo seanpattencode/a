@@ -1079,22 +1079,34 @@ def cmd_ssh():
     pw and not shutil.which('sshpass') and _die("x need sshpass"); print(f"Connecting to {nm}...\n[AI: use 'timeout N aio ssh X' - interactive session needs TTY]", file=sys.stderr, flush=True); os.execvp('sshpass',['sshpass','-p',pw]+cmd) if pw else os.execvp('ssh',cmd)
 
 def cmd_hub():
-    jobs = list(db().execute("SELECT name, schedule, prompt, agent, project, device, enabled, last_run, COALESCE(parallel,1) FROM hub_jobs"))
+    sd = Path.home()/'.config/systemd/user'; sd.mkdir(parents=True, exist_ok=True); sc = ['systemctl', '--user']; jobs=sorted(sd.glob('aio-*.timer'))
+    def _fmt(t):
+        try:
+            tm = next((l.split('=',1)[1].strip() for l in t.read_text().splitlines() if 'OnCalendar=' in l), '?')
+            try: tm = datetime.strptime(tm.split()[-1], "%H:%M").strftime("%I:%M%p").lower().lstrip('0')
+            except: pass
+            c = next((l.split('=',1)[1].strip() for l in t.with_suffix('.service').read_text().splitlines() if 'ExecStart=' in l), '?')
+            if str(Path(__file__).resolve()) in c:
+                c = 'aio ' + c.split(str(Path(__file__).resolve()))[-1].strip()
+                if c.split()[1].isdigit() and (i:=int(c.split()[1])) >= 0:
+                    c = (APPS[i-len(PROJ)][0] if i>=len(PROJ) and i<len(PROJ)+len(APPS) else os.path.basename(PROJ[i])) if i < len(PROJ)+len(APPS) else c
+            return tm, c
+        except: return '?', '?'
+    if not wda:
+        while (print(f"{'#':<3} {'Name':<15} {'Time':<8} {'Command'}") or [print(f"{i:<3} {t.stem[4:]:<15} {_fmt(t)[0]:<8} {_fmt(t)[1]}") for i,t in enumerate(jobs)] or True) and (c:=input("\nCommands: add <name> <time> <cmd> | rm <#> | run <#>\n> ").strip()): sp.run([sys.executable, __file__, 'hub'] + c.split()); jobs=sorted(sd.glob('aio-*.timer'))
+        return
     if wda == 'add':
-        n=input("Name: ").strip().replace(' ','-'); projs=load_proj(); [print(f"  {i}. {os.path.basename(x)}") for i,x in enumerate(projs)]; p=None
-        while not p: pi=input("Project (#/path): ").strip(); p=projs[int(pi)] if pi.isdigit() and int(pi)<len(projs) else os.path.expanduser(pi) if os.path.isdir(os.path.expanduser(pi)) else (print("x invalid"),None)[1]
-        pr=input("Prompt: ").strip()
-        a=input("Agent (c/l/g) [l]: ").strip() or 'l'; pa=input("Parallel [1]: ").strip() or '1'; si=input("Schedule (e.g. '6:00' or '6:00 mon'): ").strip(); t,dow=((si.split()+['*'])[:2]); s=f"{t.split(':')[1] if ':' in t else '0'} {t.split(':')[0]} * * {dow}"; d=DEVICE_ID
-        with db() as c: c.execute("INSERT INTO hub_jobs(name,schedule,prompt,agent,project,device,parallel) VALUES(?,?,?,?,?,?,?)",(n,s,pr,a,p,d,int(pa))); c.commit()
-        svc=f"[Unit]\nDescription=aio hub {n}\n[Service]\nType=oneshot\nExecStart={shutil.which('aio')} hub run {n}\n[Install]\nWantedBy=multi-user.target"
-        tmr=f"[Unit]\nDescription=aio hub {n} timer\n[Timer]\nOnCalendar={dow.title()+' ' if dow!='*' else ''}*-*-* {t}\nPersistent=true\n[Install]\nWantedBy=timers.target"
-        sd=Path.home()/'.config/systemd/user'; sd.mkdir(parents=True,exist_ok=True); (sd/f'aio-{n}.service').write_text(svc); (sd/f'aio-{n}.timer').write_text(tmr)
-        sp.run(['systemctl','--user','daemon-reload']); sp.run(['systemctl','--user','enable','--now',f'aio-{n}.timer']); print(f"✓ Added {n} @{d}"); return
-    if wda == 'rm' and len(sys.argv)>3: n=sys.argv[3]; c=db(); c.execute("DELETE FROM hub_jobs WHERE name=?",(n,)); c.commit(); sp.run(['systemctl','--user','disable','--now',f'aio-{n}.timer'],capture_output=True); print(f"✓ Removed {n}"); return
-    if wda == 'run' and len(sys.argv)>3: n=sys.argv[3]; c=db(); j=c.execute("SELECT prompt,agent,project FROM hub_jobs WHERE name=?",(n,)).fetchone(); j and (print(f"→ {n}"),os.system(f"cd {j[2]} && aio {j[1]}++ && tmux send-keys -t {os.path.basename(j[2])} {shlex.quote(j[0])} Enter")); c.execute("UPDATE hub_jobs SET last_run=? WHERE name=?",(datetime.now().isoformat()[:16],n)); c.commit(); return
-    def _ht(s): p=s.split(); return f"{p[1]}:{p[0].zfill(2)}{'' if p[4]=='*' else ' '+p[4]}" if len(p)>=5 else s
-    def _ta(n): return sp.run(['systemctl','--user','is-active',f'aio-{n}.timer'],capture_output=True).returncode==0
-    print("HUB - Scheduled Jobs\n" + ("\n".join(f"  {i}. {'✓' if _ta(n) else 'x'} {n} @{_ht(s)} {a}x{pa}:{os.path.basename(p)}{' (last:'+l+')' if l else ''}" for i,(n,s,pr,a,p,d,e,l,pa) in enumerate(jobs)) or "  (none)") + "\n  add/rm <name>/run <name>")
+        a = sys.argv[3:] + ['']*3; n,s,c = a[0], a[1], ' '.join(a[2:]).strip()
+        while not n: n = input("Name: ").strip().replace(' ','-')
+        while not s or ':' not in s: s = input("Time (e.g. 12:00): ").strip()
+        while not c: c = input("Command: ").strip()
+        c = c.replace('aio ', f'{sys.executable} {os.path.abspath(__file__)} ') if c.startswith('aio ') else c
+        for x,t in [('service',f"[Unit]\nDescription={n}\n[Service]\nType=oneshot\nExecStart={c}\n"), ('timer',f"[Unit]\nDescription={n}\n[Timer]\nOnCalendar={s}\nPersistent=true\n[Install]\nWantedBy=timers.target\n")]: (sd/f"aio-{n}.{x}").write_text(t)
+        [sp.run(sc+a) for a in [['daemon-reload'], ['enable','--now',f"aio-{n}.timer"]]]; print(f"✓ Scheduled {n}")
+    elif wda in ('rm', 'run'):
+        n = sys.argv[3]; n = jobs[int(n)].stem[4:] if n.isdigit() and int(n)<len(jobs) else n
+        if wda == 'rm': sp.run(sc+['disable','--now',f"aio-{n}.timer"], stderr=sp.DEVNULL); [(sd/f"aio-{n}.{x}").unlink(missing_ok=True) for x in ['timer','service']]; sp.run(sc+['daemon-reload']); print(f"✓ Removed {n}")
+        else: sp.run(sc+['start',f"aio-{n}.service"], stderr=sp.DEVNULL); print(f"✓ Triggered {n}")
 
 def cmd_run():
     args = sys.argv[2:]; hosts = list(db().execute("SELECT name,host FROM ssh")); [print(f"  {i}. {n}") for i,(n,h) in enumerate(hosts)] if args and not args[0].isdigit() else None
