@@ -33,5 +33,15 @@ aio push "msg"         # Git commit + push
 - Directory names starting with `.` may cause issues
 - `aio push` may show failure on Mac but still work
 
+## Recommendatations
+
+
+on gemini set
+tools.shell.enableInteractiveShell: false
+this prevents waiting for interactive commands forever
+and change the model to be pro preview permanently
+
+
+
 
 
