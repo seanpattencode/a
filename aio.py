@@ -1102,12 +1102,17 @@ def cmd_hub():
         while not s or ':' not in s: s = input("Time (e.g. 12:00): ").strip()
         while not c: c = input("Command: ").strip()
         c = c.replace('aio ', f'{sys.executable} {os.path.abspath(__file__)} ') if c.startswith('aio ') else c
-        for x,t in [('service',f"[Unit]\nDescription={n}\n[Service]\nType=oneshot\nExecStart={c}\n"), ('timer',f"[Unit]\nDescription={n}\n[Timer]\nOnCalendar={s}\nPersistent=true\n[Install]\nWantedBy=timers.target\n")]: (sd/f"aio-{n}.{x}").write_text(t)
-        [sp.run(sc+a) for a in [['daemon-reload'], ['enable','--now',f"aio-{n}.timer"]]]; print(f"✓ Scheduled {n}")
+        c = c.replace('python ', f'{sys.executable} ') if 'python ' in c else (f'{sys.executable} ' + c[7:] if c.startswith('python ') else c)
+        if any(x in c for x in ['&&','||',';','>>','|']) or c.split()[0] in ['cd','echo','ls']: c = f'/bin/bash -c {shlex.quote(c)}'
+        for x,t in [('service',f"[Unit]\nDescription={n}\n[Service]\nType=oneshot\nEnvironment=DISPLAY=:0\nExecStart={c}\n"), ('timer',f"[Unit]\nDescription={n}\n[Timer]\nOnCalendar={s}\nPersistent=true\n[Install]\nWantedBy=timers.target\n")]: (sd/f"aio-{n}.{x}").write_text(t)
+        [sp.run(sc+a) for a in [['daemon-reload'], ['enable','--now',f"aio-{n}.timer"]]]; print(f"✓ Scheduled {n} @ {s} (timer active)")
     elif wda in ('rm', 'run'):
         n = sys.argv[3]; n = jobs[int(n)].stem[4:] if n.isdigit() and int(n)<len(jobs) else n
         if wda == 'rm': sp.run(sc+['disable','--now',f"aio-{n}.timer"], stderr=sp.DEVNULL); [(sd/f"aio-{n}.{x}").unlink(missing_ok=True) for x in ['timer','service']]; sp.run(sc+['daemon-reload']); print(f"✓ Removed {n}")
-        else: sp.run(sc+['start',f"aio-{n}.service"], stderr=sp.DEVNULL); print(f"✓ Triggered {n}")
+        else:
+            sp.run(sc+['start',f"aio-{n}.service"], stderr=sp.DEVNULL)
+            failed = sp.run(sc+['is-failed',f"aio-{n}.service"], capture_output=True).returncode == 0
+            print(f"✓ Triggered {n} (service started)" if not failed else f"x Failed {n} (check journalctl --user -u aio-{n})")
 
 def cmd_run():
     args = sys.argv[2:]; hosts = list(db().execute("SELECT name,host FROM ssh")); [print(f"  {i}. {n}") for i,(n,h) in enumerate(hosts)] if args and not args[0].isdigit() else None
