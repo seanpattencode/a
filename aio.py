@@ -982,7 +982,7 @@ def cmd_log():
     if not logs: return
     if wda == 'clean': days = int(sys.argv[3]) if len(sys.argv) > 3 else 7; old = [f for f in logs if (time.time() - f.stat().st_mtime) > days*86400]; [f.unlink() for f in old]; print(f"✓ Deleted {len(old)} logs older than {days}d"); return
     if wda == 'tail': f = logs[int(sys.argv[3])] if len(sys.argv) > 3 and sys.argv[3].isdigit() else logs[0]; os.execvp('tail', ['tail', '-f', str(f)])
-    for i, f in enumerate(logs[:20]): sz = f.stat().st_size/1024; age = (time.time()-f.stat().st_mtime)/3600; print(f"  {i}. {f.stem:<40} {sz:>6.0f}KB  {age:.0f}h ago")
+    for i, f in enumerate(logs[:20]): sz = f.stat().st_size/1024; m = (time.time()-f.stat().st_mtime)/60; age = f"{m:.0f}m" if m < 60 else f"{m/60:.0f}h"; print(f"  {i}. {f.stem:<40} {sz:>6.0f}KB  {age} ago")
     print(f"\nCommands: aio log tail [#] | aio log clean [days]")
     if (c := input("> ").strip()).isdigit() and int(c) < len(logs): sp.run(['tmux', 'new-window', f'cat "{logs[int(c)]}"; read'])
 
