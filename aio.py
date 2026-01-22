@@ -619,7 +619,9 @@ if arg == '_ghost':
 HELP_SHORT = f"""aio - AI session manager
 Usage: aio [c|g|co|a]   Start AI (Claude, Gemini, Codex, Aider)
        aio <project>    Open project
-       aio help         Show all commands"""
+       aio update       Update aio
+       aio help         Show all commands
+Code:  https://github.com/seanpattencode/aio"""
 
 HELP_FULL = f"""aio - AI agent session manager
 SESSIONS: c=claude g=gemini co=codex a=aider h=htop t=top
