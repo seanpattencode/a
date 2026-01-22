@@ -611,25 +611,10 @@ if arg == '_ghost':
     sys.exit(0)
 
 # Help
-HELP_SHORT = f"""aio - AI agent session manager
-QUICK START:
-  aio c               Start Claude (c=claude g=gemini co=codex a=aider)
-  aio run "task"      Run task on remote SSH host
-  aio fix             AI finds/fixes issues
-  aio bug "task"      Fix a bug
-  aio feat "task"     Add a feature
-REMOTE:
-  aio ssh             List SSH hosts (✓/x = online)
-  aio ssh 2           Connect to host 2
-  aio run 2 "task"    Run on host 2 | aio run 2 co "task" (codex)
-GIT:
-  aio push msg        Push with message
-  aio pull            Sync with server
-MANAGEMENT:
-  aio jobs            Show active jobs
-  aio attach          Reconnect to session
-  aio n               Notes (aio n "text" to add)
-Run 'aio help' for all commands"""
+HELP_SHORT = f"""aio - AI session manager
+Usage: aio [c|g|co|a]   Start AI (Claude, Gemini, Codex, Aider)
+       aio <project>    Open project
+       aio help         Show all commands"""
 
 HELP_FULL = f"""aio - AI agent session manager
 SESSIONS: c=claude g=gemini co=codex a=aider h=htop t=top
@@ -647,8 +632,8 @@ CONFIG: install | deps | update | config [key] [val]
 DB: {DB_PATH}  Worktrees: {{WT_DIR}}"""
 
 # Commands
-def cmd_help(): print(HELP_SHORT); list_all(help=False)
-def cmd_help_full(): print(HELP_FULL.format(WT_DIR=WT_DIR)); list_all(help=False)
+def cmd_default(): print(HELP_SHORT); list_all(help=False); print("\nRun 'aio help' for full command list")
+def cmd_help(): print(HELP_FULL.format(WT_DIR=WT_DIR)); list_all(help=False)
 def cmd_update(): manual_update()
 def cmd_jobs(): list_jobs(running='--running' in sys.argv or '-r' in sys.argv)
 def cmd_kill(): input("Kill all tmux sessions? (y/n): ").lower() in ['y', 'yes'] and (print("✓ Killed all tmux"), sp.run(['tmux', 'kill-server']))
@@ -1196,7 +1181,7 @@ def cmd_scan():
 
 # Dispatch
 CMDS = {
-    None: cmd_help, '': cmd_help, 'help': cmd_help_full, 'hel': cmd_help_full, '--help': cmd_help_full, '-h': cmd_help_full,
+    None: cmd_default, '': cmd_default, 'help': cmd_help, 'hel': cmd_help, '--help': cmd_help, '-h': cmd_help,
     'update': cmd_update, 'upd': cmd_update, 'jobs': cmd_jobs, 'job': cmd_jobs, 'kill': cmd_kill, 'kil': cmd_kill, 'killall': cmd_kill, 'attach': cmd_attach, 'att': cmd_attach,
     'cleanup': cmd_cleanup, 'cle': cmd_cleanup, 'config': cmd_config, 'con': cmd_config, 'ls': cmd_ls, 'diff': cmd_diff, 'dif': cmd_diff, 'send': cmd_send, 'sen': cmd_send,
     'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'set': cmd_set,
