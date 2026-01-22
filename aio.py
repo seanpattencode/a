@@ -104,12 +104,12 @@ def _env():
 # Update
 def _sg(*a, **k): return sp.run(['git', '-C', SCRIPT_DIR] + list(a), capture_output=True, text=True, **k)
 def manual_update():
+    [Path(os.path.join(DATA_DIR, f)).unlink(missing_ok=True) for f in ['help_cache.txt', 'help_cache_short.txt', 'help_cache_full.txt']]
     if _sg('rev-parse', '--git-dir').returncode != 0: print("x Not in git repo"); return False
     print("Checking..."); before = _sg('rev-parse', 'HEAD').stdout.strip()[:8]
     if not before or _sg('fetch').returncode != 0: return False
     if 'behind' not in _sg('status', '-uno').stdout: print(f"✓ Up to date ({before})"); return True
     print("Downloading..."); _sg('pull', '--ff-only')
-    [Path(os.path.join(DATA_DIR, f)).unlink(missing_ok=True) for f in ['help_cache.txt', 'help_cache_short.txt', 'help_cache_full.txt']]
     after = _sg('rev-parse', 'HEAD'); print(f"✓ {before} -> {after.stdout.strip()[:8]}" if after.returncode == 0 else "✓ Done"); return True
 
 def check_updates():
