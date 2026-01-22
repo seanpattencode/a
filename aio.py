@@ -77,7 +77,7 @@ DB_PATH = os.path.join(DATA_DIR, "aio.db")
 NOTE_DIR = os.path.join(DATA_DIR, "notebook")
 LOG_DIR = os.path.join(DATA_DIR, "logs")
 _GP, _GT = '_aio_ghost_', 300
-_GM = {'co': 'c', 'c': 'l', 'g': 'g', 'o': 'l', 'cop': 'c', 'cp': 'l', 'gp': 'g'}
+_GM = {'co': 'co', 'c': 'c', 'g': 'g', 'cop': 'co', 'cp': 'c', 'gp': 'g'}
 _AIO_DIR = os.path.expanduser('~/.aios')
 _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
@@ -174,12 +174,9 @@ def init_db():
         if c.execute("SELECT COUNT(*) FROM apps").fetchone()[0] == 0:
             ui = next((p for p in [os.path.join(SCRIPT_DIR, "aioUI.py"), os.path.expanduser("~/aio/aioUI.py"), os.path.expanduser("~/.local/bin/aioUI.py")] if os.path.exists(p)), None)
             if ui: c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", ("aioUI", f"python3 {ui}", 0))
-        if c.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0:
-            cdx, cld = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox', 'claude --dangerously-skip-permissions'
-            for k, n, t in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('co','codex',cdx),('cop','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('c','claude',cld),('cp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
-                c.execute("INSERT INTO sessions VALUES (?, ?, ?)", (k, n, t))
-        c.execute("INSERT OR IGNORE INTO sessions VALUES ('o', 'claude', 'claude --dangerously-skip-permissions')")
-        c.execute("INSERT OR IGNORE INTO sessions VALUES ('a', 'aider', 'OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')")
+        cdx, cld = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox', 'claude --dangerously-skip-permissions'
+        for k, n, t in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('co','codex',cdx),('cop','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('c','claude',cld),('cp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
+            c.execute("INSERT OR REPLACE INTO sessions VALUES (?, ?, ?)", (k, n, t))
         c.commit()
 
 def load_cfg():
@@ -464,16 +461,16 @@ def _ghost_spawn(dp, sm_map):
     sf = os.path.join(DATA_DIR, 'ghost_state.json')
     try:
         with open(sf) as f: st = json.load(f)
-        if time.time() - st.get('time', 0) > _GT: [sp.run(['tmux', 'kill-session', '-t', f'{_GP}{k}'], capture_output=True) for k in 'clg']
+        if time.time() - st.get('time', 0) > _GT: [sp.run(['tmux', 'kill-session', '-t', f'{_GP}{k}'], capture_output=True) for k in ['c','co','g']]
     except: pass
-    for k in 'clg':
+    for k in ['c','co','g']:
         g = f'{_GP}{k}'
         if tm.has(g):
             r = sp.run(['tmux', 'display-message', '-p', '-t', g, '#{pane_current_path}'], capture_output=True, text=True)
             if r.returncode == 0 and r.stdout.strip() == dp: continue
             sp.run(['tmux', 'kill-session', '-t', g], capture_output=True)
         _, cmd = sm_map.get(k, (None, None))
-        if cmd: create_sess(g, dp, cmd); send_prefix(g, {'c': 'codex', 'l': 'claude', 'g': 'gemini'}[k], dp)
+        if cmd: create_sess(g, dp, cmd); send_prefix(g, {'co': 'codex', 'c': 'claude', 'g': 'gemini'}[k], dp)
     try: Path(sf).write_text(json.dumps({'dir': dp, 'time': time.time()}))
     except: pass
 
@@ -526,13 +523,13 @@ def fmt_cmd(c, mx=60):
     d = c.replace(os.path.expanduser('~'), '~')
     return d[:mx-3] + "..." if len(d) > mx else d
 
-def list_all(help=True, cache=True):
+def list_all(help=True, cache=True, is_full=False):
     p, a = load_proj(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(p) + '\n')
     out = ([f"PROJECTS:"] + [f"  {i}. {'+' if os.path.exists(x) else 'x'} {x}" for i, x in enumerate(p)] if p else [])
     out += ([f"COMMANDS:"] + [f"  {len(p)+i}. {n} -> {fmt_cmd(c)}" for i, (n, c) in enumerate(a)] if a else [])
     txt = '\n'.join(out); out and print(txt)
     if cache:
-        Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_FULL.format(WT_DIR=WT_DIR) + '\n' + txt + '\n')
+        Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text((HELP_FULL.format(WT_DIR=WT_DIR) if is_full else HELP_SHORT) + '\n' + txt + '\n')
         Path(os.path.join(DATA_DIR, 'help_cache_short.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
         Path(os.path.join(DATA_DIR, 'help_cache_full.txt')).write_text(HELP_FULL.format(WT_DIR=WT_DIR) + '\n' + txt + '\n')
     if help and (p or a): print(f"\nTip: aio add [path|name cmd]  aio remove <#|name>")
@@ -624,25 +621,44 @@ Usage: aio [c|g|co|a]   Start AI (Claude, Gemini, Codex, Aider)
        aio help         Show all commands
 Code:  https://github.com/seanpattencode/aio"""
 
-HELP_FULL = f"""aio - AI agent session manager
-SESSIONS: c=claude g=gemini co=codex a=aider h=htop t=top
-  aio <key> [#|dir]      Start session (# = project index)
-  aio <key>++ [#]        New worktree  |  aio <key> "prompt"  Send prompt
-WORKFLOWS: aio fix|bug|feat|auto|del [agent] ["task"]
-WORKTREES: aio w  list | w<#>  open | w<#>-  delete
-REMOTE: ssh  list hosts | ssh <#>  connect | run [#] [agent] "task"
-ADD/REMOVE: aio add [path|name "cmd"]  aio remove <#|name>
-MONITOR: jobs [-r] | cleanup | ls | attach | kill
-GIT: push [file] [msg] | pull [-y] | revert [N]
-NOTES: n  review | n "text"  add | n sync
-CLOUD: gdrive [login|logout|status|sync]
-CONFIG: install | deps | update | config [key] [val]
-DB: {DB_PATH}  Worktrees: {{WT_DIR}}"""
+HELP_FULL = f"""aio - AI session manager
+
+START / ATTACH
+  aio c               Start Claude
+  aio g               Start Gemini
+  aio co              Start Codex
+  aio a               Start Aider
+  aio <#>             Open project #
+  aio .               Open current dir
+
+COMMANDS
+  aio ssh <#>         Connect to host
+  aio run <#> "cmd"   Run on remote
+  aio push "msg"      Git commit+push
+  aio pull            Git sync
+  aio jobs            List active tasks
+  aio list            List all sessions
+
+ADVANCED
+  aio c++             New worktree session
+  aio c "prompt"      Send prompt to AI
+  aio fix             AI autonomous fix
+  aio update          Update aio tool
+
+CONFIG
+  DB: {DB_PATH}
+  WT: {{WT_DIR}}"""
 
 # Commands
-def cmd_default(): print(HELP_SHORT); list_all(help=False); print("\nRun 'aio help' for full command list")
-def cmd_help(): print(HELP_FULL.format(WT_DIR=WT_DIR)); list_all(help=False)
-def cmd_update(): manual_update()
+def cmd_default(): print(HELP_SHORT); list_all(help=False, is_full=False); print("\nRun 'aio help' for full command list")
+def cmd_help(): print(HELP_FULL.format(WT_DIR=WT_DIR)); list_all(help=False, is_full=True)
+def cmd_update():
+    manual_update()
+    inst = os.path.join(SCRIPT_DIR, "install.sh")
+    if os.path.exists(inst): sp.run(["bash", inst])
+    else: sp.run(["bash", "-c", f"curl -fsSL https://raw.githubusercontent.com/seanpattencode/aio/main/install.sh | bash"])
+    sp.run([sys.executable, __file__, 'help'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    print("✓ Caches updated")
 def cmd_jobs(): list_jobs(running='--running' in sys.argv or '-r' in sys.argv)
 def cmd_kill(): input("Kill all tmux sessions? (y/n): ").lower() in ['y', 'yes'] and (print("✓ Killed all tmux"), sp.run(['tmux', 'kill-server']))
 
