@@ -109,6 +109,7 @@ def manual_update():
     if not before or _sg('fetch').returncode != 0: return False
     if 'behind' not in _sg('status', '-uno').stdout: print(f"✓ Up to date ({before})"); return True
     print("Downloading..."); _sg('pull', '--ff-only')
+    [Path(os.path.join(DATA_DIR, f)).unlink(missing_ok=True) for f in ['help_cache.txt', 'help_cache_short.txt', 'help_cache_full.txt']]
     after = _sg('rev-parse', 'HEAD'); print(f"✓ {before} -> {after.stdout.strip()[:8]}" if after.returncode == 0 else "✓ Done"); return True
 
 def check_updates():
@@ -529,14 +530,18 @@ def list_all(help=True, cache=True):
     p, a = load_proj(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(p) + '\n')
     out = ([f"PROJECTS:"] + [f"  {i}. {'+' if os.path.exists(x) else 'x'} {x}" for i, x in enumerate(p)] if p else [])
     out += ([f"COMMANDS:"] + [f"  {len(p)+i}. {n} -> {fmt_cmd(c)}" for i, (n, c) in enumerate(a)] if a else [])
-    txt = '\n'.join(out); out and print(txt); cache and Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
+    txt = '\n'.join(out); out and print(txt)
+    if cache:
+        Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
+        Path(os.path.join(DATA_DIR, 'help_cache_short.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
+        Path(os.path.join(DATA_DIR, 'help_cache_full.txt')).write_text(HELP_FULL.format(WT_DIR=WT_DIR) + '\n' + txt + '\n')
     if help and (p or a): print(f"\nTip: aio add [path|name cmd]  aio remove <#|name>")
     return p, a
 
 def db_sync():
     if not os.path.isdir(f"{DATA_DIR}/.git"): return True
     sqlite3.connect(DB_PATH).execute("PRAGMA wal_checkpoint(TRUNCATE)").close()
-    r = sp.run(f'cd "{DATA_DIR}" && git rebase --abort 2>/dev/null; git add -A && git diff --cached --quiet || git commit -m "sync" && (git push -q 2>&1 || git reset --hard @{{u}} && git push -q 2>&1)', shell=True, capture_output=True, text=True)
+    r = sp.run(f'cd "{DATA_DIR}" && git add -A && (git diff --cached --quiet || git commit -m "sync") && git push -q', shell=True, capture_output=True, text=True)
     r.returncode != 0 and r.stderr and print(f"! sync: {r.stderr.strip()[:50]}"); (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', DB_PATH, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL); return r.returncode == 0
 
 def cmd_backup():
@@ -1194,6 +1199,8 @@ CMDS = {
 
 ALIAS = {'claude': 'c', 'codex': 'co', 'gemini': 'g', 'aider': 'a', 'cl': 'c', 'co': 'co', 'ge': 'g', 'ai': 'a'}
 if arg in ALIAS: arg = ALIAS[arg]
+
+if arg in ('help', '-h', '--help'): cmd_help(); sys.exit(0)
 
 if arg in CMDS: CMDS[arg]()
 elif arg and arg.endswith('++') and not arg.startswith('w'): cmd_wt_plus()

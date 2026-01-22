@@ -99,6 +99,10 @@ fi
 RC="$HOME/.bashrc"; [[ -f "$HOME/.zshrc" ]] && RC="$HOME/.zshrc"
 grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
 
+# Fast help wrapper
+FUNC='aio() { if [[ $# -eq 0 ]] && [[ -f "$HOME/.local/share/aios/help_cache_short.txt" ]]; then cat "$HOME/.local/share/aios/help_cache_short.txt"; elif [[ "$1" == "help" ]] && [[ -f "$HOME/.local/share/aios/help_cache_full.txt" ]]; then cat "$HOME/.local/share/aios/help_cache_full.txt"; else "$HOME/.local/bin/aio" "$@"; fi; }'
+grep -q 'aio() {' "$RC" 2>/dev/null || echo "$FUNC" >> "$RC"
+
 # Enable aio tmux config if no existing tmux.conf (adds mouse support, status bar)
 [[ ! -s "$HOME/.tmux.conf" ]] && "$BIN/aio" config tmux_conf y 2>/dev/null && ok "tmux config (mouse enabled)"
 
