@@ -77,7 +77,7 @@ DB_PATH = os.path.join(DATA_DIR, "aio.db")
 NOTE_DIR = os.path.join(DATA_DIR, "notebook")
 LOG_DIR = os.path.join(DATA_DIR, "logs")
 _GP, _GT = '_aio_ghost_', 300
-_GM = {'co': 'co', 'c': 'c', 'g': 'g', 'cop': 'co', 'cp': 'c', 'gp': 'g'}
+_GM = {'c': 'c', 'l': 'l', 'g': 'g', 'o': 'l', 'cp': 'c', 'lp': 'l', 'gp': 'g'}
 _AIO_DIR = os.path.expanduser('~/.aios')
 _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
@@ -104,7 +104,6 @@ def _env():
 # Update
 def _sg(*a, **k): return sp.run(['git', '-C', SCRIPT_DIR] + list(a), capture_output=True, text=True, **k)
 def manual_update():
-    [Path(os.path.join(DATA_DIR, f)).unlink(missing_ok=True) for f in ['help_cache.txt', 'help_cache_short.txt', 'help_cache_full.txt']]
     if _sg('rev-parse', '--git-dir').returncode != 0: print("x Not in git repo"); return False
     print("Checking..."); before = _sg('rev-parse', 'HEAD').stdout.strip()[:8]
     if not before or _sg('fetch').returncode != 0: return False
@@ -166,7 +165,7 @@ def init_db():
         if c.execute("SELECT COUNT(*) FROM config").fetchone()[0] == 0:
             dp = get_prompt('default') or ''
             for k, v in [('claude_prompt', dp), ('codex_prompt', dp), ('gemini_prompt', dp), ('worktrees_dir', os.path.expanduser("~/projects/aiosWorktrees")), ('multi_default', 'l:3')]: c.execute("INSERT INTO config VALUES (?, ?)", (k, v))
-        c.execute("INSERT OR IGNORE INTO config VALUES ('multi_default', 'c:3')")
+        c.execute("INSERT OR IGNORE INTO config VALUES ('multi_default', 'l:3')")
         c.execute("INSERT OR IGNORE INTO config VALUES ('claude_prefix', 'Ultrathink. ')")
         if c.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0:
             for p in [SCRIPT_DIR, os.path.expanduser("~/aio"), os.path.expanduser("~/projects/aio")]:
@@ -174,9 +173,12 @@ def init_db():
         if c.execute("SELECT COUNT(*) FROM apps").fetchone()[0] == 0:
             ui = next((p for p in [os.path.join(SCRIPT_DIR, "aioUI.py"), os.path.expanduser("~/aio/aioUI.py"), os.path.expanduser("~/.local/bin/aioUI.py")] if os.path.exists(p)), None)
             if ui: c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", ("aioUI", f"python3 {ui}", 0))
-        cdx, cld = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox', 'claude --dangerously-skip-permissions'
-        for k, n, t in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('co','codex',cdx),('cop','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('c','claude',cld),('cp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
-            c.execute("INSERT OR REPLACE INTO sessions VALUES (?, ?, ?)", (k, n, t))
+        if c.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0:
+            cdx, cld = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox', 'claude --dangerously-skip-permissions'
+            for k, n, t in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','codex',cdx),('cp','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('l','claude',cld),('lp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
+                c.execute("INSERT INTO sessions VALUES (?, ?, ?)", (k, n, t))
+        c.execute("INSERT OR IGNORE INTO sessions VALUES ('o', 'claude', 'claude --dangerously-skip-permissions')")
+        c.execute("INSERT OR IGNORE INTO sessions VALUES ('a', 'aider', 'OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')")
         c.commit()
 
 def load_cfg():
@@ -235,7 +237,7 @@ def load_sess(cfg):
     dp, s = get_prompt('default'), {}
     esc = lambda p: cfg.get(p, dp).replace('\n', '\\n').replace('"', '\\"')
     for k, n, t in data:
-        s[k] = (n, t.replace(' "{CLAUDE_PROMPT}"', '').replace(' "{CODEX_PROMPT}"', '').replace(' "{GEMINI_PROMPT}"', '') if k in ['cop','cp','gp'] else t.format(CLAUDE_PROMPT=esc('claude_prompt'), CODEX_PROMPT=esc('codex_prompt'), GEMINI_PROMPT=esc('gemini_prompt')))
+        s[k] = (n, t.replace(' "{CLAUDE_PROMPT}"', '').replace(' "{CODEX_PROMPT}"', '').replace(' "{GEMINI_PROMPT}"', '') if k in ['cp','lp','gp'] else t.format(CLAUDE_PROMPT=esc('claude_prompt'), CODEX_PROMPT=esc('codex_prompt'), GEMINI_PROMPT=esc('gemini_prompt')))
     return s
 
 # Cloud sync (merged from aioCloud.py)
@@ -461,16 +463,16 @@ def _ghost_spawn(dp, sm_map):
     sf = os.path.join(DATA_DIR, 'ghost_state.json')
     try:
         with open(sf) as f: st = json.load(f)
-        if time.time() - st.get('time', 0) > _GT: [sp.run(['tmux', 'kill-session', '-t', f'{_GP}{k}'], capture_output=True) for k in ['c','co','g']]
+        if time.time() - st.get('time', 0) > _GT: [sp.run(['tmux', 'kill-session', '-t', f'{_GP}{k}'], capture_output=True) for k in 'clg']
     except: pass
-    for k in ['c','co','g']:
+    for k in 'clg':
         g = f'{_GP}{k}'
         if tm.has(g):
             r = sp.run(['tmux', 'display-message', '-p', '-t', g, '#{pane_current_path}'], capture_output=True, text=True)
             if r.returncode == 0 and r.stdout.strip() == dp: continue
             sp.run(['tmux', 'kill-session', '-t', g], capture_output=True)
         _, cmd = sm_map.get(k, (None, None))
-        if cmd: create_sess(g, dp, cmd); send_prefix(g, {'co': 'codex', 'c': 'claude', 'g': 'gemini'}[k], dp)
+        if cmd: create_sess(g, dp, cmd); send_prefix(g, {'c': 'codex', 'l': 'claude', 'g': 'gemini'}[k], dp)
     try: Path(sf).write_text(json.dumps({'dir': dp, 'time': time.time()}))
     except: pass
 
@@ -523,22 +525,18 @@ def fmt_cmd(c, mx=60):
     d = c.replace(os.path.expanduser('~'), '~')
     return d[:mx-3] + "..." if len(d) > mx else d
 
-def list_all(help=True, cache=True, is_full=False):
+def list_all(help=True, cache=True):
     p, a = load_proj(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(p) + '\n')
     out = ([f"PROJECTS:"] + [f"  {i}. {'+' if os.path.exists(x) else 'x'} {x}" for i, x in enumerate(p)] if p else [])
     out += ([f"COMMANDS:"] + [f"  {len(p)+i}. {n} -> {fmt_cmd(c)}" for i, (n, c) in enumerate(a)] if a else [])
-    txt = '\n'.join(out); out and print(txt)
-    if cache:
-        Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text((HELP_FULL.format(WT_DIR=WT_DIR) if is_full else HELP_SHORT) + '\n' + txt + '\n')
-        Path(os.path.join(DATA_DIR, 'help_cache_short.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
-        Path(os.path.join(DATA_DIR, 'help_cache_full.txt')).write_text(HELP_FULL.format(WT_DIR=WT_DIR) + '\n' + txt + '\n')
+    txt = '\n'.join(out); out and print(txt); cache and Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
     if help and (p or a): print(f"\nTip: aio add [path|name cmd]  aio remove <#|name>")
     return p, a
 
 def db_sync():
     if not os.path.isdir(f"{DATA_DIR}/.git"): return True
     sqlite3.connect(DB_PATH).execute("PRAGMA wal_checkpoint(TRUNCATE)").close()
-    r = sp.run(f'cd "{DATA_DIR}" && git add -A && (git diff --cached --quiet || git commit -m "sync") && git push -q', shell=True, capture_output=True, text=True)
+    r = sp.run(f'cd "{DATA_DIR}" && git rebase --abort 2>/dev/null; git add -A && git diff --cached --quiet || git commit -m "sync" && (git push -q 2>&1 || git reset --hard @{{u}} && git push -q 2>&1)', shell=True, capture_output=True, text=True)
     r.returncode != 0 and r.stderr and print(f"! sync: {r.stderr.strip()[:50]}"); (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', DB_PATH, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL); return r.returncode == 0
 
 def cmd_backup():
@@ -613,52 +611,45 @@ if arg == '_ghost':
     sys.exit(0)
 
 # Help
-HELP_SHORT = f"""aio - AI session manager
-Usage: aio [c|g|co|a]   Start AI (Claude, Gemini, Codex, Aider)
-       aio <#|path>     Open project/command by number or path
-       aio pull         Sync git changes
-       aio update       Update aio
-       aio help         Show all commands
-Code:  https://github.com/seanpattencode/aio"""
+HELP_SHORT = f"""aio - AI agent session manager
+QUICK START:
+  aio c               Start agent (c=codex l/o=claude g=gemini a=aider)
+  aio run "task"      Run task on remote SSH host
+  aio fix             AI finds/fixes issues
+  aio bug "task"      Fix a bug
+  aio feat "task"     Add a feature
+REMOTE:
+  aio ssh             List SSH hosts (✓/x = online)
+  aio ssh 2           Connect to host 2
+  aio run 2 "task"    Run on host 2 | aio run 2 c "task" (codex)
+GIT:
+  aio push msg        Push with message
+  aio pull            Sync with server
+MANAGEMENT:
+  aio jobs            Show active jobs
+  aio attach          Reconnect to session
+  aio n               Notes (aio n "text" to add)
+Run 'aio help' for all commands"""
 
-HELP_FULL = f"""aio - AI session manager
-
-START / ATTACH
-  aio c               Start Claude
-  aio g               Start Gemini
-  aio co              Start Codex
-  aio a               Start Aider
-  aio <#>             Open project #
-  aio .               Open current dir
-
-COMMANDS
-  aio ssh <#>         Connect to host
-  aio run <#> "cmd"   Run on remote
-  aio push "msg"      Git commit+push
-  aio pull            Git sync
-  aio jobs            List active tasks
-  aio list            List all sessions
-
-ADVANCED
-  aio c++             New worktree session
-  aio c "prompt"      Send prompt to AI
-  aio fix             AI autonomous fix
-  aio update          Update aio tool
-
-CONFIG
-  DB: {DB_PATH}
-  WT: {{WT_DIR}}"""
+HELP_FULL = f"""aio - AI agent session manager
+SESSIONS: c=codex l/o=claude g=gemini a=aider h=htop t=top
+  aio <key> [#|dir]      Start session (# = project index)
+  aio <key>++ [#]        New worktree  |  aio <key> "prompt"  Send prompt
+WORKFLOWS: aio fix|bug|feat|auto|del [agent] ["task"]
+WORKTREES: aio w  list | w<#>  open | w<#>-  delete
+REMOTE: ssh  list hosts | ssh <#>  connect | run [#] [agent] "task"
+ADD/REMOVE: aio add [path|name "cmd"]  aio remove <#|name>
+MONITOR: jobs [-r] | cleanup | ls | attach | kill
+GIT: push [file] [msg] | pull [-y] | revert [N]
+NOTES: n  review | n "text"  add | n sync
+CLOUD: gdrive [login|logout|status|sync]
+CONFIG: install | deps | update | config [key] [val]
+DB: {DB_PATH}  Worktrees: {{WT_DIR}}"""
 
 # Commands
-def cmd_default(): print(HELP_SHORT); list_all(help=False, is_full=False); print("\nRun 'aio help' for full command list")
-def cmd_help(): print(HELP_FULL.format(WT_DIR=WT_DIR)); list_all(help=False, is_full=True)
-def cmd_update():
-    manual_update()
-    inst = os.path.join(SCRIPT_DIR, "install.sh")
-    if os.path.exists(inst): sp.run(["bash", inst])
-    else: sp.run(["bash", "-c", f"curl -fsSL https://raw.githubusercontent.com/seanpattencode/aio/main/install.sh | bash"])
-    sp.run([sys.executable, __file__, 'help'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    print("✓ Caches updated")
+def cmd_help(): print(HELP_SHORT); list_all(help=False)
+def cmd_help_full(): print(HELP_FULL.format(WT_DIR=WT_DIR)); list_all(help=False)
+def cmd_update(): manual_update()
 def cmd_jobs(): list_jobs(running='--running' in sys.argv or '-r' in sys.argv)
 def cmd_kill(): input("Kill all tmux sessions? (y/n): ").lower() in ['y', 'yes'] and (print("✓ Killed all tmux"), sp.run(['tmux', 'kill-server']))
 
@@ -931,8 +922,8 @@ def cmd_dash():
     os.execvp('tmux', ['tmux', 'switch-client' if 'TMUX' in os.environ else 'attach', '-t', 'dash'])
 
 def cmd_workflow():
-    args, agent = sys.argv[2:], 'c'
-    if args and args[0] in 'cgcoc': agent, args = args[0], args[1:]
+    args, agent = sys.argv[2:], 'l'
+    if args and args[0] in 'clg': agent, args = args[0], args[1:]
     pt = get_prompt(arg, show=True) or '{task}'
     task = 'autonomous' if arg in ('fix', 'auto', 'del') else (' '.join(args) if args else input(f"{arg}: "))
     an, cmd = sess[agent]; sn = f"{arg}-{agent}-{datetime.now().strftime('%H%M%S')}"; prompt = pt if arg in ('fix', 'auto', 'del') else pt.format(task=task)
@@ -949,7 +940,7 @@ def cmd_multi():
         with db() as c: c.execute("INSERT OR REPLACE INTO config VALUES ('multi_default', ?)", (ns,)); c.commit(); print(f"✓ Default: {ns}"); sys.exit(0)
     pp, si = (PROJ[int(wda)], 3) if wda and wda.isdigit() and int(wda) < len(PROJ) else (os.getcwd(), 2)
     specs, _, _ = parse_specs(sys.argv, si)
-    if not specs: ds = load_cfg().get('multi_default', 'c:3'); specs, _, _ = parse_specs([''] + ds.split(), 1); print(f"Using: {ds}")
+    if not specs: ds = load_cfg().get('multi_default', 'l:3'); specs, _, _ = parse_specs([''] + ds.split(), 1); print(f"Using: {ds}")
     total, rn, rid = sum(c for _, c in specs), os.path.basename(pp), datetime.now().strftime('%Y%m%d-%H%M%S')
     sn, rd = f"{rn}-{rid}", os.path.join(WT_DIR, rn, rid)
     cd = os.path.join(rd, "candidates"); os.makedirs(cd, exist_ok=True)
@@ -1173,7 +1164,7 @@ def cmd_hub():
 
 def cmd_run():
     args = sys.argv[2:]; hosts = list(db().execute("SELECT name,host FROM ssh")); [print(f"  {i}. {n}") for i,(n,h) in enumerate(hosts)] if args and not args[0].isdigit() else None
-    hi = int(args.pop(0)) if args and args[0].isdigit() else int(input("Host #: ").strip()); agent = args.pop(0) if args and args[0] in 'cgcoc' else 'c'
+    hi = int(args.pop(0)) if args and args[0].isdigit() else int(input("Host #: ").strip()); agent = args.pop(0) if args and args[0] in 'clg' else 'l'
     with db() as c: n,h = list(c.execute("SELECT name,host FROM ssh"))[hi]; hp = h.rsplit(':',1); import keyring; pw = keyring.get_password('aio-ssh',n); task = ' '.join(args); proj = os.path.basename(os.getcwd())
     cmd = f'cd ~/projects/{proj} && aio {agent}++' + (f' && sleep 2 && tmux send-keys -t $(tmux ls -F "#{{session_name}}" | grep "^{proj}" | tail -1) {shlex.quote(task)} Enter' if task else '')
     print(f"→ {n}"); os.execvp('sshpass', ['sshpass','-p',pw,'ssh','-tt','-p',hp[1] if len(hp)>1 else '22',hp[0],cmd])
@@ -1205,7 +1196,7 @@ def cmd_scan():
 
 # Dispatch
 CMDS = {
-    None: cmd_default, '': cmd_default, 'help': cmd_help, 'hel': cmd_help, '--help': cmd_help, '-h': cmd_help,
+    None: cmd_help, '': cmd_help, 'help': cmd_help_full, 'hel': cmd_help_full, '--help': cmd_help_full, '-h': cmd_help_full,
     'update': cmd_update, 'upd': cmd_update, 'jobs': cmd_jobs, 'job': cmd_jobs, 'kill': cmd_kill, 'kil': cmd_kill, 'killall': cmd_kill, 'attach': cmd_attach, 'att': cmd_attach,
     'cleanup': cmd_cleanup, 'cle': cmd_cleanup, 'config': cmd_config, 'con': cmd_config, 'ls': cmd_ls, 'diff': cmd_diff, 'dif': cmd_diff, 'send': cmd_send, 'sen': cmd_send,
     'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'set': cmd_set,
@@ -1216,13 +1207,8 @@ CMDS = {
     'hub': cmd_hub,
 }
 
-ALIAS = {'claude': 'c', 'codex': 'co', 'gemini': 'g', 'aider': 'a', 'cl': 'c', 'co': 'co', 'ge': 'g', 'ai': 'a'}
-if arg in ALIAS: arg = ALIAS[arg]
-
-if arg in ('help', '-h', '--help'): cmd_help(); sys.exit(0)
-
 if arg in CMDS: CMDS[arg]()
 elif arg and arg.endswith('++') and not arg.startswith('w'): cmd_wt_plus()
 elif arg and (os.path.isdir(os.path.expanduser(arg)) or os.path.isfile(arg) or (arg.startswith('/projects/') and os.path.isdir(os.path.expanduser('~' + arg)))): cmd_dir_file()
-elif arg in sess: cmd_sess()
-else: print(f"x Unknown command: {arg}"); cmd_help()
+elif arg in sess or (arg and len(arg) <= 3): cmd_sess()
+else: cmd_sess()
