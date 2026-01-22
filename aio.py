@@ -990,20 +990,30 @@ def cmd_done():
     Path(f"{DATA_DIR}/.done").touch(); print("✓ done")
 
 def cmd_agent():
-    agent = wda if wda in sess else 'g'
-    task = ' '.join(sys.argv[3:]) if wda in sess else ' '.join(sys.argv[2:])
-    if not task: _die("Usage: aio agent [g|c|l] <task>")
-    timeout = 300
-    done_file = Path(f"{DATA_DIR}/.done"); done_file.unlink(missing_ok=True)
-    sn = f"agent-{agent}-{int(time.time())}"
-    _, cmd = sess[agent]
+    existing = [s.split(':')[0] for s in sp.run(['tmux', 'ls'], capture_output=True, text=True).stdout.split('\n') if s.startswith('agent-')]
+    if wda and wda.startswith('agent-') and wda in existing:
+        sn, task = wda, ' '.join(sys.argv[3:])
+    elif wda and wda.isdigit() and int(wda) < len(existing):
+        sn, task = existing[int(wda)], ' '.join(sys.argv[3:])
+    else:
+        agent = wda if wda in sess else 'g'; task = ' '.join(sys.argv[3:]) if wda in sess else ' '.join(sys.argv[2:])
+        if not task:
+            if existing: print("Active agents:"); [print(f"  {i}. {s}") for i,s in enumerate(existing)]
+            _die("Usage: aio agent [g|c|l|#|name] <task>")
+        sn = f"agent-{agent}-{int(time.time())}"; _, cmd = sess[agent]
+        print(f"Agent: {agent} | Task: {task[:50]}..."); tm.new(sn, os.getcwd(), cmd); _start_log(sn)
+        print("Waiting for agent to start..."); last_out, stable = '', 0
+        for _ in range(60):
+            time.sleep(1); out = sp.run(['tmux', 'capture-pane', '-t', sn, '-p'], capture_output=True, text=True).stdout
+            if 'Type your message' in out:
+                if out == last_out: stable += 1
+                else: stable = 0
+                if stable >= 2: break
+            last_out = out
+    timeout, done_file = 300, Path(f"{DATA_DIR}/.done"); done_file.unlink(missing_ok=True)
     prompt = f'{task}. When fully complete, run the command: aio done'
-    print(f"Agent: {agent} | Task: {task[:50]}...")
-    tm.new(sn, os.getcwd(), cmd); _start_log(sn)
-    time.sleep(5)  # wait for agent to start
-    tm.send(sn, prompt); time.sleep(0.1); sp.run(['tmux', 'send-keys', '-t', sn, 'Enter'])
-    print("Waiting for completion...")
-    start = time.time()
+    print(f"Sending to {sn}..."); tm.send(sn, prompt); time.sleep(0.3); sp.run(['tmux', 'send-keys', '-t', sn, 'Enter'])
+    print("Waiting for completion..."); start = time.time()
     while not done_file.exists():
         if time.time() - start > timeout: print(f"x Timeout after {timeout}s"); break
         time.sleep(1)
