@@ -1125,7 +1125,7 @@ def cmd_scan():
         pd = os.path.expanduser('~/projects'); os.makedirs(pd, exist_ok=True)
         for i in idxs: n, u = repos[i]; dest = f"{pd}/{n}"; r = sp.run(['gh', 'repo', 'clone', u, dest], capture_output=True, text=True); ok, _ = add_proj(dest) if r.returncode == 0 or os.path.isdir(dest) else (False, ''); print(f"{'✓' if ok else 'x'} {n}")
     else:
-        default = '~/projects' if os.path.isdir(os.path.expanduser('~/projects')) else '~'
+        default = next((p for p in ['~/projects', '~/storage/shared', '~'] if os.path.isdir(os.path.expanduser(p))), '~')
         d = os.path.expanduser(next((a for a in args if a not in (sel,) and not a.startswith('-')), default)); existing = set(load_proj())
         repos = sorted([p.parent for p in Path(d).rglob('.git') if p.exists() and str(p.parent) not in existing and '/.cargo/' not in str(p) and '/lazy/' not in str(p) and '/aiosWorktrees/' not in str(p)], key=lambda x: x.name.lower())[:50]
         if not repos: print(f"No new repos in {d}"); return
