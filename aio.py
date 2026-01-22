@@ -1088,6 +1088,30 @@ def cmd_run():
     cmd = f'cd ~/projects/{proj} && aio {agent}++' + (f' && sleep 2 && tmux send-keys -t $(tmux ls -F "#{{session_name}}" | grep "^{proj}" | tail -1) {shlex.quote(task)} Enter' if task else '')
     print(f"→ {n}"); os.execvp('sshpass', ['sshpass','-p',pw,'ssh','-tt','-p',hp[1] if len(hp)>1 else '22',hp[0],cmd])
 
+def cmd_scan():
+    args = sys.argv[2:]; gh_mode = 'gh' in args or 'github' in args; args = [a for a in args if a not in ('gh', 'github')]
+    sel = next((a for a in args if a.isdigit() or a == 'all' or '-' in a and a.replace('-','').isdigit()), None)
+    if gh_mode:
+        r = sp.run(['gh', 'repo', 'list', '-L', '50', '--json', 'name,url'], capture_output=True, text=True); repos = json.loads(r.stdout) if r.returncode == 0 else []
+        cloned = {os.path.basename(p) for p in load_proj()}; repos = [(r['name'], r['url']) for r in repos if r['name'] not in cloned]
+        if not repos: print("No new GitHub repos"); return
+        for i, (n, u) in enumerate(repos): print(f"  {i}. {n}")
+        if not sel: sel = input("\nClone+add (#, #-#, 'all', or q): ").strip() if sys.stdin.isatty() else 'q'
+        if sel in ('q', ''): return
+        idxs = list(range(len(repos))) if sel == 'all' else [j for x in sel.replace(',', ' ').split() for j in (range(int(x.split('-')[0]), int(x.split('-')[1])+1) if '-' in x else [int(x)]) if 0 <= j < len(repos)]
+        pd = os.path.expanduser('~/projects'); os.makedirs(pd, exist_ok=True)
+        for i in idxs: n, u = repos[i]; dest = f"{pd}/{n}"; r = sp.run(['gh', 'repo', 'clone', u, dest], capture_output=True, text=True); ok, _ = add_proj(dest) if r.returncode == 0 or os.path.isdir(dest) else (False, ''); print(f"{'✓' if ok else 'x'} {n}")
+    else:
+        d = os.path.expanduser(next((a for a in args if a not in (sel,) and not a.startswith('-')), '~')); existing = set(load_proj())
+        repos = sorted([p.parent for p in Path(d).rglob('.git') if p.is_dir() and str(p.parent) not in existing], key=lambda x: x.name.lower())[:50]
+        if not repos: print(f"No new repos in {d}"); return
+        for i, r in enumerate(repos): print(f"  {i}. {r.name:<25} {str(r)}")
+        if not sel: sel = input("\nAdd (#, #-#, 'all', or q): ").strip() if sys.stdin.isatty() else 'q'
+        if sel in ('q', ''): return
+        idxs = list(range(len(repos))) if sel == 'all' else [j for x in sel.replace(',', ' ').split() for j in (range(int(x.split('-')[0]), int(x.split('-')[1])+1) if '-' in x else [int(x)]) if 0 <= j < len(repos)]
+        for i in idxs: ok, _ = add_proj(str(repos[i])); print(f"{'✓' if ok else 'x'} {repos[i].name}")
+    auto_backup() if idxs else None
+
 # Dispatch
 CMDS = {
     None: cmd_help, '': cmd_help, 'help': cmd_help_full, 'hel': cmd_help_full, '--help': cmd_help_full, '-h': cmd_help_full,
@@ -1095,7 +1119,7 @@ CMDS = {
     'cleanup': cmd_cleanup, 'cle': cmd_cleanup, 'config': cmd_config, 'con': cmd_config, 'ls': cmd_ls, 'diff': cmd_diff, 'dif': cmd_diff, 'send': cmd_send, 'sen': cmd_send,
     'watch': cmd_watch, 'wat': cmd_watch, 'push': cmd_push, 'pus': cmd_push, 'pull': cmd_pull, 'pul': cmd_pull, 'revert': cmd_revert, 'rev': cmd_revert, 'set': cmd_set,
     'install': cmd_install, 'ins': cmd_install, 'uninstall': cmd_uninstall, 'uni': cmd_uninstall, 'deps': cmd_deps, 'dep': cmd_deps, 'prompt': cmd_prompt, 'pro': cmd_prompt, 'gdrive': cmd_gdrive, 'gdr': cmd_gdrive, 'note': cmd_note, 'n': cmd_note, 'settings': cmd_set,
-    'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi, 'backup': cmd_backup, 'bak': cmd_backup,
+    'add': cmd_add, 'remove': cmd_remove, 'rem': cmd_remove, 'rm': cmd_remove, 'dash': cmd_dash, 'das': cmd_dash, 'all': cmd_multi, 'backup': cmd_backup, 'bak': cmd_backup, 'scan': cmd_scan, 'sca': cmd_scan,
     'e': cmd_e, 'x': cmd_x, 'p': cmd_p, 'copy': cmd_copy, 'cop': cmd_copy, 'tree': cmd_tree, 'tre': cmd_tree, 'dir': lambda: (print(f"{os.getcwd()}"), sp.run(['ls'])), 'web': cmd_web, 'ssh': cmd_ssh,
     'fix': cmd_workflow, 'bug': cmd_workflow, 'feat': cmd_workflow, 'fea': cmd_workflow, 'auto': cmd_workflow, 'aut': cmd_workflow, 'del': cmd_workflow, 'run': cmd_run,
     'hub': cmd_hub,
