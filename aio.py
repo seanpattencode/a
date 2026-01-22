@@ -77,7 +77,7 @@ DB_PATH = os.path.join(DATA_DIR, "aio.db")
 NOTE_DIR = os.path.join(DATA_DIR, "notebook")
 LOG_DIR = os.path.join(DATA_DIR, "logs")
 _GP, _GT = '_aio_ghost_', 300
-_GM = {'c': 'c', 'l': 'l', 'g': 'g', 'o': 'l', 'cp': 'c', 'lp': 'l', 'gp': 'g'}
+_GM = {'c': 'l', 'l': 'l', 'g': 'g', 'o': 'l', 'co': 'c', 'cp': 'c', 'lp': 'l', 'gp': 'g'}
 _AIO_DIR = os.path.expanduser('~/.aios')
 _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
@@ -175,7 +175,7 @@ def init_db():
             if ui: c.execute("INSERT INTO apps (name, command, display_order) VALUES (?, ?, ?)", ("aioUI", f"python3 {ui}", 0))
         if c.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0:
             cdx, cld = 'codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox', 'claude --dangerously-skip-permissions'
-            for k, n, t in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','codex',cdx),('cp','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('l','claude',cld),('lp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
+            for k, n, t in [('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gemini','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','claude',cld),('claude','claude',cld),('cp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('l','claude',cld),('lp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('co','codex',cdx),('codex','codex',cdx),('cop','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
                 c.execute("INSERT INTO sessions VALUES (?, ?, ?)", (k, n, t))
         c.execute("INSERT OR IGNORE INTO sessions VALUES ('o', 'claude', 'claude --dangerously-skip-permissions')")
         c.execute("INSERT OR IGNORE INTO sessions VALUES ('a', 'aider', 'OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')")
@@ -613,7 +613,7 @@ if arg == '_ghost':
 # Help
 HELP_SHORT = f"""aio - AI agent session manager
 QUICK START:
-  aio c               Start agent (c=codex l/o=claude g=gemini a=aider)
+  aio c               Start agent (c=claude co=codex g=gemini a=aider)
   aio run "task"      Run task on remote SSH host
   aio fix             AI finds/fixes issues
   aio bug "task"      Fix a bug
@@ -621,7 +621,7 @@ QUICK START:
 REMOTE:
   aio ssh             List SSH hosts (✓/x = online)
   aio ssh 2           Connect to host 2
-  aio run 2 "task"    Run on host 2 | aio run 2 c "task" (codex)
+  aio run 2 "task"    Run on host 2 | aio run 2 co "task" (codex)
 GIT:
   aio push msg        Push with message
   aio pull            Sync with server
@@ -632,7 +632,7 @@ MANAGEMENT:
 Run 'aio help' for all commands"""
 
 HELP_FULL = f"""aio - AI agent session manager
-SESSIONS: c=codex l/o=claude g=gemini a=aider h=htop t=top
+SESSIONS: c=claude co=codex g=gemini a=aider h=htop t=top
   aio <key> [#|dir]      Start session (# = project index)
   aio <key>++ [#]        New worktree  |  aio <key> "prompt"  Send prompt
 WORKFLOWS: aio fix|bug|feat|auto|del [agent] ["task"]
