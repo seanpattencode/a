@@ -66,7 +66,7 @@ aio prompt         # Set default prompt for all agents
 ```bash
 aio help           # Full command list
 aio add            # Add current dir as project
-aio scan           # Discover repos to add
+aio scan           # Add your repos fast
 aio ssh            # Manage remote hosts
 aio jobs           # View active sessions
 aio n "text"       # Quick note

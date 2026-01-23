@@ -628,7 +628,7 @@ PROJECTS
   aio <#>             cd to project #
   aio add             Add current dir as project
   aio remove <#>      Remove project
-  aio scan            Discover repos to add
+  aio scan            Add your repos fast
 
 GIT
   aio push [msg]      Commit and push
