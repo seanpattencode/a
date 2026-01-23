@@ -626,7 +626,7 @@ AGENTS          c=claude  co=codex  g=gemini  a=aider
 
 PROJECTS
   aio <#>             cd to project #
-  aio add <path>      Add project
+  aio add             Add current dir as project
   aio remove <#>      Remove project
   aio scan            Discover repos to add
 

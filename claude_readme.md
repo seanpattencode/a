@@ -51,7 +51,7 @@ The workflow:
 
 ```bash
 aio help           # Full command list
-aio add .          # Add current dir as project
+aio add            # Add current dir as project
 aio ssh            # Manage remote hosts
 aio jobs           # View active sessions
 aio n "text"       # Quick note
