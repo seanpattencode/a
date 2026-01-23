@@ -140,7 +140,7 @@ def ensure_git_cfg():
         return True
     except: return False
 
-# Database - unified single DB
+# Database - all data syncs to central sqlite via github (aio-sync repo). gdrive/rclone are backups only.
 def db(): c = sqlite3.connect(DB_PATH); c.execute("PRAGMA journal_mode=WAL;"); return c
 
 def init_db():
@@ -542,11 +542,11 @@ def db_sync():
     r.returncode != 0 and r.stderr and print(f"! sync: {r.stderr.strip()[:50]}"); (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', LOG_DIR, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/logs/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL); return r.returncode == 0
 
 def cmd_backup():
-    lb = sorted(Path(DATA_DIR).glob('aio_auto_*.db')); lt = datetime.fromtimestamp(lb[-1].stat().st_mtime).strftime('%m-%d %H:%M') if lb else 'never'
-    gu = sp.run(f'cd "{DATA_DIR}" && git remote get-url origin 2>/dev/null', shell=True, capture_output=True, text=True).stdout.strip()
-    gt = sp.run(f'cd "{DATA_DIR}" && git log -1 --format=%ci', shell=True, capture_output=True, text=True).stdout[:16] if gu else None
-    gd = sp.run([get_rclone(), 'lsf', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], capture_output=True, text=True).stdout.strip() if get_rclone() and cloud_configured() else None
-    print(f"Local:  {len(lb)} backups, last {lt} ({DATA_DIR})\nGit:    {'✓ '+gt+' '+gu if gt else 'x not configured'}\nGDrive: {'✓ '+gd.split()[0]+' '+(cloud_account() or RCLONE_REMOTE) if gd else 'x not configured'}\nManual: cd {DATA_DIR} && git add -A && git commit -m bak && git push")
+    if wda == 'setup':
+        url = sys.argv[3] if len(sys.argv) > 3 else (sp.run(['gh', 'repo', 'view', 'aio-sync', '--json', 'url', '-q', '.url'], capture_output=True, text=True).stdout.strip() or sp.run(['gh', 'repo', 'create', 'aio-sync', '--private', '-y'], capture_output=True, text=True).stdout.strip()) if shutil.which('gh') else None
+        if not url: _die("x No URL (need gh CLI or provide URL)")
+        sp.run(f'cd "{DATA_DIR}" && git init -q 2>/dev/null; git remote set-url origin {url} 2>/dev/null || git remote add origin {url}; git fetch origin 2>/dev/null && git reset --hard origin/main 2>/dev/null || (git add -A && git commit -m "init" -q && git push -u origin main)', shell=True); print("✓ Sync ready"); return
+    gu = sp.run(f'cd "{DATA_DIR}" && git remote get-url origin 2>/dev/null', shell=True, capture_output=True, text=True).stdout.strip(); print(f"Git: {'✓ '+gu if gu else 'x (aio backup setup)'}")
 
 def auto_backup():
     if not hasattr(os, 'fork'): return

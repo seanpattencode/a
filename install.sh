@@ -115,6 +115,9 @@ grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$P
 # Generate cache
 python3 "$BIN/aio" >/dev/null 2>&1 && ok "cache generated"
 
+# Setup sync if gh is logged in
+command -v gh &>/dev/null && gh auth status &>/dev/null && python3 "$BIN/aio" backup setup 2>/dev/null && ok "sync configured"
+
 # Final message
 echo ""
 echo -e "${G}══════════════════════════════════════════════════════════════${R}"
