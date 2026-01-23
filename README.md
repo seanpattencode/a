@@ -20,6 +20,16 @@ aio push "checkpoint"
 aio pull
 ```
 
+```bash
+# Without aio
+claude --dangerously-skip-permissions
+cd ~/projects/my-company/apps/frontend-dashboard
+
+# With aio
+aio c
+aio 3
+```
+
 ## What is aio
 
 A ~1200-line Python script that manages AI coding agents. Small enough to understand, modify, and make yours.
