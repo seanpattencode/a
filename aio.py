@@ -1168,6 +1168,11 @@ def cmd_run():
 def cmd_scan():
     args = sys.argv[2:]; gh_mode = 'gh' in args or 'github' in args; args = [a for a in args if a not in ('gh', 'github')]
     sel = next((a for a in args if a.isdigit() or a == 'all' or '-' in a and a.replace('-','').isdigit()), None)
+    # If no args and gh available, ask what to scan
+    if not gh_mode and not args and shutil.which('gh'):
+        print("Scan: 1=local repos  2=GitHub"); ch = input("> ").strip()
+        if ch == '2': gh_mode = True
+        elif ch != '1': return
     if gh_mode:
         r = sp.run(['gh', 'repo', 'list', '-L', '50', '--json', 'name,url'], capture_output=True, text=True); repos = json.loads(r.stdout) if r.returncode == 0 else []
         cloned = {os.path.basename(p) for p in load_proj()}; repos = [(r['name'], r['url']) for r in repos if r['name'] not in cloned]
