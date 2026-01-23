@@ -537,9 +537,9 @@ def list_all(cache=True, quiet=False):
 
 def db_sync(pull=False):
     if not os.path.isdir(f"{DATA_DIR}/.git"): return True
-    sqlite3.connect(DB_PATH).execute("PRAGMA wal_checkpoint(TRUNCATE)").close()
-    pull and sp.run(f'cd "{DATA_DIR}" && git fetch -q 2>/dev/null && git reset --hard origin/HEAD 2>/dev/null', shell=True, capture_output=True)
-    sp.run(f'cd "{DATA_DIR}" && git add -A && git diff --cached --quiet || git -c user.name=aio -c user.email=a@a commit -m sync -q && git push origin HEAD:main -q 2>/dev/null', shell=True, capture_output=True); return True
+    c = sqlite3.connect(DB_PATH); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); my = (c.execute("SELECT path,display_order FROM projects WHERE device=?", (DEVICE_ID,)).fetchall(), c.execute("SELECT name,command,display_order FROM apps WHERE device=?", (DEVICE_ID,)).fetchall()); c.close()
+    pull and sp.run(f'cd "{DATA_DIR}" && git fetch -q && git reset --hard @{{u}}', shell=True, capture_output=True); sp.run(f'cd "{DATA_DIR}" && git add -A && git diff --cached --quiet || git -c user.name=aio -c user.email=a@a commit -m sync -q && git push origin HEAD:main -q 2>/dev/null', shell=True, capture_output=True)
+    c = sqlite3.connect(DB_PATH); [c.execute("DELETE FROM "+t+" WHERE device=?", (DEVICE_ID,)) for t in ['projects','apps']]; [c.execute("INSERT INTO projects(path,display_order,device)VALUES(?,?,?)",(*p,DEVICE_ID)) for p in my[0]]; [c.execute("INSERT INTO apps(name,command,display_order,device)VALUES(?,?,?,?)",(*a,DEVICE_ID)) for a in my[1]]; c.commit(); c.close(); return True
 
 def cmd_backup():
     if wda == 'setup':
