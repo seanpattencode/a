@@ -30,8 +30,17 @@ info "Detected: $OS ${SUDO:+(sudo)}${SUDO:-"(no root)"}"
 install_node() {
     command -v npm &>/dev/null && return 0
     info "Installing node (user-level)..."
-    ARCH=$(uname -m); [[ "$ARCH" == "x86_64" ]] && ARCH="x64"; [[ "$ARCH" == "aarch64" ]] && ARCH="arm64"
-    curl -fsSL "https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-$ARCH.tar.xz" | tar -xJf - -C "$HOME/.local" --strip-components=1
+    ARCH=$(uname -m)
+    [[ "$ARCH" == "x86_64" ]] && ARCH="x64"
+    [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && ARCH="arm64"
+
+    if [[ "$OSTYPE" == darwin* ]]; then
+        # macOS
+        curl -fsSL "https://nodejs.org/dist/v22.12.0/node-v22.12.0-darwin-$ARCH.tar.gz" | tar -xzf - -C "$HOME/.local" --strip-components=1
+    else
+        # Linux
+        curl -fsSL "https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-$ARCH.tar.xz" | tar -xJf - -C "$HOME/.local" --strip-components=1
+    fi
     command -v node &>/dev/null && ok "node $(node -v)" || warn "node install failed"
 }
 
@@ -106,10 +115,18 @@ grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$P
 # Generate cache
 python3 "$BIN/aio" >/dev/null 2>&1 && ok "cache generated"
 
-# Try to reload shell
-echo -e "\n${G}Done!${R}"
-if [[ -n "$BASH_VERSION" ]] && [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
-    source "$RC" && ok "bashrc reloaded"
-else
-    warn "Run manually: source $RC"
-fi
+# Final message
+echo ""
+echo -e "${G}══════════════════════════════════════════════════════════════${R}"
+echo -e "${G}  Installation complete!${R}"
+echo -e "${G}══════════════════════════════════════════════════════════════${R}"
+echo ""
+echo -e "${Y}⚠  IMPORTANT: To use the 'aio' command, you must either:${R}"
+echo ""
+echo -e "   ${C}1.${R} Open a ${G}new terminal window${R}  (recommended)"
+echo ""
+echo -e "   ${C}2.${R} Or run this command in your current terminal:"
+echo -e "      ${C}source $RC${R}"
+echo ""
+echo -e "Then type ${G}aio${R} to get started!"
+echo ""
