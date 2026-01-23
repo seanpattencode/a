@@ -161,7 +161,8 @@ def init_db():
         c.execute("CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, real_deadline INTEGER NOT NULL, virtual_deadline INTEGER, created_at INTEGER NOT NULL, completed_at INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS jobs (name TEXT PRIMARY KEY, step TEXT NOT NULL, status TEXT NOT NULL, path TEXT, session TEXT, updated_at INTEGER NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS hub_jobs (id INTEGER PRIMARY KEY, name TEXT, schedule TEXT, prompt TEXT, agent TEXT DEFAULT 'l', project TEXT, device TEXT, enabled INTEGER DEFAULT 1, last_run TEXT, parallel INTEGER DEFAULT 1)")
-        c.execute("CREATE TABLE IF NOT EXISTS agent_logs (session TEXT PRIMARY KEY, parent TEXT, started REAL)")
+        c.execute("CREATE TABLE IF NOT EXISTS agent_logs (session TEXT PRIMARY KEY, parent TEXT, started REAL, device TEXT)")
+        if 'device' not in [r[1] for r in c.execute("PRAGMA table_info(agent_logs)")]: c.execute("ALTER TABLE agent_logs ADD COLUMN device TEXT")
         # Defaults
         if c.execute("SELECT COUNT(*) FROM config").fetchone()[0] == 0:
             dp = get_prompt('default') or ''
@@ -370,9 +371,9 @@ def ensure_tmux():
     sp.run(['tmux', 'refresh-client', '-S'], capture_output=True)
 
 def _start_log(sn, parent=None):
-    os.makedirs(LOG_DIR, exist_ok=True); lf = os.path.join(LOG_DIR, f"{sn}.log")
+    os.makedirs(LOG_DIR, exist_ok=True); lf = os.path.join(LOG_DIR, f"{DEVICE_ID}-{sn}.log")
     sp.run(['tmux', 'pipe-pane', '-t', sn, f"cat >> {lf}"], capture_output=True)
-    with db() as c: c.execute("INSERT OR REPLACE INTO agent_logs VALUES (?,?,?)", (sn, parent, time.time()))
+    with db() as c: c.execute("INSERT OR REPLACE INTO agent_logs VALUES (?,?,?,?)", (sn, parent, time.time(), DEVICE_ID))
 
 def create_sess(sn, wd, cmd, env=None):
     ai = cmd and any(a in cmd for a in ['codex', 'claude', 'gemini', 'aider'])
@@ -537,8 +538,8 @@ def list_all(cache=True, quiet=False):
 def db_sync():
     if not os.path.isdir(f"{DATA_DIR}/.git"): return True
     sqlite3.connect(DB_PATH).execute("PRAGMA wal_checkpoint(TRUNCATE)").close()
-    r = sp.run(f'cd "{DATA_DIR}" && git rebase --abort 2>/dev/null; git add -A && git diff --cached --quiet || git commit -m "sync" && (git push -q 2>&1 || git reset --hard @{{u}} && git push -q 2>&1)', shell=True, capture_output=True, text=True)
-    r.returncode != 0 and r.stderr and print(f"! sync: {r.stderr.strip()[:50]}"); (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', DB_PATH, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/db/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL); return r.returncode == 0
+    r = sp.run(f'cd "{DATA_DIR}" && git rebase --abort 2>/dev/null; git add -A && git diff --cached --quiet || git commit -m "sync {DEVICE_ID}" && (git push -q 2>&1 || git pull --rebase -q && git push -q 2>&1)', shell=True, capture_output=True, text=True)
+    r.returncode != 0 and r.stderr and print(f"! sync: {r.stderr.strip()[:50]}"); (rc := get_rclone()) and cloud_configured() and sp.Popen([rc, 'copy', LOG_DIR, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/logs/', '-q'], stdout=sp.DEVNULL, stderr=sp.DEVNULL); return r.returncode == 0
 
 def cmd_backup():
     lb = sorted(Path(DATA_DIR).glob('aio_auto_*.db')); lt = datetime.fromtimestamp(lb[-1].stat().st_mtime).strftime('%m-%d %H:%M') if lb else 'never'
@@ -989,16 +990,16 @@ def cmd_copy():
 
 def cmd_log():
     os.makedirs(LOG_DIR, exist_ok=True); logs = sorted(Path(LOG_DIR).glob('*.log'), key=lambda x: x.stat().st_mtime, reverse=True)
-    with db() as c: meta = {r[0]: (r[1], r[2]) for r in c.execute("SELECT session, parent, started FROM agent_logs")}
     total = sum(f.stat().st_size for f in logs); print(f"Logs: {len(logs)} files, {total/1024/1024:.1f}MB")
     if not logs: return
     if wda == 'clean': days = int(sys.argv[3]) if len(sys.argv) > 3 else 7; old = [f for f in logs if (time.time() - f.stat().st_mtime) > days*86400]; [f.unlink() for f in old]; print(f"✓ Deleted {len(old)} logs older than {days}d"); return
     if wda == 'tail': f = logs[int(sys.argv[3])] if len(sys.argv) > 3 and sys.argv[3].isdigit() else logs[0]; os.execvp('tail', ['tail', '-f', str(f)])
     for i, f in enumerate(logs[:20]):
-        sz = f.stat().st_size/1024; sn = f.stem; parent, started = meta.get(sn, (None, f.stat().st_mtime))
-        m = (time.time() - started)/60; age = f"{m:.0f}m" if m < 60 else f"{m/60:.0f}h"
-        sub = " (subagent)" if parent else ""; print(f"  {i}. {sn:<35} {sz:>5.0f}KB {age:>4} ago{sub}")
-    print(f"\nCommands: aio log tail [#] | aio log clean [days]")
+        sz, nm, mt = f.stat().st_size/1024, f.stem, f.stat().st_mtime
+        parts = nm.split('-'); dev, sn = (parts[0], '-'.join(parts[1:])) if len(parts) > 2 and parts[0] not in ['claude','gemini','codex','aider'] else (DEVICE_ID[:10], nm)
+        ts = datetime.fromtimestamp(mt).strftime('%m/%d %H:%M')
+        print(f"  {i}. {ts}  {dev:<10} {sn:<25} {sz:>5.0f}KB")
+    print(f"\naio log tail [#] | aio log clean [days]")
     if (c := input("> ").strip()).isdigit() and int(c) < len(logs): sp.run(['tmux', 'new-window', f'cat "{logs[int(c)]}"; read'])
 
 def cmd_done():
