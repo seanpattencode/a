@@ -529,8 +529,7 @@ def fmt_cmd(c, mx=60):
 
 def list_all(cache=True, quiet=False):
     p, a = load_proj(), load_apps(); Path(os.path.join(DATA_DIR, 'projects.txt')).write_text('\n'.join(p) + '\n')
-    dp = cfg.get('default_prompt', ''); dpl = f"DEFAULT PROMPT: {dp[:50]}{'...' if len(dp)>50 else ''}" if dp else ''
-    out = ([dpl] if dpl else []) + ([f"PROJECTS:"] + [f"  {i}. {'+' if os.path.exists(x) else 'x'} {x}" for i, x in enumerate(p)] if p else [])
+    out = ([f"PROJECTS:"] + [f"  {i}. {'+' if os.path.exists(x) else 'x'} {x}" for i, x in enumerate(p)] if p else [])
     out += ([f"COMMANDS:"] + [f"  {len(p)+i}. {n} -> {fmt_cmd(c)}" for i, (n, c) in enumerate(a)] if a else [])
     txt = '\n'.join(out); not quiet and out and print(txt); cache and Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + txt + '\n')
     return p, a
