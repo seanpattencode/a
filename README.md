@@ -45,7 +45,7 @@ pkg install git python
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/seanpattencode/aio/main/install.sh | bash
+git clone https://github.com/seanpattencode/aio.git && cd aio && ./install.sh
 ```
 
 Installs: tmux, node, claude, codex, gemini, aio. Prompts for sudo if needed. Works without root (installs to ~/.local).
