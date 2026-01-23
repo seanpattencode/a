@@ -26,7 +26,7 @@ aio pull
 
 ## What is aio
 
-A ~1200-line Python script that manages AI coding agents. Small enough to understand, modify, and make yours.
+A ~1200-line Python script that manages AI coding agents. Runs on macOS, Linux, Windows (WSL), and Android (Termux). Small enough to understand, modify, and make yours.
 
 ## Prerequisites
 
