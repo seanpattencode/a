@@ -41,16 +41,16 @@ def run():
             [(sd / f'aio-{nm}.{x}').unlink(missing_ok=True) for x in ['timer', 'service']]
 
     with db() as c:
-        jobs = c.execute("SELECT id,name,schedule,prompt,device,enabled FROM hub_jobs ORDER BY device,name").fetchall()
+        jobs = c.execute("SELECT id,name,schedule,prompt,device,enabled,last_run FROM hub_jobs ORDER BY device,name").fetchall()
 
     if not wda:
-        _pj = lambda jobs: [print(f"{i:<3}{j[1]:<12}{j[2]:<7}{j[4]:<10}{'✓' if j[5] else 'x':<4}{(j[3] or '')}") for i, j in enumerate(jobs)] or print("  (none)")
-        print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
+        _pj = lambda jobs: [print(f"{i:<3}{j[1]:<12}{j[2]:<7}{(j[6] or '-')[:16]:<17}{j[4]:<10}{'✓' if j[5] else 'x':<4}{(j[3] or '')}") for i, j in enumerate(jobs)] or print("  (none)")
+        print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<17}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
         while (c := input("\n<#>|add|rm <#>|sync|log|q\n> ").strip()) and c != 'q':
             args = ['run', c] if c.isdigit() else c.split()
             sp.run([sys.executable, __file__.replace('hub.py', '../aio.py'), 'hub'] + args)
-            jobs = db().execute("SELECT id,name,schedule,prompt,device,enabled FROM hub_jobs ORDER BY device,name").fetchall()
-            print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
+            jobs = db().execute("SELECT id,name,schedule,prompt,device,enabled,last_run FROM hub_jobs ORDER BY device,name").fetchall()
+            print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<17}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
         return
 
     if wda == 'add':
@@ -70,14 +70,19 @@ def run():
             cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ') if j[3].startswith('aio ') else j[3]
             _install(j[1], j[2], cmd)
         print(f"✓ synced {len(mine)} jobs")
-    elif wda in ('rm', 'run', 'log'):
+    elif wda == 'log':
+        if not os.path.exists(LOG): print('No logs'); return
+        runs = db().execute("SELECT name,last_run FROM hub_jobs WHERE last_run IS NOT NULL ORDER BY last_run DESC LIMIT 20").fetchall()
+        print(f"{'Name':<15}{'Last Run'}"); [print(f"{r[0]:<15}{r[1]}") for r in runs] if runs else print("  (no runs)")
+        print(f"\n--- Recent log output ---\n{open(LOG).read()[-3000:]}")
+    elif wda in ('rm', 'run'):
         n = sys.argv[3] if len(sys.argv) > 3 else ''
         j = jobs[int(n)] if n.isdigit() and int(n) < len(jobs) else next((x for x in jobs if x[1] == n), None)
         if not j: print(f"x {n}?"); return
         if wda == 'rm':
             _uninstall(j[1]); c = db(); c.execute("DELETE FROM hub_jobs WHERE id=?", (j[0],)); c.commit(); c.close(); db_sync(); print(f"✓ rm {j[1]}")
-        elif wda == 'log':
-            print(open(LOG).read()[-2000:] if os.path.exists(LOG) else 'No logs')
         else:
+            from datetime import datetime
             cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ') if j[3].startswith('aio ') else j[3]
-            print(f"$ {cmd}", flush=True); sp.run(cmd, shell=True); print(f"✓")
+            print(f"$ {cmd}", flush=True); sp.run(cmd, shell=True)
+            c = db(); c.execute("UPDATE hub_jobs SET last_run=? WHERE id=?", (datetime.now().strftime('%Y-%m-%d %H:%M'), j[0])); c.commit(); c.close(); db_sync(); print(f"✓")
