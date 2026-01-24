@@ -1,0 +1,5 @@
+#!/bin/bash
+# Fast aio wrapper - prints cache, then runs python
+CACHE=~/.local/share/aios/help_cache.txt
+[ -f "$CACHE" ] && cat "$CACHE"
+exec python3 "$(dirname "$(readlink -f "$0")")/aio.py" "$@"

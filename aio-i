@@ -2,4 +2,4 @@
 # Fast interactive picker (<3ms to first output)
 CACHE=~/.local/share/aios/i_cache.txt
 [ -f "$CACHE" ] && cat "$CACHE" || echo -e "help\nupdate\njobs"
-exec python3 "$(dirname "$0")/aio.py" i
+exec aio i

@@ -76,8 +76,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 AIO_URL="https://raw.githubusercontent.com/seanpattencode/aio/main/aio.py"
 if [[ -f "$SCRIPT_DIR/aio.py" ]]; then
     ln -sf "$SCRIPT_DIR/aio.py" "$BIN/aio" && chmod +x "$BIN/aio" && ok "aio installed (local)"
+    ln -sf "$SCRIPT_DIR/aio-i" "$BIN/aio-i" && chmod +x "$BIN/aio-i" && ok "aio-i installed (local)"
 else
     curl -fsSL "$AIO_URL" -o "$BIN/aio" && chmod +x "$BIN/aio" && ok "aio installed (remote)"
+    curl -fsSL "${AIO_URL%aio.py}aio-i" -o "$BIN/aio-i" && chmod +x "$BIN/aio-i" && ok "aio-i installed (remote)"
 fi
 
 # PATH setup in shell rc (do early so aio works immediately)

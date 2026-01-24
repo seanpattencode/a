@@ -63,6 +63,7 @@ def run():
             cmd = matches[sel]
             print(f"\n\n\033[KRunning: aio {cmd}\n")
             os.execvp(sys.executable, [sys.executable, os.path.dirname(__file__) + '/../aio.py', cmd])
+        elif ch in ('\x03', '\x04') or (ch == 'q' and not buf): break  # Ctrl+C, Ctrl+D, q
         elif ch.isalnum() or ch in '-_': buf, sel = buf + ch, 0
 
         sys.stdout.write("\033[1B\r")
