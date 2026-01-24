@@ -279,6 +279,16 @@ You can use paid services (Claude API, cloud storage) without being locked into 
 - **Life**: Less time fighting tools, more time doing things
 - **Fun**: Building your own system is satisfying in a way using products never is
 
+### The Body Analogy
+
+If you're on your bed and your computer is 10 feet away, you should be able to pick up your phone and use it to interact with the computer. Why can't you?
+
+Your electronic systems are **external semi-organs of your body** that are cut off from each other arbitrarily. Your phone, your laptop, your server - they're all *you*. They hold your thoughts, your work, your context.
+
+The current state is like having a hand that can't feel what the other hand is holding. The nervous system is severed for no good reason - just business models and walled gardens.
+
+aio isn't giving you something new. It's **giving you back what you already have** - unified access to your own devices, your own data, your own tools. The connection that should have been there all along.
+
 ## Web Interface: Terminal Logic as Core
 
 Plan from the beginning: add web interface but keep terminal logic as source of truth.

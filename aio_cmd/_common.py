@@ -471,6 +471,7 @@ PROJECTS
   aio <#>             cd to project #
   aio add             Add current dir as project
   aio remove <#>      Remove project
+  aio move <#> <#>    Reorder project
   aio scan            Add your repos fast
 
 GIT
