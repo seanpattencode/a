@@ -28,7 +28,7 @@ def run():
             sp.run(['crontab', '-'], input=f"{old}\n{m} {h} * * * {cmd} >> {LOG} 2>&1 # aio:{nm}\n", text=True)
         else:
             sd = Path.home() / '.config/systemd/user'; sd.mkdir(parents=True, exist_ok=True)
-            (sd / f'aio-{nm}.service').write_text(f"[Unit]\nDescription={nm}\n[Service]\nType=oneshot\nExecStart={cmd}\n")
+            (sd / f'aio-{nm}.service').write_text(f"[Unit]\nDescription={nm}\n[Service]\nType=oneshot\nExecStart=/bin/bash -c '{cmd} >> {LOG} 2>&1'\n")
             (sd / f'aio-{nm}.timer').write_text(f"[Unit]\nDescription={nm}\n[Timer]\nOnCalendar={sched}\nPersistent=true\n[Install]\nWantedBy=timers.target\n")
             [sp.run(['systemctl', '--user'] + a, capture_output=True) for a in [['daemon-reload'], ['enable', '--now', f'aio-{nm}.timer']]]
 
@@ -44,13 +44,15 @@ def run():
         jobs = c.execute("SELECT id,name,schedule,prompt,device,enabled,last_run FROM hub_jobs ORDER BY device,name").fetchall()
 
     if not wda:
-        _pj = lambda jobs: [print(f"{i:<3}{j[1]:<12}{j[2]:<7}{(j[6] or '-')[:16]:<17}{j[4]:<10}{'✓' if j[5] else 'x':<4}{(j[3] or '')}") for i, j in enumerate(jobs)] or print("  (none)")
-        print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<17}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
+        from datetime import datetime as dt
+        _lr = lambda t: dt.strptime(t, '%Y-%m-%d %H:%M').strftime('%m/%d %I:%M%p').lower() if t else '-'
+        _pj = lambda jobs: [print(f"{i:<3}{j[1]:<12}{j[2]:<7}{_lr(j[6]):<14}{j[4]:<10}{'✓' if j[5] else 'x':<4}{(j[3] or '')}") for i, j in enumerate(jobs)] or print("  (none)")
+        print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<14}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
         while (c := input("\n<#>|add|rm <#>|sync|log|q\n> ").strip()) and c != 'q':
             args = ['run', c] if c.isdigit() else c.split()
             sp.run([sys.executable, __file__.replace('hub.py', '../aio.py'), 'hub'] + args)
             jobs = db().execute("SELECT id,name,schedule,prompt,device,enabled,last_run FROM hub_jobs ORDER BY device,name").fetchall()
-            print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<17}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
+            print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<14}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
         return
 
     if wda == 'add':
@@ -84,5 +86,6 @@ def run():
         else:
             from datetime import datetime
             cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ') if j[3].startswith('aio ') else j[3]
-            print(f"$ {cmd}", flush=True); sp.run(cmd, shell=True)
+            print(f"$ {cmd}", flush=True); r = sp.run(cmd, shell=True, capture_output=True, text=True); out = r.stdout + r.stderr
+            print(out) if out else None; open(LOG, 'a').write(f"\n[{datetime.now():%Y-%m-%d %I:%M:%S%p}] {j[1]}\n{out}")
             c = db(); c.execute("UPDATE hub_jobs SET last_run=? WHERE id=?", (datetime.now().strftime('%Y-%m-%d %H:%M'), j[0])); c.commit(); c.close(); db_sync(); print(f"✓")
