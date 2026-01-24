@@ -25,11 +25,14 @@ def run():
     except: items = CMDS; refresh_cache()
 
     if not sys.stdin.isatty():
-        print('\n'.join(items)); sys.exit(0)  # Output for piping to fzf
+        print('\n'.join(items)); sys.exit(0)
 
     # Rebuild cache in background
     if os.fork() == 0: refresh_cache(); os._exit(0)
 
+    # Clear the pre-printed cache, show interactive UI
+    n = min(len(items), 10) + 2
+    sys.stdout.write(f"\033[{n}A\033[J")  # Move up and clear
     buf, sel = "", 0
     print("Type to filter, Tab=cycle, Enter=run, Esc=quit\n")
 

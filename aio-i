@@ -1,5 +1,5 @@
 #!/bin/bash
-# Fast interactive picker (<1ms startup) - reads cache, uses fzf
+# Fast interactive picker (<3ms to first output)
 CACHE=~/.local/share/aios/i_cache.txt
-[ -f "$CACHE" ] || python3 "$(dirname "$0")/aio.py" i >/dev/null 2>&1
-sel=$(fzf --height=10 --reverse < "$CACHE") && exec aio $sel
+[ -f "$CACHE" ] && cat "$CACHE" || echo -e "help\nupdate\njobs"
+exec python3 "$(dirname "$0")/aio.py" i
