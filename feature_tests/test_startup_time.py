@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Test startup time of aio commands"""
+"""Test startup time of aio commands
+
+Why LLM agents measure 15-25ms but users see 2ms:
+- Agents run non-interactive shells (bash -c "cmd") which skip .bashrc
+- Users run interactive shells which load the aio() bash function
+- The bash function cats cached files instantly, bypassing Python startup
+- This test uses 'bash -i' to simulate real user experience
+"""
 import subprocess as sp, re
 
 TESTS = [
