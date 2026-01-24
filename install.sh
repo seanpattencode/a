@@ -86,6 +86,20 @@ fi
 RC="$HOME/.bashrc"; [[ -f "$HOME/.zshrc" ]] && RC="$HOME/.zshrc"
 grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
 
+# Fast aio bash function (2ms startup vs 25ms python)
+sed -i '/^aio() {/,/^}/d' "$RC" 2>/dev/null  # Remove old function
+cat >> "$RC" << 'AIOFUNC'
+aio() {
+    local cache=~/.local/share/aios/help_cache.txt projects=~/.local/share/aios/projects.txt icache=~/.local/share/aios/i_cache.txt
+    if [[ "$1" =~ ^[0-9]+$ ]]; then local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null); [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; return; }; fi
+    local d="${1/#~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"; [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; ls; return; }
+    [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command python3 ~/.local/bin/aio "$@"; return; }
+    [[ "$1" == "i" ]] && { cat "$icache" 2>/dev/null; [[ -t 0 ]] && command python3 ~/.local/bin/aio "$@"; return; }
+    command python3 ~/.local/bin/aio "$@"
+}
+AIOFUNC
+ok "bash function"
+
 # Node CLIs (may take a few minutes)
 install_cli() {
     local pkg="$1" cmd="$2"
