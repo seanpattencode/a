@@ -1,16 +1,19 @@
 """aio i - Interactive command picker with live suggestions"""
-import sys, os, tty, termios, time, subprocess as sp
+import sys, os, tty, termios
 
 CMDS = ['help','update','jobs','kill','attach','cleanup','config','ls','diff','send','watch',
         'push','pull','revert','set','settings','install','uninstall','deps','prompt','gdrive',
         'add','remove','move','dash','all','backup','scan','copy','log','done','agent','tree',
         'dir','web','ssh','run','hub','daemon','ui','review','note']
 
-# Build prefix dict
-PREFIX = {}
-for c in CMDS:
-    for i in range(1, len(c)+1):
-        PREFIX.setdefault(c[:i], []).append(c)
+def build_prefix(items):
+    d = {}
+    for c in items:
+        for i in range(1, len(c)+1):
+            d.setdefault(c[:i], []).append(c)
+    return d
+
+PREFIX = build_prefix(CMDS)
 
 def getch():
     fd = sys.stdin.fileno()
@@ -22,11 +25,15 @@ def run():
     if not sys.stdin.isatty():
         print("x Interactive mode requires tty"); sys.exit(1)
 
+    from . _common import load_proj, load_apps, init_db
+    init_db()
+    items = [str(i) for i in range(len(load_proj()) + len(load_apps()))] + CMDS
+
     buf, sel = "", 0
     print("Type to filter, Tab=cycle, Enter=run, Esc=quit\n")
 
     while True:
-        matches = PREFIX.get(buf, CMDS)[:8] if buf else CMDS[:8]
+        matches = [x for x in items if x.startswith(buf)][:8] if buf else items[:8]
         sel = min(sel, len(matches)-1) if matches else 0
 
         # Render
