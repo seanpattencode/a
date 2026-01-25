@@ -49,6 +49,7 @@ def run():
         _lr = lambda t: dt.strptime(t, '%Y-%m-%d %H:%M').strftime('%m/%d %I:%M%p').lower() if t else '-'
         _pj = lambda jobs: [print(f"{i:<3}{j[1]:<12}{j[2]:<7}{_lr(j[6]):<14}{j[4]:<10}{'✓' if j[5] else 'x':<4}{(j[3] or '')}") for i, j in enumerate(jobs)] or print("  (none)")
         print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<14}{'Device':<10}{'On':<4}{'Command'}"); _pj(jobs)
+        if not sys.stdin.isatty(): return
         while (c := input("\n<#>|add|rm|ed <#>|sync|log|q\n> ").strip()) and c != 'q':
             args = ['run', c] if c.isdigit() else c.split()
             sp.run([sys.executable, __file__.replace('hub.py', '../aio.py'), 'hub'] + args)
@@ -75,10 +76,11 @@ def run():
     elif wda == 'log':
         if not os.path.exists(LOG): print('No logs'); return
         runs = [(m.group(1), m.group(2)[:20]) for l in open(LOG) if (m := re.match(r'^\[(\d{4}-\d{2}-\d{2}[^\]]+)\] (.+)', l))][-20:][::-1]
-        print(f"{'Time':<24}{'Job'}"); [print(f"{t:<24}{n}") for t, n in runs] or print('No runs'); input("\nq to exit> ")
+        print(f"{'Time':<24}{'Job'}"); [print(f"{t:<24}{n}") for t, n in runs] or print('No runs'); sys.stdin.isatty() and input("\nq to exit> ")
     elif wda == 'ed':
         n = sys.argv[3] if len(sys.argv) > 3 else ''; j = jobs[int(n)] if n.isdigit() and int(n) < len(jobs) else None
-        if not j or not (new := input(f"Name [{j[1]}]: ").strip()): return print(f"x {n}?") if not j else None
+        new = sys.argv[4] if len(sys.argv) > 4 else (sys.stdin.isatty() and input(f"Name [{j[1]}]: ").strip() if j else '')
+        if not j or not new: return print(f"x {n}?") if not j else None
         _uninstall(j[1]); c = db(); c.execute("UPDATE hub_jobs SET name=? WHERE id=?", (new, j[0])); c.commit(); db_sync(); print(f"✓ {new} (run 'sync' to update timer)")
     elif wda in ('rm', 'run'):
         n = sys.argv[3] if len(sys.argv) > 3 else ''

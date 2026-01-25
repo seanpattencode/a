@@ -4,7 +4,7 @@ from pathlib import Path
 from . _common import init_db, db, _up, _die, emit_event, db_sync
 
 def run():
-    init_db()
+    init_db(); db_sync(pull=True)
     wda = sys.argv[2] if len(sys.argv) > 2 else None
     try: import keyring as kr
     except: kr = None
