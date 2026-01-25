@@ -20,15 +20,16 @@ def run():
     _pt = lambda s: (lambda m: f"{int(m[1])+(12 if m[3]=='pm' and int(m[1])!=12 else (-int(m[1]) if m[3]=='am' and int(m[1])==12 else 0))}:{m[2]}" if m else s)(re.match(r'^(\d{1,2}):(\d{2})\s*(am|pm)?$', s.lower().strip()))
 
     def _install(nm, sched, cmd):
+        aio = f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")}'
         if _tx:
             shutil.which('crontab') or sp.run(['pkg', 'install', '-y', 'cronie'], capture_output=True)
             sp.run(['pgrep', 'crond'], capture_output=True).returncode != 0 and sp.run(['crond'])
             h, m = sched.split(':')
             old = '\n'.join(l for l in (sp.run(['crontab', '-l'], capture_output=True, text=True).stdout or '').split('\n') if f'# aio:{nm}' not in l).strip()
-            sp.run(['crontab', '-'], input=f"{old}\n{m} {h} * * * {cmd} >> {LOG} 2>&1 # aio:{nm}\n", text=True)
+            sp.run(['crontab', '-'], input=f"{old}\n{m} {h} * * * {aio} hub run {nm} # aio:{nm}\n", text=True)
         else:
             sd = Path.home() / '.config/systemd/user'; sd.mkdir(parents=True, exist_ok=True); esc = lambda s: s.replace('%','%%')
-            (sd / f'aio-{nm}.service').write_text(f"[Unit]\nDescription={nm}\n[Service]\nType=oneshot\nExecStart=/bin/bash -c '{esc(cmd)} >> {LOG} 2>&1'\n")
+            (sd / f'aio-{nm}.service').write_text(f"[Unit]\nDescription={nm}\n[Service]\nType=oneshot\nExecStart=/bin/bash -c '{aio} hub run {nm}'\n")
             (sd / f'aio-{nm}.timer').write_text(f"[Unit]\nDescription={nm}\n[Timer]\nOnCalendar={esc(sched)}\nPersistent=true\n[Install]\nWantedBy=timers.target\n")
             [sp.run(['systemctl', '--user'] + a, capture_output=True) for a in [['daemon-reload'], ['enable', '--now', f'aio-{nm}.timer']]]
 
