@@ -2,9 +2,14 @@
 """aio - AI agent session manager (git-like modular dispatcher)"""
 import sys, os
 
-# Fast-path for 'aio n <text>' - no imports needed
+# Fast-path for 'aio n <text>' - append-only event + sqlite insert
+# SYNC: Emits notes.add event to events.jsonl. Never delete - ack to archive. Any device can ack.
 if len(sys.argv) > 2 and sys.argv[1] in ('note', 'n'):
-    import sqlite3, subprocess as sp; dd = os.path.expanduser("~/.local/share/aios"); db = f"{dd}/aio.db"; os.makedirs(dd, exist_ok=True); os.path.exists(db) and sqlite3.connect(db).execute("PRAGMA wal_checkpoint(TRUNCATE)").connection.close(); (os.path.isdir(f"{dd}/.git") or __import__('shutil').which('gh') and (u:=sp.run(['gh','repo','view','aio-sync','--json','url','-q','.url'],capture_output=True,text=True).stdout.strip() or sp.run(['gh','repo','create','aio-sync','--private','-y'],capture_output=True,text=True).stdout.strip()) and sp.run(f'cd "{dd}"&&git init -b main -q;git remote add origin {u} 2>/dev/null;git fetch origin 2>/dev/null&&git reset --hard origin/main 2>/dev/null||(git add -A&&git commit -m init -q&&git push -u origin main 2>/dev/null)',shell=True,capture_output=True)) and sp.run(f'cd "{dd}" && git fetch -q 2>/dev/null && git reset --hard origin/main 2>/dev/null', shell=True, capture_output=True); c = sqlite3.connect(db); c.execute("CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP,proj)"); c.execute("INSERT INTO notes(t) VALUES(?)", (' '.join(sys.argv[2:]),)); c.commit(); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close(); r = sp.run(f'cd "{dd}" && git add -A && git diff --cached --quiet || git -c user.name=aio -c user.email=a@a commit -m n && git push origin HEAD:main -q 2>&1', shell=True, capture_output=True, text=True) if os.path.isdir(f"{dd}/.git") else type('R',(),{'returncode':0})(); print("✓" if r.returncode == 0 else f"! {r.stderr.strip()[:40] or 'sync failed'}"); sys.exit(0)
+    import sqlite3, subprocess as sp, json, time, hashlib, socket; dd = os.path.expanduser("~/.local/share/aios"); db = f"{dd}/aio.db"; ef = f"{dd}/events.jsonl"; os.makedirs(dd, exist_ok=True); dev = socket.gethostname()
+    eid = hashlib.md5(f"{time.time()}{os.getpid()}".encode()).hexdigest()[:8]; txt = ' '.join(sys.argv[2:])
+    open(ef, "a").write(json.dumps({"ts": time.time(), "id": eid, "dev": dev, "op": "notes.add", "d": {"t": txt}}) + "\n")
+    c = sqlite3.connect(db); c.execute("CREATE TABLE IF NOT EXISTS notes(id,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP,proj)"); c.execute("INSERT OR REPLACE INTO notes(id,t,s) VALUES(?,?,0)", (eid, txt)); c.commit(); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()
+    r = sp.run(f'cd "{dd}" && git add -A && git diff --cached --quiet || git -c user.name=aio -c user.email=a@a commit -m n -q && git push origin HEAD:main -q 2>&1', shell=True, capture_output=True, text=True) if os.path.isdir(f"{dd}/.git") else type('R',(),{'returncode':0})(); print("✓" if r.returncode == 0 else f"! {r.stderr.strip()[:40] or 'sync failed'}"); sys.exit(0)
 
 # Fast-path for 'aio i' - show cache instantly, start interactive in background
 # NOTE: Agents test with `bash -i -c 'aio i'`, time with `bash -i -c 'time aio i < /dev/null' 2>&1`

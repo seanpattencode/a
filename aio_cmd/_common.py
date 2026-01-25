@@ -397,6 +397,10 @@ def launch_dir(d, term=None):
     except Exception as e: print(f"x {e}"); return False
 
 # Sync - JSONL append-only event log (git auto-merges text, never loses data)
+# ARCHITECTURE: Events are immutable. Never delete data - use "archive" or "ack" to hide.
+# Any device can emit events (add/ack/update/archive). State rebuilt by replaying all events.
+# This avoids merge conflicts: git auto-merges append-only text, then replay rebuilds SQLite.
+# Tables using events: ssh (add/archive/rename), notes (add/ack/update)
 def emit_event(table, op, data, device=None):
     """Append event to events.jsonl. Events are immutable - archive instead of delete."""
     import hashlib; eid = hashlib.md5(f"{time.time()}{os.getpid()}".encode()).hexdigest()[:8]
@@ -405,25 +409,30 @@ def emit_event(table, op, data, device=None):
     return eid
 
 def replay_events(tables=None):
-    """Rebuild state from events.jsonl. Tables: ssh, hub_jobs, notes."""
+    """Rebuild state from events.jsonl. Tables: ssh, notes."""
     if not os.path.exists(EVENTS_PATH): return
-    state = {}; tables = tables or ['ssh', 'hub_jobs', 'notes']
+    state = {}; tables = tables or ['ssh', 'notes']
     for line in open(EVENTS_PATH):
         try: e = json.loads(line)
         except: continue
         t, op = e["op"].split("."); d = e["d"]
         if t not in tables: continue
         if t not in state: state[t] = {}
-        if op == "add": state[t][d.get("name") or d.get("id") or e["id"]] = {**d, "_ts": e["ts"], "_id": e["id"]}
-        elif op == "update": k = d.get("name") or d.get("id"); state[t].get(k, {}).update({**d, "_ts": e["ts"]})
-        elif op == "archive": k = d.get("name") or d.get("id"); k in state[t] and state[t][k].update({"_archived": e["ts"]})
-        elif op == "rename" and d.get("old") in state.get(t, {}): state[t][d["old"]]["_archived"] = e["ts"]; state[t][d["new"]] = {**{k:v for k,v in state[t][d["old"]].items() if not k.startswith("_")}, "name": d["new"], "_ts": e["ts"], "_id": e["id"]}
+        k = d.get("name") or d.get("id") or e["id"]
+        if op == "add": state[t][k] = {**d, "_ts": e["ts"], "_id": e["id"], "_dev": e.get("dev")}
+        elif op == "update" and k in state[t]: state[t][k].update({**d, "_ts": e["ts"]})
+        elif op in ("archive", "ack") and k in state[t]: state[t][k]["_archived"] = e["ts"]
+        elif op == "rename" and d.get("old") in state.get(t, {}): state[t][d["old"]]["_archived"] = e["ts"]; state[t][d["new"]] = {**{x:y for x,y in state[t][d["old"]].items() if not x.startswith("_")}, "name": d["new"], "_ts": e["ts"], "_id": e["id"]}
     # Apply to db
     c = sqlite3.connect(DB_PATH)
     for t, items in state.items():
         active = {k: v for k, v in items.items() if not v.get("_archived")}
-        if t == "ssh": c.execute("DELETE FROM ssh"); [c.execute("INSERT OR REPLACE INTO ssh(name,host)VALUES(?,?)", (v["name"], v.get("host",""))) for v in active.values()]
-        elif t == "hub_jobs": pass  # hub_jobs has device column, handled separately
+        archived = {k: v for k, v in items.items() if v.get("_archived")}
+        if t == "ssh": c.execute("DELETE FROM ssh"); [c.execute("INSERT OR REPLACE INTO ssh(name,host)VALUES(?,?)", (v.get("name",k), v.get("host",""))) for k,v in active.items()]
+        elif t == "notes":
+            c.execute("DELETE FROM notes WHERE id LIKE '________'")  # only delete event-based notes (8-char hex ids)
+            for k,v in active.items(): c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj)VALUES(?,?,0,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj")))
+            for k,v in archived.items(): c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj)VALUES(?,?,1,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj")))
     c.commit(); c.close()
 
 def db_sync(pull=False):
@@ -432,7 +441,7 @@ def db_sync(pull=False):
     # Git merge with -X theirs: events.jsonl auto-merges (append-only), conflicts take remote (rebuild from events)
     pull and sp.run(f'cd "{DATA_DIR}" && git stash -q 2>/dev/null; git fetch -q && git merge -X theirs origin/main --no-edit -q; git stash pop -q 2>/dev/null', shell=True, capture_output=True)
     sp.run(f'cd "{DATA_DIR}" && git add -A && git diff --cached --quiet || git -c user.name=aio -c user.email=a@a commit -m sync -q && git push origin HEAD:main -q 2>/dev/null', shell=True, capture_output=True)
-    pull and replay_events(['ssh'])  # Rebuild from merged events
+    pull and replay_events(['ssh', 'notes'])  # Rebuild from merged events
     c = sqlite3.connect(DB_PATH); [c.execute("DELETE FROM "+t+" WHERE device=?", (DEVICE_ID,)) for t in ['projects','apps']]; [c.execute("INSERT INTO projects(path,display_order,device)VALUES(?,?,?)",(*p,DEVICE_ID)) for p in my[0]]; [c.execute("INSERT INTO apps(name,command,display_order,device)VALUES(?,?,?,?)",(*a,DEVICE_ID)) for a in my[1]]; c.commit(); c.close(); return True
 
 def auto_backup():
