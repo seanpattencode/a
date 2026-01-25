@@ -30,9 +30,7 @@ def run():
     # Rebuild cache in background
     if os.fork() == 0: refresh_cache(); os._exit(0)
 
-    # Clear pre-printed cache (11 lines), show UI
-    sys.stdout.write("\033[11A\033[J"); buf, sel = "", 0
-    print("Type to filter, Tab=cycle, Enter=run, Esc=quit\n")
+    sys.stdout.write("\033[u\033[J"); buf, sel = "", 0  # Restore cursor, clear below
 
     while True:
         matches = [x for x in items if buf.replace(' ','').lower() in x.lower()][:8] if buf else items[:8]
