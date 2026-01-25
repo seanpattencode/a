@@ -27,9 +27,9 @@ def run():
             old = '\n'.join(l for l in (sp.run(['crontab', '-l'], capture_output=True, text=True).stdout or '').split('\n') if f'# aio:{nm}' not in l).strip()
             sp.run(['crontab', '-'], input=f"{old}\n{m} {h} * * * {cmd} >> {LOG} 2>&1 # aio:{nm}\n", text=True)
         else:
-            sd = Path.home() / '.config/systemd/user'; sd.mkdir(parents=True, exist_ok=True)
-            (sd / f'aio-{nm}.service').write_text(f"[Unit]\nDescription={nm}\n[Service]\nType=oneshot\nExecStart=/bin/bash -c '{cmd} >> {LOG} 2>&1'\n")
-            (sd / f'aio-{nm}.timer').write_text(f"[Unit]\nDescription={nm}\n[Timer]\nOnCalendar={sched}\nPersistent=true\n[Install]\nWantedBy=timers.target\n")
+            sd = Path.home() / '.config/systemd/user'; sd.mkdir(parents=True, exist_ok=True); esc = lambda s: s.replace('%','%%')
+            (sd / f'aio-{nm}.service').write_text(f"[Unit]\nDescription={nm}\n[Service]\nType=oneshot\nExecStart=/bin/bash -c '{esc(cmd)} >> {LOG} 2>&1'\n")
+            (sd / f'aio-{nm}.timer').write_text(f"[Unit]\nDescription={nm}\n[Timer]\nOnCalendar={esc(sched)}\nPersistent=true\n[Install]\nWantedBy=timers.target\n")
             [sp.run(['systemctl', '--user'] + a, capture_output=True) for a in [['daemon-reload'], ['enable', '--now', f'aio-{nm}.timer']]]
 
     def _uninstall(nm):
@@ -56,12 +56,12 @@ def run():
         return
 
     if wda == 'add':
-        # One-line: aio hub add <name> <sched> <cmd...>  e.g. aio hub add gdrive-sync '*:0/30' aio gdrive sync
+        # aio hub add <name> <sched> <cmd...>  e.g. aio hub add gdrive-sync '*:0/30' aio gdrive sync
         a, tty = sys.argv[3:], sys.stdin.isatty(); n, s, c = (a+[''])[0], (a+['',''])[1], ' '.join(a[2:])
         items = [(os.path.basename(p), f"aio {i}") for i, p in enumerate(PROJ)] + [(nm, cmd) for nm, cmd in APPS]
         c = (c or (tty and ([print(f"  {i}. {nm} -> {cmd}") for i, (nm, cmd) in enumerate(items)], input("# or cmd: "))[-1].strip() or '')); c = items[int(c)][1] if c.isdigit() and int(c) < len(items) else c
         n, s = n or (tty and input("Name: ").strip().replace(' ','-')), s if ':' in s else (tty and input("Time (9:00am, *:0/30): ").strip())
-        if not all([n,s,c]): sys.exit("Usage: aio hub add <name> <sched> <cmd...>")
+        (e := "Missing name" if not n else "Bad sched (need : e.g. 9:00, *:0/30)" if ':' not in (s or '') else "Missing cmd" if not c else "") and sys.exit(f"✗ {e}")
         s = _pt(s) if s[0].isdigit() else s
         with db() as cn: cn.execute("INSERT OR REPLACE INTO hub_jobs(name,schedule,prompt,device,enabled)VALUES(?,?,?,?,1)", (n, s, c, DEVICE_ID)); cn.commit()
         cmd = c.replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ') if c.startswith('aio ') else c; _install(n, s, cmd); db_sync(); print(f"✓ {n} @ {s}")
