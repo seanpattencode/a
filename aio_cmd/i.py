@@ -41,12 +41,9 @@ def run():
         sel = min(sel, len(matches)-1) if matches else 0
 
         # Render
-        sys.stdout.write(f"\r\033[K> {buf}")
-        sys.stdout.write(f"\n\033[K  ")
-        for i, m in enumerate(matches):
-            if i == sel: sys.stdout.write(f"\033[7m {m} \033[0m ")
-            else: sys.stdout.write(f" {m}  ")
-        sys.stdout.write(f"\033[A\r\033[{len(buf)+3}C")
+        sys.stdout.write(f"\r\033[K> {buf}\n")
+        for i, m in enumerate(matches): sys.stdout.write(f"\033[K{' >' if i==sel else '  '} {m}\n")
+        sys.stdout.write(f"\033[{len(matches)+1}A\033[{len(buf)+3}C")
         sys.stdout.flush()
 
         ch = getch()
@@ -66,6 +63,6 @@ def run():
         elif ch in ('\x03', '\x04') or (ch == 'q' and not buf): break  # Ctrl+C, Ctrl+D, q
         elif ch.isalnum() or ch in '-_ ': buf, sel = buf + ch, 0
 
-        sys.stdout.write("\033[1B\r")
+        sys.stdout.write("\033[J")
 
     print("\033[2B\033[K")
