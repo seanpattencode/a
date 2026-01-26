@@ -444,14 +444,13 @@ def replay_events(tables=None):
             for k,v in archived.items(): c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj)VALUES(?,?,1,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj")))
     c.commit(); c.close()
 
+# Append-only sync: only events.jsonl synced (text, auto-merges), aio.db is local cache
 def db_sync(pull=False):
     if not os.path.isdir(f"{DATA_DIR}/.git") and not (shutil.which('gh') and (u:=sp.run(['gh','repo','view','aio-sync','--json','url','-q','.url'],capture_output=True,text=True).stdout.strip() or sp.run(['gh','repo','create','aio-sync','--private','-y'],capture_output=True,text=True).stdout.strip()) and sp.run(f'cd "{DATA_DIR}"&&git init -b main -q;git remote add origin {u} 2>/dev/null;git fetch origin 2>/dev/null&&git reset --hard origin/main 2>/dev/null||(git add -A&&git commit -m init -q&&git push -u origin main 2>/dev/null)',shell=True,capture_output=True) and os.path.isdir(f"{DATA_DIR}/.git")): return True
-    c = sqlite3.connect(DB_PATH); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); my = (c.execute("SELECT path,display_order FROM projects WHERE device=?", (DEVICE_ID,)).fetchall(), c.execute("SELECT name,command,display_order FROM apps WHERE device=?", (DEVICE_ID,)).fetchall()); c.close()
-    # Git merge with -X theirs: events.jsonl auto-merges (append-only), conflicts take remote (rebuild from events)
-    pull and sp.run(f'cd "{DATA_DIR}" && git stash -q 2>/dev/null; git fetch -q && git merge -X theirs origin/main --no-edit -q; git stash pop -q 2>/dev/null', shell=True, capture_output=True)
-    sp.run(f'cd "{DATA_DIR}" && git add -A && git diff --cached --quiet || git -c user.name=aio -c user.email=a@a commit -m sync -q && git push origin HEAD:main -q 2>/dev/null', shell=True, capture_output=True)
-    pull and replay_events(['ssh', 'notes'])  # Rebuild from merged events
-    c = sqlite3.connect(DB_PATH); [c.execute("DELETE FROM "+t+" WHERE device=?", (DEVICE_ID,)) for t in ['projects','apps']]; [c.execute("INSERT INTO projects(path,display_order,device)VALUES(?,?,?)",(*p,DEVICE_ID)) for p in my[0]]; [c.execute("INSERT INTO apps(name,command,display_order,device)VALUES(?,?,?,?)",(*a,DEVICE_ID)) for a in my[1]]; c.commit(); c.close(); return True
+    gi = f"{DATA_DIR}/.gitignore"; gic = Path(gi).read_text() if os.path.exists(gi) else ""; "aio.db\n" not in gic and Path(gi).write_text(gic.rstrip('\n') + "\naio.db\n")
+    pull and sp.run(f'cd "{DATA_DIR}" && git fetch -q && git merge origin/main --no-edit -q 2>/dev/null', shell=True, capture_output=True)
+    sp.run(f'cd "{DATA_DIR}" && git add events.jsonl .gitignore 2>/dev/null; git diff --cached --quiet || git -c user.name=aio -c user.email=a@a commit -m sync -q && git push origin HEAD:main -q 2>/dev/null', shell=True, capture_output=True)
+    pull and replay_events(['ssh', 'notes']); return True
 
 def auto_backup():
     if not hasattr(os, 'fork'): return
