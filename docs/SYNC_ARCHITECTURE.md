@@ -177,6 +177,26 @@ When events.sql grows too large:
 
 ---
 
+## Current Implementation (2026-01-26)
+
+| Spec | Actual | Why |
+|------|--------|-----|
+| `events.sql` | `events.jsonl` | JSONL already existed, easier to parse |
+| SQL views | `replay_events()` | Rebuilds tables directly, simpler |
+| Incremental replay | Full replay | <1k events, fast enough for now |
+| All tables via events | Only `notes`, `ssh` | Others are device-local, no sync needed |
+
+**Files:**
+- `~/.local/share/aios/events.jsonl` - synced (append-only)
+- `~/.local/share/aios/aio.db` - local cache (.gitignore)
+
+**Code:** `aio_cmd/_common.py` lines 413-455
+- `emit_event()` - append to events.jsonl
+- `replay_events()` - rebuild db from events
+- `db_sync()` - git sync events.jsonl only
+
+---
+
 *Author: Claude + Sean*
 *Date: 2026-01-26*
-*Status: Requirements approved, implementation pending*
+*Status: Implemented and tested on 3 devices*
