@@ -66,11 +66,11 @@ def run():
         (e := "Missing name" if not n else "Bad sched (need : e.g. 9:00, *:0/30)" if ':' not in (s or '') else "Missing cmd" if not c else "") and sys.exit(f"✗ {e}")
         s = _pt(s) if s[0].isdigit() else s
         with db() as cn: cn.execute("INSERT OR REPLACE INTO hub_jobs(name,schedule,prompt,device,enabled)VALUES(?,?,?,?,1)", (n, s, c, DEVICE_ID)); cn.commit()
-        cmd = c.replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ') if c.startswith('aio ') else c; _install(n, s, cmd); db_sync(); print(f"✓ {n} @ {s}")
+        cmd = c.replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ').replace('python ', f'{sys.executable} '); _install(n, s, cmd); db_sync(); print(f"✓ {n} @ {s}")
     elif wda == 'sync':
         [_uninstall(j[1]) for j in jobs]; mine = [j for j in jobs if j[4] == DEVICE_ID and j[5]]
         for j in mine:
-            cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ') if j[3].startswith('aio ') else j[3]
+            cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ').replace('python ', f'{sys.executable} ')
             _install(j[1], j[2], cmd)
         print(f"✓ synced {len(mine)} jobs")
     elif wda == 'log':
@@ -90,7 +90,7 @@ def run():
             _uninstall(j[1]); c = db(); c.execute("DELETE FROM hub_jobs WHERE id=?", (j[0],)); c.commit(); c.close(); db_sync(); print(f"✓ rm {j[1]}")
         else:
             from datetime import datetime
-            cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ') if j[3].startswith('aio ') else j[3]
+            cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ').replace('python ', f'{sys.executable} ')
             print(f"Running {j[1]}...", flush=True); r = sp.run(cmd, shell=True, capture_output=True, text=True); out = r.stdout + r.stderr
             print(out) if out else None; open(LOG, 'a').write(f"\n[{datetime.now():%Y-%m-%d %I:%M:%S%p}] {j[1]}\n{out}")
             c = db(); c.execute("UPDATE hub_jobs SET last_run=? WHERE id=?", (datetime.now().strftime('%Y-%m-%d %H:%M'), j[0])); c.commit(); c.close(); db_sync(); print(f"✓")
