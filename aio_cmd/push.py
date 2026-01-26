@@ -1,10 +1,26 @@
 """aio push - Commit and push"""
-import sys, os, subprocess as sp, shutil
+import sys, os, subprocess as sp, shutil, time
 from pathlib import Path
-from . _common import init_db, load_cfg, load_proj, _git, _git_main, _git_push, _env, _die, ensure_git_cfg, _in_repo
+from . _common import init_db, load_cfg, load_proj, _git, _git_main, _git_push, _env, _die, ensure_git_cfg, _in_repo, LOG_DIR
+
+_PUSH_LOG = os.path.join(LOG_DIR, 'push.log')
+
+def _bg_push(path, branch, env):
+    """Background push with logging"""
+    os.makedirs(LOG_DIR, exist_ok=True)
+    script = f'''cd "{path}" && git push origin {branch} 2>&1 && echo "[OK] {path} {branch}" >> "{_PUSH_LOG}" || echo "[FAIL] {path} {branch}: $(git push origin {branch} 2>&1 | head -1)" >> "{_PUSH_LOG}"'''
+    sp.Popen(['sh', '-c', script], env=env, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+    print(f"✓ Pushing {branch}...")
+
+def _check_push_log():
+    """Check for failed background pushes"""
+    if not os.path.exists(_PUSH_LOG): return
+    fails = [l for l in open(_PUSH_LOG).readlines() if '[FAIL]' in l]
+    if fails: print(f"! Previous push failed: {fails[-1].strip()}")
+    open(_PUSH_LOG, 'w').close()  # clear log
 
 def run():
-    init_db()
+    init_db(); _check_push_log()
     cfg = load_cfg()
     PROJ = load_proj()
     WT_DIR = cfg.get('worktrees_dir', os.path.expanduser("~/projects/aiosWorktrees"))
@@ -60,4 +76,4 @@ def run():
             _git(cwd, 'checkout', main).returncode == 0 or _die(f"x Checkout failed")
             _git(cwd, 'merge', cur, '--no-edit', '-X', 'theirs').returncode == 0 or _die("x Merge failed"); print(f"✓ Merged {cur} -> {main}")
         if not _git(cwd, 'remote').stdout.strip(): print("[i] Local only"); return
-        _git(cwd, 'fetch', 'origin', env=env); _git_push(cwd, main, env) or sys.exit(1)
+        _bg_push(cwd, main, env)
