@@ -91,12 +91,15 @@ sed -i '/^aio() {/,/^}/d' "$RC" 2>/dev/null  # Remove old function
 cat >> "$RC" << 'AIOFUNC'
 aio() {
     local cache=~/.local/share/aios/help_cache.txt projects=~/.local/share/aios/projects.txt icache=~/.local/share/aios/i_cache.txt
+    [[ "$1" == "a" || "$1" == "ai" || "$1" == "aio" || "$1" == "all" ]] && { command python3 ~/.local/bin/aio "$@"; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null); [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; return; }; fi
     local d="${1/#~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"; [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; ls; return; }
     [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command python3 ~/.local/bin/aio "$@"; return; }
     [[ "$1" == "i" ]] && { printf "Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n"; head -8 "$icache" 2>/dev/null | awk 'NR==1{print " > "$0}NR>1{print "   "$0}'; [[ -t 0 ]] && printf '\033[?25l' && _AIO_I=1 command python3 ~/.local/bin/aio "$@"; printf '\033[?25h'; return; }
     command python3 ~/.local/bin/aio "$@"
 }
+a() { aio "$@"; }
+ai() { aio "$@"; }
 AIOFUNC
 ok "bash function"
 
