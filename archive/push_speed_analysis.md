@@ -118,6 +118,76 @@ This is near-optimal UX for "save work with description"
 = 2.5 hours gained per line of code
 ```
 
+## The Complete Equation
+
+```
+Useful = Intuitive × Fast-to-type × Fast-to-run × Fast-feedback
+```
+
+If any factor is slow, the whole experience breaks:
+
+| Broken factor | Result |
+|---------------|--------|
+| Intuitive but slow to type | Won't use |
+| Fast to type but slow to run | Frustrating |
+| Fast to run but slow feedback | Disconnected |
+
+**aio push achieves all four:**
+
+| Factor | Status | Value |
+|--------|--------|-------|
+| Intuitive | ✓ | "push" = push |
+| Type speed | ✓ | 8 chars |
+| Run speed | ✓ | 85ms |
+| Feedback | ✓ | instant ✓/○ |
+
+```
+Think "push" → type "aio push msg" → see ✓
+     0ms            ~500ms            85ms
+
+Total: <1 sec from thought to confirmed
+```
+
+**That's the bar.** Thought → confirmation in under 1 second.
+
+## The `aio` Brand Pattern
+
+```
+aio push    → the obvious push
+aio pull    → the obvious pull
+aio 0       → the obvious project
+aio c       → the obvious claude
+```
+
+**Principle:** `aio [what you want]` = does the obvious thing
+
+No flags. No options. No thinking. User types what they want, it happens.
+
+Cryptic shortcuts like `p` are forgettable. `aio push` reads like English and stays in memory.
+
+## 90/10 Rule: Enhance, Don't Replace
+
+```
+aio push = 90% case (quick save + push)
+git      = 10% case (conflicts, rebase, complex ops)
+```
+
+**aio doesn't replace git.** It makes the common path instant.
+
+| Situation | Tool |
+|-----------|------|
+| Quick push | `aio push` |
+| Merge conflict | `git` |
+| Interactive rebase | `git` |
+| Complex merge | `git` |
+| Branch surgery | `git` |
+
+When `aio push` fails, it tells you. Then you use git.
+
+**This is crucial:** Don't try to handle everything. Handle the 90% perfectly. Let existing tools handle the 10%.
+
+Result: Simple code, fast common path, no lock-in.
+
 ## Conclusion
 
 The complexity is justified. Speed matters not just for the milliseconds saved, but for the behavioral change it enables. Faster tools get used more, leading to better habits and compounding benefits.
