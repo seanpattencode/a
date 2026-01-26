@@ -1,16 +1,27 @@
-"""aio push - instant background commit+push"""
-import sys, os, subprocess as sp
+"""aio push - first real, then instant for 10min"""
+import sys, os, subprocess as sp, time
 
-_LOG = os.path.expanduser('~/.local/share/aios/logs/push.log')
-
-def _check():
-    if os.path.exists(_LOG) and (f := open(_LOG).read().strip()) and 'FAIL' in f and 'up-to-date' not in f: print(f"! {f}")
-    os.path.exists(_LOG) and open(_LOG, 'w').close()
+_DIR = os.path.expanduser('~/.local/share/aios/logs')
+_LOG, _OK = f'{_DIR}/push.log', f'{_DIR}/push.ok'
+_TTL = 600  # 10 min
 
 def run():
-    _check()
     cwd, msg = os.getcwd(), ' '.join(sys.argv[2:]) or f"Update {os.path.basename(os.getcwd())}"
-    os.makedirs(os.path.dirname(_LOG), exist_ok=True)
-    s = f'cd "{cwd}" && git add -A && git commit -m "{msg}" --allow-empty; r=$(git push 2>&1); echo "$r" | grep -q "up-to-date\\|OK\\|done\\|->\\|Everything" && echo "[OK]" > "{_LOG}" || echo "[FAIL] $r" > "{_LOG}"'
-    sp.Popen(['sh', '-c', s], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-    print(f"✓ {msg}")
+    os.makedirs(_DIR, exist_ok=True)
+
+    # Check if recent success (instant mode)
+    if os.path.exists(_OK) and time.time() - os.path.getmtime(_OK) < _TTL:
+        s = f'cd "{cwd}" && git add -A && git commit -m "{msg}" --allow-empty 2>/dev/null; git push 2>/dev/null; touch "{_OK}"'
+        sp.Popen(['sh', '-c', s], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        print(f"✓ {msg}")
+        return
+
+    # Real push (first time or expired)
+    sp.run(['git', 'add', '-A'], cwd=cwd)
+    sp.run(['git', 'commit', '-m', msg, '--allow-empty'], cwd=cwd, capture_output=True)
+    r = sp.run(['git', 'push'], cwd=cwd, capture_output=True, text=True)
+    if r.returncode == 0 or 'up-to-date' in r.stderr:
+        open(_OK, 'w').close()
+        print(f"✓ {msg}")
+    else:
+        print(f"✗ {r.stderr.strip() or r.stdout.strip()}")
