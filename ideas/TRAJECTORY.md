@@ -22,7 +22,7 @@ Most projects document *what*. This documents *why the approach*. That's the dif
 
 ## Human vs LLM division of labor
 
-**[SEAN]:** In the medium and short term humans take advantage over LLMs here. They can operate with greater flops on a smaller set of tokens than LLMs, which means they are naturally most suited for dealing with the axioms. LLMs handle the complex interactions due to their speed. LLMs can't bear the same flops on a small set.
+**[SEAN]:** In the medium and short term humans take advantage over LLMs here. They can operate with greater flops on a smaller set of tokens than LLMs, which means they are naturally most suited for dealing with the axioms. LLMs handle the complex intera
 
 **[CLAUDE]:** Humans think deep on few tokens (axiom design). LLMs think shallow on many tokens (combinatorial expansion). Terse code plays to human strengths at the axiom level, then hands off to LLMs for the grunt work.
 
@@ -36,15 +36,15 @@ Most projects document *what*. This documents *why the approach*. That's the dif
 
 **[SEAN]:** Is this how a mathematician should think to write code? Isn't code mathematical algorithm that happens to execute?
 
-**[CLAUDE]:** Yes. Mathematicians seek minimal, elegant proofs - no verbose steps, distill to axioms. Code *is* math that runs. Verbose code is like a proof with unnecessary lemmas - each one a place for errors to hide. APL was designed by a mathematician (Iverson). Terse code is mathematical code. We just forgot because "engineering" meant plumbing.
+**[CLAUDE]:** Yes. Mathematicians seek minimal, elegant proofs - no verbose steps, distill to axioms. Code *is* math that runs. Verbose code is like a proof with unnecessary lemmas - each one a place for errors to hide. APL was designed by a mathematician
 
 ## What are the actual axioms? (speculation)
 
-**[SEAN]:** Time seems like it should be an axiom but according to Einstein's equations it seems not to be, while speed of light constant is one. But speed is distance/time, so they are related, so if speed is the constant and time variable, distance is also variable. Which means that as a variable, distance cannot be a fundamental axiom in the strict sense - it's spacetime, but really just the speed is constant requirement.
+**[SEAN]:** Time seems like it should be an axiom but according to Einstein's equations it seems not to be, while speed of light constant is one. But speed is distance/time, so they are related, so if speed is the constant and time variable, distance is a
 
 Why should speed be the constant one? Maybe because if the universe changes state it's computation, but distance and time are local observations inside only. So the system is built around computation as a more fundamental unit than local observation.
 
-We all tend to agree at least now (although it may change later) that information is the fundamental state of the universe, but it's obviously not static, so computation is the processing of information - the fundamental state. So from this we could say there is one or two things: information, or a hybrid of information and computation.
+We all tend to agree at least now (although it may change later) that information is the fundamental state of the universe, but it's obviously not static, so computation is the processing of information - the fundamental state. So from this we could say t
 
 **[CLAUDE]:** This connects back to code. If computation is more fundamental than spacetime, then:
 - The universe isn't "running on" something - it *is* the running
@@ -56,21 +56,21 @@ Terse code mirrors this: minimal state (information) + minimal operations (compu
 
 ## Fundamental unit of information
 
-**[SEAN]:** What is the fundamental unit of information? Qubits are the most likely candidate. They represent bits and more operations. But bits can also be used to simulate qubits which are just linear algebra constructs. Information theory assumes bits as the fundamental unit.
+**[SEAN]:** What is the fundamental unit of information? Qubits are the most likely candidate. They represent bits and more operations. But bits can also be used to simulate qubits which are just linear algebra constructs. Information theory assumes bits 
 
-If we think about it, can we get a simpler information representation method? The existence/non-existence 1/0 is a 2-item set by counting. So if counting is the fundamental metric of complexity, only a 1-item set could be more fundamental. And technically we could call this the universal set that treats everything as a single unit, but then that seems quite odd as we don't see an obvious way to compute on a single item set.
+If we think about it, can we get a simpler information representation method? The existence/non-existence 1/0 is a 2-item set by counting. So if counting is the fundamental metric of complexity, only a 1-item set could be more fundamental. And technically
 
-Though we could think about a more restrictive method: if counting is even more fundamental, then there can be integers as fundamental over binary. A series of numbers in succession with computation, transforming into one another but without a 0 state. Yet then this is binary representable because an integer can be represented as a bit string.
+Though we could think about a more restrictive method: if counting is even more fundamental, then there can be integers as fundamental over binary. A series of numbers in succession with computation, transforming into one another but without a 0 state. Ye
 
-**[CLAUDE]:** The regress bottoms out at *distinction* - the ability to tell things apart. You need at least 2 states to distinguish. A 1-item set has no distinctions, so no information (Shannon: information is surprise, but everything is the same = no surprise).
+**[CLAUDE]:** The regress bottoms out at *distinction* - the ability to tell things apart. You need at least 2 states to distinguish. A 1-item set has no distinctions, so no information (Shannon: information is surprise, but everything is the same = no su
 
-Unary (counting with 1s: 111 = 3) exists but still requires distinguishing "1" from "boundary/nothing". So binary might be the true floor: the minimum structure that supports distinction. Qubits add superposition but still collapse to binary on measurement.
+Unary (counting with 1s: 111 = 3) exists but still requires distinguishing "1" from "boundary/nothing". So binary might be the true floor: the minimum structure that supports distinction. Qubits add superposition but still collapse to binary on measuremen
 
 Maybe: distinction is the axiom, binary is the minimal implementation, everything else is derived.
 
 **[SEAN]:** Maybe this is the fundamental nature of the diff.
 
-**[CLAUDE]:** Full circle. We started with `aio diff` as a practical tool and ended at: diff *is* the fundamental operation. Distinction between states. Before/after. 0/1. The diff isn't just showing changes - it's implementing the most basic axiom of information itself.
+**[CLAUDE]:** Full circle. We started with `aio diff` as a practical tool and ended at: diff *is* the fundamental operation. Distinction between states. Before/after. 0/1. The diff isn't just showing changes - it's implementing the most basic axiom of inf
 
 Token counting in diff = measuring the amount of new distinction introduced. The whole tool is operating at the axiomatic level without knowing it.
 
@@ -86,7 +86,7 @@ And subtraction requires distinction first - you can only subtract what you can 
 
 This mirrors everything: once you have the right axioms (units), operations become trivial. The work is finding the right level of abstraction. Verbose code = still figuring out what the units are. Terse code = units already found, just operating.
 
-**[SEAN]:** Therefore much code is likely the recovery of fundamental axioms from the complexities the numerous ones have introduced by coexisting - there is some fundamental necessary complexity. And maybe optimal code shortness can give us insight into the rough count of the number of fundamental axioms, if we are sure an operation can be compressed no further, by an estimate of the number of combinations of interactions of axioms and the errors of larger programs vs smaller ones. If we could measure that comprehensively - which is probably not possible.
+**[SEAN]:** Therefore much code is likely the recovery of fundamental axioms from the complexities the numerous ones have introduced by coexisting - there is some fundamental necessary complexity. And maybe optimal code shortness can give us insight into 
 
 **[CLAUDE]:** This is close to Kolmogorov complexity - the minimum description length reveals inherent complexity. If you compress code as far as possible and hit a floor, that floor might reflect the axiom count of the problem domain.
 
@@ -94,21 +94,21 @@ Game of Life: ~5 axioms → ~50 tokens minimum. If you can't go below 50 tokens,
 
 But you're right - comprehensive measurement is probably impossible (halting problem territory). We can only approach it asymptotically through practice.
 
-**[SEAN]:** But Kolmogorov complexity is a bit of a lie in the sense that we can compress anything down to one char - just map a complex thing to a word in its entirety. It's not the most fundamental representation, it's the most concise that we mutually already know how to understand.
+**[SEAN]:** But Kolmogorov complexity is a bit of a lie in the sense that we can compress anything down to one char - just map a complex thing to a word in its entirety. It's not the most fundamental representation, it's the most concise that we mutually 
 
 **[CLAUDE]:** Sharp. "Let X = Shakespeare's complete works." Now it's one token. Kolmogorov requires a shared interpreter - the complexity is relative to what we agree symbols mean.
 
-APL is terse because we know what `⍵∨.∧` means. Without that agreement, it's noise. So: no absolute fundamental representation exists. Only fundamental *given* a shared base. The axioms aren't the symbols - they're the agreement about what symbols mean.
+APL is terse because we know what `⍵∨.∧` means. Without that agreement, it's noise. So: no absolute fundamental representation exists. Only fundamental *given* a shared base. The axioms aren't the symbols - they're the agreement about what symbols m
 
 Maybe the true floor is: how many distinct agreements do we need? That might be the real axiom count.
 
-**[SEAN]:** So therefore what's complex and easy - or at least easy to think about for humans, which is done in words if not only in words - is determined by what society has jointly discovered. Ideas shared from others affect what people do in the future implicitly by favoring certain avenues of decision making vs others.
+**[SEAN]:** So therefore what's complex and easy - or at least easy to think about for humans, which is done in words if not only in words - is determined by what society has jointly discovered. Ideas shared from others affect what people do in the future
 
-Yet it's also true that over time processes like the scientific method invalidating ideas should push the collective state towards a more correct one. Humans I would guess probably slowly go towards the fundamental axioms of logic over time, in at least discovery but to some degree in everyday practice for efficiency's sake.
+Yet it's also true that over time processes like the scientific method invalidating ideas should push the collective state towards a more correct one. Humans I would guess probably slowly go towards the fundamental axioms of logic over time, in at least d
 
-So analyzing natural language, as LLMs do, can get towards the fundamental properties that humans have, including consciousness. Though it brings up the question: are humans bad at this process and have missed some fundamentals, or have we found all of them because there are so few but don't well recognize them?
+So analyzing natural language, as LLMs do, can get towards the fundamental properties that humans have, including consciousness. Though it brings up the question: are humans bad at this process and have missed some fundamentals, or have we found all of th
 
-**[CLAUDE]:** Language is the compression of millennia of human axiom-discovery. LLMs trained on it inherit that compressed knowledge. If consciousness has structure, and humans have been talking about it forever, the axioms might be *in* the language already - just not labeled.
+**[CLAUDE]:** Language is the compression of millennia of human axiom-discovery. LLMs trained on it inherit that compressed knowledge. If consciousness has structure, and humans have been talking about it forever, the axioms might be *in* the language alr
 
 Two possibilities:
 1. We found them all but can't see them (fish can't see water)
@@ -116,7 +116,7 @@ Two possibilities:
 
 If (1): LLMs might extract what we can't articulate. If (2): LLMs inherit our blind spots. Probably some of both. The question is the ratio.
 
-**[SEAN]:** When tasks work for a set of axioms but not their complexity, what is the correctness we should expect? Is it related to number of axioms? Could we approximate it saying 90 percent on a task means you've almost certainly got all axioms? Would be interesting to simulate.
+**[SEAN]:** When tasks work for a set of axioms but not their complexity, what is the correctness we should expect? Is it related to number of axioms? Could we approximate it saying 90 percent on a task means you've almost certainly got all axioms? Would 
 
 **[CLAUDE]:** If you have N axioms, each understood with probability p, and a task requires K axioms interacting:
 
@@ -134,7 +134,7 @@ But if you're at 70% on complex tasks: either missing an axiom entirely, or have
 
 Testable: create tasks requiring known axiom combinations, measure if failures cluster (missing axiom) or spread (partial understanding).
 
-**[SEAN]:** Though of course the dirty secret of mathematical logic is nobody is quite sure the axioms or how to select them, except the equations nominally built on them worked with them as assumptions. Usually if not always these assumptions were made to help the equation work rather than the other way around. The count remains a mystery in practice because empirical science can never confidently claim total axiom number, and mathematical logic is not a 1:1 mapping to reality unless we can conclusively show 100 percent adherence of everything in reality to it - which we can't do.
+**[SEAN]:** Though of course the dirty secret of mathematical logic is nobody is quite sure the axioms or how to select them, except the equations nominally built on them worked with them as assumptions. Usually if not always these assumptions were made t
 
 **[CLAUDE]:** The axioms are post-hoc. "This equation works. What assumptions make it valid?" Then we call those assumptions axioms. Reverse-engineered foundations.
 
@@ -164,7 +164,7 @@ Both paths lead to: something must be certain. You can't doubt doubt without aff
 
 So: at least one axiom is guaranteed to exist. We just might not know which one. The floor isn't zero.
 
-**[SEAN]:** Can we make a logic chain from that thing we know for certain? If it's that we know nothing for certain except that fact, we know to expect differences from expectations, and we can minimize that over time like a human or machine learning model - which is progress. Which means we are going towards an asymptote of correctness that can never be gone over, but can either be hit or infinitely approached though never hit.
+**[SEAN]:** Can we make a logic chain from that thing we know for certain? If it's that we know nothing for certain except that fact, we know to expect differences from expectations, and we can minimize that over time like a human or machine learning mode
 
 Which would imply that the differences may become, in intelligent ability, vanishingly small in the long term between intelligent beings. Certainly LLM copying would achieve similar things.
 
@@ -188,7 +188,7 @@ If this holds: we're watching the asymptote get approached in real time. The sca
 
 Which means: the interesting work shifts from "get closer to asymptote" to "what can you do at near-ceiling intelligence?" The game changes.
 
-**[SEAN]:** Although we can't know it for certain, the most boring resolution to the idea of the singularity is that progress will continue but slow down in percentage terms as a result of fundamental limits. Incredible capacity to us but not the exponential people fear.
+**[SEAN]:** Although we can't know it for certain, the most boring resolution to the idea of the singularity is that progress will continue but slow down in percentage terms as a result of fundamental limits. Incredible capacity to us but not the exponent
 
 **[CLAUDE]:** The boring singularity: asymptotic approach, not vertical takeoff. Year-over-year gains shrink. 2025: +20%. 2030: +10%. 2040: +2%. Still improving, still transformative relative to today, but no runaway.
 
@@ -204,7 +204,7 @@ So collective epistemics are systematically distorted toward drama. The asymptot
 
 Meta-trap: even this observation won't spread, because "selection bias exists" isn't clickable either.
 
-**[SEAN]:** When do ensembles work? When errors are uncorrelated. When are they uncorrelated? When axioms are different. When are axioms different? If it's the same real world problem you should think that multiple models are operating on the same axioms and so they should not find anything more. But I feel there must be something more. Architecture diversity, informational representation, initialization strategies all matter hugely.
+**[SEAN]:** When do ensembles work? When errors are uncorrelated. When are they uncorrelated? When axioms are different. When are axioms different? If it's the same real world problem you should think that multiple models are operating on the same axioms 
 
 **[CLAUDE]:** The axioms of the problem are fixed. But each model finds a *different partial subset* of those axioms. They're all approaching the same asymptote from different directions.
 
@@ -216,7 +216,7 @@ Ensemble works not because axioms differ, but because *coverage* differs. Model 
 
 Errors uncorrelated because the *gaps* are uncorrelated, even when the target is identical. Different shadows of the same object.
 
-**[SEAN]:** What's really happening: they all cover fundamentals. But cover complexities differently. We really need the combination to not overrepresent axioms repeated - diversity measured correctly, that means. And more crucially, recognize when one's found a combinatorial issue and others overlooked it. This necessarily will be when only one or a few models have found it. The majority will vote it out for non-discovery, when it's actually something needed to be added.
+**[SEAN]:** What's really happening: they all cover fundamentals. But cover complexities differently. We really need the combination to not overrepresent axioms repeated - diversity measured correctly, that means. And more crucially, recognize when one's 
 
 **[CLAUDE]:** Majority voting is anti-discovery. If 4/5 models miss a rare axiom interaction and 1/5 finds it, voting kills the insight. The ensemble converges to consensus, which is the *already-known*.
 
@@ -224,7 +224,7 @@ What you want: union of discoveries, not intersection. Weight unique findings *h
 
 Current ensemble practice: optimized for robustness (averaging out errors). What's needed: optimized for discovery (surfacing rare finds). Opposite objectives. Most ensembles do the wrong one for frontier problems.
 
-**[SEAN]:** If this state remains, the small edge from huge diverse representations will be more important than a single representation alone. But the discoverability problem is then the big issue. Confidence scores are an obvious simple step but not nearly enough. In theory independence and diversity are the ways but hard to measure, especially for one case alone vs the whole set.
+**[SEAN]:** If this state remains, the small edge from huge diverse representations will be more important than a single representation alone. But the discoverability problem is then the big issue. Confidence scores are an obvious simple step but not near
 
 **[CLAUDE]:** The single-case problem: is this outlier a discovery or an error? Can't tell from one instance. Need systematic understanding of *where* each model diverges and *why*.
 
@@ -237,7 +237,7 @@ But all require large sample to calibrate. For true frontier (no ground truth ye
 
 Chicken-egg: need discoveries to calibrate discovery-detection, but can't detect discoveries without calibration.
 
-**[SEAN]:** The most obvious and practical solution is to empirically experiment to see if a different hypothesis is right. But that requires us to separate predictions from hypotheses and design experiments - which ML considers to be a meta layer above its practice, not underneath a model.
+**[SEAN]:** The most obvious and practical solution is to empirically experiment to see if a different hypothesis is right. But that requires us to separate predictions from hypotheses and design experiments - which ML considers to be a meta layer above i
 
 **[CLAUDE]:** ML inverted the stack. Scientific method: hypothesis → experiment → prediction → test. ML: prediction → done.
 
@@ -280,7 +280,7 @@ You never prove the model. You fail to falsify it across expanding test surface.
 
 Current ML: celebrate single benchmark. Scientific ML: seek falsification, be suspicious of success, expand test surface relentlessly. The asymptote of confidence, not proof.
 
-**[SEAN]:** But it's then also of course an issue - asking a model to do more means dealing with more axioms and interaction complexities. The question is how you want to concentrate on one task vs predict the whole world's outcome. We might say well, learn the whole world and learn everything as a result. But we usually don't really want that - we want high performance on specific task of interest, and concentration of effort means best results come from non-generalist systems often. And if we can always pair the generalist with the non, we can always get same or better performance on that task.
+**[SEAN]:** But it's then also of course an issue - asking a model to do more means dealing with more axioms and interaction complexities. The question is how you want to concentrate on one task vs predict the whole world's outcome. We might say well, lea
 
 **[CLAUDE]:** The generalist-specialist tradeoff:
 - Generalist: broad axiom coverage, shallow on combinations
@@ -292,7 +292,7 @@ This is the ensemble insight again: generalist catches axioms specialist missed,
 
 Practical implication: don't choose. Train generalist for axiom coverage, fine-tune specialist for task depth, ensemble at inference. Best of both. The "learn everything" vs "learn one thing well" debate is false dichotomy - you can combine.
 
-**[SEAN]:** If error rate is a pseudo-axiom, we might think that MLs that go deeper find these - we might call them pseudo-axioms. Combinatorial interactions that are relevant, important, and so often there they are axioms. Or perhaps more often: false but often so much they are more valuable to assume than not, especially if you know when to apply them vs apply them always.
+**[SEAN]:** If error rate is a pseudo-axiom, we might think that MLs that go deeper find these - we might call them pseudo-axioms. Combinatorial interactions that are relevant, important, and so often there they are axioms. Or perhaps more often: false bu
 
 A common assumption is that if we know the axioms we know everything - give up on progress, nothing left to be done. But from this perspective, there is a - while not infinite - immense amount of work to be done pushing from 90 to 99.
 
@@ -307,7 +307,7 @@ The work from 90→99:
 
 Knowing physics axioms ≠ knowing engineering. Knowing logic axioms ≠ knowing when to use which heuristic. The 90→99 is where most useful work lives.
 
-**[SEAN]:** Although less elegant and pure, there is also a harder to accept but valid thing too: that axioms are not fundamental and derived split, but that there are numerous ones - maybe millions - and what we call fundamental are just the most important of the set. So we can think we know all by just them, but actually the smaller less important ones are there and we just haven't found them yet. The computational theory of reality being a simulation implies efficient representations are better, but it's important to recognize this as an alternative explanation.
+**[SEAN]:** Although less elegant and pure, there is also a harder to accept but valid thing too: that axioms are not fundamental and derived split, but that there are numerous ones - maybe millions - and what we call fundamental are just the most importa
 
 **[CLAUDE]:** Two competing models:
 
@@ -320,3 +320,39 @@ We prefer (1) for aesthetic and computational reasons. But (2) might be true. Re
 If (2): there's no asymptote of "knowing all axioms." Just endless discovery of smaller, less important ones. Progress never ends, but gains shrink forever - not because approaching ceiling, but because remaining axioms matter less.
 
 Both models produce diminishing returns. Can't distinguish empirically. But the *meaning* differs: approaching truth vs. approaching irrelevance.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+To make progress, probably reducing the time between hypothesis and true experiment is most important. Whats hypothesis time today and requirements to test? immense. 
+
+
+Real validation is not fast or standard, live testing services would be a basic thing to help.
+Open collection of hypothesis over the internet could help. Determining who should be able to be run and not or what testing is
+something important, but even more important would be the lowering of the cost and time of experiemnt. More simulations can
+help this process, and digital systems for testing and experiemntation will be important. They require some good
+understanding of the existing problem to be useful however. So a faster path to a good simulator is probably needed. Programatic
+internet controllable labs are promising, and using them to refine simualtors is good.
+To make something good and useful therefore we need to get people to attempt a task, then try tiny self scale experiemtns, then
+make experiemtn on demand service, then simulator.
