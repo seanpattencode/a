@@ -10,7 +10,7 @@ def run():
     elif os.path.isfile(arg):
         ext = os.path.splitext(arg)[1].lower()
         if ext == '.py':
-            os.execvp(sys.executable, [sys.executable, arg] + sys.argv[2:])
+            sys.exit(sp.run([sys.executable, arg] + sys.argv[2:]).returncode)
         elif ext in ('.html', '.htm'):
             __import__('webbrowser').open('file://' + os.path.abspath(arg))
         elif ext == '.md':
