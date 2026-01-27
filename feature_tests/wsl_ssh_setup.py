@@ -11,16 +11,43 @@ WIN_IP = WIN_IP.group() if WIN_IP else None
 print(f"WSL: {WSL_IP}  Windows: {WIN_IP}")
 if not WIN_IP: sys.exit("x No Windows LAN IP (192.168.1.x) found")
 
-sp.run("pgrep -x sshd || sudo service ssh start || sudo /usr/sbin/sshd", shell=True)
-sp.run(["powershell.exe", "-c", f"Start-Process powershell -Verb RunAs -Wait -ArgumentList '-c',\"netsh interface portproxy delete v4tov4 listenport=2222 listenaddress=0.0.0.0 2>\\$null; netsh interface portproxy add v4tov4 listenport=2222 listenaddress=0.0.0.0 connectport=22 connectaddress={WSL_IP}; netsh advfirewall firewall delete rule name=`\"WSL SSH`\" 2>\\$null; netsh advfirewall firewall add rule name=`\"WSL SSH`\" dir=in action=allow protocol=tcp localport=2222\""])
+sp.run("pgrep -x sshd >/dev/null || sudo service ssh start", shell=True)
 
-name, user, host = sys.argv[1] if len(sys.argv) > 1 else f"wsl-{os.uname().nodename}", getpass.getuser(), f"{getpass.getuser()}@{WIN_IP}:2222"
-print(f"Registering: {name} = {host}")
+# Check current state
+print("\n=== Checking port forward ===")
+pf = sp.run(["powershell.exe", "-c", "netsh interface portproxy show all"], capture_output=True, text=True).stdout
+print(pf if pf.strip() else "(none)")
+
+# Write and run admin script
+print("\n=== Setting up port forward (check Windows for UAC prompt) ===")
+ps_script = f'''
+netsh interface portproxy delete v4tov4 listenport=2222 listenaddress=0.0.0.0 2>$null
+netsh interface portproxy add v4tov4 listenport=2222 listenaddress=0.0.0.0 connectport=22 connectaddress={WSL_IP}
+netsh advfirewall firewall delete rule name="WSL SSH" 2>$null
+netsh advfirewall firewall add rule name="WSL SSH" dir=in action=allow protocol=tcp localport=2222
+echo "=== Result ==="
+netsh interface portproxy show all
+pause
+'''
+sp.run(["powershell.exe", "-c", f"Start-Process powershell -Verb RunAs -ArgumentList '-NoExit','-Command','{ps_script}'"])
+
+input("\nPress Enter after Windows admin window shows 'Result' with port forward...")
+
+# Verify
+print("\n=== Verifying ===")
+pf = sp.run(["powershell.exe", "-c", "netsh interface portproxy show all"], capture_output=True, text=True).stdout
+print(pf)
+if "2222" not in pf: sys.exit("x Port forward not set - run admin commands manually")
+
+# Register
+name = sys.argv[1] if len(sys.argv) > 1 else f"wsl-{os.uname().nodename}"
+host = f"{getpass.getuser()}@{WIN_IP}:2222"
+print(f"\nRegistering: {name} = {host}")
 pw = getpass.getpass("SSH password: ")
 
 sys.path.insert(0, os.path.expanduser("~/aio"))
 from aio_cmd._common import init_db, db, emit_event
 from aio_cmd.ssh import _enc
-init_db(); c = db(); c.execute("INSERT OR REPLACE INTO ssh(name,host,pw)VALUES(?,?,?)", (name, host, _enc(pw))); c.commit()
+init_db(); c = db(); c.execute("DELETE FROM ssh WHERE name=?", (name,)); c.execute("INSERT INTO ssh(name,host,pw)VALUES(?,?,?)", (name, host, _enc(pw))); c.commit()
 emit_event("ssh", "add", {"name": name, "host": host, "pw": _enc(pw)}, sync=True)
 print(f"✓ {name} = {host}\nTest: aio ssh {name}")
