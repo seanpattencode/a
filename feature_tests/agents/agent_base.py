@@ -5,7 +5,7 @@ from email.message import EmailMessage
 
 P=os.path.dirname(os.path.abspath(__file__))
 DB=os.path.join(P,"email.db")
-AIO=os.path.join(os.path.dirname(P),"aio.py")
+AIO=os.path.join(os.path.dirname(os.path.dirname(P)),"aio.py")
 GOALS=os.path.join(P,"goals.md")
 FILTERS=os.path.join(P,"great_filters.md")
 
