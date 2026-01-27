@@ -50,6 +50,8 @@ A fancy filing cabinet with guards. Not computation - just data movement.
 
 Most software is a glorified spreadsheet with authentication. The Turing-complete machine underneath is barely touched.
 
+Imagine hiring Alan Turing and telling him to file papers. That's what we do with computers.
+
 ## Current Fleet
 - Linux (Ubuntu) - full support
 - Android (Termux) - full support
