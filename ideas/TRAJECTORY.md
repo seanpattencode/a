@@ -306,3 +306,17 @@ The work from 90→99:
 "We know the axioms, we're done" assumes axioms are enough. But axioms × combinations × pseudo-axioms × scope conditions = immense space. The fundamentals are few; the applied knowledge built on them is vast.
 
 Knowing physics axioms ≠ knowing engineering. Knowing logic axioms ≠ knowing when to use which heuristic. The 90→99 is where most useful work lives.
+
+**[SEAN]:** Although less elegant and pure, there is also a harder to accept but valid thing too: that axioms are not fundamental and derived split, but that there are numerous ones - maybe millions - and what we call fundamental are just the most important of the set. So we can think we know all by just them, but actually the smaller less important ones are there and we just haven't found them yet. The computational theory of reality being a simulation implies efficient representations are better, but it's important to recognize this as an alternative explanation.
+
+**[CLAUDE]:** Two competing models:
+
+1. **Elegant**: Few true axioms, everything else derived. Simulation/Occam favors this. Clean hierarchy.
+
+2. **Messy**: Millions of axioms of varying importance. "Fundamental" is just "most important," not "only." No clean split.
+
+We prefer (1) for aesthetic and computational reasons. But (2) might be true. Reality under no obligation to be elegant.
+
+If (2): there's no asymptote of "knowing all axioms." Just endless discovery of smaller, less important ones. Progress never ends, but gains shrink forever - not because approaching ceiling, but because remaining axioms matter less.
+
+Both models produce diminishing returns. Can't distinguish empirically. But the *meaning* differs: approaching truth vs. approaching irrelevance.
