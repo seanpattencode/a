@@ -33,7 +33,9 @@ def _ok(m): print(f"✓ {m}")
 def _err(m): print(f"x {m}")
 def _die(m, c=1): _err(m); sys.exit(c)
 def _confirm(m): return input(f"{m} (y/n): ").strip().lower() in ['y', 'yes']
-def _up(h): return not (lambda s,hp: s.settimeout(0.5) or s.connect_ex((hp[0].split('@')[-1], int(hp[1]) if len(hp)>1 else 22)))(socket.socket(), h.rsplit(':',1))
+def _up(h):
+    try: s=socket.socket(); s.settimeout(0.5); hp=h.rsplit(':',1); return not s.connect_ex((hp[0].split('@')[-1], int(hp[1]) if len(hp)>1 else 22))
+    except: return False
 def _in_repo(p):
     while p != '/' and not os.path.exists(p+'/.git'): p = os.path.dirname(p)
     return p != '/'

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """WSL SSH Setup - run on WSL to enable SSH access from LAN"""
-import sys, os, subprocess as sp, getpass
+import sys, os, subprocess as sp, getpass, re
 
 if not os.path.exists('/proc/version') or 'microsoft' not in open('/proc/version').read().lower():
     sys.exit("x Not WSL")
 
 WSL_IP = sp.run("hostname -I", shell=True, capture_output=True, text=True).stdout.split()[0]
-WIN_IP = sp.run(["powershell.exe", "-c", "(Get-NetIPAddress -AddressFamily IPv4|Where-Object{$_.InterfaceAlias -notmatch 'Loopback|vEthernet|WSL' -and $_.IPAddress -match '^192\\.'}).IPAddress"], capture_output=True, text=True).stdout.strip()
+WIN_IP = re.search(r'192\.168\.1\.\d+', sp.run(["powershell.exe", "-c", "ipconfig"], capture_output=True, text=True).stdout)
+WIN_IP = WIN_IP.group() if WIN_IP else None
 print(f"WSL: {WSL_IP}  Windows: {WIN_IP}")
-if not WIN_IP: sys.exit("x No Windows LAN IP found")
+if not WIN_IP: sys.exit("x No Windows LAN IP (192.168.1.x) found")
 
 sp.run("pgrep -x sshd || sudo service ssh start || sudo /usr/sbin/sshd", shell=True)
 sp.run(["powershell.exe", "-c", f"Start-Process powershell -Verb RunAs -Wait -ArgumentList '-c',\"netsh interface portproxy delete v4tov4 listenport=2222 listenaddress=0.0.0.0 2>\\$null; netsh interface portproxy add v4tov4 listenport=2222 listenaddress=0.0.0.0 connectport=22 connectaddress={WSL_IP}; netsh advfirewall firewall delete rule name=`\"WSL SSH`\" 2>\\$null; netsh advfirewall firewall add rule name=`\"WSL SSH`\" dir=in action=allow protocol=tcp localport=2222\""])
