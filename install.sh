@@ -54,20 +54,19 @@ case $OS in
     debian)
         if [[ -n "$SUDO" ]]; then
             export DEBIAN_FRONTEND=noninteractive
-            $SUDO apt-get update -qq
-            $SUDO apt-get install -y -qq tmux git curl nodejs npm python3-pip 2>/dev/null || true
-            ok "system packages"
+            $SUDO apt update -qq && $SUDO apt install -yqq tmux git curl nodejs npm python3-pip sshpass 2>/dev/null || true
+            ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; fi
         ;;
     arch)
-        if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip 2>/dev/null && ok "system packages"
+        if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip sshpass 2>/dev/null && ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi
         ;;
     fedora)
-        if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip 2>/dev/null && ok "system packages"
+        if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip sshpass 2>/dev/null && ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi
         ;;
-    termux) pkg update -y && pkg install -y tmux nodejs git python openssh sshpass && ok "system packages" ;;
+    termux) pkg update -y && pkg install -y tmux nodejs git python openssh sshpass && ok "pkgs" ;;
     *) install_node; warn "Unknown OS - install tmux manually" ;;
 esac
 

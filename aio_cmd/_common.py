@@ -438,11 +438,10 @@ def replay_events(tables=None):
     for t, items in state.items():
         active = {k: v for k, v in items.items() if not v.get("_archived")}
         archived = {k: v for k, v in items.items() if v.get("_archived")}
-        if t == "ssh": c.execute("DELETE FROM ssh"); [c.execute("INSERT OR REPLACE INTO ssh(name,host)VALUES(?,?)", (v.get("name",k), v.get("host",""))) for k,v in active.items()]
+        if t == "ssh": c.execute("CREATE TABLE IF NOT EXISTS ssh(name PRIMARY KEY,host,pw)"); c.execute("DELETE FROM ssh"); [c.execute("INSERT OR REPLACE INTO ssh(name,host)VALUES(?,?)", (v.get("name",k), v.get("host",""))) for k,v in active.items()]
         elif t == "notes":
-            c.execute("DELETE FROM notes WHERE id LIKE '________'")  # only delete event-based notes (8-char hex ids)
-            for k,v in active.items(): c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj,dev)VALUES(?,?,0,?,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj"), v.get("_dev")))
-            for k,v in archived.items(): c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj,dev)VALUES(?,?,1,?,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj"), v.get("_dev")))
+            try: c.execute("DELETE FROM notes WHERE id LIKE '________'"); [c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj,dev)VALUES(?,?,0,?,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj"), v.get("_dev"))) for k,v in active.items()]; [c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj,dev)VALUES(?,?,1,?,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj"), v.get("_dev"))) for k,v in archived.items()]
+            except: pass
     c.commit(); c.close()
 
 # Append-only sync: only events.jsonl synced (text, auto-merges), aio.db is local cache
