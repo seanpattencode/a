@@ -52,9 +52,9 @@ def run():
             ip, p = sp.run("ipconfig getifaddr en0", shell=True, capture_output=True, text=True).stdout.strip() or _sshd_ip(), _sshd_port()
         # === Linux/Termux: use local IP ===
         else: ip, p = sp.run("hostname -I 2>/dev/null | awk '{print $1}'", shell=True, capture_output=True, text=True).stdout.strip() or _sshd_ip(), _sshd_port()
-        # Register
-        u = os.environ.get('USER','user'); h = f"{u}@{ip}" + (f":{p}" if p != 22 else ""); n = (sys.argv[3:] or [u])[0]; pw=input("Pw: ").strip()
-        sp.run(['sshpass','-p',pw,'ssh','-o','StrictHostKeyChecking=no','localhost','exit'],capture_output=True).returncode and _die("x bad pw")
+        # self [name] [pw]
+        u=os.environ.get('USER','user'); h=f"{u}@{ip}"+(f":{p}"if p!=22 else""); a=sys.argv[3:]; n=a[0]if a else u; pw=a[1]if len(a)>1 else input("Pw:").strip()
+        os.system(f'sshpass -p "{pw}" ssh -oStrictHostKeyChecking=no -p{p} localhost exit')or 0
         (c:=db()).execute("INSERT OR REPLACE INTO ssh(name,host,pw)VALUES(?,?,?)",(n,h,_enc(pw))); c.commit(); emit_event("ssh","add",{"name":n,"host":h,"pw":_enc(pw)}); db_sync(); print(f"✓ {n}={h}"); return
     if wda in ('info','i'): [print(f"{n}: ssh {'-p '+hp[1]+' ' if len(hp:=h.rsplit(':',1))>1 else ''}{hp[0]}") for n,h in hosts]; return
     if wda in ('all','*') and len(sys.argv)>3:
