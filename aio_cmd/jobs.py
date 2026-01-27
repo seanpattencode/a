@@ -27,7 +27,8 @@ def run():
     if rm and rm.isdigit() and (i := int(rm)) < len(jobs):
         j = jobs[i]; [sp.run(['tmux', 'kill-session', '-t', s], capture_output=True) for s in j['s']]
         j['wt'] and shutil.rmtree(j['p'], ignore_errors=True); print(f"✓ {j['n']}"); return
-    if sel and sel.isdigit() and (i := int(sel)) < len(jobs) and jobs[i]['s']: tm.go(jobs[i]['s'][0])
+    if sel and sel.isdigit() and (i := int(sel)) < len(jobs):
+        j = jobs[i]; j['s'] and tm.go(j['s'][0]); os.chdir(j['p']); os.execvp('bash', ['bash'])
     print("Agent worktrees with sessions\n")
     for i, j in enumerate(jobs):
         st = '●' if j['a'] else '○'; ctd = f" {j['ctd']}" if j['ctd'] else ''
