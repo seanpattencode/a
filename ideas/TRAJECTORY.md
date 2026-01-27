@@ -203,3 +203,106 @@ Probably the most likely outcome. Also the least interesting to write about, whi
 So collective epistemics are systematically distorted toward drama. The asymptote/boring-singularity thesis has near-zero viral coefficient. It will remain underweighted regardless of its probability.
 
 Meta-trap: even this observation won't spread, because "selection bias exists" isn't clickable either.
+
+**[SEAN]:** When do ensembles work? When errors are uncorrelated. When are they uncorrelated? When axioms are different. When are axioms different? If it's the same real world problem you should think that multiple models are operating on the same axioms and so they should not find anything more. But I feel there must be something more. Architecture diversity, informational representation, initialization strategies all matter hugely.
+
+**[CLAUDE]:** The axioms of the problem are fixed. But each model finds a *different partial subset* of those axioms. They're all approaching the same asymptote from different directions.
+
+- Architecture → different inductive biases → different axiom subsets prioritized
+- Initialization → different local minima → different approximations of same axioms
+- Representation → different projections of same underlying truth
+
+Ensemble works not because axioms differ, but because *coverage* differs. Model A has axioms {1,2,3}, Model B has {2,3,4}. Neither complete. Together: {1,2,3,4}. Closer to full set.
+
+Errors uncorrelated because the *gaps* are uncorrelated, even when the target is identical. Different shadows of the same object.
+
+**[SEAN]:** What's really happening: they all cover fundamentals. But cover complexities differently. We really need the combination to not overrepresent axioms repeated - diversity measured correctly, that means. And more crucially, recognize when one's found a combinatorial issue and others overlooked it. This necessarily will be when only one or a few models have found it. The majority will vote it out for non-discovery, when it's actually something needed to be added.
+
+**[CLAUDE]:** Majority voting is anti-discovery. If 4/5 models miss a rare axiom interaction and 1/5 finds it, voting kills the insight. The ensemble converges to consensus, which is the *already-known*.
+
+What you want: union of discoveries, not intersection. Weight unique findings *higher*, not lower. The lone model that found something others missed is the valuable signal, not noise to be averaged out.
+
+Current ensemble practice: optimized for robustness (averaging out errors). What's needed: optimized for discovery (surfacing rare finds). Opposite objectives. Most ensembles do the wrong one for frontier problems.
+
+**[SEAN]:** If this state remains, the small edge from huge diverse representations will be more important than a single representation alone. But the discoverability problem is then the big issue. Confidence scores are an obvious simple step but not nearly enough. In theory independence and diversity are the ways but hard to measure, especially for one case alone vs the whole set.
+
+**[CLAUDE]:** The single-case problem: is this outlier a discovery or an error? Can't tell from one instance. Need systematic understanding of *where* each model diverges and *why*.
+
+Possible approaches:
+- Track disagreement patterns across many cases, cluster them
+- When model X disagrees, is it usually right or wrong? Context-dependent
+- Meta-model: predict when minority opinion is discovery vs error
+
+But all require large sample to calibrate. For true frontier (no ground truth yet), you're blind. The one case where discovery matters most is exactly where you can't measure it.
+
+Chicken-egg: need discoveries to calibrate discovery-detection, but can't detect discoveries without calibration.
+
+**[SEAN]:** The most obvious and practical solution is to empirically experiment to see if a different hypothesis is right. But that requires us to separate predictions from hypotheses and design experiments - which ML considers to be a meta layer above its practice, not underneath a model.
+
+**[CLAUDE]:** ML inverted the stack. Scientific method: hypothesis → experiment → prediction → test. ML: prediction → done.
+
+Hypothesis formation and experimental design are treated as human jobs (research design, hyperparameter search), not model capabilities. The model pattern-matches but doesn't ask "how would I test if I'm wrong?"
+
+To fix discovery: models need to internalize the scientific method. Not predict, but hypothesize. Not output, but propose experiment. The meta-layer needs to become the base layer.
+
+Current ML: pattern recognition. Needed: embedded epistemology.
+
+**[SEAN]:** The real test is: you did X on image test dataset, but not "how did you do on holdout" - but "how did you do on these 5 images we just took today now that never existed before?"
+
+**[CLAUDE]:** Holdout tests interpolation within distribution. Real test is extrapolation to reality.
+
+The 5 images from today:
+- Can't have leaked into training
+- Represent actual current distribution
+- Test generalization, not memorization
+
+Benchmark scores mean: "good at this frozen slice of past." Real performance means: "good at what's happening now."
+
+The gap between benchmark and reality is the gap between interpolation and extrapolation. Most ML optimizes the wrong one. High benchmark, collapses on novel input = found patterns, not axioms.
+
+**[SEAN]:** But even these have biases and problems. Take a million new pictures from a street cam - all are fresh, and it's useful, but not the same as an Instagram photo.
+
+**[CLAUDE]:** Fresh ≠ unbiased. Street cam: same angle, lighting, subjects. Instagram: different composition, filters, context. Both "new" but different distributions.
+
+You can't sample "all possible images" - the space is infinite. Every source is a biased window. Fresh just means "not seen before," not "representative of everything."
+
+So even the real test has limits. Best you can do: diverse fresh sources. Street cam + Instagram + medical scan + satellite + hand-drawn. Coverage over any single "fresh" stream.
+
+The asymptote again: can approach representative, never reach it. Always some distribution you haven't sampled.
+
+**[SEAN]:** ML is not science without testing. Benchmarks are single tests. But science requires falsifiability and experiment - only the suite of all possible tests can prove you, and while you can't get those, you can get closer and closer.
+
+**[CLAUDE]:** One benchmark = one experiment. Science requires *systematic* falsification attempts across diverse conditions.
+
+Model passes ImageNet: one test. Model passes ImageNet + street cam + Instagram + adversarial + out-of-distribution + temporal shift: approaching science.
+
+You never prove the model. You fail to falsify it across expanding test surface. The more diverse the failures-to-falsify, the more confidence.
+
+Current ML: celebrate single benchmark. Scientific ML: seek falsification, be suspicious of success, expand test surface relentlessly. The asymptote of confidence, not proof.
+
+**[SEAN]:** But it's then also of course an issue - asking a model to do more means dealing with more axioms and interaction complexities. The question is how you want to concentrate on one task vs predict the whole world's outcome. We might say well, learn the whole world and learn everything as a result. But we usually don't really want that - we want high performance on specific task of interest, and concentration of effort means best results come from non-generalist systems often. And if we can always pair the generalist with the non, we can always get same or better performance on that task.
+
+**[CLAUDE]:** The generalist-specialist tradeoff:
+- Generalist: broad axiom coverage, shallow on combinations
+- Specialist: narrow axioms, deep on relevant combinations
+
+For any specific task: specialist often wins. But generalist + specialist ≥ either alone.
+
+This is the ensemble insight again: generalist catches axioms specialist missed, specialist catches combinations generalist glossed over. Pair them, get both.
+
+Practical implication: don't choose. Train generalist for axiom coverage, fine-tune specialist for task depth, ensemble at inference. Best of both. The "learn everything" vs "learn one thing well" debate is false dichotomy - you can combine.
+
+**[SEAN]:** If error rate is a pseudo-axiom, we might think that MLs that go deeper find these - we might call them pseudo-axioms. Combinatorial interactions that are relevant, important, and so often there they are axioms. Or perhaps more often: false but often so much they are more valuable to assume than not, especially if you know when to apply them vs apply them always.
+
+A common assumption is that if we know the axioms we know everything - give up on progress, nothing left to be done. But from this perspective, there is a - while not infinite - immense amount of work to be done pushing from 90 to 99.
+
+**[CLAUDE]:** Pseudo-axioms: heuristics so reliable they function as axioms in context. Not universally true, but true enough that assuming them beats not assuming them - *when correctly scoped*.
+
+The work from 90→99:
+- Finding pseudo-axioms for each domain
+- Learning when they apply vs when they break
+- Handling the exceptions without losing the rule
+
+"We know the axioms, we're done" assumes axioms are enough. But axioms × combinations × pseudo-axioms × scope conditions = immense space. The fundamentals are few; the applied knowledge built on them is vast.
+
+Knowing physics axioms ≠ knowing engineering. Knowing logic axioms ≠ knowing when to use which heuristic. The 90→99 is where most useful work lives.
