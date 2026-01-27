@@ -24,6 +24,32 @@ Everything else - GUIs, REST APIs, cloud platforms - are abstractions on top. So
 
 Multi-device control was inevitable the moment people had more than one PC. We just never normalized it.
 
+## Actual vs Theoretical Capability
+
+**SQL CRUD is not Turing complete:**
+- CREATE, READ, UPDATE, DELETE - declarative data shuffling
+- No loops, no branching, no recursion (basic SQL)
+- Recursive CTEs make it technically Turing complete, but nobody uses that
+
+**Most apps are:**
+```
+User → API → Validate → DB Write → DB Read → Format → Response
+```
+A fancy filing cabinet with guards. Not computation - just data movement.
+
+**What we have vs what we use:**
+
+| Layer | Capability | Typical Use |
+|-------|-----------|-------------|
+| CPU | Any computable function | ~0.001% |
+| Kernel | Full system control | ~1% |
+| Terminal | Direct kernel access | ~5% of devs |
+| SSH | Remote kernel access | ~2% of devs |
+| REST API | HTTP request/response | 80% of apps |
+| CRUD | Data in, data out | 95% of apps |
+
+Most software is a glorified spreadsheet with authentication. The Turing-complete machine underneath is barely touched.
+
 ## Current Fleet
 - Linux (Ubuntu) - full support
 - Android (Termux) - full support
