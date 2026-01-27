@@ -156,8 +156,10 @@ elif command -v python3 &>/dev/null; then python3 -m ensurepip --user 2>/dev/nul
 
 # Ollama (local LLMs)
 if ! command -v ollama &>/dev/null; then
-    info "Installing ollama..."
-    curl -fsSL https://ollama.com/install.sh | sh && ok "ollama" || warn "ollama install failed"
+    if [[ -n "$SUDO" ]] || [[ $EUID -eq 0 ]]; then
+        info "Installing ollama..."
+        curl -fsSL https://ollama.com/install.sh | sh && ok "ollama" || warn "ollama install failed"
+    else warn "ollama needs sudo - run: curl -fsSL https://ollama.com/install.sh | sudo sh"; fi
 else ok "ollama (exists)"; fi
 
 # Enable aio tmux config if no existing tmux.conf (adds mouse support, status bar)
