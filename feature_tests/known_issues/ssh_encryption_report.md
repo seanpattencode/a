@@ -121,9 +121,32 @@ attacker (no key): ✗ cannot decrypt
 
 4. Re-encrypt existing passwords for all registered devices
 
+## Additional Finding: PyNaCl (libsodium)
+
+```python
+from nacl.public import PrivateKey,PublicKey,SealedBox
+def _enc(t,pub): return base64.b64encode(SealedBox(pub).encrypt(t.encode())).decode() if t else None
+def _dec(c,priv):
+    try: return SealedBox(priv).decrypt(base64.b64decode(c)).decode()
+    except: return None
+```
+
+**Stats:** 66 tokens (lowest!)
+**Requires:** `python-pynacl` package (libsodium wrapper)
+
+## Final Comparison
+
+| Implementation | Tokens | Security | Dependency |
+|----------------|--------|----------|------------|
+| **PyNaCl** | **66** | per-device | python-pynacl |
+| age CLI | 78 | per-device | age binary |
+| Current XOR | 102 | shared key | none |
+| OpenSSL symmetric | 105 | shared key | preinstalled |
+| cryptography lib | 180 | per-device | often preinstalled |
+
 ## Conclusion
 
-**Surprising finding:** Per-device encryption with `age` is both MORE secure AND FEWER tokens than current shared-key XOR.
+**Surprising finding:** Per-device encryption with `age` or `PyNaCl` is both MORE secure AND FEWER tokens than current shared-key XOR.
 
 The trade-off is the `age` dependency (~1MB binary), which could be bundled with aio install.
 
