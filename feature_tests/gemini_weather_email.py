@@ -21,8 +21,8 @@ def send(subj,body):
 
 def weather():
     try:
-        claude=shutil.which('claude')or os.path.expanduser('~/.local/bin/claude')
-        r=subprocess.run([claude,'-p','--allowedTools','WebSearch'],input='NYC weather in 10 words or less',capture_output=True,text=True,timeout=30)
+        gemini=shutil.which('gemini')or os.path.expanduser('~/.local/bin/gemini')
+        r=subprocess.run([gemini,'NYC weather in 10 words or less'],capture_output=True,text=True,timeout=60)
         return r.stdout.strip() if r.returncode==0 else "weather unavailable"
     except:return "weather unavailable"
 
