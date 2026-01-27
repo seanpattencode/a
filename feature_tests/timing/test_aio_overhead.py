@@ -1,68 +1,38 @@
 #!/usr/bin/env python3
-"""Test aio timing overhead vs direct python execution
+"""Test aio timing overhead - shell fast-path vs Python fallback"""
+import subprocess as sp, tempfile, os, statistics, re, json
 
-Measures:
-- Direct python execution time
-- aio wrapper overhead
-- Overhead as percentage
-- Scaling with script duration
-"""
-import subprocess as sp, tempfile, os, statistics
-
+N = 5
 AIO = os.path.expanduser("~/projects/aio/aio.py")
-N = 5  # runs per test
+TIMING = os.path.expanduser("~/.local/share/aios/timing.jsonl")
 
-def time_cmd(cmd):
-    """Return execution time in ms"""
+def time_direct(cmd):
     times = []
     for _ in range(N):
-        r = sp.run(cmd, shell=True, capture_output=True, text=True)
-        # Parse 'real' time from time command output
-        import re
-        m = re.search(r'(\d+\.\d+) total', r.stderr) or re.search(r'real\s+0m([\d.]+)s', r.stderr)
+        r = sp.run(f'time {cmd}', shell=True, capture_output=True, text=True)
+        m = re.search(r'(\d+\.\d+) total', r.stderr) or re.search(r'real\t0m([\d.]+)s', r.stderr)
         if m: times.append(float(m.group(1)) * 1000)
-    return statistics.mean(times) if times else 0, statistics.stdev(times) if len(times) > 1 else 0
+    return statistics.mean(times) if times else 0
 
-def test_overhead():
-    scripts = [
-        ("noop", "pass"),
-        ("print", "print('x')"),
-        ("sleep_10ms", "import time; time.sleep(0.01)"),
-        ("sleep_100ms", "import time; time.sleep(0.1)"),
-        ("sleep_500ms", "import time; time.sleep(0.5)"),
-        ("import_json", "import json; json.dumps({'a':1})"),
-        ("import_heavy", "import subprocess, sqlite3, json, re, os, sys"),
-    ]
+def time_shell_aio(path):
+    times = []
+    for _ in range(N):
+        sp.run(['zsh', '-i', '-c', f'aio {path}'], capture_output=True, stdin=sp.DEVNULL)
+        with open(TIMING) as f: last = json.loads(f.readlines()[-1])
+        if last['cmd'] == path: times.append(last['ms'])
+    return statistics.mean(times) if times else 0
 
-    print(f"{'Script':<15} {'Direct':>10} {'Via aio':>10} {'Overhead':>10} {'%':>8}")
+def test():
+    scripts = [("noop", "pass"), ("print", "print('x')"), ("sleep_100ms", "import time; time.sleep(0.1)"), ("sleep_500ms", "import time; time.sleep(0.5)")]
+    print(f"{'Script':<12} {'Direct':>8} {'Shell aio':>10} {'Py aio':>8} {'Shell':>7} {'Py':>7}")
     print("-" * 58)
-
-    results = []
     for name, code in scripts:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-            f.write(code)
-            f.flush()
-            path = f.name
-
-        direct_ms, direct_std = time_cmd(f"time python3 {path} 2>&1")
-        aio_ms, aio_std = time_cmd(f"time python3 {AIO} {path} 2>&1")
-        overhead = aio_ms - direct_ms
-        pct = (overhead / direct_ms * 100) if direct_ms > 0 else 0
-
-        print(f"{name:<15} {direct_ms:>7.1f}ms {aio_ms:>7.1f}ms {overhead:>+7.1f}ms {pct:>7.1f}%")
-        results.append((name, direct_ms, aio_ms, overhead, pct))
+            f.write(code); path = f.name
+        direct = time_direct(f"python3 {path}")
+        shell = time_shell_aio(path)
+        pyaio = time_direct(f"python3 {AIO} {path}")
+        print(f"{name:<12} {direct:>6.0f}ms {shell:>8.0f}ms {pyaio:>6.0f}ms {shell-direct:>+5.0f}ms {pyaio-direct:>+5.0f}ms")
         os.unlink(path)
 
-    print("-" * 58)
-    avg_overhead = statistics.mean(r[3] for r in results)
-    print(f"{'Average overhead:':<15} {avg_overhead:>+28.1f}ms")
-
-    # Test aio commands directly
-    print(f"\n{'aio command':<20} {'Time':>10}")
-    print("-" * 32)
-    for cmd in ["help", "ssh", "diff"]:
-        ms, _ = time_cmd(f"time python3 {AIO} {cmd} 2>&1")
-        print(f"aio {cmd:<16} {ms:>7.1f}ms")
-
-if __name__ == '__main__':
-    test_overhead()
+if __name__ == '__main__': test()
