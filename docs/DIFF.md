@@ -71,8 +71,6 @@ Terse code:    Hard to read once, easy to maintain forever
 
 It's anti-enterprise philosophy: "readable" 500-line Java class vs "cryptic" 50-line Python that does the same thing. The Python has 10x fewer failure points.
 
-If you can't read APL you aren't a real programmer, we could joke.
-
 ## Design decisions
 
 - Pragmatic over pure: Shows real commit size, not git staging state
