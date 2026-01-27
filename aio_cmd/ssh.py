@@ -15,7 +15,7 @@ def run():
     init_db(); db_sync(pull=True)
     wda = sys.argv[2] if len(sys.argv) > 2 else None
 
-    def _sshd_running(): return sp.run(['pgrep', '-x', 'sshd'], capture_output=True).returncode == 0
+    def _sshd_running(): return not os.system('nc -z localhost 22 2>&-||nc -z localhost 8022 2>&-')
     def _sshd_ip(): r = sp.run("ipconfig getifaddr en0 2>/dev/null || ifconfig 2>/dev/null | grep -A1 'wlan0\\|en0' | grep inet | awk '{print $2}'", shell=True, capture_output=True, text=True); return r.stdout.strip() or '?'
     def _sshd_port(): return 8022 if os.environ.get('TERMUX_VERSION') else 22
 
