@@ -44,6 +44,7 @@ class TM:
     def new(self, n, d, c, e=None): return sp.run(['tmux', 'new-session', '-d', '-s', n, '-c', d] + ([c] if c else []), capture_output=True, env=e)
     def send(self, n, t): return sp.run(['tmux', 'send-keys', '-l', '-t', n, t])
     def attach(self, n): return ['tmux', 'attach', '-t', n]
+    def go(self, n): os.execvp('tmux', ['tmux', 'switch-client' if 'TMUX' in os.environ else 'attach', '-t', n])
     def has(self, n):
         try: return sp.run(['tmux', 'has-session', '-t', n], capture_output=True, timeout=2).returncode == 0
         except sp.TimeoutExpired: return (sp.run(['pkill', '-9', 'tmux']), False)[1] if input("! tmux hung. Kill? (y/n): ").lower() == 'y' else sys.exit(1)
