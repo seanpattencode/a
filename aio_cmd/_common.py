@@ -453,9 +453,10 @@ def replay_events(tables=None):
 
 # Append-only sync: only events.jsonl synced (text, auto-merges), aio.db is local cache
 def db_sync(pull=False):
-    if not os.path.isdir(f"{DATA_DIR}/.git") and not (shutil.which('gh') and (u:=sp.run(['gh','repo','view','aio-sync','--json','url','-q','.url'],capture_output=True,text=True).stdout.strip() or sp.run(['gh','repo','create','aio-sync','--private','-y'],capture_output=True,text=True).stdout.strip()) and sp.run(f'cd "{DATA_DIR}"&&git init -b main -q;git remote add origin {u} 2>/dev/null;git fetch origin 2>/dev/null&&git reset --hard origin/main 2>/dev/null||(git add -A&&git commit -m init -q&&git push -u origin main 2>/dev/null)',shell=True,capture_output=True) and os.path.isdir(f"{DATA_DIR}/.git")): return True
+    if not os.path.isdir(f"{DATA_DIR}/.git") or not shutil.which('gh') or sp.run(['gh','auth','status'],capture_output=True).returncode!=0:
+        pull and replay_events(['ssh', 'notes', 'hub']); return True
     gi, df = f"{DATA_DIR}/.gitignore", f"{DATA_DIR}/.device"; ".device" not in (Path(gi).read_text() if os.path.exists(gi) else "") and Path(gi).write_text("*.db*\n*.log\nlogs/\n*cache*\ntiming.jsonl\nnotebook/\n.device\n"); dev = Path(df).read_text() if os.path.exists(df) else None
-    sp.run(f'gh auth status -q 2>&1 && cd "{DATA_DIR}" && git add -A; git -c user.name=aio -c user.email=a@a commit -qm sync 2>/dev/null; git fetch -q && git -c user.name=aio -c user.email=a@a merge -q --no-edit origin/main 2>/dev/null; git push -q 2>/dev/null', shell=True, capture_output=True); dev and Path(df).write_text(dev)
+    sp.run(f'cd "{DATA_DIR}"&&git add -A;git -c user.name=aio -c user.email=a@a commit -qm sync 2>/dev/null;git fetch -q&&git -c user.name=aio -c user.email=a@a merge -q --no-edit origin/main 2>/dev/null;git push -q 2>/dev/null',shell=True,capture_output=True); dev and Path(df).write_text(dev)
     pull and replay_events(['ssh', 'notes', 'hub']); return True
 
 def auto_backup():
