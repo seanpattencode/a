@@ -93,7 +93,7 @@ case $OS in
         if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip sshpass 2>/dev/null && ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi
         ;;
-    termux) pkg update -y && pkg install -y tmux nodejs git python openssh sshpass && ok "pkgs" ;;
+    termux) pkg update -y && pkg install -y tmux nodejs git python openssh sshpass gh && ok "pkgs" ;;
     *) install_node; warn "Unknown OS - install tmux manually" ;;
 esac
 
@@ -168,8 +168,8 @@ else ok "ollama (exists)"; fi
 # Generate cache
 python3 "$BIN/aio" >/dev/null 2>&1 && ok "cache generated"
 
-# Setup sync if gh is logged in
-command -v gh &>/dev/null && gh auth status &>/dev/null && python3 "$BIN/aio" backup setup 2>/dev/null && ok "sync configured"
+# Setup sync (prompt gh login if needed)
+command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && read -p "Login? (y/n): " yn && [[ "$yn" =~ ^[Yy] ]] && gh auth login; }; gh auth status &>/dev/null && python3 "$BIN/aio" backup setup 2>/dev/null && ok "sync configured"; }
 
 # Final message
 echo ""
