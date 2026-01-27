@@ -27,9 +27,29 @@ Untracked files in the repo = "I made this, will commit it, just haven't `git ad
 - **tokens**: Estimated using tiktoken (cl100k_base), falls back to len/4
 - **incl. N untracked**: Notes when untracked files are counted
 
+## Why tokens matter
+
+> token counting is complexity counting is error probability counting
+
+Token count is a proxy for:
+
+```
+tokens ≈ complexity ≈ surface area for bugs ≈ review difficulty
+```
+
+A +500 token commit isn't just "bigger" - it's statistically more likely to contain bugs, harder to review, and more likely to have unintended interactions.
+
+**Implications:**
+- High token commits deserve more testing
+- Negative token commits (refactors that simplify) actively reduce risk
+- Per-file token counts show where the risk concentrates
+- "I'll split this" becomes a risk management decision, not just cleanliness
+
+**The insight:** You're not counting words. You're counting potential failure points.
+
 ## Design decisions
 
 - Pragmatic over pure: Shows real commit size, not git staging state
 - Untracked files count as additions: User will add them anyway
-- Token counting: Useful for estimating PR review effort and LLM context usage
+- Token counting: Risk/complexity metric, not vanity metric
 - Truncated file list: Keeps output scannable for large changesets
