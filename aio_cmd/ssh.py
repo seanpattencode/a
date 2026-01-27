@@ -61,8 +61,9 @@ def run():
     if wda in ('info','i'): [print(f"{n}: ssh {'-p '+hp[1]+' ' if len(hp:=h.rsplit(':',1))>1 else ''}{hp[0]}") for n,h in hosts]; return
     if wda in ('all','*') and len(sys.argv)>3:
         cmd='bash -ic '+repr(' '.join(sys.argv[3:]));
-        def _run(nh): n,h=nh; pw=pwmap.get(n); hp=h.rsplit(':',1); r=sp.run((['sshpass','-p',pw] if pw else [])+['ssh','-o','ConnectTimeout=5','-o','StrictHostKeyChecking=accept-new']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0],cmd],capture_output=True,text=True); return(n,r.returncode==0,(r.stdout or r.stderr).split('\n')[0][:50])
-        [print(f"{'✓' if ok else 'x'} {n}" + (f": {out}" if out else "")) for n,ok,out in TP(8).map(_run,hosts)]; return
+        def _run(nh): n,h=nh; pw=pwmap.get(n); hp=h.rsplit(':',1); r=sp.run((['sshpass','-p',pw] if pw else [])+['ssh','-o','ConnectTimeout=5','-o','StrictHostKeyChecking=accept-new']+(['-p',hp[1]] if len(hp)>1 else [])+[hp[0],cmd],capture_output=True,text=True); return(n,r.returncode==0,(r.stdout or r.stderr).strip())
+        for n,ok,out in TP(8).map(_run,hosts): print(f"{'✓' if ok else 'x'} {n}"); out and print('\n'.join('  '+l for l in out.split('\n')[:20]))
+        return
     if wda == 'rm' and len(sys.argv) > 3: a=sys.argv[3]; n=hosts[int(a)][0] if a.isdigit() and int(a)<len(hosts) else a; (c:=db()).execute("DELETE FROM ssh WHERE name=?",(n,)); c.commit(); emit_event("ssh","archive",{"name":n}); db_sync(); print(f"✓ rm {n}"); return
     if wda == 'pw' and len(sys.argv) > 3: a=sys.argv[3]; n=hosts[int(a)][0] if a.isdigit() and int(a)<len(hosts) else a; pw=input(f"Pw for {n}: ").strip(); (c:=db()).execute("UPDATE ssh SET pw=? WHERE name=?",(_enc(pw) if pw else None,n)); c.commit(); emit_event("ssh","update",{"name":n,"pw":_enc(pw) if pw else None}); db_sync(); print(f"✓ {n}"); return
     if wda in ('mv','rename') and len(sys.argv) > 4: o,n=sys.argv[3:5]; p=pwmap.get(o); h=hmap.get(o,""); (c:=db()).execute("DELETE FROM ssh WHERE name=?",(o,)); c.execute("INSERT OR REPLACE INTO ssh(name,host,pw)VALUES(?,?,?)",(n,h,_enc(p) if p else None)); c.commit(); emit_event("ssh","rename",{"old":o,"new":n,"host":h}); db_sync(); print(f"✓ {o} → {n}"); return
