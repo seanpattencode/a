@@ -15,9 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
 # --shell flag: only update shell functions, skip deps
 [[ "$1" == "--shell" ]] && {
     for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
-        [[ -f "$RC" ]] || continue
+        touch "$RC"
         grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
-        sed -i '' -e '/^aio() {/,/^}/d' -e '/^a() { aio/d' -e '/^ai() { aio/d' "$RC" 2>/dev/null
+        sed -i '' -e '/^aio() {/,/^}/d' -e '/^a() { aio/d' -e '/^ai() { aio/d' "$RC" 2>/dev/null||:
         cat >> "$RC" << 'AIOFUNC'
 aio() {
     local cache=~/.local/share/aios/help_cache.txt projects=~/.local/share/aios/projects.txt icache=~/.local/share/aios/i_cache.txt
@@ -109,9 +109,9 @@ fi
 
 # PATH + aio function in both shells
 for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    [[ -f "$RC" ]] || continue
+    touch "$RC"
     grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
-    sed -i '' -e '/^aio() {/,/^}/d' -e '/^a() { aio/d' -e '/^ai() { aio/d' "$RC" 2>/dev/null
+    sed -i '' -e '/^aio() {/,/^}/d' -e '/^a() { aio/d' -e '/^ai() { aio/d' "$RC" 2>/dev/null||:
     cat >> "$RC" << 'AIOFUNC'
 aio() {
     local cache=~/.local/share/aios/help_cache.txt projects=~/.local/share/aios/projects.txt icache=~/.local/share/aios/i_cache.txt
