@@ -21,8 +21,9 @@ def run():
         m = re.search(r'-(\d{8})-(\d{6})-', os.path.basename(jp)); ct = datetime.strptime(f"{m.group(1)}{m.group(2)}", "%Y%m%d%H%M%S") if m else None
         td = (datetime.now() - ct).total_seconds() if ct else 0; ctd = f"{int(td/60)}m" if td < 3600 else f"{int(td/3600)}h" if td < 86400 else f"{int(td/86400)}d" if ct else ""
         jobs.append({'p': jp, 'n': os.path.basename(jp), 's': ss, 'wt': jp.startswith(WT_DIR), 'a': active, 'ct': ct, 'ctd': ctd})
-    jobs = sorted(jobs, key=lambda x: x['ct'] or datetime.min)
+    jobs = sorted(jobs, key=lambda x: x['ct'] or datetime.min)[-10:]
     if sel and sel.isdigit() and (i := int(sel)) < len(jobs) and jobs[i]['s']: tm.go(jobs[i]['s'][0])
+    print("Agent worktrees with sessions\n")
     for i, j in enumerate(jobs):
         st = '●' if j['a'] else '○'; ctd = f" {j['ctd']}" if j['ctd'] else ''
         print(f"  {i}  {st} {j['n'][:40]}{ctd}")
