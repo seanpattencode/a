@@ -1,7 +1,7 @@
 """aio hub - Scheduled jobs"""
 import sys, os, subprocess as sp, shutil, re
 from pathlib import Path
-from . _common import init_db, load_cfg, load_proj, load_apps, db, db_sync, DEVICE_ID, DATA_DIR
+from . _common import init_db, load_cfg, load_proj, load_apps, db, db_sync, emit_event, DEVICE_ID, DATA_DIR
 
 def run():
     init_db()
@@ -66,6 +66,7 @@ def run():
         (e := "Missing name" if not n else "Bad sched (need : e.g. 9:00, *:0/30)" if ':' not in (s or '') else "Missing cmd" if not c else "") and sys.exit(f"✗ {e}")
         s = _pt(s) if s[0].isdigit() else s
         with db() as cn: cn.execute("INSERT OR REPLACE INTO hub_jobs(name,schedule,prompt,device,enabled)VALUES(?,?,?,?,1)", (n, s, c, DEVICE_ID)); cn.commit()
+        emit_event('hub', 'add', {'name': n, 'schedule': s, 'prompt': c, 'device': DEVICE_ID, 'enabled': 1})
         cmd = c.replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ').replace('python ', f'{sys.executable} '); _install(n, s, cmd); db_sync(); print(f"✓ {n} @ {s}")
     elif wda == 'sync':
         [_uninstall(j[1]) for j in jobs]; mine = [j for j in jobs if j[4] == DEVICE_ID and j[5]]
@@ -81,13 +82,15 @@ def run():
         n = sys.argv[3] if len(sys.argv) > 3 else ''; j = jobs[int(n)] if n.isdigit() and int(n) < len(jobs) else None
         new = sys.argv[4] if len(sys.argv) > 4 else (sys.stdin.isatty() and input(f"Name [{j[1]}]: ").strip() if j else '')
         if not j or not new: return print(f"x {n}?") if not j else None
-        _uninstall(j[1]); c = db(); c.execute("UPDATE hub_jobs SET name=? WHERE id=?", (new, j[0])); c.commit(); db_sync(); print(f"✓ {new} (run 'sync' to update timer)")
+        _uninstall(j[1]); c = db(); c.execute("UPDATE hub_jobs SET name=? WHERE id=?", (new, j[0])); c.commit()
+        emit_event('hub', 'rename', {'old': j[1], 'new': new}); db_sync(); print(f"✓ {new} (run 'sync' to update timer)")
     elif wda in ('rm', 'run'):
         n = sys.argv[3] if len(sys.argv) > 3 else ''
         j = jobs[int(n)] if n.isdigit() and int(n) < len(jobs) else next((x for x in jobs if x[1] == n), None)
         if not j: print(f"x {n}?"); return
         if wda == 'rm':
-            _uninstall(j[1]); c = db(); c.execute("DELETE FROM hub_jobs WHERE id=?", (j[0],)); c.commit(); c.close(); db_sync(); print(f"✓ rm {j[1]}")
+            _uninstall(j[1]); c = db(); c.execute("DELETE FROM hub_jobs WHERE id=?", (j[0],)); c.commit(); c.close()
+            emit_event('hub', 'archive', {'name': j[1]}); db_sync(); print(f"✓ rm {j[1]}")
         else:
             from datetime import datetime
             cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ').replace('python ', f'{sys.executable} ')
