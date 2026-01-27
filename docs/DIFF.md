@@ -71,9 +71,113 @@ Terse code:    Hard to read once, easy to maintain forever
 
 It's anti-enterprise philosophy: "readable" 500-line Java class vs "cryptic" 50-line Python that does the same thing. The Python has 10x fewer failure points.
 
+And if there's an error in terse code, you know what to do - count how many options you have. Single char error in 50 chars? That's 50 places to check, not 500.
+
+## Bugs become variants
+
+In terse code, "bugs" often become interesting variants rather than crashes.
+
+```python
+# Correct Game of Life - cells born with exactly 3 neighbors
+life=lambda g:((c(g,np.ones((3,3)),mode='same')-g)==3)|(g&...)
+
+# "Bug" - changed ==3 to >=3
+life=lambda g:((c(g,np.ones((3,3)),mode='same')-g)>=3)|(g&...)
+```
+
+The "bug" still runs. Instead of a glider, you get an expanding blob - a different cellular automaton with different emergent behavior. You accidentally discovered an expansion rule.
+
+**In verbose code, bugs are just broken:** NullPointerException, silent failure, hours of debugging for no creative payoff.
+
+**In terse code, bugs become forks in possibility space:**
+- 50 tokens = 50 possible single-char variants
+- Each variant likely produces something that runs
+- Each variant does something meaningfully different
+
+You're not debugging, you're exploring a design space. Terse code is a creative medium. Verbose code is fragile scaffolding around the actual idea.
+
+**Why?** Terse code plays closer to the fundamental axioms of the problem rather than abstractions on top of them. Each token is a rule of the system, not plumbing. Change a token, change a rule, get a different valid system. Change plumbing, get a crash.
+
 ## Design decisions
 
 - Pragmatic over pure: Shows real commit size, not git staging state
 - Untracked files count as additions: User will add them anyway
 - Token counting: Risk/complexity metric, not vanity metric
 - Truncated file list: Keeps output scannable for large changesets
+
+## Appendix: Axioms of Game of Life
+
+The APL-style code:
+```python
+life=lambda g:((c(g,np.ones((3,3)),mode='same')-g)==3)|(g&(c(g,np.ones((3,3)),mode='same')-g==2))
+```
+
+Derives from these axioms:
+
+**A1. Space** — Discrete lattice Z², cells ∈ {0,1}
+
+**A2. Neighborhood** — Moore neighborhood (8-connected)
+```
+N(x,y) = {(x+i, y+j) : i,j ∈ {-1,0,1}, (i,j) ≠ (0,0)}
+```
+
+**A3. Counting** — Neighbor sum via convolution
+```
+count(x,y) = Σ g(n) for n ∈ N(x,y)
+           = (K * g)(x,y) - g(x,y)   where K = ones(3,3)
+```
+
+**A4. Transition** — Birth/survival predicate
+```
+g'(x,y) = 1  iff  count=3 ∨ (g(x,y)=1 ∧ count=2)
+```
+
+**A5. Synchrony** — All cells update simultaneously from state at t
+
+**Mapping axioms → tokens:**
+
+| Axiom | Token(s) |
+|-------|----------|
+| A1 | `g` (the grid) |
+| A2 | `np.ones((3,3))` |
+| A3 | `c(...)-g` |
+| A4 | `==3`, `==2`, `\|`, `&` |
+| A5 | `lambda` (pure function) |
+
+Every token is an axiom. No plumbing. Change `==3` to `>=3`, you changed A4, you get a different valid cellular automaton.
+
+## Verbose bug comparison
+
+Verbose Game of Life (~50 lines, class-based):
+```python
+def count_neighbors(self, x, y):
+    count = 0
+    for dy in [-1, 0, 1]:
+        for dx in [-1, 0, 1]:
+            if dx == 0 or dy == 0:  # BUG: 'and' → 'or'
+                continue
+            count += self.get_cell(x + dx, y + dy)
+    return count
+```
+
+Defensible change: "skip if on axis" vs "skip if at center". Result:
+```
+Gen 0: Glider
+Gen 1: Single cell
+Gen 2: Empty (dead forever)
+```
+
+Just dies. Only counts 4 diagonal neighbors, nothing satisfies birth condition.
+
+| | Terse bug (`>=3`) | Verbose bug (`or`) |
+|---|---|---|
+| Runs? | Yes | Yes |
+| Interesting? | Expanding blob | Dead grid |
+| Valid variant? | Yes (different CA) | No (broken) |
+| Bug location | Line 1, char 45 | Line 24, nested in class |
+
+Verbose code buries axioms in plumbing. Change plumbing, get broken plumbing. Terse code exposes axioms. Change axiom, get different valid system.
+
+**Speculation:** Maybe our universe is terse - a few fundamental constants, a handful of forces, and everything else emerges. Change the fine-structure constant slightly, you don't get a crash, you get a different valid universe. That's why physics is discoverable at all.
+
+The inconsistencies we find (quantum weirdness, relativistic paradoxes) aren't signs of broken plumbing - they're the complex combinatorial interactions of simple rules. N simple axioms → N² interactions. The rules are terse; the combinations are vast. Exactly what should arise from a moderately numerous set of simple rules. The universe isn't buggy. It's a one-liner with emergent complexity.
