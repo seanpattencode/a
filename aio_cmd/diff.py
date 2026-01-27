@@ -9,8 +9,10 @@ def _tok(d):
 def run():
     sel = sys.argv[2] if len(sys.argv) > 2 else None
     if sel and sel.isdigit():
+        total = 0
         for i, L in enumerate(sp.run(['git', 'log', f'-{sel}', '--pretty=%H %s'], capture_output=True, text=True).stdout.strip().split('\n')):
-            h, m = L.split(' ', 1); print(f"  {i}  {_tok(sp.run(['git', 'show', h, '--pretty='], capture_output=True, text=True).stdout):>+6}  {m[:55]}")
+            h, m = L.split(' ', 1); t = _tok(sp.run(['git', 'show', h, '--pretty='], capture_output=True, text=True).stdout); total += t; print(f"  {i}  {t:>+6}  {m[:55]}")
+        print(f"\nTotal: {total:+} tokens")
         return
     sp.run(['git', 'fetch', 'origin'], capture_output=True); cwd = os.getcwd()
     b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
