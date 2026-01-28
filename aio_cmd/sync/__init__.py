@@ -1,13 +1,15 @@
-"""aio sync - unified sync/storage layer
+"""aio sync - central sync API
 
-Simple API:
-    from aio_cmd.sync import store
+Usage:
+    from aio_cmd.sync import put, get, delete, list_all, sync
 
-    store.put("ssh", "server1", {"host": "user@1.2.3.4", "pw": "xxx"})
-    store.get("ssh", "server1")
-    store.delete("ssh", "server1")
-    store.list("ssh")
-    store.sync()  # push/pull with remote
+    put("ssh", "server1", {"host": "user@1.2.3.4"})
+    get("ssh", "server1")
+    list_all("ssh")
+    sync()
+
+Structure:
+    sync/api.py      - Central API (dispatches to backends)
+    sync/backends/   - Implementations (git, crsqlite, http, etc.)
 """
-
-from .store import put, get, delete, list_all, sync, check_consensus
+from .api import put, get, delete, list_all, sync
