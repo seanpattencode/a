@@ -12,11 +12,10 @@ An ai agent manager.
 ```
 
 **Windows (WSL):**
-1. Open PowerShell as Admin (right-click Start → "Terminal (Admin)")
+1. Press Windows key, type `powershell`, right-click → "Run as administrator"
 2. Run: `wsl --install`
-3. Restart your PC when prompted
-4. Ubuntu will auto-launch on reboot—create a username/password
-5. In Ubuntu terminal, run the Mac/Linux install below
+3. Restart PC, Ubuntu opens—create username/password
+4. In Ubuntu, run the install below
 
 **Termux (Android):**
 ```bash
