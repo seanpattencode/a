@@ -14,12 +14,12 @@ An ai agent manager.
 **Windows (WSL):**
 1. Press Windows key, type `powershell`, right-click → "Run as administrator"
 2. Run: `wsl --install -d Ubuntu`
-3. Restart PC, Ubuntu opens—create username/password
+3. Restart PC, Ubuntu opens—create username (lowercase) and password (won't show as you type)
 4. In Ubuntu, run the install below
 
 Other distros: `wsl --list --online` to see options, `wsl --install -d <distro>`
 
-Troubleshooting: Username must start with lowercase. Password won't show as you type—this is normal. To reopen Ubuntu, press Windows key and search "Ubuntu". To reset: `wsl --unregister Ubuntu` then `wsl --install -d Ubuntu`
+Troubleshooting: To reopen Ubuntu, press Windows key and search "Ubuntu". To reset: `wsl --unregister Ubuntu` then `wsl --install -d Ubuntu`
 
 **Termux (Android):**
 ```bash
