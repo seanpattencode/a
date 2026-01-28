@@ -58,9 +58,10 @@ def run():
         (c:=db()).execute("INSERT OR REPLACE INTO ssh(name,host,pw)VALUES(?,?,?)",(n,h,_enc(pw))); c.commit(); emit_event("ssh","add",{"name":n,"host":h,"pw":_enc(pw)}); db_sync(); print(f"✓ {n}={h}"); return
     if wda in ('info','i'): [print(f"{n}: ssh {'-p '+hp[1]+' ' if len(hp:=h.rsplit(':',1))>1 else ''}{hp[0]}") for n,h in hosts]; return
     if wda in ('all','*') and len(sys.argv)>3:
-        cmd='bash -ic '+repr(' '.join(sys.argv[3:]));
+        cmd='bash -ic '+repr(' '.join(sys.argv[3:])); ok_l, fail_l = [], []
         def _run(nh): n,h=nh; pw=pwmap.get(n); hp=h.rsplit(':',1); r=sp.run((['sshpass','-p',pw]if pw else[])+['ssh','-oConnectTimeout=5','-oStrictHostKeyChecking=no','-oIdentitiesOnly=yes']+(['-p',hp[1]]if len(hp)>1 else[])+[hp[0],cmd],capture_output=1,text=1); return(n,not r.returncode,(r.stdout or r.stderr).strip())
-        for n,ok,out in TP(8).map(_run,hosts): print(f"\n{'✓' if ok else 'x'} {n}"); out and print('\n'.join('  '+l for l in out.split('\n')[:20]))
+        for n,ok,out in TP(8).map(_run,hosts): (ok_l if ok else fail_l).append(n); print(f"\n{'✓' if ok else 'x'} {n}"); out and print('\n'.join('  '+l for l in out.split('\n')[:20]))
+        print(f"\n✓ {len(ok_l)}" + (f"  x {len(fail_l)} ({','.join(fail_l)})" if fail_l else ""))
         return
     if wda == 'rm' and len(sys.argv) > 3: a=sys.argv[3]; n=hosts[int(a)][0] if a.isdigit() and int(a)<len(hosts) else a; (c:=db()).execute("DELETE FROM ssh WHERE name=?",(n,)); c.commit(); emit_event("ssh","archive",{"name":n}); db_sync(); print(f"✓ rm {n}"); return
     if wda == 'pw' and len(sys.argv) > 3: a=sys.argv[3]; n=hosts[int(a)][0] if a.isdigit() and int(a)<len(hosts) else a; pw=input(f"Pw for {n}: ").strip(); (c:=db()).execute("UPDATE ssh SET pw=? WHERE name=?",(_enc(pw) if pw else None,n)); c.commit(); emit_event("ssh","update",{"name":n,"pw":_enc(pw) if pw else None}); db_sync(); print(f"✓ {n}"); return

@@ -237,8 +237,12 @@ def cloud_login():
     rc = get_rclone() or cloud_install()
     if not rc: print("✗ rclone install failed"); return False
     sp.run([rc, 'config', 'create', RCLONE_REMOTE, 'drive'])
-    if cloud_configured(): print(f"✓ Logged in as {cloud_account() or 'unknown'}"); cloud_sync(wait=True); return True
-    print("✗ Login failed - try again"); return False
+    if not cloud_configured(): print("✗ Login failed - try again"); return False
+    print(f"✓ Logged in as {cloud_account() or 'unknown'}"); cloud_sync(wait=True)
+    aio = os.path.join(SCRIPT_DIR, 'aio.py')
+    if not db().execute("SELECT 1 FROM hub_jobs WHERE name='gdrive-sync'").fetchone():
+        sp.run([sys.executable, aio, 'hub', 'add', 'gdrive-sync', '*:0/30', 'aio', 'gdrive', 'sync'])
+    return True
 def cloud_logout():
     if cloud_configured(): sp.run([get_rclone(), 'config', 'delete', RCLONE_REMOTE]); print("✓ Logged out"); return True
     print("Not logged in"); return False
