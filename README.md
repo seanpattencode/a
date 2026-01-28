@@ -35,7 +35,12 @@ A ~1200-line Python script that manages AI coding agents. Runs on macOS, Linux, 
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-**Windows:** Install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) first, then follow Linux instructions.
+**Windows (WSL):**
+1. Open PowerShell as Admin (right-click Start → "Terminal (Admin)")
+2. Run: `wsl --install`
+3. Restart your PC when prompted
+4. Ubuntu will auto-launch on reboot—create a username/password
+5. In Ubuntu terminal, run the Mac/Linux install below
 
 **Termux (Android):**
 ```bash
