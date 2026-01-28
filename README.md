@@ -19,6 +19,8 @@ An ai agent manager.
 
 Other distros: `wsl --list --online` to see options, `wsl --install -d <distro>`
 
+Troubleshooting: Username must start with lowercase. Password won't show as you type—this is normal. To reopen Ubuntu, press Windows key and search "Ubuntu". To reset: `wsl --unregister Ubuntu` then `wsl --install -d Ubuntu`
+
 **Termux (Android):**
 ```bash
 pkg update -y && pkg install -y git gh python
