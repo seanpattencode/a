@@ -410,11 +410,10 @@ def launch_dir(d, term=None):
     try: sp.Popen(cmds.get(term, [])); print(f"✓ {term}: {d}"); return True
     except Exception as e: print(f"x {e}"); return False
 
-# Sync - JSONL append-only event log (git auto-merges text, never loses data)
-# ARCHITECTURE: Events are immutable. Never delete data - use "archive" or "ack" to hide.
-# Any device can emit events (add/ack/update/archive). State rebuilt by replaying all events.
-# This avoids merge conflicts: git auto-merges append-only text, then replay rebuilds SQLite.
-# Tables using events: ssh (add/archive/rename), notes (add/ack/update)
+# Sync - Distributed system: events.jsonl is source of truth, aio.db is local cache
+# To sync a table: 1) emit_event() on write, 2) handle table in replay_events()
+# DB-only changes won't sync! Events sync via git, then replay rebuilds local SQLite.
+# Tables: ssh, notes, hub, projects, apps. Ops: add/archive/ack/update/rename
 def emit_event(table, op, data, device=None, sync=False):
     """Append event to events.jsonl. Events are immutable - archive instead of delete."""
     import hashlib; eid = hashlib.md5(f"{time.time()}{os.getpid()}".encode()).hexdigest()[:8]
@@ -423,41 +422,39 @@ def emit_event(table, op, data, device=None, sync=False):
     sync and db_sync(); return eid
 
 def replay_events(tables=None):
-    """Rebuild state from events.jsonl. Tables: ssh, notes, hub."""
+    """Rebuild state from events.jsonl. Tables: ssh, notes, hub, projects, apps."""
     if not os.path.exists(EVENTS_PATH): return
-    state = {}; tables = tables or ['ssh', 'notes', 'hub']
+    state = {}; tables = tables or ['ssh', 'notes', 'hub', 'projects', 'apps']
     for line in open(EVENTS_PATH):
         try: e = json.loads(line)
         except: continue
         t, op = e["op"].split("."); d = e["d"]
         if t not in tables: continue
         if t not in state: state[t] = {}
-        k = d.get("name") or d.get("id") or e["id"]
+        k = d.get("path") or d.get("name") or d.get("id") or e["id"]
         if op == "add": state[t][k] = {**d, "_ts": e["ts"], "_id": e["id"], "_dev": e.get("dev")}
         elif op == "update" and k in state[t]: state[t][k].update({**d, "_ts": e["ts"]})
         elif op in ("archive", "ack") and k in state[t]: state[t][k]["_archived"] = e["ts"]
         elif op == "rename" and d.get("old") in state.get(t, {}): state[t][d["old"]]["_archived"] = e["ts"]; state[t][d["new"]] = {**{x:y for x,y in state[t][d["old"]].items() if not x.startswith("_")}, "name": d["new"], "_ts": e["ts"], "_id": e["id"]}
-    # Apply to db
     c = sqlite3.connect(DB_PATH)
-    c.execute("CREATE TABLE IF NOT EXISTS ssh(name TEXT PRIMARY KEY,host TEXT,pw TEXT)")
     for t, items in state.items():
         active = {k: v for k, v in items.items() if not v.get("_archived")}
-        archived = {k: v for k, v in items.items() if v.get("_archived")}
         if t == "ssh": c.execute("CREATE TABLE IF NOT EXISTS ssh(name PRIMARY KEY,host,pw)"); c.execute("DELETE FROM ssh"); [c.execute("INSERT OR REPLACE INTO ssh(name,host,pw)VALUES(?,?,?)", (v.get("name",k), v.get("host",""), v.get("pw"))) for k,v in active.items()]
         elif t == "notes":
-            try: c.execute("DELETE FROM notes WHERE id LIKE '________'"); [c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj,dev)VALUES(?,?,0,?,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj"), v.get("_dev"))) for k,v in active.items()]; [c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj,dev)VALUES(?,?,1,?,?,?)", (k, v.get("t",""), v.get("d"), v.get("proj"), v.get("_dev"))) for k,v in archived.items()]
+            try: c.execute("DELETE FROM notes WHERE id LIKE '________'"); [c.execute("INSERT OR REPLACE INTO notes(id,t,s,d,proj,dev)VALUES(?,?,?,?,?,?)", (k, v.get("t",""), 1 if v.get("_archived") else 0, v.get("d"), v.get("proj"), v.get("_dev"))) for k,v in items.items()]
             except: pass
-        elif t == "hub":
-            c.execute("DELETE FROM hub_jobs WHERE name IN (SELECT name FROM hub_jobs)"); [c.execute("INSERT OR REPLACE INTO hub_jobs(name,schedule,prompt,device,enabled)VALUES(?,?,?,?,?)", (v.get("name",k), v.get("schedule",""), v.get("prompt",""), v.get("device",""), v.get("enabled",1))) for k,v in active.items()]
+        elif t == "hub": c.execute("DELETE FROM hub_jobs WHERE name IN (SELECT name FROM hub_jobs)"); [c.execute("INSERT OR REPLACE INTO hub_jobs(name,schedule,prompt,device,enabled)VALUES(?,?,?,?,?)", (v.get("name",k), v.get("schedule",""), v.get("prompt",""), v.get("device",""), v.get("enabled",1))) for k,v in active.items()]
+        elif t == "projects": [c.execute("DELETE FROM projects WHERE path=?", (k,)) for k in items]; [c.execute("INSERT INTO projects(path,display_order,device)VALUES(?,?,?)", (v["path"], int(v.get("_ts",0))%1000, v.get("_dev","*"))) for v in active.values() if v.get("path")]
+        elif t == "apps": [c.execute("DELETE FROM apps WHERE name=?", (k,)) for k in items]; [c.execute("INSERT INTO apps(name,command,display_order,device)VALUES(?,?,?,?)", (v["name"], v.get("cmd",""), int(v.get("_ts",0))%1000, v.get("_dev","*"))) for v in active.values() if v.get("name")]
     c.commit(); c.close()
 
 # Append-only sync: only events.jsonl synced (text, auto-merges), aio.db is local cache
 def db_sync(pull=False):
     if not os.path.isdir(f"{DATA_DIR}/.git") or not shutil.which('gh') or sp.run(['gh','auth','status'],capture_output=True).returncode!=0:
-        pull and replay_events(['ssh', 'notes', 'hub']); return True
+        pull and replay_events(); return True
     gi, df = f"{DATA_DIR}/.gitignore", f"{DATA_DIR}/.device"; ".device" not in (Path(gi).read_text() if os.path.exists(gi) else "") and Path(gi).write_text("*.db*\n*.log\nlogs/\n*cache*\ntiming.jsonl\nnotebook/\n.device\n"); dev = Path(df).read_text() if os.path.exists(df) else None
     sp.run(f'cd "{DATA_DIR}"&&git add -A;git -c user.name=aio -c user.email=a@a commit -qm sync 2>/dev/null;git fetch -q&&git -c user.name=aio -c user.email=a@a merge -q --no-edit origin/main 2>/dev/null;git push -q 2>/dev/null',shell=True,capture_output=True); dev and Path(df).write_text(dev)
-    pull and replay_events(['ssh', 'notes', 'hub']); return True
+    pull and replay_events(); return True
 
 def auto_backup():
     if not hasattr(os, 'fork'): return
