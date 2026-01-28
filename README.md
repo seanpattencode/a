@@ -11,7 +11,7 @@ An ai agent manager.
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-**Windows (WSL):**
+**Windows (WSL):** [Video guide](https://www.youtube.com/watch?v=WD7swbRpwKM)
 1. Press Windows key, type `powershell`, right-click → "Run as administrator"
 2. Run: `wsl --install -d Ubuntu`
 3. Restart PC, Ubuntu opens—create username (lowercase) and password (won't show as you type)
