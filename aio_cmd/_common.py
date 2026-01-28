@@ -456,7 +456,9 @@ def replay_events(tables=None, full=False):
                 if op == "add": c.execute("INSERT OR REPLACE INTO hub_jobs(name,schedule,prompt,device,enabled)VALUES(?,?,?,?,?)", (d.get("name",k), d.get("schedule",""), d.get("prompt",""), d.get("device",""), d.get("enabled",1)))
                 elif op == "archive": c.execute("DELETE FROM hub_jobs WHERE name=?", (k,))
             elif t == "projects":
-                if op == "add": c.execute("SELECT 1 FROM projects WHERE repo=? OR path=?",(d.get("repo"),d["path"])).fetchone() or c.execute("INSERT INTO projects(path,display_order,device,repo)VALUES(?,?,?,?)", (d["path"], int(e.get("ts",0))%1000, e.get("dev","*"), d.get("repo")))
+                if op == "add":
+                    if d.get("repo"): c.execute("UPDATE projects SET repo=? WHERE path=? AND repo IS NULL",(d["repo"],d["path"]))
+                    c.execute("SELECT 1 FROM projects WHERE path=?",(d["path"],)).fetchone() or c.execute("INSERT INTO projects(path,display_order,device,repo)VALUES(?,?,?,?)", (d["path"], int(e.get("ts",0))%1000, e.get("dev","*"), d.get("repo")))
                 elif op == "archive": c.execute("DELETE FROM projects WHERE path=?", (k,))
             elif t == "apps":
                 if op == "add": c.execute("SELECT 1 FROM apps WHERE name=?",(d["name"],)).fetchone() or c.execute("INSERT INTO apps(name,command,display_order,device)VALUES(?,?,?,?)", (d["name"], d.get("cmd",""), int(e.get("ts",0))%1000, e.get("dev","*")))
