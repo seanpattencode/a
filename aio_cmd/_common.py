@@ -24,7 +24,7 @@ _AIO_DIR = os.path.expanduser('~/.aios')
 _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
 _SRC_LINE = 'source-file ~/.aios/tmux.conf  # aio'
-RCLONE_REMOTE, RCLONE_BACKUP_PATH = 'aio-gdrive', 'aio-backup'
+RCLONE_REMOTES, RCLONE_BACKUP_PATH = ('aio-gdrive', 'aio-gdrive2'), 'aio-backup'
 
 # Basic helpers
 def _git(path, *a, **k): return sp.run(['git', '-C', path] + list(a), capture_output=True, text=True, **k)
@@ -203,28 +203,36 @@ def fmt_cmd(c, mx=60):
 
 # Cloud sync
 def get_rclone(): return shutil.which('rclone') or next((p for p in ['/usr/bin/rclone', os.path.expanduser('~/.local/bin/rclone')] if os.path.isfile(p)), None)
-def cloud_configured():
-    r = sp.run([get_rclone(), 'listremotes'], capture_output=True, text=True) if get_rclone() else None
-    return r and r.returncode == 0 and f'{RCLONE_REMOTE}:' in r.stdout
-def cloud_account():
+def _configured_remotes():
+    if not (rc := get_rclone()): return []
+    r = sp.run([rc, 'listremotes'], capture_output=True, text=True)
+    return [rem for rem in RCLONE_REMOTES if r.returncode == 0 and f'{rem}:' in r.stdout]
+def cloud_configured(): return bool(_configured_remotes())
+def cloud_account(remote=None):
     if not (rc := get_rclone()): return None
     try:
-        token = json.loads(json.loads(sp.run([rc, 'config', 'dump'], capture_output=True, text=True).stdout).get(RCLONE_REMOTE, {}).get('token', '{}')).get('access_token')
+        rem = remote or _configured_remotes()[0]
+        token = json.loads(json.loads(sp.run([rc, 'config', 'dump'], capture_output=True, text=True).stdout).get(rem, {}).get('token', '{}')).get('access_token')
         if not token: return None
         import urllib.request
         u = json.loads(urllib.request.urlopen(urllib.request.Request('https://www.googleapis.com/drive/v3/about?fields=user', headers={'Authorization': f'Bearer {token}'}), timeout=5).read()).get('user', {})
         return f"{u.get('displayName', '')} <{u.get('emailAddress', 'unknown')}>"
     except: return None
 def cloud_sync(wait=False):
-    if not (rc := get_rclone()) or not cloud_configured(): return False, None
-    local, remote = DATA_DIR, f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}'
+    rc, remotes = get_rclone(), _configured_remotes()
+    if not rc or not remotes: return False, None
     def _sync():
-        r = sp.run([rc, 'sync', local, remote, '-q', '--exclude', '*.db*', '--exclude', '*.log', '--exclude', 'logs/**', '--exclude', '*cache*', '--exclude', 'timing.jsonl', '--exclude', '.device', '--exclude', '.git/**'], capture_output=True, text=True)
-        ef = Path(DATA_DIR) / '.rclone_err'; ef.write_text(r.stderr) if r.returncode != 0 else (ef.unlink(missing_ok=True), Path(DATA_DIR, '.gdrive_sync').touch()); return r.returncode == 0
+        ok = True
+        for rem in remotes:
+            r = sp.run([rc, 'sync', DATA_DIR, f'{rem}:{RCLONE_BACKUP_PATH}', '-q', '--exclude', '*.db*', '--exclude', '*cache*', '--exclude', 'timing.jsonl', '--exclude', '.device', '--exclude', '.git/**', '--exclude', 'logs/**'], capture_output=True, text=True)
+            sp.run([rc, 'sync', LOG_DIR, f'{rem}:{RCLONE_BACKUP_PATH}/logs/{DEVICE_ID}', '-q'], capture_output=True)
+            ok = ok and r.returncode == 0
+        Path(DATA_DIR, '.gdrive_sync').touch() if ok else None; return ok
     return (True, _sync()) if wait else (__import__('threading').Thread(target=_sync, daemon=True).start(), (True, None))[1]
 def cloud_pull_notes():
-    if not (rc := get_rclone()) or not cloud_configured(): return False
-    sp.run([rc, 'sync', f'{RCLONE_REMOTE}:{RCLONE_BACKUP_PATH}/notebook', NOTE_DIR, '-q'], capture_output=True)
+    rc, remotes = get_rclone(), _configured_remotes()
+    if not rc or not remotes: return False
+    sp.run([rc, 'sync', f'{remotes[0]}:{RCLONE_BACKUP_PATH}/notebook', NOTE_DIR, '-q'], capture_output=True)
     return True
 def cloud_install():
     import platform
@@ -233,22 +241,31 @@ def cloud_install():
     if sp.run(f'curl -sL https://downloads.rclone.org/rclone-current-linux-{arch}.zip -o /tmp/rclone.zip && unzip -qjo /tmp/rclone.zip "*/rclone" -d {bd} && chmod +x {bd}/rclone', shell=True).returncode == 0:
         print(f"✓ Installed"); return f'{bd}/rclone'
     return None
-def cloud_login():
+def cloud_login(remote=None):
     rc = get_rclone() or cloud_install()
     if not rc: print("✗ rclone install failed"); return False
-    sp.run([rc, 'config', 'create', RCLONE_REMOTE, 'drive'])
-    if not cloud_configured(): print("✗ Login failed - try again"); return False
-    print(f"✓ Logged in as {cloud_account() or 'unknown'}"); cloud_sync(wait=True)
+    rem = remote or next((r for r in RCLONE_REMOTES if r not in _configured_remotes()), None)
+    if not rem: print("✗ All slots full. Run: aio gdrive logout"); return False
+    sp.run([rc, 'config', 'create', rem, 'drive'])
+    if rem not in _configured_remotes(): print("✗ Login failed - try again"); return False
+    print(f"✓ Logged in {rem} as {cloud_account(rem) or 'unknown'}"); cloud_sync(wait=True)
     aio = os.path.join(SCRIPT_DIR, 'aio.py')
     if not db().execute("SELECT 1 FROM hub_jobs WHERE name='gdrive-sync'").fetchone():
         sp.run([sys.executable, aio, 'hub', 'add', 'gdrive-sync', '*:0/30', 'aio', 'gdrive', 'sync'])
     return True
-def cloud_logout():
-    if cloud_configured(): sp.run([get_rclone(), 'config', 'delete', RCLONE_REMOTE]); print("✓ Logged out"); return True
-    print("Not logged in"); return False
+def cloud_logout(remote=None):
+    remotes = _configured_remotes()
+    if not remotes: print("Not logged in"); return False
+    rem = remote or remotes[-1]
+    sp.run([get_rclone(), 'config', 'delete', rem]); print(f"✓ Logged out {rem}"); return True
 def cloud_status():
-    if cloud_configured(): print(f"✓ Logged in: {cloud_account() or RCLONE_REMOTE}"); return True
-    print("✗ Not logged in. Run: aio gdrive login"); return False
+    remotes, slots = _configured_remotes(), len(RCLONE_REMOTES)
+    if remotes:
+        for rem in remotes: print(f"✓ {rem}: {cloud_account(rem) or '?'}")
+        free = slots - len(remotes)
+        free and print(f"\n{free} slot{'s' if free > 1 else ''} available. Add another account: aio gdrive login")
+        return True
+    print(f"✗ Not logged in ({slots} slots for redundancy)\n\nSetup: aio gdrive login"); return False
 
 # Worktrees
 def _wt_items(wt_dir): return sorted([d for d in os.listdir(wt_dir) if os.path.isdir(os.path.join(wt_dir, d))]) if os.path.exists(wt_dir) else []
