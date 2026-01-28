@@ -13,9 +13,11 @@ An ai agent manager.
 
 **Windows (WSL):**
 1. Press Windows key, type `powershell`, right-click → "Run as administrator"
-2. Run: `wsl --install`
+2. Run: `wsl --install -d Ubuntu`
 3. Restart PC, Ubuntu opens—create username/password
 4. In Ubuntu, run the install below
+
+Other distros: `wsl --list --online` to see options, `wsl --install -d <distro>`
 
 **Termux (Android):**
 ```bash
