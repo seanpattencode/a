@@ -41,6 +41,13 @@ git clone https://github.com/seanpattencode/aio.git && cd aio && ./install.sh
 
 Installs: tmux, node, claude, codex, gemini, aio. Prompts for sudo if needed. Works without root (installs to ~/.local).
 
+## Simple start
+Type in terminal
+aio g      
+sign in
+ask
+"Run aio help and explore codebase and explain how to use it for the project I want to do."
+
 ## Core Commands
 
 ```bash
