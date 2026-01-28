@@ -100,20 +100,20 @@ def get_prompt(name, show=False):
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     with db() as c:
-        c.execute("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        c.execute("CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY,value TEXT NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT NOT NULL, display_order INTEGER NOT NULL, device TEXT DEFAULT '*')")
         c.execute("CREATE TABLE IF NOT EXISTS apps (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, command TEXT NOT NULL, display_order INTEGER NOT NULL, device TEXT DEFAULT '*')")
         for t in ['projects', 'apps']:
             if 'device' not in [r[1] for r in c.execute(f"PRAGMA table_info({t})")]: c.execute(f"ALTER TABLE {t} ADD COLUMN device TEXT DEFAULT '*'")
-        c.execute("CREATE TABLE IF NOT EXISTS sessions (key TEXT PRIMARY KEY, name TEXT NOT NULL, command_template TEXT NOT NULL)")
+        c.execute("CREATE TABLE IF NOT EXISTS sessions(key TEXT PRIMARY KEY,name TEXT NOT NULL,command_template TEXT NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS multi_runs (id TEXT PRIMARY KEY, repo TEXT NOT NULL, prompt TEXT NOT NULL, agents TEXT NOT NULL, status TEXT DEFAULT 'running', created_at TEXT DEFAULT CURRENT_TIMESTAMP, review_rank TEXT)")
-        c.execute("CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, t TEXT, s INTEGER DEFAULT 0, d TEXT, c TEXT DEFAULT CURRENT_TIMESTAMP, proj TEXT, dev TEXT)")
-        if 'dev' not in [r[1] for r in c.execute("PRAGMA table_info(notes)")]: c.execute("ALTER TABLE notes ADD COLUMN dev TEXT")
-        c.execute("CREATE TABLE IF NOT EXISTS note_projects (id INTEGER PRIMARY KEY, name TEXT UNIQUE, c TEXT DEFAULT CURRENT_TIMESTAMP)")
+        (t:=c.execute("PRAGMA table_info(notes)").fetchall())and(t[0][2]=='INTEGER'and c.execute("DROP TABLE notes")or'dev'not in[r[1]for r in t]and c.execute("ALTER TABLE notes ADD dev"))
+        c.execute("CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP,proj,dev)")
+        c.execute("CREATE TABLE IF NOT EXISTS note_projects(id INTEGER PRIMARY KEY,name TEXT UNIQUE,c TEXT DEFAULT CURRENT_TIMESTAMP)")
         c.execute("CREATE TABLE IF NOT EXISTS todos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, real_deadline INTEGER NOT NULL, virtual_deadline INTEGER, created_at INTEGER NOT NULL, completed_at INTEGER)")
-        c.execute("CREATE TABLE IF NOT EXISTS jobs (name TEXT PRIMARY KEY, step TEXT NOT NULL, status TEXT NOT NULL, path TEXT, session TEXT, updated_at INTEGER NOT NULL)")
+        c.execute("CREATE TABLE IF NOT EXISTS jobs(name TEXT PRIMARY KEY,step TEXT NOT NULL,status TEXT NOT NULL,path TEXT,session TEXT,updated_at INTEGER NOT NULL)")
         c.execute("CREATE TABLE IF NOT EXISTS hub_jobs (id INTEGER PRIMARY KEY, name TEXT, schedule TEXT, prompt TEXT, agent TEXT DEFAULT 'l', project TEXT, device TEXT, enabled INTEGER DEFAULT 1, last_run TEXT, parallel INTEGER DEFAULT 1)")
-        c.execute("CREATE TABLE IF NOT EXISTS agent_logs (session TEXT PRIMARY KEY, parent TEXT, started REAL, device TEXT)")
+        c.execute("CREATE TABLE IF NOT EXISTS agent_logs(session TEXT PRIMARY KEY,parent TEXT,started REAL,device TEXT)")
         if 'device' not in [r[1] for r in c.execute("PRAGMA table_info(agent_logs)")]: c.execute("ALTER TABLE agent_logs ADD COLUMN device TEXT")
         if c.execute("SELECT COUNT(*) FROM config").fetchone()[0] == 0:
             dp = get_prompt('default') or ''
