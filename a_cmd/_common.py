@@ -244,7 +244,7 @@ def cloud_login(remote=None):
     if not rem: print("✗ All slots full. Run: a gdrive logout"); return False
     sp.run([rc, 'config', 'create', rem, 'drive'])
     if rem not in _configured_remotes(): print("✗ Login failed - try again"); return False
-    print(f"✓ Logged in {rem} as {cloud_account(rem) or 'unknown'}"); cloud_sync(wait=True)
+    print(f"✓ Logged in {rem} as {cloud_account(rem) or 'unknown'}"); cloud_sync(wait=True); open(f"{DATA_DIR}/.auth_local", "w").close(); Path(f"{DATA_DIR}/.auth_shared").unlink(missing_ok=True)
     aio = os.path.join(SCRIPT_DIR, 'aio.py')
     if not db().execute("SELECT 1 FROM hub_jobs WHERE name='gdrive-sync'").fetchone():
         sp.run([sys.executable, aio, 'hub', 'add', 'gdrive-sync', '*:0/30', 'aio', 'gdrive', 'sync'])
