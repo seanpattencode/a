@@ -1,32 +1,37 @@
 #!/usr/bin/env python3
-"""aio - AI agent session manager (git-like modular dispatcher)"""
+"""a - AI agent session manager"""
 import sys, os
 
-# Fast-path for 'aio n <text>' - append-only event + sqlite insert
-# SYNC: Emits notes.add event to events.jsonl. Never delete - ack to archive. Any device can ack.
+# Fast-path: 'a n <text>' - append event + sqlite insert
 if len(sys.argv) > 2 and sys.argv[1] in ('note', 'n') and sys.argv[2][0] != '?':
-    import sqlite3, subprocess as sp, json, time, hashlib, socket, shutil; dd = os.path.expanduser("~/.local/share/a"); db = f"{dd}/aio.db"; ef = f"{dd}/events.jsonl"; os.makedirs(dd, exist_ok=True); dev = (sp.run(['getprop','ro.product.model'],capture_output=True,text=True).stdout.strip().replace(' ','-') or socket.gethostname()) if os.path.exists('/data/data/com.termux') else socket.gethostname()
-    eid = hashlib.md5(f"{time.time()}{os.getpid()}".encode()).hexdigest()[:8]; txt = ' '.join(sys.argv[2:]); ev = json.dumps({"ts": time.time(), "id": eid, "dev": dev, "op": "notes.add", "d": {"t": txt}})
-    open(ef, "a").write(ev + "\n"); c = sqlite3.connect(db); c.execute("CREATE TABLE IF NOT EXISTS notes(id,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP,proj)"); c.execute("INSERT OR REPLACE INTO notes(id,t,s) VALUES(?,?,0)", (eid, txt)); c.commit(); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()
+    import sqlite3, subprocess as sp, json, time, hashlib, socket, shutil
+    dd = os.path.expanduser("~/.local/share/a"); os.makedirs(dd, exist_ok=True)
+    dev = (sp.run(['getprop','ro.product.model'],capture_output=True,text=True).stdout.strip().replace(' ','-') or socket.gethostname()) if os.path.exists('/data/data/com.termux') else socket.gethostname()
+    eid = hashlib.md5(f"{time.time()}{os.getpid()}".encode()).hexdigest()[:8]; txt = ' '.join(sys.argv[2:])
+    ev = json.dumps({"ts": time.time(), "id": eid, "dev": dev, "op": "notes.add", "d": {"t": txt}})
+    ef = f"{dd}/events.jsonl"; open(ef, "a").write(ev + "\n")
+    c = sqlite3.connect(f"{dd}/aio.db"); c.execute("CREATE TABLE IF NOT EXISTS notes(id,t,s DEFAULT 0,d,c DEFAULT CURRENT_TIMESTAMP,proj)")
+    c.execute("INSERT OR REPLACE INTO notes(id,t,s) VALUES(?,?,0)", (eid, txt)); c.commit(); c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()
     if os.path.isdir(f"{dd}/.git") and shutil.which('gh') and sp.run(['gh','auth','status'],capture_output=True).returncode==0:
-        sp.run(f'cd "{dd}"&&git add -A&&git diff --cached --quiet||git -c user.name=aio -c user.email=a@a commit -m n -q;git fetch -q&&git -c user.name=aio -c user.email=a@a merge -q -X theirs --no-edit origin/main 2>/dev/null',shell=True,capture_output=True)
-        eid not in open(ef).read() and open(ef,"a").write(ev+"\n"); r=sp.run(f'cd "{dd}"&&git add -A&&git diff --cached --quiet||git -c user.name=aio -c user.email=a@a commit -m n -q;git push origin HEAD:main -q',shell=True,capture_output=True,text=True); print("✓" if r.returncode==0 else f"✓({r.stderr.strip()[:20]})")
+        g = f'cd "{dd}"&&git add -A&&git diff --cached --quiet||git -c user.name=a -c user.email=a@a commit -m n -q'
+        sp.run(f'{g};git fetch -q&&git -c user.name=a -c user.email=a@a merge -q -X theirs --no-edit origin/main 2>/dev/null',shell=True,capture_output=True)
+        eid in open(ef).read() or open(ef,"a").write(ev+"\n"); r=sp.run(f'{g};git push origin HEAD:main -q',shell=True,capture_output=True,text=True)
+        print("✓" if r.returncode==0 else f"✓({r.stderr.strip()[:20]})")
     else: print("✓")
     sys.exit(0)
 
-# Fast-path for 'aio i' - show cache instantly, start interactive in background
-# NOTE: Agents test with `bash -i -c 'aio i'`, time with `bash -i -c 'time aio i < /dev/null' 2>&1`
-if len(sys.argv) > 1 and sys.argv[1] == 'i':
-    c = os.path.expanduser("~/.local/share/a/i_cache.txt")
-    if not sys.stdin.isatty(): print(open(c).read() if os.path.exists(c) else '', end=''); sys.exit(0)
-    if not os.environ.get('_AIO_I'): items = (open(c).read().strip().split('\n')[:8]+['']*8)[:8] if os.path.exists(c) else ['']*8; print("Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n > "+items[0]+'\n'+'\n'.join(f"   {m}" for m in items[1:]))
+# Fast-path: 'a i' - pipe mode only
+if len(sys.argv) > 1 and sys.argv[1] == 'i' and not sys.stdin.isatty():
+    c = os.path.expanduser("~/.local/share/a/i_cache.txt"); print(open(c).read() if os.path.exists(c) else '', end=''); sys.exit(0)
 
-# Generate monolith from all modules
+# Generate monolith
 if len(sys.argv) > 1 and sys.argv[1] in ('mono', 'monolith'):
-    p = os.path.expanduser("~/.local/share/a/aio_mono.py"); open(p, 'w').write('\n\n'.join(f"# === {f} ===\n" + open(f).read() for f in sorted(__import__('glob').glob(os.path.dirname(__file__) + '/a_cmd/*.py')))); print(p); sys.exit(0)
+    from glob import glob as G
+    p = os.path.expanduser("~/.local/share/a/a_mono.py")
+    open(p, 'w').write('\n\n'.join(f"# === {f} ===\n" + open(f).read() for f in sorted(G(os.path.dirname(__file__) + '/a_cmd/*.py'))))
+    print(p); sys.exit(0)
 
-# Command dispatch table (like git's cmd_struct)
-# NOTE: Shell function a() defined in install.sh. aio renamed to a.
+# Command dispatch
 CMDS = {
     None: 'help', '': 'help', 'help': 'help_full', 'hel': 'help_full', '--help': 'help_full', '-h': 'help_full',
     'update': 'update', 'upd': 'update', 'jobs': 'jobs', 'job': 'jobs', 'kill': 'kill', 'kil': 'kill', 'killall': 'kill',
@@ -38,46 +43,25 @@ CMDS = {
     'add': 'add', 'remove': 'remove', 'rem': 'remove', 'rm': 'remove', 'move': 'move', 'mov': 'move', 'dash': 'dash', 'das': 'dash',
     'all': 'multi', 'a': 'multi', 'ai': 'multi', 'aio': 'multi', 'backup': 'backup', 'bak': 'backup', 'scan': 'scan', 'sca': 'scan',
     'e': 'e', 'x': 'x', 'p': 'p', 'copy': 'copy', 'cop': 'copy', 'log': 'log', 'done': 'done',
-    'agent': 'agent', 'tree': 'tree', 'tre': 'tree', 'dir': 'dir', 'web': 'web', 'ssh': 'ssh', 'run': 'run', 'hub': 'hub', 'task': 'task', 'tas': 'task', 't': 'task',
-    'daemon': 'daemon', 'ui': 'ui', 'review': 'review', 'n': 'note', 'note': 'note', 'i': 'i', 'rebuild': 'rebuild', 'repo': 'repo',
+    'agent': 'agent', 'tree': 'tree', 'tre': 'tree', 'dir': 'dir', 'web': 'web', 'ssh': 'ssh', 'run': 'run', 'hub': 'hub',
+    'task': 'task', 'tas': 'task', 't': 'task', 'daemon': 'daemon', 'ui': 'ui', 'review': 'review',
+    'n': 'note', 'note': 'note', 'i': 'i', 'rebuild': 'rebuild', 'repo': 'repo',
 }
 
 def main():
-    import time; _START = time.time()
+    import time, atexit, json; _t = time.time()
     arg = sys.argv[1] if len(sys.argv) > 1 else None
-    wda = sys.argv[2] if len(sys.argv) > 2 else None
-
-    # Timing
-    import atexit, json
-    from datetime import datetime
-    _CMD = ' '.join(sys.argv[1:3]) if len(sys.argv) > 1 else 'help'
-    def _save_timing():
-        try: d = os.path.expanduser("~/.local/share/a"); os.makedirs(d, exist_ok=True); open(f"{d}/timing.jsonl", "a").write(json.dumps({"cmd": _CMD, "ms": int((time.time() - _START) * 1000), "ts": datetime.now().isoformat()}) + "\n")
+    cmd = ' '.join(sys.argv[1:3]) if arg else 'help'
+    def _log():
+        try: d = os.path.expanduser("~/.local/share/a"); os.makedirs(d, exist_ok=True); open(f"{d}/timing.jsonl", "a").write(json.dumps({"cmd": cmd, "ms": int((time.time() - _t) * 1000)}) + "\n")
         except: pass
-    atexit.register(_save_timing)
-
-    # Check for known command
-    cmd_name = CMDS.get(arg)
-
-    if cmd_name:
-        # Lazy import command module
-        mod = __import__(f'a_cmd.{cmd_name}', fromlist=[cmd_name])
-        mod.run()
-    elif arg and arg.endswith('++') and not arg.startswith('w'):
-        # Worktree++ command
-        from a_cmd import wt_plus; wt_plus.run()
-    elif arg and arg.startswith('w') and arg not in ('watch', 'web') and not os.path.isfile(arg):
-        # Worktree command
-        from a_cmd import wt; wt.run()
-    elif arg and (os.path.isdir(os.path.expanduser(arg)) or os.path.isfile(arg) or (arg.startswith('/projects/') and os.path.isdir(os.path.expanduser('~' + arg)))):
-        # Directory/file command
-        from a_cmd import dir_file; dir_file.run()
-    elif arg and arg.isdigit():
-        # Project number shortcut
-        from a_cmd import project_num; project_num.run()
-    else:
-        # Session command (fallback)
-        from a_cmd import sess; sess.run()
+    atexit.register(_log)
+    if c := CMDS.get(arg): __import__(f'a_cmd.{c}', fromlist=[c]).run()
+    elif arg and arg.endswith('++') and not arg.startswith('w'): from a_cmd import wt_plus; wt_plus.run()
+    elif arg and arg.startswith('w') and arg not in ('watch', 'web') and not os.path.isfile(arg): from a_cmd import wt; wt.run()
+    elif arg and (os.path.isdir(os.path.expanduser(arg)) or os.path.isfile(arg) or (arg.startswith('/projects/') and os.path.isdir(os.path.expanduser('~' + arg)))): from a_cmd import dir_file; dir_file.run()
+    elif arg and arg.isdigit(): from a_cmd import project_num; project_num.run()
+    else: from a_cmd import sess; sess.run()
 
 if __name__ == '__main__':
     main()

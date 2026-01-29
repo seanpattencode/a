@@ -20,16 +20,15 @@ def refresh_cache():
     os.makedirs(os.path.dirname(CACHE), exist_ok=True); open(CACHE, 'w').write('\n'.join(items))
 
 def run():
-    try: items = open(CACHE).read().strip().split('\n')
+    try: items = [x for x in open(CACHE).read().strip().split('\n') if x and not x.startswith(('<','=','>','#'))]
     except: refresh_cache(); items = open(CACHE).read().strip().split('\n')
+    if not items: refresh_cache(); items = open(CACHE).read().strip().split('\n')
 
-    if not sys.stdin.isatty():
-        print('\n'.join(items)); sys.exit(0)
+    if not sys.stdin.isatty(): print('\n'.join(items)); sys.exit(0)
 
-    # Rebuild cache in background
-    if os.fork() == 0: refresh_cache(); os._exit(0)
+    if os.fork() == 0: refresh_cache(); os._exit(0)  # Rebuild cache in background
 
-    sys.stdout.write("\033[?25l\033[u"); buf, sel = "", 0  # Hide cursor, restore position
+    print("Filter, Tab=cycle, Enter=run, Esc=quit\n"); buf, sel = "", 0
 
     while True:
         matches = [x for x in items if buf.replace(' ','').lower() in x.lower()][:8] if buf else items[:8]

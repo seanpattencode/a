@@ -1,8 +1,6 @@
 # a
 
-> `aio` has been renamed to `a`. One character. See [ideas/LATENCY.md](ideas/LATENCY.md).
-
-An ai agent manager.
+AI agent manager. One character. See [ideas/LATENCY.md](ideas/LATENCY.md).
 
 ## Prerequisites
 
@@ -39,7 +37,7 @@ a update
 git clone https://github.com/seanpattencode/aio.git && cd aio && ./install.sh
 ```
 
-Installs: tmux, node, claude, codex, gemini, aio. Prompts for sudo if needed. Works without root (installs to ~/.local).
+Installs: tmux, node, claude, codex, gemini, a. Prompts for sudo if needed. Works without root (installs to ~/.local).
 
 ## Simple start
 Type in terminal
