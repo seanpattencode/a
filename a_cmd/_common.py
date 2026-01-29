@@ -155,10 +155,7 @@ def load_sess(cfg):
 
 def _pmark(p,r): return '+' if os.path.exists(p) else ('~' if r else 'x')
 def _refresh_cache():
-    p, a = load_proj(), load_apps()
-    out = [f"PROJECTS:"] + [f"  {i}. {_pmark(x,r)} {x}" for i,(x,r) in enumerate(p)]
-    out += [f"COMMANDS:"] + [f"  {len(p)+i}. {n} -> {c.replace(os.path.expanduser('~'), '~')[:60]}" for i, (n, c) in enumerate(a)] if a else []
-    Path(os.path.join(DATA_DIR, 'help_cache.txt')).write_text(HELP_SHORT + '\n' + '\n'.join(out) + '\n')
+    from .update import refresh_caches; refresh_caches()
 
 def add_proj(p):
     p = os.path.abspath(os.path.expanduser(p))

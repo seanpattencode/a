@@ -1,11 +1,8 @@
 """aio i - Interactive command picker with live suggestions"""
 import sys, os, tty, termios
 
-CMDS = ['help','update','jobs','kill','attach','cleanup','config','ls','diff','send','watch',
-        'push','pull','revert','set','settings','install','uninstall','deps','prompt','gdrive',
-        'add','remove','move','dash','all','backup','scan','copy','log','done','agent','tree',
-        'dir','web','ssh','run','hub','daemon','ui','review','note']
-CACHE = os.path.expanduser("~/.local/share/a/i_cache.txt")
+from ._common import DATA_DIR
+CACHE = f"{DATA_DIR}/i_cache.txt"
 
 def getch():
     fd = sys.stdin.fileno()
@@ -14,10 +11,7 @@ def getch():
     finally: termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 def refresh_cache():
-    from ._common import load_proj, load_apps, init_db
-    init_db(); p, a = load_proj(), load_apps()
-    items = [f"{i}:{os.path.basename(x[0])}" for i,x in enumerate(p)] + [f"{len(p)+i}:{n}" for i,(n,_) in enumerate(a)] + CMDS
-    os.makedirs(os.path.dirname(CACHE), exist_ok=True); open(CACHE, 'w').write('\n'.join(items))
+    from .update import refresh_caches; refresh_caches()
 
 def run():
     try: items = [x for x in open(CACHE).read().strip().split('\n') if x and not x.startswith(('<','=','>','#'))]
