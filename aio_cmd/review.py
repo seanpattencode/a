@@ -8,8 +8,8 @@ def run():
     c = input("> ").strip()
     if not c.split()[0].isdigit(): return
     p = items[int(c.split()[0])]; repo, num = p['repository']['nameWithOwner'], str(p['number'])
-    sp.run(['gh', 'pr', 'diff', '--repo', repo, num])
-    act = input("\n[m]erge [c]lose [r]un [q]uit > ").strip().lower()
+    sp.run(f'D=/tmp/pr-{num};rm -rf $D&&gh repo clone {repo} $D&>/dev/null&&cd $D&&gh pr checkout {num}&>/dev/null&&aio diff main', shell=True)
+    act = input("[m]erge [c]lose [r]un > ").strip().lower()
     if act == 'm': sp.run(['gh', 'pr', 'merge', '--repo', repo, num, '--squash', '--delete-branch'])
     elif act == 'c': sp.run(['gh', 'pr', 'close', '--repo', repo, num, '--delete-branch'])
-    elif act == 'r': d = f"/tmp/pr-{num}"; sp.run(f"rm -rf {d} && gh repo clone {repo} {d} && cd {d} && gh pr checkout {num} && python3 agent.py", shell=True)
+    elif act == 'r': sp.run(f"cd /tmp/pr-{num}&&python3 agent.py", shell=True)

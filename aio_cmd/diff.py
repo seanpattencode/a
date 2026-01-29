@@ -16,13 +16,13 @@ def run():
         return
     sp.run(['git', 'fetch', 'origin'], capture_output=True); cwd = os.getcwd()
     b = sp.run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'], capture_output=True, text=True).stdout.strip()
-    target = 'origin/main' if b.startswith('wt-') else f'origin/{b}'
+    target = f'origin/{sel}' if sel else ('origin/main' if b.startswith('wt-') else f'origin/{b}')
     committed = sp.run(['git', 'diff', f'{target}..HEAD'], capture_output=True, text=True).stdout
     uncommitted = sp.run(['git', 'diff', 'HEAD', '--diff-filter=d'], capture_output=True, text=True).stdout
     diff = committed + uncommitted
     untracked = sp.run(['git', 'ls-files', '--others', '--exclude-standard'], capture_output=True, text=True).stdout.strip()
-    print(f"{cwd}\n{b} -> {target}")
-    if not diff and not untracked: print("No changes\n\naio diff 5 = last 5 commits"); return
+    print(f"{b} -> {target}" if sel else f"{cwd}\n{b} -> {target}")
+    if not diff and not untracked: print("No changes"); return
     try: enc = __import__('tiktoken').get_encoding('cl100k_base').encode; tok = lambda s: len(enc(s))
     except: tok = lambda s: len(s) // 4
     G, R, X, f, fstats = '\033[48;2;26;84;42m', '\033[48;2;117;34;27m', '\033[0m', '', {}
@@ -48,4 +48,4 @@ def run():
     files = list(fstats.keys()) + list(ut.keys())
     flist = ' '.join(os.path.basename(f) for f in files[:5]) + (' ...' if len(files) > 5 else '')
     unt = f" (incl. {len(ut)} untracked)" if ut else ""
-    print(f"{'─'*60}\n{len(files)} file{'s' if len(files)!=1 else ''} ({flist}), +{ins}/-{dels} lines{unt} | Net: {ins-dels:+} lines, {ta-tr:+} tokens\n\naio diff 5 = last 5 commits")
+    print(f"{'─'*60}\n{len(files)} file{'s' if len(files)!=1 else ''} ({flist}), +{ins}/-{dels} lines{unt} | Net: {ins-dels:+} lines, {ta-tr:+} tokens" + ("\n\ndiff # = last #" if not sel else ""))
