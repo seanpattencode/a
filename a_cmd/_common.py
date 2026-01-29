@@ -367,7 +367,7 @@ def send_prefix(sn, agent, wd, cfg):
 def send_to_sess(sn, prompt, wait=False, timeout=None, enter=True):
     if not tm.has(sn): print(f"x Session {sn} not found"); return False
     tm.send(sn, prompt)
-    if enter: time.sleep(0.1); tm.send(sn, '\n'); print(f"✓ Sent to '{sn}'")
+    if enter: time.sleep(0.1); sp.run(['tmux', 'send-keys', '-t', sn, 'Enter']); print(f"✓ Sent to '{sn}'")
     else: print(f"✓ Inserted into '{sn}'")
     if wait:
         print("Waiting...", end='', flush=True); start, last = time.time(), time.time()

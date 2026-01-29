@@ -2,7 +2,7 @@
 import sys, os, subprocess as sp
 from . _common import (init_db, load_cfg, load_proj, load_apps, load_sess, tm, _env,
                        get_dir_sess, create_sess, send_prefix, launch_win, _start_log,
-                       _ghost_claim, _GM, SCRIPT_DIR, fmt_cmd)
+                       _ghost_claim, _GM, SCRIPT_DIR, fmt_cmd, get_prefix)
 
 def run():
     init_db()
@@ -65,10 +65,11 @@ def run():
     pp = [a for a in sys.argv[(2 if is_wda_prompt else (3 if wda else 2)):] if a not in ['-w', '--new-window', '--yes', '-y', '-t', '--with-terminal']]
 
     if pp:
+        pre = get_prefix(sess[arg][0] if arg in sess else arg, cfg, wd)
         print("Prompt queued")
-        sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'aio_new.py'), 'send', sn, ' '.join(pp)] + (['--no-enter'] if is_p else []), stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'a.py'), 'send', sn, pre + ' '.join(pp)] + (['--no-enter'] if is_p else []), stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     elif is_p and (pm := {'cp': cfg.get('codex_prompt', ''), 'lp': cfg.get('claude_prompt', ''), 'gp': cfg.get('gemini_prompt', '')}.get(arg)):
-        sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'aio_new.py'), 'send', sn, pm, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+        sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'a.py'), 'send', sn, pm, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     elif created and arg in sess:
         send_prefix(sn, sess[arg][0], wd, cfg)
 
