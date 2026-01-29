@@ -208,12 +208,12 @@ def cloud_account(remote=None):
     if not (rc := get_rclone()): return "(no rclone)"
     try:
         rem = remote or _configured_remotes()[0]
+        if sp.run([rc, 'about', f'{rem}:'], capture_output=True, timeout=10).returncode != 0: return "(token expired)"
         token = json.loads(json.loads(sp.run([rc, 'config', 'dump'], capture_output=True, text=True).stdout).get(rem, {}).get('token', '{}')).get('access_token')
-        if not token: return "(no token)"
-        import urllib.request
-        u = json.loads(urllib.request.urlopen(urllib.request.Request('https://www.googleapis.com/drive/v3/about?fields=user', headers={'Authorization': f'Bearer {token}'}), timeout=5).read()).get('user', {})
+        u = json.loads(__import__('urllib.request').request.urlopen(__import__('urllib.request').request.Request('https://www.googleapis.com/drive/v3/about?fields=user', headers={'Authorization': f'Bearer {token}'}), timeout=5).read()).get('user', {})
         return f"{u.get('displayName', '')} <{u.get('emailAddress', 'unknown')}>"
-    except Exception as e: return f"(offline)" if 'urlopen' in str(e.__traceback__.tb_frame.f_code.co_name) else "(token expired)"
+    except sp.TimeoutExpired: return "(offline)"
+    except: return "(error)"
 def cloud_sync(wait=False):
     rc, remotes = get_rclone(), _configured_remotes()
     if not rc or not remotes: return False, None
@@ -579,7 +579,7 @@ OTHER
   a n "text"          Quick note
   a log               View agent logs
   a config            View/set settings
-  a update            Update a
+  a update [shell|cache]  Update a (or just shell/cache)
   a mono              Generate monolith for reading
 
 EXPERIMENTAL
