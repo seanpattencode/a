@@ -29,7 +29,7 @@ a() {
     [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/aios/timing.jsonl; return $r; }
     command python3 ~/.local/bin/aio "$@"
 }
-aio() { echo "aio has been renamed a. Yeah i know it sucks but its faster in the long term. 2.9× fewer errors on mobile, don't need English to type a. See ideas/LATENCY.md"; a "$@"; }
+aio() { echo "'a' saves 2 chars×0.4s×50/day×365=2h/year. See ideas/LATENCY.md"; a "$@"; }
 AFUNC
     done
     ok "shell functions (bash + zsh)"
@@ -122,7 +122,7 @@ a() {
     [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/aios/timing.jsonl; return $r; }
     command python3 ~/.local/bin/aio "$@"
 }
-aio() { echo "aio has been renamed a. Yeah i know it sucks but its faster in the long term. 2.9× fewer errors on mobile, don't need English to type a. See ideas/LATENCY.md"; a "$@"; }
+aio() { echo "'a' saves 2 chars×0.4s×50/day×365=2h/year. See ideas/LATENCY.md"; a "$@"; }
 AFUNC
 done
 ok "shell functions (bash + zsh)"
