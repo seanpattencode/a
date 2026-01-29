@@ -3,7 +3,7 @@ import os, subprocess as sp
 DATA = os.path.expanduser('~/.local/share/a')
 
 def sync(msg='sync', bg=True):
-    os.makedirs(DATA, exist_ok=True); cmd='cd {}; git init -q; git add -A; git commit -qm "{}" --allow-empty; git remote get-url origin || gh repo create aio-sync --private --source . --push -y; git push -q'.format(DATA, msg)
+    os.makedirs(DATA, exist_ok=True); cmd='cd {}; git init -q; git fetch -q 2>/dev/null; git reset --hard origin/main 2>/dev/null; git add -A; git commit -qm "{}" --allow-empty; git remote get-url origin || gh repo create aio-sync --private --source . --push -y; git push -q'.format(DATA, msg)
     (sp.Popen if bg else sp.run)(cmd, shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL); return sp.run(['git','-C',DATA,'remote','get-url','origin'], capture_output=True, text=True).stdout.strip() or 'syncing...'
 
 def run():
