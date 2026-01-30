@@ -6,11 +6,11 @@ from pathlib import Path
 from ._common import SCRIPT_DIR
 
 SYNC_ROOT = Path(SCRIPT_DIR).parent / 'a-sync'
-REPOS = {'common': 'aio-common', 'ssh': 'aio-ssh', 'logs': 'aio-logs'}
+REPOS = {'common': 'aio-common', 'ssh': 'aio-ssh', 'logs': 'aio-logs', 'login': 'aio-login'}
 
 def _sync_repo(path, repo_name, msg='sync'):
     path.mkdir(parents=True, exist_ok=True)
-    r = sp.run(f'cd {path}; git init -q; git add -A; git commit -qm "{msg}" 2>/dev/null; git remote get-url origin 2>/dev/null || git remote add origin $(gh api user -q \'"https://github.com/"+.login+"/{repo_name}.git"\') 2>/dev/null || gh repo create {repo_name} --private --source . --push -y; git pull --rebase -q && git push -q', shell=True, capture_output=True, text=True)
+    r = sp.run(f'cd {path}; git init -q; git add -A; git commit -qm "{msg}" 2>/dev/null; gh repo create {repo_name} --private 2>/dev/null; URL=$(gh api user -q \'"https://github.com/"+.login+"/{repo_name}.git"\'); git remote set-url origin $URL 2>/dev/null || git remote add origin $URL; git pull --rebase -q origin HEAD 2>/dev/null; git push -u origin HEAD -q', shell=True, capture_output=True, text=True)
     url = sp.run(['git','-C',str(path),'remote','get-url','origin'], capture_output=True, text=True).stdout.strip() or 'syncing...'
     if r.returncode: print(f"x sync failed [{repo_name}] - copy this to ai agent (hint: a copy):\n  Sync conflict in {path}. Verify: {url}\n  Run `cd {path} && git status`, explain the issue, propose a fix plan for my approval.")
     return url
