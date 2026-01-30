@@ -5,12 +5,12 @@ Because we by default save things to git and version control it, we can be more 
 import os, subprocess as sp
 from pathlib import Path
 from ._common import SYNC_ROOT
-REPOS = {'common': 'a-common', 'ssh': 'a-ssh', 'logs': 'a-logs', 'login': 'a-login', 'hub': 'a-hub', 'notes': 'a-notes', 'workspace': 'a-workspace'}
+REPOS = {k: f'a-{k}' for k in 'common ssh logs login hub notes workspace'.split()}
 
 def _sync_repo(path, repo_name, msg='sync'):
     git_dir = path / '.git'
     if git_dir.exists():  # existing repo: add, commit, pull, push
-        r = sp.run(f'cd {path} && git add -A && git commit -qm "{msg}" 2>/dev/null; git pull -q 2>/dev/null; git push -q', shell=True, capture_output=True, text=True)
+        r = sp.run(f'cd {path} && git pull -q --rebase 2>/dev/null; git add -A && git commit -qm "{msg}" 2>/dev/null; git push -q', shell=True, capture_output=True, text=True)
     else:  # new setup: clone if exists, else create
         path.parent.mkdir(parents=True, exist_ok=True)
         r = sp.run(f'gh repo clone {repo_name} {path} 2>/dev/null || (mkdir -p {path} && cd {path} && git init -q && echo "# {repo_name}" > README.md && git add -A && git commit -qm "init" && gh repo create {repo_name} --private --source=. --push)', shell=True, capture_output=True, text=True)

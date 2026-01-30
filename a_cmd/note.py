@@ -12,7 +12,7 @@ def _save(nid, text, status='pending', project=None, due=None, device=None):
     (NOTES_DIR/f'{nid}.txt').write_text(f"ID: {nid}\nText: {text}\nStatus: {status}\nDevice: {device or DEVICE_ID}\nCreated: {datetime.now():%Y-%m-%d %H:%M}\n"+(f"Project: {project}\n" if project else "")+(f"Due: {due}\n" if due else ""))
     sync('notes')
 def _load():
-    NOTES_DIR.mkdir(parents=True, exist_ok=True); (NOTES_DIR/'.git').exists() or sync('notes'); notes = []
+    NOTES_DIR.mkdir(parents=True, exist_ok=True); sync('notes'); notes = []
     for f in NOTES_DIR.glob('*.txt'):
         d = {k.strip(): v.strip() for line in f.read_text().splitlines() if ':' in line for k, v in [line.split(':', 1)]}
         if 'ID' in d and 'Text' in d: notes.append((d['ID'], d['Text'], d.get('Due'), d.get('Project'), d.get('Device',DEVICE_ID), d.get('Status','pending'), d.get('Created')))
