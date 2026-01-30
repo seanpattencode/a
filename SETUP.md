@@ -51,6 +51,46 @@ ssh user@host 'export PATH="$HOME/.local/bin:$PATH" && echo "TOKEN_HERE" | gh au
 ssh user@host 'export PATH="$HOME/.local/bin:$PATH" && cd ~/projects/a && python3 a.py sync'
 ```
 
+## Termux (Android) via ADB
+
+For Android devices connected via USB with Termux installed and sshd running.
+
+```bash
+# 1. Forward Termux SSH port
+adb forward tcp:8022 tcp:8022
+
+# 2. Clear old host key (if needed)
+ssh-keygen -R '[localhost]:8022'
+
+# 3. If repo exists but outdated, update it
+sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -p 8022 localhost \
+  'cd ~/projects/aio && git fetch origin && git reset --hard origin/main'
+
+# Or clone fresh:
+sshpass -p 'PASSWORD' ssh -o StrictHostKeyChecking=no -p 8022 localhost \
+  'git clone https://github.com/seanpattencode/aio.git ~/projects/a'
+
+# 4. Create symlinks (aio -> a for compatibility)
+sshpass -p 'PASSWORD' ssh -p 8022 localhost \
+  'ln -sf ~/projects/aio ~/projects/a; rm -f ~/.local/bin/aio*; mkdir -p ~/.local/bin && ln -sf ~/projects/a/a.py ~/.local/bin/a'
+
+# 5. Install gh and update shell
+sshpass -p 'PASSWORD' ssh -p 8022 localhost 'pkg install -y gh'
+sshpass -p 'PASSWORD' ssh -p 8022 localhost 'cd ~/projects/a && python a.py update shell'
+
+# 6. Apply gh token and credential helper
+sshpass -p 'PASSWORD' ssh -p 8022 localhost \
+  'echo "TOKEN_HERE" | gh auth login --with-token && git config --global credential.helper "$(command -v gh) auth git-credential"'
+
+# 7. Sync
+sshpass -p 'PASSWORD' ssh -p 8022 localhost 'cd ~/projects/a && python a.py sync'
+```
+
+**Get Termux IP for SSH host entry:**
+```bash
+sshpass -p 'PASSWORD' ssh -p 8022 localhost 'ip addr show wlan0 | grep "inet " | awk "{print \$2}" | cut -d/ -f1'
+```
+
 ## Via `a ssh` (after host is added)
 
 ```bash
