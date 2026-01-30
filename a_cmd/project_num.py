@@ -1,6 +1,6 @@
 """aio <#> - Open project by number"""
 import sys, os, subprocess as sp
-from . _common import init_db, load_proj, load_apps, resolve_cmd, fmt_cmd, SCRIPT_DIR
+from . _common import init_db, load_proj, load_apps, resolve_cmd, fmt_cmd, SCRIPT_DIR, SYNC_ROOT
 
 _OK = os.path.expanduser('~/.local/share/a/logs/push.ok')
 
@@ -9,7 +9,11 @@ def run():
     if 0 <= idx < len(PROJ):
         p, repo = PROJ[idx]
         if not os.path.exists(p) and repo:
-            p = os.path.expanduser(f"~/projects/{os.path.basename(p)}"); os.path.isdir(p) or (print(f"Cloning {repo}"),sp.run(['git','clone',repo,p]).returncode==0 or sys.exit(1))
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            if sp.run(['gh','auth','token'], capture_output=True).returncode != 0:
+                t = next((l.split(':',1)[1].strip() for f in sorted((SYNC_ROOT/'login').glob('gh_*.txt'), key=lambda f: -f.stat().st_mtime) for l in f.read_text().splitlines() if l.startswith('Token:')), None)
+                t and sp.run(f'echo "{t}"|gh auth login --with-token', shell=True, capture_output=True) and print("✓ gh auth from sync")
+            print(f"Cloning {repo}..."); sp.run(['git','clone',repo,p]).returncode and sys.exit(1)
         print(f"Opening project {idx}: {p}")
         sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'aio_new.py'), '_ghost', p], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         sp.Popen(f'git -C "{p}" ls-remote --exit-code origin HEAD>/dev/null 2>&1&&touch "{_OK}"', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
