@@ -7,6 +7,7 @@ _TTL = 600  # 10 min
 
 def run():
     cwd, msg = os.getcwd(), ' '.join(sys.argv[2:]) or f"Update {os.path.basename(os.getcwd())}"
+    if not os.path.isdir(f'{cwd}/.git') and (subs:=[d for d in os.listdir(cwd) if os.path.isdir(f'{cwd}/{d}/.git')]) and input(f"Push {len(subs)} repos? ({', '.join(subs)}) [y/n]: ").lower() in ('y','yes',''): [(os.chdir(f'{cwd}/{d}'), run()) for d in subs]; return
     os.makedirs(_DIR, exist_ok=True)
     chg = sp.run(['git', 'status', '--porcelain'], cwd=cwd, capture_output=True, text=True).stdout.strip()
     tag = "✓" if chg else "○"  # ○ = clarification commit
