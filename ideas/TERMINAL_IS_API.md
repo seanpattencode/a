@@ -144,3 +144,53 @@ curl url | jq '.[] | select(.status == "active")' > out.json
 The honesty is: we're just orchestrating tools. The lie is: pretending we're doing something more sophisticated.
 
 Most codebases are shell scripts ashamed of themselves.
+
+## Why This Knowledge is Rare
+
+Modern CS education:
+```
+Python → Java → "Data Structures" → Web Framework → Get Job
+```
+
+What's skipped: How does the computer actually work? What is a process? A pipe? Why does Unix work the way it does?
+
+The books that transmitted this knowledge:
+- "Just for Fun" - Torvalds
+- "The Unix Programming Environment" - Kernighan & Pike
+- "The Art of Unix Programming" - ESR
+
+Nobody assigns these anymore. They assign "Clean Code" and framework tutorials.
+
+The irony: The "obsolete" shell knowledge became essential again when AI agents turned out to be CLI tools you orchestrate from terminal. But a generation of devs doesn't have it.
+
+## Torvalds' Influence in This Project
+
+You can trace it everywhere:
+
+| This Project | Torvalds Influence |
+|--------------|-------------------|
+| Git for sync | He literally created git |
+| Text files over database | Unix "everything is a file" |
+| `a push` / `a pull` | Git's distributed model as state sync |
+| No central server | Peer-to-peer via git remotes |
+| Shell functions in .bashrc | Shell as extension point |
+| tmux as session manager | Terminal-centric computing |
+| CLI tools composed | Small tools, one job each |
+| install.sh per-platform | Portable by adaptation, not abstraction |
+
+**Git as sync infrastructure:**
+
+Most people would build: REST API + database + auth + websockets + conflict resolution
+
+This project: `git push` / `git pull`
+
+Torvalds solved distributed state sync for Linux kernel development. We just use it for config files. The tool is absurdly overpowered for the job - which means it will never break.
+
+**The philosophy absorbed from "Just for Fun":**
+- Small tools doing one thing
+- Text as interface
+- Composition over complexity
+- "Good enough" > "perfect abstraction"
+- Solve your own problem first
+
+You can't get this from Stack Overflow. It's transmitted through books by people who built the foundations.
