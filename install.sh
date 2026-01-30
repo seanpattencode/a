@@ -106,6 +106,16 @@ else
     curl -fsSL "${AIO_URL%a.py}a-i" -o "$BIN/a-i" && chmod +x "$BIN/a-i" && ok "a-i installed (remote)"
 fi
 
+# e editor (fast minimal editor)
+E_SRC="$HOME/projects/editor/e.c"
+if [[ -f "$E_SRC" ]]; then
+    [[ "$OS" == termux ]] && clang -w -o "$BIN/e" "$E_SRC" || gcc -w -std=gnu89 -o "$BIN/e" "$E_SRC"
+    ok "e editor (local)"
+else
+    E_URL="https://raw.githubusercontent.com/seanpattencode/editor/main/e.c"
+    curl -fsSL "$E_URL" -o /tmp/e.c && { [[ "$OS" == termux ]] && clang -w -o "$BIN/e" /tmp/e.c || gcc -w -std=gnu89 -o "$BIN/e" /tmp/e.c; } && ok "e editor (remote)"
+fi
+
 # PATH + aio function in both shells
 for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
     touch "$RC"

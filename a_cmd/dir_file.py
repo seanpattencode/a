@@ -14,4 +14,4 @@ def run():
         elif ext in ('.html', '.htm'):
             __import__('webbrowser').open('file://' + os.path.abspath(arg))
         elif ext == '.md':
-            os.execvp(os.environ.get('EDITOR', 'nvim'), [os.environ.get('EDITOR', 'nvim'), arg])
+            os.execvp(os.environ.get('EDITOR', 'e'), [os.environ.get('EDITOR', 'e'), arg])
