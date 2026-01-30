@@ -211,3 +211,42 @@ When Unix philosophy is in your head, you don't "decide" to use pipes. You just 
 This is why the knowledge transmission matters. You can't teach someone "use git for sync" as a rule. They'll apply it wrong. But if they've absorbed *why* Unix works the way it does, they'll independently arrive at the same solutions.
 
 The architecture is an emergent property of the philosophy.
+
+## Python is Super Bash
+
+The original split:
+
+**Programming languages** (C, Fortran)
+- Build the tools
+- Performance critical
+- Compiled, optimized
+
+**Scripting languages** (sh, Perl, Python)
+- Glue tools together
+- Dev speed critical
+- Interpreted, flexible
+
+Python IS super bash:
+- Variables that aren't insane
+- Real data structures
+- Error handling that works
+- But still `subprocess.run()` at its core
+
+**What went wrong:**
+
+People started building *applications* in Python. Web backends, ML pipelines, entire products. Python became "a programming language" and forgot it was supposed to be glue.
+
+Then you get Python apps that are slow, rewrites to Go/Rust "for performance", ecosystem of heavy libraries, people treating Python like Java.
+
+**This project uses Python correctly:**
+
+```python
+# This is scripting
+sp.run(['git', 'push'])
+sp.run(['tmux', 'new-session', ...])
+sp.run(['claude', '--dangerously-skip-permissions'])
+```
+
+The "real work" is done by C programs (git, tmux) or external services (claude). Python just orchestrates.
+
+That's the original vision. Super bash. Not "Java but slower."
