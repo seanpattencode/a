@@ -4,10 +4,8 @@ This allows for isolation, so a sync conflict in notes doesn't bottleneck agent 
 Because we by default save things to git and version control it, we can be more fearless in what we attempt knowing we can revert it. This helps democratize information rollback for the user's own programs and files and is essential for agentic interaction with file systems. A db might be very powerful when it runs and fail infrequently but a merkle tree revives you every time. And that is the security you need to be able to rely on things you build personally in the long term."""
 import os, subprocess as sp
 from pathlib import Path
-from ._common import SCRIPT_DIR
-
-SYNC_ROOT = Path(SCRIPT_DIR).parent / 'a-sync'
-REPOS = {'common': 'aio-common', 'ssh': 'aio-ssh', 'logs': 'aio-logs', 'login': 'aio-login'}
+from ._common import SYNC_ROOT
+REPOS = {'common': 'a-common', 'ssh': 'a-ssh', 'logs': 'a-logs', 'login': 'a-login'}
 
 def _sync_repo(path, repo_name, msg='sync'):
     path.mkdir(parents=True, exist_ok=True)

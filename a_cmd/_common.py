@@ -8,7 +8,8 @@ SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 PROMPTS_DIR = Path(SCRIPT_DIR) / 'data' / 'prompts'
 DATA_DIR = os.path.expanduser("~/.local/share/a")
 DB_PATH = os.path.join(DATA_DIR, "aio.db")
-LOG_DIR = os.path.join(DATA_DIR, "logs")
+SYNC_ROOT = Path(SCRIPT_DIR).parent / 'a-sync'
+LOG_DIR = str(SYNC_ROOT / 'logs')
 def _get_dev():
     f = os.path.expanduser('~/.local/share/a/.device')
     if os.path.exists(f): return open(f).read().strip()
