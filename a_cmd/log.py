@@ -1,15 +1,28 @@
-"""aio log [#|tail #|clean days] - View agent logs"""
-import sys, os, time, subprocess as sp
+"""aio log [#|tail #|clean days|grab] - View agent logs"""
+import sys, os, time, subprocess as sp, shutil
 from pathlib import Path
 from datetime import datetime
-from . _common import init_db, LOG_DIR
+from . _common import init_db, LOG_DIR, DEVICE_ID
 from .sync import sync
 
+CLAUDE_DIR = Path.home()/'.claude'
+
+def _grab():
+    """Copy Claude logs to sync dir"""
+    dst = Path(LOG_DIR)/'claude'/DEVICE_ID; dst.mkdir(parents=True, exist_ok=True)
+    n = 0
+    if (h := CLAUDE_DIR/'history.jsonl').exists(): shutil.copy2(h, dst/'history.jsonl'); n += 1
+    for f in CLAUDE_DIR.glob('projects/**/*.jsonl'):
+        rel = f.relative_to(CLAUDE_DIR/'projects'); (dst/'projects'/rel.parent).mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, dst/'projects'/rel); n += 1
+    sync('logs'); print(f"✓ {n} files → {dst}")
+
 def run():
-    init_db(); Path(LOG_DIR).mkdir(parents=True, exist_ok=True); (Path(LOG_DIR)/'.git').exists() or sync('logs')
+    init_db(); Path(LOG_DIR).mkdir(parents=True, exist_ok=True); sync('logs')
+    sel = sys.argv[2] if len(sys.argv) > 2 else None
+    if sel == 'grab': _grab(); return
     logs = sorted(Path(LOG_DIR).glob('*.log'), key=lambda x: x.stat().st_mtime, reverse=True)
     if not logs: print("No logs"); return
-    sel = sys.argv[2] if len(sys.argv) > 2 else None
     if sel == 'clean': days = int(sys.argv[3]) if len(sys.argv) > 3 else 7; old = [f for f in logs if (time.time() - f.stat().st_mtime) > days*86400]; [f.unlink() for f in old]; print(f"✓ {len(old)} logs"); return
     if sel == 'tail': f = logs[int(sys.argv[3])] if len(sys.argv) > 3 and sys.argv[3].isdigit() else logs[0]; os.execvp('tail', ['tail', '-f', str(f)])
     if sel and sel.isdigit() and (i := int(sel)) < len(logs): sp.run(['tmux', 'new-window', f'cat "{logs[i]}"; read']); return

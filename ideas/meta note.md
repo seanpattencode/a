@@ -1,0 +1,10 @@
+Knowledge is provisional and there are two main methods of verification, experiemnt/empirical evidence, and matehamtical logical reasoning from axioms that are true from valid operations to conclusions. Its however also important to recognize that the combinatoiral space of possible things to verify makes it very difficult to find something to verify, and verifiation itself can sometimes be debatable, though to say that might imply its more provisional when in reality we can agree on a guestimate of 99.9 percent of things if we all just looked at the same data.
+
+The ideas in these notes and more broadly i write should be viewed in this method, provisional understandings that inevitably contain inaccuracies. The ability to correct quickly is more important or at least essential as having the right answers. So when I say this is how things are, its really this is how i understand it at the time and I will change my mind if I am convinced otherwise. But its hard to say that every sentence so its not. In the future stronger systems of verification of knowledge on a computer like speed will be important. But this situation as a broad whole is probably going to remain the same.
+
+Yet if we know that we have errors in our judgement, that itself is a piece of knowledge! And if we know that errors exist and detect them in any way, that is exactly the same as knowing that progress is possible and can be made. 
+
+Another concept I like to reference is this: how many people are the smartest and least errorful in the world or how many sentient beings? There is only one at any given time, and your chances of being that one are in the billions among humans and far higher among agents. 
+Yet among those, how many BELIEVE they are that one? Its hard to estimate but its probably in the millions range if not higher.
+So your chances of being self deluded are approximately at best 1000x your chance of being correct, and in reality almost certainly much higher. 
+So its best to act like.
