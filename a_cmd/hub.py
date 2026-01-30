@@ -1,7 +1,21 @@
-"""aio hub - Scheduled jobs"""
+"""aio hub - Scheduled jobs (RFC 5322 .txt storage)"""
 import sys, os, subprocess as sp, shutil, re
 from pathlib import Path
-from . _common import init_db, load_cfg, load_proj, load_apps, db, DEVICE_ID, DATA_DIR
+from . _common import init_db, load_cfg, load_proj, load_apps, db, DEVICE_ID, DATA_DIR, SYNC_ROOT
+from .sync import sync
+
+HUB_DIR = SYNC_ROOT / 'hub'
+def _save_job(name, schedule, prompt, device, enabled=True, last_run=None):
+    HUB_DIR.mkdir(parents=True, exist_ok=True)
+    (HUB_DIR/f'{name}.txt').write_text(f"Name: {name}\nSchedule: {schedule}\nPrompt: {prompt}\nDevice: {device}\nEnabled: {enabled}\n"+(f"Last-Run: {last_run}\n" if last_run else ""))
+    sync('hub')
+def _load_jobs():
+    HUB_DIR.mkdir(parents=True, exist_ok=True); (HUB_DIR/'.git').exists() or sync('hub'); jobs = []
+    for f in HUB_DIR.glob('*.txt'):
+        d = {k.strip(): v.strip() for line in f.read_text().splitlines() if ':' in line for k, v in [line.split(':', 1)]}
+        if 'Name' in d and 'Schedule' in d: jobs.append((0, d['Name'], d['Schedule'], d.get('Prompt',''), d.get('Device',DEVICE_ID), d.get('Enabled','true').lower()=='true', d.get('Last-Run')))
+    return jobs
+def _rm_job(name): (HUB_DIR/f'{name}.txt').unlink(missing_ok=True); sync('hub')
 
 def run():
     init_db()
@@ -39,11 +53,12 @@ def run():
             sp.run(['systemctl', '--user', 'disable', '--now', f'aio-{nm}.timer'], capture_output=True)
             [(sd / f'aio-{nm}.{x}').unlink(missing_ok=True) for x in ['timer', 'service']]
 
-    with db() as c:
-        jobs = c.execute("SELECT id,name,schedule,prompt,device,enabled,last_run FROM hub_jobs ORDER BY device,name").fetchall()
+    jobs = _load_jobs()
 
     if not wda:
         from datetime import datetime as dt; w = os.get_terminal_size().columns - 50 if sys.stdout.isatty() else 60
+        url = sp.run(['git','-C',str(HUB_DIR),'remote','get-url','origin'], capture_output=True, text=True).stdout.strip()
+        print(f"Hub: {len(jobs)} jobs\n  {HUB_DIR}\n  {url}\n")
         _lr = lambda t: dt.strptime(t, '%Y-%m-%d %H:%M').strftime('%m/%d %I:%M%p').lower() if t else '-'
         _pj = lambda jobs: [print(f"{i:<3}{j[1][:11]:<12}{j[2][:6]:<7}{_lr(j[6]):<14}{j[4][:9]:<10}{'✓' if j[5] else ' '} {(s:=j[3]or'') if len(s:=j[3]or'')<=w else s[:w//2-1]+'...'+s[-(w//2-2):]}") for i, j in enumerate(jobs)] or print("  (none)")
         print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<14}{'Device':<10}On Command"); _pj(jobs)
@@ -51,7 +66,7 @@ def run():
         while (c := input("\n<#> run | on/off <#> | add|rm|ed <#> | q\n> ").strip()) and c != 'q':
             args = ['run', c] if c.isdigit() else c.split()
             sp.run([sys.executable, __file__.replace('hub.py', '../aio.py'), 'hub'] + args)
-            jobs = db().execute("SELECT id,name,schedule,prompt,device,enabled,last_run FROM hub_jobs ORDER BY device,name").fetchall()
+            jobs = _load_jobs()
             print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<14}{'Device':<10}On Command"); _pj(jobs)
         return
 
@@ -63,7 +78,7 @@ def run():
         n, s = n or (tty and input("Name: ").strip().replace(' ','-')), s if ':' in s else (tty and input("Time (9:00am, *:0/30): ").strip())
         (e := "Missing name" if not n else "Bad sched (need : e.g. 9:00, *:0/30)" if ':' not in (s or '') else "Missing cmd" if not c else "") and sys.exit(f"✗ {e}")
         s = _pt(s) if s[0].isdigit() else s
-        with db() as cn: cn.execute("INSERT OR REPLACE INTO hub_jobs(name,schedule,prompt,device,enabled)VALUES(?,?,?,?,1)", (n, s, c, DEVICE_ID)); cn.commit()
+        _save_job(n, s, c, DEVICE_ID)
         cmd = c.replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ').replace('python ', f'{sys.executable} '); _install(n, s, cmd); print(f"✓ {n} @ {s}")
     elif wda == 'sync':
         [_uninstall(j[1]) for j in jobs]; mine = [j for j in jobs if j[4] == DEVICE_ID and j[5]]
@@ -79,7 +94,7 @@ def run():
         n = sys.argv[3] if len(sys.argv) > 3 else ''; j = jobs[int(n)] if n.isdigit() and int(n) < len(jobs) else None
         new = sys.argv[4] if len(sys.argv) > 4 else (sys.stdin.isatty() and input(f"Name [{j[1]}]: ").strip() if j else '')
         if not j or not new: return print(f"x {n}?") if not j else None
-        _uninstall(j[1]); c = db(); c.execute("UPDATE hub_jobs SET name=? WHERE id=?", (new, j[0])); c.commit()
+        _uninstall(j[1]); _rm_job(j[1]); _save_job(new, j[2], j[3], j[4], j[5], j[6])
         print(f"✓ {new} (run 'sync' to update timer)")
     elif wda in ('on', 'off', 'rm', 'run'):
         n = sys.argv[3] if len(sys.argv) > 3 else ''; j = jobs[int(n)] if n.isdigit() and int(n) < len(jobs) else next((x for x in jobs if x[1] == n), None)
@@ -90,14 +105,14 @@ def run():
                 if j[4].lower() not in hosts: print(f"x {j[4]} not in ssh hosts"); return
                 r = sp.run([sys.executable, __file__.replace('hub.py','../aio.py'), 'ssh', hosts[j[4].lower()], 'aio', 'hub', wda, j[1]], capture_output=True, text=True)
                 print(r.stdout.strip() or f"x {j[4]} failed"); return
-            en = wda == 'on'; c = db(); c.execute("UPDATE hub_jobs SET enabled=? WHERE id=?", (en, j[0])); c.commit(); c.close()
+            en = wda == 'on'; _save_job(j[1], j[2], j[3], j[4], en, j[6])
             _install(j[1], j[2], j[3]) if en else _uninstall(j[1]); print(f"✓ {j[1]} {wda}"); return
         if wda == 'rm':
-            _uninstall(j[1]); c = db(); c.execute("DELETE FROM hub_jobs WHERE id=?", (j[0],)); c.commit(); c.close()
+            _uninstall(j[1]); _rm_job(j[1])
             print(f"✓ rm {j[1]}")
         else:
             from datetime import datetime
             cmd = j[3].replace('aio ', f'{sys.executable} {os.path.abspath(__file__).replace("hub.py", "../aio.py")} ').replace('python ', f'{sys.executable} ')
             print(f"Running {j[1]}...", flush=True); r = sp.run(cmd, shell=True, capture_output=True, text=True); out = r.stdout + r.stderr
             print(out) if out else None; open(LOG, 'a').write(f"\n[{datetime.now():%Y-%m-%d %I:%M:%S%p}] {j[1]}\n{out}")
-            c = db(); c.execute("UPDATE hub_jobs SET last_run=? WHERE id=?", (datetime.now().strftime('%Y-%m-%d %H:%M'), j[0])); c.commit(); c.close(); print(f"✓")
+            _save_job(j[1], j[2], j[3], j[4], j[5], datetime.now().strftime('%Y-%m-%d %H:%M')); print(f"✓")
