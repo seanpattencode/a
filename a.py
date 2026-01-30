@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""a - AI agent session manager"""
+"""a - AI agent session manager
+NOTE: After editing commands, test via bash (~/.local/bin/a) not just python a.py
+"""
 import sys, os
 
 # Fast-path: 'a i' - pipe mode only
@@ -33,6 +35,17 @@ CMDS = {
 
 def main():
     arg = sys.argv[1] if len(sys.argv) > 1 else None
+    # Experimental: a x.test1 runs a_cmd/experimental/test1.py, a x lists all
+    if arg == 'x':
+        d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'a_cmd/experimental')
+        cmds = sorted(f[:-3] for f in os.listdir(d) if f.endswith('.py') and f != '__init__.py')
+        print("Experimental commands - add .py to a_cmd/experimental/\n")
+        [print(f"  a x.{c}") for c in cmds] or print("  (none yet)")
+        return
+    if arg and arg.startswith('x.'):
+        try: __import__(f'a_cmd.experimental.{arg[2:]}', fromlist=[arg[2:]]).run()
+        except ModuleNotFoundError: print(f"x No experimental cmd: {arg[2:]}"); sys.exit(1)
+        return
     if c := CMDS.get(arg): __import__(f'a_cmd.{c}', fromlist=[c]).run()
     elif arg and arg.endswith('++') and not arg.startswith('w'): from a_cmd import wt_plus; wt_plus.run()
     elif arg and arg.startswith('w') and arg not in ('watch', 'web') and not os.path.isfile(arg): from a_cmd import wt; wt.run()
