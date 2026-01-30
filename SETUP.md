@@ -84,12 +84,61 @@ sshpass -p 'PASSWORD' ssh -p 8022 localhost \
 
 # 7. Sync
 sshpass -p 'PASSWORD' ssh -p 8022 localhost 'cd ~/projects/a && python a.py sync'
+
+# 8. Register to SSH hosts (auto-detects IP)
+sshpass -p 'PASSWORD' ssh -p 8022 localhost 'cd ~/projects/a && python a.py ssh self DEVICENAME PASSWORD'
 ```
 
-**Get Termux IP for SSH host entry:**
+**Start sshd via ADB input (if not running):**
 ```bash
-sshpass -p 'PASSWORD' ssh -p 8022 localhost 'ip addr show wlan0 | grep "inet " | awk "{print \$2}" | cut -d/ -f1'
+adb shell "am start -n com.termux/.app.TermuxActivity"
+sleep 2 && adb shell "input text 'sshd'" && adb shell "input keyevent 66"
 ```
+
+**Set Termux password via ADB (if needed):**
+```bash
+adb shell "input text 'passwd'" && adb shell "input keyevent 66"
+sleep 1 && adb shell "input text 'YOUR_PASSWORD'" && adb shell "input keyevent 66"
+sleep 1 && adb shell "input text 'YOUR_PASSWORD'" && adb shell "input keyevent 66"
+```
+
+## Termux Offline (no network on device)
+
+For devices without wifi, push repos via ADB.
+
+```bash
+# 1. Forward port and start sshd (see above)
+adb forward tcp:8022 tcp:8022
+
+# 2. Create tarballs on host machine
+cd ~/projects
+tar czf /tmp/a-repo.tar.gz a
+tar czf /tmp/a-sync.tar.gz a-sync
+
+# 3. Push to device (uses /data/local/tmp which is accessible)
+adb push /tmp/a-repo.tar.gz /data/local/tmp/
+adb push /tmp/a-sync.tar.gz /data/local/tmp/
+
+# 4. Extract in Termux
+sshpass -p 'PASSWORD' ssh -p 8022 localhost \
+  'mkdir -p ~/projects && cd ~/projects && tar xzf /data/local/tmp/a-repo.tar.gz && tar xzf /data/local/tmp/a-sync.tar.gz'
+
+# 5. Create symlink and update shell
+sshpass -p 'PASSWORD' ssh -p 8022 localhost \
+  'mkdir -p ~/.local/bin && ln -sf ~/projects/a/a.py ~/.local/bin/a && cd ~/projects/a && python a.py update shell'
+
+# 6. Apply gh token (gh must be pre-installed: pkg install gh)
+sshpass -p 'PASSWORD' ssh -p 8022 localhost \
+  'echo "TOKEN_HERE" | gh auth login --with-token && git config --global credential.helper "$(command -v gh) auth git-credential"'
+
+# 7. Clean up temp files
+adb shell "rm /data/local/tmp/a-repo.tar.gz /data/local/tmp/a-sync.tar.gz"
+
+# 8. Once wifi connected, register to SSH hosts
+sshpass -p 'PASSWORD' ssh -p 8022 localhost 'cd ~/projects/a && python a.py ssh self DEVICENAME PASSWORD'
+```
+
+Note: Sync and SSH registration require network. Pushed repos include full git history.
 
 ## Via `a ssh` (after host is added)
 
@@ -124,6 +173,18 @@ export PATH="$HOME/.local/bin:$PATH" && ...
 
 ## After Setup
 
+**Register device to SSH hosts (run on the new device):**
+```bash
+a ssh self <name> <password>
+# Example: a ssh self tablet Focus999.
+# Auto-detects IP, adds to synced SSH hosts
+```
+
+Then from any other device:
+- `a ssh <#>` or `a ssh <name>` to connect
+- `a ssh` to list all hosts
+
+Other commands:
 - `a <#>` auto-clones missing projects using synced gh token
 - `a sync` pulls/pushes all sync repos
 - `a login` shows gh token status across devices
