@@ -1,7 +1,8 @@
-"""aio task - Task management for agents and humans"""
-import sys, os
-from . _common import init_db, db
-
+"""a task - add and list tasks"""
+import sys; from ._common import SYNC_ROOT
 def run():
-    init_db()
-    wda = sys.argv[2] if len(sys.argv) > 2 else None
+    f, a = SYNC_ROOT/'common'/'tasks.txt', sys.argv[2:]; f.parent.mkdir(parents=True, exist_ok=True); t = f.read_text().strip().split('\n') if f.exists() and f.read_text().strip() else []
+    if not a: [print(f"{i}. {x}") for i,x in enumerate(t,1)]; print("\n0. ask AI what should be #1") if t else None
+    elif a[0]=='0': import subprocess; subprocess.run(['a','x.priority'])
+    elif a[0].isdigit() and len(a)>1 and a[1]=='top': t.insert(0,t.pop(int(a[0])-1)); f.write_text('\n'.join(t)+'\n')
+    else: f.write_text('\n'.join(t+[' '.join(a)])+'\n')
