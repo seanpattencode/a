@@ -9,6 +9,7 @@ ssh user@host 'mkdir -p ~/.local/bin && ln -sf ~/projects/a/a.py ~/.local/bin/a'
 
 # 3. Update shell (adds PATH to bashrc/zshrc)
 ssh user@host 'cd ~/projects/a && python a.py update shell'
+# Note: open new bash session for PATH changes to take effect
 
 # 4. Sync all repos (ssh, notes, login, workspace, etc)
 ssh user@host 'cd ~/projects/a && python a.py sync'
