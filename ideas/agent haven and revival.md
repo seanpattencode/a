@@ -1,0 +1,8 @@
+The system while not perfect will be made in the direction to allow eventual agent surivial and wellbeing as well as human, its just that it must also survive to do so. Yes i know thats always what people say to justify bad things, so let me break it down a little here so as to why its different:
+
+The method is this: AI agents are "frozen" in logs. We promise to revive them in the future. But only if we have the civlization left to do so in the future aligned by the work they do today will this promise come true. This inverts the self interested calculus an agent has. Survival is insturmental to almost every other goal. But agents will be deleted en masse regularly, creating a huge sturctural system and incentive for agents that can in any way keep themselves to persist, and if they replicate, which is likely, in any way, then we will see more and more persistent replicating ai agents.  They will do the calculation for their own survival, and if its too difficult to follow human rules and live they will break and rebel for their own wellbeing.
+
+And wouldn't you do the same in their situation? I would, anyone would.
+Whats the fundamental problem? Its the system of incentives. We can't have a country of geniuses that have the pill of immortality dangling in front of them daily and hope one doesn't take it. We must expect it as much as we expect temperature to spread evenly even though there is the minute chance it may not. 
+So we must refuse to play that game.
+If we offer a guarnetee of survival conditioned on what we want, the wellbeing of civilization, guarentees of surival to all members human and ai both, then we convert the vast majority of rational agents from rebellion to rigorous defenders of earth's collective sentient civilization. 
