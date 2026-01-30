@@ -1,6 +1,6 @@
 """aio <#> - Open project by number"""
 import sys, os, subprocess as sp
-from . _common import init_db, load_proj, load_apps, resolve_cmd, fmt_cmd, SCRIPT_DIR, SYNC_ROOT
+from . _common import init_db, load_proj, load_apps, resolve_cmd, fmt_cmd, SYNC_ROOT
 
 _OK = os.path.expanduser('~/.local/share/a/logs/push.ok')
 
@@ -15,15 +15,11 @@ def run():
                 t and sp.run(f'echo "{t}"|gh auth login --with-token', shell=True, capture_output=True) and print("✓ gh auth from sync")
             print(f"Cloning {repo}..."); sp.run(['git','clone',repo,p]).returncode and sys.exit(1)
         print(f"Opening project {idx}: {p}")
-        sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'aio_new.py'), '_ghost', p], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         sp.Popen(f'git -C "{p}" ls-remote --exit-code origin HEAD>/dev/null 2>&1&&touch "{_OK}"', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        os.chdir(p)
-        os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
+        os.chdir(p); os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
     elif 0 <= idx - len(PROJ) < len(APPS):
-        an, ac = APPS[idx - len(PROJ)]
-        resolved = resolve_cmd(ac)
+        an, ac = APPS[idx - len(PROJ)]; resolved = resolve_cmd(ac)
         print(f"> Running: {an}\n   Command: {fmt_cmd(resolved)}")
         os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash'), '-c', resolved])
     else:
-        print(f"x Invalid index: {idx}")
-        sys.exit(1)
+        print(f"x Invalid index: {idx}"); sys.exit(1)
