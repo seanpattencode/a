@@ -120,6 +120,8 @@ a 7
 
 Every character on a phone keyboard has ~5% error rate. A 47-character path means you'll mistype 2-3 times per command. With `a 7`, you're done before autocorrect kicks in.
 
+`a` makes mobile dev actually usable. You have hours of dead time on your phone - commuting, waiting, whatever. Without `a`, that time is wasted because typing paths and commands on a phone keyboard is miserable. With `a`, you can checkpoint code, switch projects, and run agents from anywhere.
+
 **The real cost:**
 
 Each command alone saves seconds. But friction changes behavior:
