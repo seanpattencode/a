@@ -11,7 +11,7 @@ def run():
     if not loc:
         r = sp.run(['gh', 'repo', 'list', '-L', '100', '--json', 'name,url,pushedAt'], capture_output=True, text=True)
         repos = sorted(json.loads(r.stdout or '[]'), key=lambda x: x.get('pushedAt',''), reverse=True)
-        cloned = {os.path.basename(p) for p in load_proj()}
+        cloned = {os.path.basename(p) for p, _ in load_proj()}
 
         # Name match or search filter
         if name:
@@ -34,7 +34,7 @@ def run():
         for i in idxs: n, u, _ = repos[i]; dest = f"{pd}/{n}"; r = sp.run(['gh', 'repo', 'clone', u, dest], capture_output=True, text=True); ok, _ = add_proj(dest) if r.returncode == 0 or os.path.isdir(dest) else (False, ''); print(f"{'✓' if ok else 'x'} {n}")
     else:
         d = os.path.expanduser(next((a for a in args if a not in (sel,)), '~/projects'))
-        existing = set(load_proj())
+        existing = {p for p, _ in load_proj()}
         repos = sorted([p.parent for p in Path(d).rglob('.git') if p.exists() and str(p.parent) not in existing and '/.' not in str(p.parent)], key=lambda x: x.name.lower())[:50]
         if not repos: print(f"No new repos in {d}"); return
         pg=0
