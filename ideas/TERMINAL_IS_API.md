@@ -194,3 +194,20 @@ Torvalds solved distributed state sync for Linux kernel development. We just use
 - Solve your own problem first
 
 You can't get this from Stack Overflow. It's transmitted through books by people who built the foundations.
+
+## None of This Was Planned
+
+This architecture wasn't designed. It emerged.
+
+No one sat down and said "let's use git as a sync protocol" or "terminal should be our API layer." The decisions just happened because the mental models were internalized:
+
+- Need to sync? `git push`
+- Need to run claude? `subprocess`
+- Need session state? tmux already exists
+- Need to store config? Text file
+
+When Unix philosophy is in your head, you don't "decide" to use pipes. You just reach for them like you reach for a glass of water.
+
+This is why the knowledge transmission matters. You can't teach someone "use git for sync" as a rule. They'll apply it wrong. But if they've absorbed *why* Unix works the way it does, they'll independently arrive at the same solutions.
+
+The architecture is an emergent property of the philosophy.
