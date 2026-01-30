@@ -189,20 +189,18 @@ def rm_proj(i):
 
 def add_app(n, cmd):
     if not n or not cmd: return False, "Name and command required"
-    with db() as c:
-        if c.execute("SELECT 1 FROM apps WHERE name=? AND device IN (?, '*')", (n, DEVICE_ID)).fetchone(): return False, f"Exists: {n}"
-        m = c.execute("SELECT MAX(display_order) FROM apps").fetchone()[0]
-        c.execute("INSERT INTO apps (name, command, display_order, device) VALUES (?, ?, ?, ?)", (n, cmd, 0 if m is None else m+1, DEVICE_ID)); c.commit()
+    from .sync import sync, SYNC_ROOT
+    d = SYNC_ROOT / 'workspace' / 'cmds'; d.mkdir(parents=True, exist_ok=True)
+    if (d/f'{n}.txt').exists(): return False, f"Exists: {n}"
+    (d/f'{n}.txt').write_text(f"Name: {n}\nCommand: {cmd}\n"); sync('workspace')
     _refresh_cache(); return True, f"Added: {n}"
 
 def rm_app(i):
-    with db() as c:
-        rows = c.execute("SELECT id, name FROM apps ORDER BY display_order").fetchall()
-        if i < 0 or i >= len(rows): return False, f"Invalid index: {i}"
-        c.execute("DELETE FROM apps WHERE id=?", (rows[i][0],))
-        for j, r in enumerate(c.execute("SELECT id FROM apps ORDER BY display_order")): c.execute("UPDATE apps SET display_order=? WHERE id=?", (j, r[0]))
-        c.commit()
-    _refresh_cache(); return True, f"Removed: {rows[i][1]}"
+    from .sync import sync, SYNC_ROOT
+    a = load_apps()
+    if i < 0 or i >= len(a): return False, f"Invalid index: {i}"
+    n = a[i][0]; (SYNC_ROOT/'workspace'/'cmds'/f'{n}.txt').unlink(missing_ok=True); sync('workspace')
+    _refresh_cache(); return True, f"Removed: {n}"
 
 def fmt_cmd(c, mx=60):
     d = c.replace(os.path.expanduser('~'), '~')

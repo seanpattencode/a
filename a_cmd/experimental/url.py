@@ -1,6 +1,6 @@
-"""open URL in browser on all devices"""
+"""a x.url <url> - open in browser on all devices"""
 import sys, subprocess as sp
-from concurrent.futures import ThreadPoolExecutor as TP
+from concurrent.futures import ThreadPoolExecutor as TP, as_completed
 from ..ssh import _load
 
 # OS-specific browser commands (detected from OS field)
@@ -17,6 +17,7 @@ def _browser_cmd(os_info, url):
 
 def run():
     url = sys.argv[2] if len(sys.argv) > 2 else 'https://github.com/seanpattencode/aio'
+    if not url.startswith('http'): url = 'https://' + url
     hosts = _load()
     print(f"Opening: {url}\n")
 
@@ -34,6 +35,8 @@ def run():
         )
         return (n, r.returncode == 0, os_info or '?')
 
-    for n, ok, info in TP(8).map(_open, hosts):
-        print(f"{'✓' if ok else 'x'} {n}: {info}")
+    with TP(8) as ex:
+        for f in as_completed([ex.submit(_open, d) for d in hosts]):
+            n, ok, info = f.result()
+            print(f"{'✓' if ok else 'x'} {n}: {info}")
 
