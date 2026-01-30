@@ -39,8 +39,8 @@ def main():
     if arg == 'x':
         d = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'a_cmd/experimental')
         cmds = sorted(f[:-3] for f in os.listdir(d) if f.endswith('.py') and f != '__init__.py')
-        print("Experimental commands - add .py to a_cmd/experimental/\n")
-        [print(f"  a x.{c}") for c in cmds] or print("  (none yet)")
+        print("a x.<name>  run from a_cmd/experimental/\n")
+        for c in cmds: m = __import__(f'a_cmd.experimental.{c}', fromlist=[c]); print(f"  {c:<10} {(m.__doc__ or '').split(chr(10))[0]}")
         return
     if arg and arg.startswith('x.'):
         try: __import__(f'a_cmd.experimental.{arg[2:]}', fromlist=[arg[2:]]).run()

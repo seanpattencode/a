@@ -1,11 +1,7 @@
-#!/usr/bin/env python3
-"""Test: Open a URL on all devices - each OS uses different browser command"""
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from a_cmd.ssh import _load
-from a_cmd._common import _up
-import subprocess as sp
+"""open URL in browser on all devices"""
+import sys, subprocess as sp
 from concurrent.futures import ThreadPoolExecutor as TP
+from ..ssh import _load
 
 # OS-specific browser commands (detected from OS field)
 def _browser_cmd(os_info, url):
@@ -19,7 +15,8 @@ def _browser_cmd(os_info, url):
     else:  # Linux
         return f'xdg-open "{url}" 2>/dev/null || sensible-browser "{url}" 2>/dev/null || echo "no browser"'
 
-def run(url):
+def run():
+    url = sys.argv[2] if len(sys.argv) > 2 else 'https://github.com/seanpattencode/aio'
     hosts = _load()
     print(f"Opening: {url}\n")
 
@@ -40,6 +37,3 @@ def run(url):
     for n, ok, info in TP(8).map(_open, hosts):
         print(f"{'✓' if ok else 'x'} {n}: {info}")
 
-if __name__ == '__main__':
-    url = sys.argv[1] if len(sys.argv) > 1 else 'https://github.com/seanpattencode/aio'
-    run(url)

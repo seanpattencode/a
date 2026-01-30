@@ -1,3 +1,3 @@
-"""Experimental: test1 - just prints 1"""
+"""prints 1 (test)"""
 def run():
     print("1")
