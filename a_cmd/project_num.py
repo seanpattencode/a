@@ -1,6 +1,6 @@
-"""aio <#> - Open project by number"""
+"""a <#> - Open project"""
 import sys, os, subprocess as sp
-from . _common import init_db, load_proj, load_apps, resolve_cmd, fmt_cmd, SYNC_ROOT
+from . _common import init_db, load_cfg, load_proj, load_apps, load_sess, resolve_cmd, fmt_cmd, SYNC_ROOT, _ghost_spawn
 
 _OK = os.path.expanduser('~/.local/share/a/logs/push.ok')
 
@@ -16,10 +16,10 @@ def run():
             print(f"Cloning {repo}..."); sp.run(['git','clone',repo,p]).returncode and sys.exit(1)
         print(f"Opening project {idx}: {p}")
         sp.Popen(f'git -C "{p}" ls-remote --exit-code origin HEAD>/dev/null 2>&1&&touch "{_OK}"', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
-        os.chdir(p); os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash')])
+        os.chdir(p); cfg=load_cfg(); (os.fork()==0)and(_ghost_spawn(p,load_sess(cfg),cfg),os._exit(0)); os.execvp(sh:=os.environ.get('SHELL','/bin/bash'),[sh])
     elif 0 <= idx - len(PROJ) < len(APPS):
         an, ac = APPS[idx - len(PROJ)]; resolved = resolve_cmd(ac)
         print(f"> Running: {an}\n   Command: {fmt_cmd(resolved)}")
-        os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash'), '-c', resolved])
+        os.execvp(sh:=os.environ.get('SHELL','/bin/bash'), [sh, '-c', resolved])
     else:
         print(f"x Invalid index: {idx}"); sys.exit(1)

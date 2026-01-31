@@ -2,7 +2,7 @@
 import sys, os, subprocess as sp
 from . _common import (init_db, load_cfg, load_proj, load_apps, load_sess, tm, _env,
                        get_dir_sess, create_sess, send_prefix, launch_win, _start_log,
-                       _ghost_claim, _ghost_spawn, _GM, SCRIPT_DIR, fmt_cmd)
+                       _ghost_claim, _GM, SCRIPT_DIR, fmt_cmd)
 
 def run():
     init_db()
@@ -45,10 +45,9 @@ def run():
         sys.exit(0)
 
     if arg in _GM and not wda and (g := _ghost_claim(arg, wd)):
-        sn = f"{sess[arg][0] if arg in sess else arg}-{os.path.basename(wd)}"
-        sp.run(['tmux', 'rename-session', '-t', g, sn], capture_output=True)
-        print(f"Ghost: {sn}")
-        os.execvp((a:=tm.attach(sn))[0],a)
+        sn=f"{sess[arg][0] if arg in sess else arg}-{os.path.basename(wd)}"; i=0
+        while tm.has(sn+f"-{i}"*(i>0)): i+=1
+        sn+=f"-{i}"*(i>0); sp.run(['tmux','rename-session','-t',g,sn],capture_output=True); print(f"Ghost: {sn}"); os.execvp((a:=tm.attach(sn))[0],a)
 
     sn = get_dir_sess(arg, wd, sess); env = _env(); created = False
     if sn is None:
@@ -72,7 +71,7 @@ def run():
     elif is_p and (pm := {'cp': cfg.get('codex_prompt', ''), 'lp': cfg.get('claude_prompt', ''), 'gp': cfg.get('gemini_prompt', '')}.get(arg)):
         sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'a.py'), 'send', sn, pm, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     elif created and arg in sess:
-        send_prefix(sn, sess[arg][0], wd, cfg); (os.fork()==0)and(_ghost_spawn(wd,sess,cfg),os._exit(0))
+        send_prefix(sn, sess[arg][0], wd, cfg)
 
     if new_win:
         launch_win(sn)
