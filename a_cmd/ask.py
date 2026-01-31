@@ -9,29 +9,31 @@ def load_keys():
     if not KEYS_FILE.exists(): return {}
     return dict(l.strip().split('=',1) for l in KEYS_FILE.read_text().splitlines() if '=' in l and not l.startswith('#'))
 
+MODELS = {'claude':'claude-3-5-haiku-20241022', 'gpt':'gpt-4o-mini', 'gemini':'gemini-2.0-flash'}
+
 def ask_anthropic(prompt, q, keys):
+    m = MODELS['claude']
     try:
         from anthropic import Anthropic
-        c = Anthropic(api_key=keys.get('ANTHROPIC_API_KEY'))
-        r = c.messages.create(model='claude-3-5-haiku-20241022', max_tokens=512, messages=[{'role':'user','content':prompt}])
-        q.put(('claude', r.content[0].text))
-    except Exception as e: q.put(('claude', f'x {e}'))
+        r = Anthropic(api_key=keys.get('ANTHROPIC_API_KEY')).messages.create(model=m, max_tokens=512, messages=[{'role':'user','content':prompt}])
+        q.put((f'claude ({m})', r.content[0].text))
+    except Exception as e: q.put((f'claude ({m})', f'x {e}'))
 
 def ask_openai(prompt, q, keys):
+    m = MODELS['gpt']
     try:
         from openai import OpenAI
-        c = OpenAI(api_key=keys.get('OPENAI_API_KEY'))
-        r = c.chat.completions.create(model='gpt-4o-mini', messages=[{'role':'user','content':prompt}], max_tokens=512)
-        q.put(('gpt', r.choices[0].message.content))
-    except Exception as e: q.put(('gpt', f'x {e}'))
+        r = OpenAI(api_key=keys.get('OPENAI_API_KEY')).chat.completions.create(model=m, messages=[{'role':'user','content':prompt}], max_tokens=512)
+        q.put((f'gpt ({m})', r.choices[0].message.content))
+    except Exception as e: q.put((f'gpt ({m})', f'x {e}'))
 
 def ask_gemini(prompt, q, keys):
+    m = MODELS['gemini']
     try:
         import google.generativeai as genai
         genai.configure(api_key=keys.get('GOOGLE_API_KEY'))
-        r = genai.GenerativeModel('gemini-2.0-flash').generate_content(prompt)
-        q.put(('gemini', r.text))
-    except Exception as e: q.put(('gemini', f'x {e}'))
+        q.put((f'gemini ({m})', genai.GenerativeModel(m).generate_content(prompt).text))
+    except Exception as e: q.put((f'gemini ({m})', f'x {e}'))
 
 def run():
     if len(sys.argv) < 3: print("usage: a ask <prompt>"); return
