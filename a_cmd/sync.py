@@ -24,13 +24,15 @@ def cloud_sync(local_path, name):
     return bool(ok),f"{'✓'*len(ok)or'x'} {','.join(ok)or'fail'}"
 
 def _sync_repo(path, repo_name, msg='sync'):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True,exist_ok=True);g=f'cd {path}&&'
     if (path/'.git').exists():
-        r = sp.run(f'cd {path} && git add -A && git commit -qm "{msg}" 2>/dev/null; git pull -q --rebase 2>/dev/null; git push -q', shell=True, capture_output=True, text=True)
+        sp.run(f'{g}git rebase --abort;git merge --abort',shell=True,capture_output=True)
+        sp.run(f'{g}git add -A&&git commit -qm "{msg}"',shell=True,capture_output=True)
+        r=sp.run(f'{g}git pull -q --no-rebase&&git push -q',shell=True,capture_output=True,text=True)
     else:
-        r = sp.run(f'gh repo clone {repo_name} {path} 2>/dev/null || (mkdir -p {path} && cd {path} && git init -q && echo "# {repo_name}" > README.md && git add -A && git commit -qm "init" && gh repo create {repo_name} --private --source=. --push)', shell=True, capture_output=True, text=True)
-    url = sp.run(['git','-C',str(path),'remote','get-url','origin'], capture_output=True, text=True).stdout.strip() or 'syncing...'
-    if r.returncode: print(f"x sync failed [{repo_name}] - copy to agent (a copy):\n  Sync conflict in {path}. Run `cd {path} && git status` and fix.")
+        r=sp.run(f'gh repo clone {repo_name} {path} 2>/dev/null||(mkdir -p {path}&&{g}git init -q&&echo "# {repo_name}">README.md&&git add -A&&git commit -qm "init"&&gh repo create {repo_name} --private --source=. --push)',shell=True,capture_output=True,text=True)
+    url=sp.run(['git','-C',str(path),'remote','get-url','origin'],capture_output=True,text=True).stdout.strip()or'sync'
+    if r.returncode:print(f"x [{repo_name}]: {g}git status")
     return url
 
 def sync(repo='common', msg='sync'): return _sync_repo(SYNC_ROOT/repo, REPOS.get(repo, f'a-{repo}'), msg)
