@@ -350,7 +350,7 @@ def create_sess(sn, wd, cmd, cfg, env=None):
     ai = cmd and any(a in cmd for a in ['codex', 'claude', 'gemini', 'aider'])
     if ai: cmd = f'while :; do {cmd}; e=$?; [ $e -eq 0 ] && break; echo -e "\\n! Crashed (exit $e). [R]estart / [Q]uit: "; read -n1 k; [[ $k =~ [Rr] ]] || break; done'
     r = tm.new(sn, wd, cmd or '', env); ensure_tmux(cfg)
-    if ai: sp.run(['tmux', 'split-window', '-v', '-t', sn, '-c', wd, 'sh -c "ls;exec $SHELL"'], capture_output=True); sp.run(['tmux', 'select-pane', '-t', sn, '-U'], capture_output=True)
+    if ai: sp.run(['tmux', 'split-window', '-v'] + (['-p', '40'] if os.environ.get('TERMUX_VERSION') else []) + ['-t', sn, '-c', wd, 'sh -c "ls;exec $SHELL"'], capture_output=True); sp.run(['tmux', 'select-pane', '-t', sn, '-U'], capture_output=True)
     _start_log(sn)
     return r
 

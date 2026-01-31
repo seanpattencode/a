@@ -26,7 +26,7 @@ def cloud_sync(local_path, name):
 def _sync_repo(path, repo_name, msg='sync'):
     path.parent.mkdir(parents=True, exist_ok=True)
     if (path/'.git').exists():
-        r = sp.run(f'cd {path} && git fetch -q && git merge -q origin/HEAD 2>/dev/null; git add -A && git commit -qm "{msg}" 2>/dev/null; git push -q', shell=True, capture_output=True, text=True)
+        r = sp.run(f'cd {path} && git add -A && git commit -qm "{msg}" 2>/dev/null; git pull -q --rebase 2>/dev/null; git push -q', shell=True, capture_output=True, text=True)
     else:
         r = sp.run(f'gh repo clone {repo_name} {path} 2>/dev/null || (mkdir -p {path} && cd {path} && git init -q && echo "# {repo_name}" > README.md && git add -A && git commit -qm "init" && gh repo create {repo_name} --private --source=. --push)', shell=True, capture_output=True, text=True)
     url = sp.run(['git','-C',str(path),'remote','get-url','origin'], capture_output=True, text=True).stdout.strip() or 'syncing...'
