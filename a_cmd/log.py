@@ -71,6 +71,6 @@ def run():
     for name, base, files in [('Claude', Path.home()/'.claude', ['history.jsonl','projects']), ('Codex', Path.home()/'.codex', ['history.jsonl','sessions']), ('Gemini', Path.home()/'.gemini', ['settings.json']), ('Aider', Path.home()/'.aider', ['caches'])]:
         if base.exists(): parts = [f"{f}({(base/f).stat().st_size//1024}KB)" if (base/f).is_file() else f"{f}({len(list((base/f).iterdir()))})" for f in files if (base/f).exists()]; parts and print(f"  {name}: {base} [{', '.join(parts)}]")
     for i, f in enumerate(logs[:20]):
-        sz, nm, mt = f.stat().st_size/1024, f.stem, f.stat().st_mtime; parts = nm.split('__'); dev, sn = (parts[0][:10], '__'.join(parts[1:])) if len(parts) > 1 else ('-', nm)
-        print(f"  {i}  {datetime.fromtimestamp(mt).strftime('%m/%d %H:%M')}  {dev:<10} {sn:<25} {sz:>5.0f}KB  {f}")
+        sz, nm, mt = f.stat().st_size/1024, f.stem, f.stat().st_mtime; parts = nm.split('__'); sn = '__'.join(parts[1:]) if len(parts) > 1 else nm
+        print(f"{i:>2} {datetime.fromtimestamp(mt):%m/%d %H:%M} {sn[:30]:<30} {sz:>4.0f}K")
     print("\nSelect:\n  a log 0")
