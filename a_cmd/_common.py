@@ -23,7 +23,7 @@ _AIO_DIR = os.path.expanduser('~/.a')
 _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
 _SRC_LINE = 'source-file ~/.a/tmux.conf  # a'
-RCLONE_REMOTES, RCLONE_BACKUP_PATH = ('aio-gdrive', 'aio-gdrive2'), 'aio-backup'
+RCLONE_REMOTES, RCLONE_BACKUP_PATH = ('a-gdrive', 'a-gdrive2'), 'a-backup'
 
 # Basic helpers
 def _git(path, *a, **k): return sp.run(['git', '-C', path] + list(a), capture_output=True, text=True, **k)
