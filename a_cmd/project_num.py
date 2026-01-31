@@ -20,6 +20,6 @@ def run():
     elif 0 <= idx - len(PROJ) < len(APPS):
         an, ac = APPS[idx - len(PROJ)]; resolved = resolve_cmd(ac)
         print(f"> Running: {an}\n   Command: {fmt_cmd(resolved)}")
-        os.execvp(s:=os.environ.get('SHELL','/bin/bash'), [s, '-c', resolved+(' '+__import__('shlex').join(sys.argv[2:]) if sys.argv[2:] else '')])
+        os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash'), '-c', resolved])
     else:
         print(f"x Invalid index: {idx}"); sys.exit(1)
