@@ -36,15 +36,16 @@ def run():
     rc = get_rclone()
     if rc:
         for r in RCLONE_REMOTES:
-            path = f'{r}:{RCLONE_BACKUP_PATH}/logs/{DEVICE_ID}'
+            path = f'{r}:{RCLONE_BACKUP_PATH}/logs'
             try:
-                res = sp.run([rc, 'lsl', path, '--max-depth', '1'], capture_output=True, text=True, timeout=15)
-                if res.returncode == 0 and res.stdout.strip():
-                    lines = [l for l in res.stdout.strip().split('\n') if l.strip()]
-                    times = [l.split()[1] + ' ' + l.split()[2][:5] for l in lines if len(l.split()) >= 3]
-                    print(f"  {path} ({len(lines)} files, last {max(times) if times else '?'})")
-                else: print(f"  {path}: x")
-            except: print(f"  {path}: timeout")
+                res = sp.run([rc,'lsjson',path,'--dirs-only'], capture_output=True, text=True, timeout=15)
+                if res.returncode == 0:
+                    import json; dirs = {d['Name']:d['ID'] for d in json.loads(res.stdout)}
+                    fid = dirs.get(DEVICE_ID,'')
+                    url = f"https://drive.google.com/drive/folders/{fid}" if fid else "x"
+                    print(f"  {r}: {url}")
+                else: print(f"  {r}: x")
+            except: print(f"  {r}: timeout")
 
     for name, base, files in [('Claude', CLAUDE_DIR, ['history.jsonl','projects']), ('Codex', Path.home()/'.codex', ['history.jsonl','sessions'])]:
         if base.exists(): parts = [f"{f}({(base/f).stat().st_size//1024}KB)" if (base/f).is_file() else f"{f}({len(list((base/f).iterdir()))})" for f in files if (base/f).exists()]; parts and print(f"  {name}: [{', '.join(parts)}]")
