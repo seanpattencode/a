@@ -7,7 +7,7 @@ from . _common import _sg, list_all, init_db, SCRIPT_DIR, DATA_DIR, load_proj, l
 CMDS = ['help','update','jobs','kill','attach','cleanup','config','ls','diff','send','watch',
         'push','pull','revert','set','install','uninstall','deps','prompt','gdrive',
         'add','remove','move','dash','all','backup','scan','copy','log','done','agent','tree',
-        'dir','web','ssh','run','hub','daemon','ui','review','note']
+        'dir','web','ssh','run','hub','task','daemon','ui','review','note']
 
 def refresh_caches():
     """Refresh all caches: help_cache.txt + i_cache.txt"""
