@@ -27,7 +27,7 @@ CMDS = {
     'deps': 'deps', 'dep': 'deps', 'prompt': 'prompt', 'pro': 'prompt', 'gdrive': 'gdrive', 'gdr': 'gdrive',
     'add': 'add', 'remove': 'remove', 'rem': 'remove', 'rm': 'remove', 'move': 'move', 'mov': 'move', 'dash': 'dash', 'das': 'dash',
     'all': 'multi', 'a': 'multi', 'ai': 'multi', 'aio': 'multi', 'backup': 'backup', 'bak': 'backup', 'scan': 'scan', 'sca': 'scan',
-    'e': 'e', 'x': 'x', 'p': 'p', 'copy': 'copy', 'cop': 'copy', 'log': 'log', 'logs': 'log', 'done': 'done',
+    'e': 'e', 'x': 'x', 'p': 'push', 'copy': 'copy', 'cop': 'copy', 'log': 'log', 'logs': 'log', 'done': 'done',
     'agent': 'agent', 'tree': 'tree', 'tre': 'tree', 'dir': 'dir', 'web': 'web', 'ssh': 'ssh', 'run': 'run', 'hub': 'hub', 'ask': 'ask',
     'task': 'task', 'tas': 'task', 't': 'task', 'daemon': 'daemon', 'ui': 'ui', 'review': 'review',
     'n': 'note', 'note': 'note', 'i': 'i', 'rebuild': 'rebuild', 'repo': 'repo', 'sync': 'sync', 'syn': 'sync', 'login': 'login',
