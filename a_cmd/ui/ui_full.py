@@ -49,5 +49,4 @@ async def note(r):
     return web.Response(text=N,content_type='text/html')
 app = web.Application(); app.add_routes([web.get('/', page), web.post('/exec', exec_cmd), web.get('/ws', term), web.get('/restart', restart), web.route('*','/n',note)])
 
-def run(port=8080):
-    u=f'http://localhost:{port}';(subprocess.run(['termux-open-url',u])if os.environ.get('TERMUX_VERSION')else webbrowser.open(u));web.run_app(app,port=port)
+def run(port=8080): web.run_app(app, port=port, print=None)

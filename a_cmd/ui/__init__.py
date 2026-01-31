@@ -1,18 +1,15 @@
-import sys, os, subprocess, webbrowser
+import sys, os, socket, subprocess as S, webbrowser as W, time
+
+def _try(p=8080):
+    with socket.socket() as s:
+        if s.connect_ex(('127.0.0.1', p)) == 0: W.open(f'http://127.0.0.1:{p}'); return True
+
+def _bg(m, p):
+    S.Popen([sys.executable, '-c', f"from a_cmd.ui.{m} import run;run({p})"], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL)
+    time.sleep(0.3); W.open(f'http://127.0.0.1:{p}'); print(f'UI on 127.0.0.1:{p}')
 
 def run():
-    a = sys.argv[2:]
-    if a and a[0] in ('full', 'f'):
-        from . import ui_full; p = int(a[1]) if len(a) > 1 and a[1].isdigit() else 8080; ui_full.run(p)
-    elif a and a[0] in ('xterm', 'x', 'clean', 'c'):
-        from . import ui_xterm; p = int(a[1]) if len(a) > 1 and a[1].isdigit() else 8080; ui_xterm.run(p)
-    elif a and a[0] == '--install':
-        os.makedirs(os.path.expanduser('~/.config/autostart'), exist_ok=True)
-        open(os.path.expanduser('~/.config/autostart/aioUI.desktop'), 'w').write(f'[Desktop Entry]\nType=Application\nExec=python3 {os.path.abspath(__file__)}\nName=aioUI')
-    elif a and a[0].isdigit():
-        from . import ui_full; ui_full.run(int(a[0]))
-    else:
-        print("1) full    Command box + xterm\n2) xterm   Clean terminal only")
-        c = input("\n> ").strip()
-        if c in ('1', 'full', 'f'): from . import ui_full; ui_full.run(8080)
-        elif c in ('2', 'xterm', 'x', 'c'): from . import ui_xterm; ui_xterm.run(8080)
+    a, M = sys.argv[2:], {'1': 'ui_full', '2': 'ui_xterm'}
+    if a and a[0][0] == 'k': S.run(['pkill', '-f', 'a_cmd.ui.ui_']); print('Killed')
+    elif a and (m := M.get(a[0])): _try(p := int(a[1]) if len(a) > 1 and a[1].isdigit() else 8080) or _bg(m, p)
+    else: print("a ui 1  full (cmd+term)\na ui 2  xterm only\na ui k  kill")
