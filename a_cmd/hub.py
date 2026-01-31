@@ -56,18 +56,19 @@ def run():
     jobs = _load_jobs()
 
     if not wda:
-        from datetime import datetime as dt; w = os.get_terminal_size().columns - 50 if sys.stdout.isatty() else 60
+        from datetime import datetime as dt; tw = shutil.get_terminal_size().columns; m = tw<60
         url = sp.run(['git','-C',str(HUB_DIR),'remote','get-url','origin'], capture_output=True, text=True).stdout.strip()
         print(f"Hub: {len(jobs)} jobs\n  {HUB_DIR}\n  {url}\n")
-        _lr = lambda t: dt.strptime(t, '%Y-%m-%d %H:%M').strftime('%m/%d %I:%M%p').lower() if t else '-'
-        _pj = lambda jobs: [print(f"{i:<3}{j[1][:11]:<12}{j[2][:6]:<7}{_lr(j[6]):<14}{j[4][:9]:<10}{'✓' if j[5] else ' '} {(s:=j[3]or'') if len(s:=j[3]or'')<=w else s[:w//2-1]+'...'+s[-(w//2-2):]}") for i, j in enumerate(jobs)] or print("  (none)")
-        print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<14}{'Device':<10}On Command"); _pj(jobs)
+        _el = lambda s,w: s if len(s)<=w else s[:w//2-1]+'..'+s[-(w-w//2-1):]
+        _lr = lambda t: dt.strptime(t,'%Y-%m-%d %H:%M').strftime('%m/%d %H:%M') if t else '-'
+        cw = tw-22 if m else tw-48; print(f"# {'Name':<8} On Cmd" if m else f"# {'Name':<10} {'Sched':<6} {'Last':<12} {'Dev':<8} On Cmd")
+        _pj = lambda J: [print(f"{i:<2}{j[1][:8]:<9}{'✓'if j[5]else' ':<3}{_el(j[3]or'',cw)}" if m else f"{i:<2}{j[1][:10]:<11}{j[2][:6]:<7}{_lr(j[6]):<13}{j[4][:7]:<8}{'✓'if j[5]else' ':<3}{_el(j[3]or'',cw)}") for i,j in enumerate(J)] or print("  (none)")
+        _pj(jobs)
         if not sys.stdin.isatty(): return
         while (c := input("\n<#> run | on/off <#> | add|rm|ed <#> | q\n> ").strip()) and c != 'q':
             args = ['run', c] if c.isdigit() else c.split()
             sp.run([sys.executable, __file__.replace('hub.py', '../a.py'), 'hub'] + args)
-            jobs = _load_jobs()
-            print(f"{'#':<3}{'Name':<12}{'Time':<7}{'Last Run':<14}{'Device':<10}On Command"); _pj(jobs)
+            jobs = _load_jobs(); _pj(jobs)
         return
 
     if wda == 'add':
