@@ -1,8 +1,8 @@
-"""aio <key> - Start session (fallback handler)"""
+"""a <key> - Start session"""
 import sys, os, subprocess as sp
 from . _common import (init_db, load_cfg, load_proj, load_apps, load_sess, tm, _env,
                        get_dir_sess, create_sess, send_prefix, launch_win, _start_log,
-                       _ghost_claim, _GM, SCRIPT_DIR, fmt_cmd)
+                       _ghost_claim, _ghost_spawn, _GM, SCRIPT_DIR, fmt_cmd)
 
 def run():
     init_db()
@@ -28,7 +28,7 @@ def run():
         elif 0 <= idx - len(PROJ) < len(APPS):
             an, ac = APPS[idx - len(PROJ)]
             print(f"> Running: {an}\n   Command: {ac}")
-            os.execvp(os.environ.get('SHELL', '/bin/bash'), [os.environ.get('SHELL', '/bin/bash'), '-c', ac])
+            os.execvp(sh:=os.environ.get('SHELL','/bin/bash'), [sh, '-c', ac])
         else: wd = WORK_DIR
     elif wda and os.path.isdir(os.path.expanduser(wda)): wd = wda
     elif wda: is_wda_prompt = True; wd = WORK_DIR
@@ -48,7 +48,7 @@ def run():
         sn = f"{sess[arg][0] if arg in sess else arg}-{os.path.basename(wd)}"
         sp.run(['tmux', 'rename-session', '-t', g, sn], capture_output=True)
         print(f"Ghost: {sn}")
-        os.execvp('tmux', ['tmux', 'attach', '-t', sn])
+        os.execvp((a:=tm.attach(sn))[0],a)
 
     sn = get_dir_sess(arg, wd, sess); env = _env(); created = False
     if sn is None:
@@ -72,7 +72,7 @@ def run():
     elif is_p and (pm := {'cp': cfg.get('codex_prompt', ''), 'lp': cfg.get('claude_prompt', ''), 'gp': cfg.get('gemini_prompt', '')}.get(arg)):
         sp.Popen([sys.executable, os.path.join(SCRIPT_DIR, 'a.py'), 'send', sn, pm, '--no-enter'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
     elif created and arg in sess:
-        send_prefix(sn, sess[arg][0], wd, cfg)
+        send_prefix(sn, sess[arg][0], wd, cfg); (os.fork()==0)and(_ghost_spawn(wd,sess,cfg),os._exit(0))
 
     if new_win:
         launch_win(sn)
@@ -81,4 +81,4 @@ def run():
     elif "TMUX" in os.environ or not sys.stdout.isatty():
         print(f"✓ Session: {sn}")
     else:
-        os.execvp(tm.attach(sn)[0], tm.attach(sn))
+        os.execvp((a:=tm.attach(sn))[0],a)
