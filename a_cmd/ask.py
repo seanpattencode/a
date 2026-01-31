@@ -9,7 +9,7 @@ def load_keys():
     if not KEYS_FILE.exists(): return {}
     return dict(l.strip().split('=',1) for l in KEYS_FILE.read_text().splitlines() if '=' in l and not l.startswith('#'))
 
-MODELS = {'claude':'claude-3-5-haiku-20241022', 'gpt':'gpt-4o-mini', 'gemini':'gemini-2.0-flash'}
+MODELS = {'claude':'claude-opus-4-5-20251101', 'gpt':'gpt-5.2', 'gemini':'gemini-3-pro-preview'}
 
 def ask_anthropic(prompt, q, keys):
     m = MODELS['claude']
@@ -23,7 +23,7 @@ def ask_openai(prompt, q, keys):
     m = MODELS['gpt']
     try:
         from openai import OpenAI
-        r = OpenAI(api_key=keys.get('OPENAI_API_KEY')).chat.completions.create(model=m, messages=[{'role':'user','content':prompt}], max_tokens=512)
+        r = OpenAI(api_key=keys.get('OPENAI_API_KEY')).chat.completions.create(model=m, messages=[{'role':'user','content':prompt}], max_completion_tokens=512)
         q.put((f'gpt ({m})', r.choices[0].message.content))
     except Exception as e: q.put((f'gpt ({m})', f'x {e}'))
 
