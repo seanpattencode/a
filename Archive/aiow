@@ -1,3 +1,0 @@
-#!/bin/bash
-# aiow - shell client for warm daemon (no Python startup)
-printf "CWD:%s\n%s" "$PWD" "$*" | nc -U /tmp/aiow.sock
