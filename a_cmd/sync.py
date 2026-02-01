@@ -1,4 +1,5 @@
 # Append-only: edits=new files. Push ours, reset to main. No merges.
+# Conflict-free: use {time_ms}_{device}.txt filenames. Each device writes unique files.
 import os, subprocess as sp
 from pathlib import Path
 from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone
