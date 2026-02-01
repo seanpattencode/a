@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """a - AI agent session manager
 NOTE: After editing commands, test via bash (~/.local/bin/a) not just python a.py
+
+CACHING: The 'a' command shows instantly despite Python startup (~100ms) because:
+  1. Shell function (installed in ~/.bashrc by install.sh) intercepts calls
+  2. For 'a' with no args: does 'cat ~/.local/share/a/help_cache.txt' (~1ms)
+  3. For 'a <num>': reads projects.txt directly in bash
+  4. For 'a t' (tasks): delegates to pure-bash 't' script (~3ms)
+  5. Only falls back to Python when cache miss or complex commands
+  Cache files: help_cache.txt, projects.txt, i_cache.txt, t_cache
+  Regenerate: 'a update' or install.sh
 """
 import sys, os
 
