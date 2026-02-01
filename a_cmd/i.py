@@ -7,14 +7,7 @@ CACHE, HELP_CACHE = f"{DATA_DIR}/i_cache.txt", f"{DATA_DIR}/help_cache.txt"
 def getch():
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = sys.stdin.read(1)
-        if ch == '\x1b':  # Read full escape sequence while still in raw mode
-            import select
-            if sys.stdin in select.select([sys.stdin],[],[],0.01)[0]:
-                ch += sys.stdin.read(2)
-        return ch
+    try: tty.setraw(fd); return sys.stdin.read(1)
     finally: termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 def refresh_cache():
@@ -36,14 +29,14 @@ def run():
     def search(q):
         q = q.lower()
         hits = [items[i] for i in ix.get(q[:2], range(len(items))) if q in items[i].lower()]
-        return sorted(hits, key=lambda x: (0 if x.lower().startswith(q) else 1, x.lower().find(q)))[:8]
+        return sorted(hits, key=lambda x: (0 if x.lower().startswith(q) else 1, x.lower().find(q)))[:10]
 
     # Show help at top
     help_txt = open(HELP_CACHE).read().strip() if os.path.exists(HELP_CACHE) else ""
     print(help_txt + "\n" + "-"*40 + "\nFilter (Tab=cycle, Enter=run, Esc=quit)\n"); buf, sel = "", 0
 
     while True:
-        matches = search(buf) if buf else items[:8]
+        matches = search(buf) if buf else items[:10]
         sel = min(sel, len(matches)-1) if matches else 0
 
         # Render search at bottom
@@ -53,15 +46,16 @@ def run():
         sys.stdout.flush()
 
         ch = getch()
-        if ch == '\x1b': break  # Plain Esc
-        elif ch in ('\x1b[A', '\x1b[D'): sel = (sel - 1) % len(matches) if matches else 0  # Up/Left
-        elif ch in ('\x1b[B', '\x1b[C'): sel = (sel + 1) % len(matches) if matches else 0  # Down/Right
+        if ch == '\x1b': break  # Esc
         elif ch == '\t': sel = (sel + 1) % len(matches) if matches else 0
         elif ch == '\x7f' and buf: buf, sel = buf[:-1], 0
-        elif ch == '\r' and matches:
-            cmd = matches[sel].split(':')[0] if ':' in matches[sel] else matches[sel]
+        elif ch == '\r':
+            if ' ' in buf: cmd = buf  # Has args, use as-is
+            elif matches: cmd = matches[sel].split(':')[0].strip() if ':' in matches[sel] else matches[sel].strip()
+            else: cmd = buf
+            if not cmd: continue
             print(f"\n\n\033[KRunning: a {cmd}\n")
-            os.execvp(sys.executable, [sys.executable, os.path.dirname(__file__) + '/../a.py', cmd])
+            import subprocess; subprocess.run([sys.executable, os.path.dirname(__file__) + '/../a.py'] + cmd.split())
         elif ch in ('\x03', '\x04') or (ch == 'q' and not buf): break  # Ctrl+C, Ctrl+D, q
         elif ch.isalnum() or ch in '-_ ': buf, sel = buf + ch, 0
 
