@@ -1,7 +1,7 @@
 import os, subprocess as sp
 from pathlib import Path
 from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone
-REPOS = {k: f'a-{k}' for k in 'common ssh login hub notes workspace docs'.split()}
+REPOS = {k: f'a-{k}' for k in 'common ssh login hub notes workspace docs tasks'.split()}
 
 def _merge_rclone():
     import re;lc,rc=SYNC_ROOT/'login'/'rclone.conf',Path.home()/'.config/rclone/rclone.conf'
