@@ -13,7 +13,7 @@ def _save(n, h, pw=None, **kw):
     (SSH_DIR/f'{n}.txt').write_text('\n'.join(f"{k}: {v}" for k, v in d.items() if v) + '\n'); sync('ssh')
 def _load():
     SSH_DIR.mkdir(parents=True, exist_ok=True); (SSH_DIR/'.git').exists() or sync('ssh')
-    return [_parse(f) for f in SSH_DIR.glob('*.txt')]
+    return [_parse(f) for f in sorted(SSH_DIR.glob('*.txt'))]
 def _rm(n): (SSH_DIR/f'{n}.txt').unlink(missing_ok=True); sync('ssh')
 def _os(): return sp.run('uname -sr 2>/dev/null || echo unknown', shell=True, capture_output=True, text=True).stdout.strip()
 
