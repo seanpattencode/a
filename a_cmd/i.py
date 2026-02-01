@@ -50,12 +50,17 @@ def run():
         elif ch == '\t': sel = (sel + 1) % len(matches) if matches else 0
         elif ch == '\x7f' and buf: buf, sel = buf[:-1], 0
         elif ch == '\r':
-            if ' ' in buf: cmd = buf  # Has args, use as-is
-            elif matches: cmd = matches[sel].split(':')[0].strip() if ':' in matches[sel] else matches[sel].strip()
-            else: cmd = buf
+            if ' ' in buf: cmd, via_a = buf, True  # Has args, use as-is
+            elif matches: cmd, via_a = (matches[sel].split(':')[0].strip() if ':' in matches[sel] else matches[sel].strip()), True
+            else: cmd, via_a = buf, False  # No match, run directly
             if not cmd: continue
-            print(f"\n\n\033[KRunning: a {cmd}\n")
-            import subprocess; subprocess.run([sys.executable, os.path.dirname(__file__) + '/../a.py'] + cmd.split())
+            import subprocess
+            if via_a:
+                print(f"\n\n\033[KRunning: a {cmd}\n")
+                subprocess.run([sys.executable, os.path.dirname(__file__) + '/../a.py'] + cmd.split())
+            else:
+                print(f"\n\n\033[KRunning: {cmd}\n")
+                subprocess.run(cmd.split())
         elif ch in ('\x03', '\x04') or (ch == 'q' and not buf): break  # Ctrl+C, Ctrl+D, q
         elif ch.isalnum() or ch in '-_ ': buf, sel = buf + ch, 0
 
