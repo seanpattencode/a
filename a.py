@@ -11,10 +11,7 @@ CACHING: The 'a' command shows instantly despite Python startup (~100ms) because
   Cache files: help_cache.txt, projects.txt, i_cache.txt, t_cache
   Regenerate: 'a update' or install.sh
 """
-import sys, os, socket;_S=os.environ.get('TMPDIR','/tmp')+'/a.sock'
-if not os.environ.get('_AIO_WARM') and os.path.exists(_S):
-    try: s=socket.socket(socket.AF_UNIX);s.connect(_S);s.send(f"{os.getcwd()}\n{' '.join(sys.argv[1:])}".encode());s.shutdown(socket.SHUT_WR);exec("while(d:=s.recv(4096)):print(d.decode(),end='')");sys.exit()
-    except: pass
+import sys, os
 
 # Generate monolith
 if len(sys.argv) > 1 and sys.argv[1] in ('mono', 'monolith'):
@@ -36,7 +33,7 @@ CMDS = {
     'all': 'multi', 'a': 'multi', 'ai': 'multi', 'aio': 'multi', 'backup': 'backup', 'bak': 'backup', 'scan': 'scan', 'sca': 'scan',
     'e': 'e', 'x': 'x', 'p': 'push', 'copy': 'copy', 'cop': 'copy', 'log': 'log', 'logs': 'log', 'done': 'done',
     'agent': 'agent', 'tree': 'tree', 'tre': 'tree', 'dir': 'dir', 'web': 'web', 'ssh': 'ssh', 'run': 'run', 'hub': 'hub', 'ask': 'ask',
-    'task': 'task', 'tas': 'task', 't': 'task', 'daemon': 'daemon', 'ui': 'ui', 'review': 'review',
+    'task': 'task', 'tas': 'task', 't': 'task', 'ui': 'ui', 'review': 'review',
     'n': 'note', 'note': 'note', 'i': 'i', 'rebuild': 'rebuild', 'repo': 'repo', 'sync': 'sync', 'syn': 'sync', 'login': 'login', 'docs': 'docs', 'doc': 'docs',
     'hi': 'hi',
 }
