@@ -2,25 +2,29 @@
 """aio warm daemon - pre-warms Python for 4-6x faster commands"""
 import os, sys, socket, io
 
-SOCK, AIO = '/tmp/aio.sock', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'aio.py')
+SOCK, AIO = '/tmp/a.sock', os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'a.py')
 
 def daemon():
+    if os.fork(): print("a daemon started"); return
+    if os.fork(): os._exit(0)  # double fork, parent exits
     os.environ['_AIO_WARM'] = '1'
+    sys.path.insert(0, os.path.dirname(AIO))
     code = compile(open(AIO).read(), AIO, 'exec')
-    sys.argv, sys.stdout = ['aio', 'help'], io.StringIO()
-    exec(code, {'__name__': '__main__', '__file__': AIO})
+    sys.argv, sys.stdout = ['a', 'help'], io.StringIO()
+    try: exec(code, {'__name__': '__main__', '__file__': AIO})
+    except SystemExit: pass
     sys.stdout = sys.__stdout__
     try: os.unlink(SOCK)
     except: pass
     sock = socket.socket(socket.AF_UNIX); sock.bind(SOCK); sock.listen(5)
-    print("aio warm daemon ready")
+    print("a warm daemon ready")
     while True:
         conn, _ = sock.accept(); data = conn.recv(8192).decode()
         if data == 'STOP': conn.close(); break
         if os.fork() == 0:
             cwd, args = data.split('\n', 1) if '\n' in data else (os.getcwd(), data)
             os.chdir(cwd); buf = io.StringIO(); sys.stdout = sys.stderr = buf
-            sys.argv = ['aio'] + (args.split() if args else [])
+            sys.argv = ['a'] + (args.split() if args else [])
             try: exec(code, {'__name__': '__main__', '__file__': AIO})
             except SystemExit: pass
             except Exception as e: buf.write(f"Error: {e}")
