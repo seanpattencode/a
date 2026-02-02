@@ -74,8 +74,8 @@ install_node() {
 # Install system packages
 case $OS in
     mac)
-        command -v brew &>/dev/null || die "Install Homebrew first: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        brew tap hudochenkov/sshpass 2>/dev/null; brew install tmux node gh sshpass rclone 2>/dev/null || brew upgrade tmux node gh sshpass rclone 2>/dev/null || true
+        command -v brew &>/dev/null || { info "Installing Homebrew..."; /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; }
+        brew install tmux node gh sshpass rclone 2>/dev/null || brew upgrade tmux node gh sshpass rclone 2>/dev/null; brew tap hudochenkov/sshpass 2>/dev/null
         ok "tmux + node + gh + rclone"
         ;;
     debian)

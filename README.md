@@ -1,58 +1,26 @@
 # a
-Human AI interaction accelerator.
+AI agent manager. Human-AI interaction accelerator.
 
-AI agent manager. 
+## Install
 
-## Prerequisites
-
-**Mac:** Install Homebrew first:
+**Mac/Linux:**
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+git clone https://github.com/seanpattencode/a.git && cd a && ./install.sh
 ```
 
-**Windows (WSL):** [Video guide](https://www.youtube.com/watch?v=WD7swbRpwKM)
-1. Press Windows key, type `powershell`, right-click → "Run as administrator"
-2. Run: `wsl --install -d Ubuntu`
-3. Restart PC, Ubuntu opens—create username (lowercase) and password (won't show as you type)
-4. In Ubuntu, run Install (Mac/Linux/WSL) below
+**Windows:** Install WSL first (`wsl --install -d Ubuntu` in PowerShell as admin, restart), then run above in Ubuntu.
 
-Troubleshooting: To reopen Ubuntu, press Windows key and search "Ubuntu". To reset: `wsl --unregister Ubuntu` then `wsl --install -d Ubuntu`
+**Termux:** `pkg install git -y && git clone https://github.com/seanpattencode/a.git ~/a && cd ~/a && bash install.sh`
 
-Other distros: `wsl --list --online` to see options, `wsl --install -d <distro>`
+## Multi-device
 
-
-
-**Termux (Android):**
-```bash
-pkg update -y && pkg install -y git gh python
-gh auth login
-gh auth setup-git
-git clone https://github.com/seanpattencode/aio ~/aio && cd ~/aio && bash install.sh
-source ~/.bashrc
-a update
-```
-
-## Install (Mac/Linux/WSL)
-
-```bash
-git clone https://github.com/seanpattencode/aio.git && cd aio && ./install.sh
-```
-
-Installs: tmux, node, claude, codex, gemini, a. Prompts for sudo if needed. Works without root (installs to ~/.local).
-
-## Multi-device Setup
-
-Auth tokens sync across devices - `gh auth login` only once:
-
-1. First device: `gh auth login` as normal
-2. Additional devices: Run `a login` to import token from your synced workspace
-
-Your GitHub token is stored in `~/projects/a-sync/login/` and shared via git sync.
+Auth syncs across devices. First device: `gh auth login`. Additional: `a login`.
 
 ## Simple start
 Type in terminal
 
 a g
+
 sign in
 
 ask
