@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""a - AI agent session manager
-NOTE: After editing commands, test via bash (~/.local/bin/a) not just python a.py
-
-CACHING: The 'a' command shows instantly despite Python startup (~100ms) because:
-  1. Shell function (installed in ~/.bashrc by install.sh) intercepts calls
-  2. For 'a' with no args: does 'cat ~/.local/share/a/help_cache.txt' (~1ms)
-  3. For 'a <num>': reads projects.txt directly in bash
-  4. For 'a t' (tasks): delegates to pure-bash 't' script (~3ms)
-  5. Only falls back to Python when cache miss or complex commands
-  Cache files: help_cache.txt, projects.txt, i_cache.txt, t_cache
-  Regenerate: 'a update' or install.sh
-"""
+"""a - AI agent session manager. Start daemon: python3 a.py --repl &"""
 import sys, os
+
+# If daemon running, use it (2ms). Otherwise fall through (30ms)
+_SOCK = '/tmp/a.sock'
+if '--repl' not in sys.argv and os.path.exists(_SOCK):
+    try:
+        import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(0.1); s.connect(_SOCK)
+        s.send('\0'.join(sys.argv[1:]).encode()); print(s.recv(65536).decode(), end=''); sys.exit(0)
+    except: pass
 
 # Generate monolith
 if len(sys.argv) > 1 and sys.argv[1] in ('mono', 'monolith'):
@@ -19,6 +16,7 @@ if len(sys.argv) > 1 and sys.argv[1] in ('mono', 'monolith'):
     p = os.path.expanduser("~/.local/share/a/a_mono.py")
     open(p, 'w').write('\n\n'.join(f"# === {f} ===\n" + open(f).read() for f in sorted(G(os.path.dirname(__file__) + '/a_cmd/*.py'))))
     print(p); sys.exit(0)
+
 
 # Command dispatch
 CMDS = {
@@ -59,4 +57,13 @@ def main():
     else: from a_cmd import sess; sess.run()
 
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] == ['--repl']:
+        import socket, io, contextlib
+        os.path.exists(_SOCK) and os.unlink(_SOCK); s=socket.socket(socket.AF_UNIX); s.bind(_SOCK); s.listen(1)
+        while (c:=s.accept()[0]):
+            sys.argv=['a']+[x for x in c.recv(4096).decode().split('\0') if x]; buf=io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                try: main()
+                except SystemExit: pass
+            c.send(buf.getvalue().encode()); c.close()
+    else: main()
