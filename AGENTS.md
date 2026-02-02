@@ -1,6 +1,3 @@
-Read a.py, relevant files
-Run and debug minimal length code
-"a diff" command to minimize token count
-Bug fixes require fewer tokens
-Give user command to verify code
-Don't push without approval. 
+Write code as short as possible, readable, fast as possible, using direct library calls over custom logic. Read a.py fully before beginning.
+Run and debug code. Use "a diff" command to check token count is lower or equal to old code unless otherwise specified.
+Don't push without approval.
