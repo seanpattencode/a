@@ -14,7 +14,9 @@ git clone https://github.com/seanpattencode/a.git && cd a && ./install.sh
 
 ## Multi-device
 
-Auth syncs across devices. First device: `gh auth login`. Additional: `a login`.
+Auth syncs across devices:
+- First device: `gh auth login` then `a login save`
+- Additional devices: `a login apply` (imports token from sync)
 
 ## Simple start
 Type in terminal
