@@ -7,11 +7,10 @@ def _merge_rclone():
     import re;lc,rc=SYNC_ROOT/'login'/'rclone.conf',Path.home()/'.config/rclone/rclone.conf'
     if not lc.exists():return
     rc.parent.mkdir(parents=True,exist_ok=True);lt,rt=lc.read_text(),rc.read_text()if rc.exists()else''
-    for n in('a-gdrive','a-gdrive2'):
-        if f'[{n}]'not in rt and(s:=re.search(rf'\[{n}\][^\[]*',lt)):rc.write_text(rt+s.group()+'\n');rt=rc.read_text()
+    for n in'a-gdrive','a-gdrive2':
+        if f'[{n}]'not in rt and(m:=re.search(rf'\[{n}\][^\[]*',lt)):rc.write_text(rt+m.group()+'\n');rt=rc.read_text()
 
 def cloud_sync(local_path, name):
-    """Tar + upload to cloud. Returns (ok, msg)."""
     rc = get_rclone();_merge_rclone()
     if not rc: return False, "no rclone"
     tar = f'{os.getenv("TMPDIR","/tmp")}/{name}-{DEVICE_ID}.tar.zst'
@@ -22,11 +21,11 @@ def cloud_sync(local_path, name):
 
 def _sync_repo(path, repo_name, msg='sync'):
     path.parent.mkdir(parents=True,exist_ok=True);g=f'cd {path}&&'
-    if (path/'.git').exists():
+    if not sp.run(f'git -C {path} remote get-url origin',shell=True,capture_output=True).returncode:
         sp.run(f'{g}git add -A&&git commit -qm "{msg}"',shell=True,capture_output=True)
         r=sp.run(f'{g}git pull -q origin main;git push -q',shell=True,capture_output=True,text=True)
     else:
-        r=sp.run(f'gh repo clone {repo_name} {path} 2>/dev/null||(mkdir -p {path}&&{g}git init -q&&echo "# {repo_name}">README.md&&git add -A&&git commit -qm "init"&&gh repo create {repo_name} --private --source=. --push)',shell=True,capture_output=True,text=True)
+        r=sp.run(f'rm -rf {path};gh repo clone {repo_name} {path}||(mkdir -p {path}&&{g}git init -q&&echo "# {repo_name}">README.md&&git add -A&&git commit -qm init&&gh repo create {repo_name} --private --source=. --push)',shell=True,capture_output=True)
     url=sp.run(['git','-C',str(path),'remote','get-url','origin'],capture_output=True,text=True).stdout.strip()or'sync'
     if r.returncode:print(f"x [{repo_name}]: {g}git status")
     return url
