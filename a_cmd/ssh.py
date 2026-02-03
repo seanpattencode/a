@@ -20,7 +20,9 @@ def _os(): return sp.run('uname -sr 2>/dev/null || echo unknown', shell=True, ca
 def run():
     wda = sys.argv[2] if len(sys.argv) > 2 else None
     def _sshd_running(): return _up('localhost:8022') or _up('localhost:22')
-    def _sshd_ip(): r = sp.run("ipconfig getifaddr en0 2>/dev/null || ifconfig 2>/dev/null | grep -A1 'wlan0\\|en0' | grep inet | awk '{print $2}'", shell=True, capture_output=True, text=True); return r.stdout.strip() or '?'
+    def _sshd_ip():
+        try: import socket as S; s=S.socket(S.AF_INET,S.SOCK_DGRAM); s.connect(("8.8.8.8",80)); ip=s.getsockname()[0]; s.close(); return ip
+        except: return '?'
     def _sshd_port(): return 8022 if os.environ.get('TERMUX_VERSION') else 22
 
     raw = _load(); hosts = [(d.get('Name','?'), d.get('Host')) for d in raw]; hmap = {d['Name']: d['Host'] for d in raw if d.get('Host')}; pwmap = {d['Name']: d.get('Password') for d in raw}; osmap = {d['Name']: d.get('OS') for d in raw}
