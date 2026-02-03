@@ -20,33 +20,25 @@ from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, g
 FOLDERS = 'common ssh login hub notes workspace docs tasks'.split()
 
 def _broadcast():
-    """Non-blocking: ping all devices 3x at 3s intervals, 2s timeout each"""
+    """Non-blocking: fork to ping all devices 3x at 3s intervals"""
+    if os.fork() > 0: return  # parent returns immediately
+    os.setsid()  # detach from terminal
     from concurrent.futures import ThreadPoolExecutor
-    def _ping_host(host_pw):
-        try:
-            host, pw = host_pw
-            hp = host.rsplit(':', 1)
-            cmd = (['sshpass', '-p', pw] if pw else []) + [
-                'ssh', '-oConnectTimeout=2', '-oStrictHostKeyChecking=no'
-            ] + (['-p', hp[1]] if len(hp) > 1 else []) + [
-                hp[0], 'cd ~/projects/a-sync 2>/dev/null && git pull -q origin main || cd ~/a-sync && git pull -q origin main'
-            ]
-            sp.run(cmd, capture_output=True, timeout=5)
-        except: pass
-    def _load_hosts():
-        hosts = []
-        for f in (SYNC_ROOT / 'ssh').glob('*.txt'):
-            d = {k.strip(): v.strip() for l in f.read_text().splitlines() if ':' in l for k, v in [l.split(':', 1)]}
-            if d.get('Host') and d.get('Name') != DEVICE_ID:
-                hosts.append((d['Host'], d.get('Password')))
-        return hosts
-    def _ping_all():
-        hosts = _load_hosts()
-        for _ in range(3):
-            with ThreadPoolExecutor(max_workers=len(hosts) or 1) as ex:
-                ex.map(lambda h: _ping_host(h), hosts, timeout=10)
-            time.sleep(3)
-    threading.Thread(target=_ping_all, daemon=True).start()
+    hosts = []
+    for f in (SYNC_ROOT / 'ssh').glob('*.txt'):
+        d = {k.strip(): v.strip() for l in f.read_text().splitlines() if ':' in l for k, v in [l.split(':', 1)]}
+        if d.get('Host') and d.get('Name') != DEVICE_ID:
+            hosts.append((d['Host'], d.get('Password')))
+    for _ in range(3):
+        def ping(hp):
+            try:
+                h, pw = hp; p = h.rsplit(':', 1)
+                cmd = (['sshpass', '-p', pw] if pw else []) + ['ssh', '-oConnectTimeout=2', '-oStrictHostKeyChecking=no'] + (['-p', p[1]] if len(p) > 1 else []) + [p[0], 'cd ~/projects/a-sync 2>/dev/null && git pull -q origin main || cd ~/a-sync && git pull -q origin main']
+                sp.run(cmd, capture_output=True, timeout=5)
+            except: pass
+        with ThreadPoolExecutor(max_workers=len(hosts) or 1) as ex: list(ex.map(ping, hosts))
+        time.sleep(3)
+    os._exit(0)
 
 def q(p):
     """Quote path for shell"""
