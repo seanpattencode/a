@@ -280,6 +280,20 @@ def run():
             count = len(list(p.glob('*.txt')))
             print(f"  {folder}: {count} files")
 
+    # Show daemon status
+    pid_file = Path.home() / '.a-sync-poll.pid'
+    daemon_running = False
+    if pid_file.exists():
+        try:
+            import os
+            os.kill(int(pid_file.read_text().strip()), 0)
+            daemon_running = True
+        except: pass
+    if daemon_running:
+        print(f"\n  Poll: running ({POLL_INTERVAL}s) - stop with: a sync stop")
+    else:
+        print(f"\n  Poll: not running - start with: a sync poll")
+
     if args and args[0] == 'all':
         print("\n--- Broadcasting to SSH hosts ---")
         sp.run('a ssh all "a sync"', shell=True)
