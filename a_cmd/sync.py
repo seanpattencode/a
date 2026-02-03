@@ -1,3 +1,17 @@
+# ============================================================================
+# FUTURE: APPEND-ONLY SYNC (see ideas/APPEND_ONLY_SYNC.md)
+#
+# Current implementation below uses git pull/push which conflicts when
+# multiple devices edit without pulling first. The append-only approach
+# would rename edited files with timestamps so git only sees new files.
+#
+# Filename format: {name}_{YYYYMMDDTHHMMss.nnnnnnnnn}.{ext}
+# Example: fix-bug_20260203T084517.243881068.txt
+#
+# Until implemented, conflicts must be resolved manually with:
+#   git pull --rebase && git push
+# ============================================================================
+
 """a-sync folder backup:
   local only:  backup/<repo>/  (pre-sync snapshot)
   git+github:  common ssh login hub notes workspace docs tasks
