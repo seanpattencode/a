@@ -182,10 +182,61 @@ def _init_repo():
     )
     return r.returncode == 0
 
+POLL_INTERVAL = 60  # seconds
+
+def _poll_loop():
+    """Background loop: pull every POLL_INTERVAL seconds"""
+    while True:
+        time.sleep(POLL_INTERVAL)
+        sp.run(f'cd {q(SYNC_ROOT)} && git pull -q origin main', shell=True, capture_output=True)
+
+def start_poll_daemon():
+    """Start background poll loop (fork to background)"""
+    import os
+    pid_file = Path.home() / '.a-sync-poll.pid'
+    if pid_file.exists():
+        pid = int(pid_file.read_text().strip())
+        try:
+            os.kill(pid, 0)  # check if running
+            print(f"Poll daemon already running (pid {pid})")
+            return
+        except OSError:
+            pass  # not running, continue
+
+    pid = os.fork()
+    if pid > 0:
+        pid_file.write_text(str(pid))
+        print(f"Poll daemon started (pid {pid}, interval {POLL_INTERVAL}s)")
+        return
+
+    # Child process
+    os.setsid()
+    while True:
+        time.sleep(POLL_INTERVAL)
+        sp.run(f'cd {q(SYNC_ROOT)} && git pull -q origin main', shell=True, capture_output=True)
+
+def stop_poll_daemon():
+    """Stop background poll loop"""
+    import os, signal
+    pid_file = Path.home() / '.a-sync-poll.pid'
+    if not pid_file.exists():
+        print("Poll daemon not running")
+        return
+    pid = int(pid_file.read_text().strip())
+    try:
+        os.kill(pid, signal.SIGTERM)
+        pid_file.unlink()
+        print(f"Poll daemon stopped (pid {pid})")
+    except OSError:
+        pid_file.unlink()
+        print("Poll daemon was not running")
+
 HELP = """a sync - Append-only sync to GitHub (no conflicts possible)
 
   a sync           Sync all data (unified a-git repo)
   a sync all       Sync + broadcast to SSH hosts
+  a sync poll      Start background poll daemon (60s interval)
+  a sync stop      Stop poll daemon
   a sync help      Show this help
 
 Data: ~/a-sync/ -> github.com/seanpattencode/a-git
@@ -197,6 +248,14 @@ def run():
 
     if args and args[0] in ('help', '-h', '--help'):
         print(HELP)
+        return
+
+    if args and args[0] == 'poll':
+        start_poll_daemon()
+        return
+
+    if args and args[0] == 'stop':
+        stop_poll_daemon()
         return
 
     # Initialize if needed
