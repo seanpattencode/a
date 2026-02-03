@@ -36,8 +36,16 @@ def setup_all():
     print(f"✓ {sh.title()} (updated)" if updated else f"• {sh.title()} (ok)")
     refresh_caches(); print("✓ Cache")
 
+HELP = """a update - Update a from git + refresh caches
+  a update        Pull latest, refresh shell/caches, sync repos
+  a update all    Update local + broadcast to all SSH hosts
+  a update shell  Refresh shell config + caches only
+  a update cache  Refresh caches only
+  a update help   Show this help"""
+
 def run():
     import sys; arg = sys.argv[2] if len(sys.argv) > 2 else None
+    if arg in ('help', '-h', '--help'): print(HELP); return
     if arg in ('bash', 'zsh', 'shell'): setup_all(); return
     if arg == 'cache': refresh_caches(); print("✓ Cache"); return
     if _sg('rev-parse', '--git-dir').returncode != 0: print("x Not in git repo"); return
@@ -47,3 +55,4 @@ def run():
     if 'behind' not in _sg('status', '-uno').stdout: print(f"✓ Up to date ({before})"); os.system(_sh); init_db(); list_all(); setup_all(); __import__('a_cmd.sync',fromlist=['']).run(); return
     print("Downloading..."); _sg('pull', '--ff-only'); after = _sg('rev-parse', 'HEAD').stdout.strip()[:8]; print(f"✓ {before} -> {after}" if after else "✓ Done")
     os.system(_sh); init_db(); list_all(); setup_all(); __import__('a_cmd.sync',fromlist=['']).run()
+    if arg == 'all': print("\n--- Broadcasting to SSH hosts ---"); sp.run('a ssh all "a update"', shell=True)
