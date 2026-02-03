@@ -13,11 +13,20 @@
   cloud only:  logs/ (rclone to gdrive, gitignored)
 All files use append-only timestamps."""
 
-import os, subprocess as sp, time, shlex
+import os, subprocess as sp, time, shlex, threading
 from pathlib import Path
 from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone
 
 FOLDERS = 'common ssh login hub notes workspace docs tasks'.split()
+
+def _broadcast():
+    """Non-blocking: ping connected devices 3x at 3s intervals"""
+    def _ping():
+        for _ in range(3):
+            # Use short timeout, try common paths
+            sp.run('timeout 5 a ssh hsu "cd ~/projects/a-sync && git pull -q origin main" 2>/dev/null', shell=True, capture_output=True)
+            time.sleep(3)
+    threading.Thread(target=_ping, daemon=True).start()
 
 def q(p):
     """Quote path for shell"""
@@ -92,6 +101,7 @@ Error: {(push.stderr + push.stdout)[:200]}
 """)
                 return False, True
             return False, False
+        _broadcast()  # notify other devices
 
     return True, False
 
