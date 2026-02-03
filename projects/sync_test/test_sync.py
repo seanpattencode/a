@@ -27,4 +27,6 @@ def archive(device, name): arc=(ROOT/device/'.archive'); arc.mkdir(exist_ok=True
 
 def test_archive(): setup(); f=create_file('device_a','toarchive'); [pull(d) for d in DEVICES]; archive('device_a','toarchive'); [pull(d) for d in DEVICES]; return {'files':{d:len(list((ROOT/d).glob('*.txt'))) for d in DEVICES},'archived':{d:len(list((ROOT/d/'.archive').glob('*.txt'))) for d in DEVICES}}
 
-if __name__ == '__main__': print(test_archive())
+def test_offline(): setup(); f1,f2,f3,f4=[create_file('device_a',n) for n in ('toadd','todelete','toarchive','toedit')]; [pull(d) for d in DEVICES]; [(create_file('device_b',f'online{i}'), pull('device_b')) for i in range(2)]; pull('device_c'); (ROOT/'device_c'/'newfile.txt').write_text('add'); (ROOT/'device_c'/f2).unlink(); (ROOT/'device_c'/'.archive').mkdir(exist_ok=True); (ROOT/'device_c'/f3).rename(ROOT/'device_c'/'.archive'/f3); (ROOT/'device_c'/f4).write_text('edited'); sync_edit('device_c'); [pull(d) for d in DEVICES]; return {'files':{d:len(list((ROOT/d).glob('*.txt'))) for d in DEVICES},'archive':{d:len(list((ROOT/d/'.archive').glob('*.txt'))) for d in DEVICES}}
+
+if __name__ == '__main__': print(test_offline())
