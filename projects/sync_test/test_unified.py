@@ -140,6 +140,22 @@ if __name__ == '__main__':
     test_cross_device()
     test_hsu_ops()
 
+    # Broadcast test
+    print("\n=== BROADCAST TEST ===")
+    fname = f'_bcast_{TS}.txt'
+    (ROOT / 'tasks' / fname).write_text('broadcast test\n')
+    sync_local()
+    print(f"  WSL: created + synced {fname}")
+    time.sleep(10)  # wait for broadcast
+    ok, out = hsu(f'ls ~/projects/a-sync/tasks/{fname}')
+    if fname in out:
+        print("  HSU: received via broadcast - PASS")
+    else:
+        ERRORS.append("broadcast: hsu didn't receive file")
+        print("  HSU: missing - FAIL")
+    (ROOT / 'tasks' / fname).unlink(missing_ok=True)
+    sync_local()
+
     # Final status
     print("\n" + "="*40)
     if ERRORS:

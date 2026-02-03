@@ -20,13 +20,33 @@ from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, g
 FOLDERS = 'common ssh login hub notes workspace docs tasks'.split()
 
 def _broadcast():
-    """Non-blocking: ping connected devices 3x at 3s intervals"""
-    def _ping():
+    """Non-blocking: ping all devices 3x at 3s intervals, 2s timeout each"""
+    from concurrent.futures import ThreadPoolExecutor
+    def _ping_host(host_pw):
+        try:
+            host, pw = host_pw
+            hp = host.rsplit(':', 1)
+            cmd = (['sshpass', '-p', pw] if pw else []) + [
+                'ssh', '-oConnectTimeout=2', '-oStrictHostKeyChecking=no'
+            ] + (['-p', hp[1]] if len(hp) > 1 else []) + [
+                hp[0], 'cd ~/projects/a-sync 2>/dev/null && git pull -q origin main || cd ~/a-sync && git pull -q origin main'
+            ]
+            sp.run(cmd, capture_output=True, timeout=5)
+        except: pass
+    def _load_hosts():
+        hosts = []
+        for f in (SYNC_ROOT / 'ssh').glob('*.txt'):
+            d = {k.strip(): v.strip() for l in f.read_text().splitlines() if ':' in l for k, v in [l.split(':', 1)]}
+            if d.get('Host') and d.get('Name') != DEVICE_ID:
+                hosts.append((d['Host'], d.get('Password')))
+        return hosts
+    def _ping_all():
+        hosts = _load_hosts()
         for _ in range(3):
-            # Use short timeout, try common paths
-            sp.run('timeout 5 a ssh hsu "cd ~/projects/a-sync && git pull -q origin main" 2>/dev/null', shell=True, capture_output=True)
+            with ThreadPoolExecutor(max_workers=len(hosts) or 1) as ex:
+                ex.map(lambda h: _ping_host(h), hosts, timeout=10)
             time.sleep(3)
-    threading.Thread(target=_ping, daemon=True).start()
+    threading.Thread(target=_ping_all, daemon=True).start()
 
 def q(p):
     """Quote path for shell"""
