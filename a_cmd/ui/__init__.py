@@ -5,7 +5,7 @@ def _try(p=8080):
         if s.connect_ex(('127.0.0.1', p)) == 0: W.open(f'http://127.0.0.1:{p}'); return True
 
 def _bg(m, p):
-    S.Popen([sys.executable, '-c', f"from a_cmd.ui.{m} import run;run({p})"], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL)
+    S.Popen([sys.executable, '-c', f"from a_cmd.ui.{m} import run;run({p})"], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL, env={**os.environ, 'PYTHONPATH': os.path.realpath(__file__+'/../../..')})
     time.sleep(0.3); W.open(f'http://127.0.0.1:{p}'); print(f'UI on 127.0.0.1:{p}')
 
 def run():
