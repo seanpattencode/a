@@ -1,8 +1,12 @@
-"""Sync repos to GitHub. All repos should use main branch. Large files (>100MB) should use cloud storage, not git."""
+"""a-sync folder backup:
+  local only:  backup/<repo>/  (pre-sync snapshot)
+  git+github:  common ssh login hub notes workspace docs tasks
+  cloud only:  logs (a log sync → gdrive tar.zst, too large for git)
+All git repos should use main branch."""
 import os, subprocess as sp
 from pathlib import Path
 from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone
-REPOS = {k: f'a-{k}' for k in 'common ssh login hub notes workspace docs tasks logs'.split()}
+REPOS = {k: f'a-{k}' for k in 'common ssh login hub notes workspace docs tasks'.split()}
 
 def _merge_rclone():
     import re;lc,rc=SYNC_ROOT/'login'/'rclone.conf',Path.home()/'.config/rclone/rclone.conf'
@@ -29,7 +33,9 @@ def _sync_repo(path, repo_name, msg='sync'):
     else:
         r=sp.run(f'rm -rf {path};gh repo clone {repo_name} {path}||(mkdir -p {path}&&{g}git init -q&&echo "# {repo_name}">README.md&&git add -A&&git commit -qm init&&gh repo create {repo_name} --private --source=. --push)',shell=True,capture_output=True)
     url=sp.run(['git','-C',str(path),'remote','get-url','origin'],capture_output=True,text=True).stdout.strip()or'sync'
-    if r.returncode:print(f"x [{repo_name}]: {g}git status")
+    if r.returncode:
+        err=(r.stderr or r.stdout or '').strip().split('\n')[-1]
+        print(f"x [{repo_name}] {err}\n  repo: {path}\n  backup: {b}\n  hint: use 'a c' and copy message for help debugging sync issue")
     return url
 
 def sync(repo='common', msg='sync'): return _sync_repo(SYNC_ROOT/repo, REPOS.get(repo, f'a-{repo}'), msg)
