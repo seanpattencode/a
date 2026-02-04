@@ -323,3 +323,92 @@ def run():
     if args and args[0] == 'all':
         print("\n--- Broadcasting to SSH hosts ---")
         sp.run('a ssh all "a sync"', shell=True)
+
+# ============================================================================
+# FOLDER STRUCTURE
+# ============================================================================
+#
+# Location: ~/projects/a-sync/ (sibling to ~/projects/a/)
+# Remote:   github.com/seanpattencode/a-git (private repo)
+#
+# Synced folders (git tracked):
+#   common/prompts/   - Default prompts for agents (*.txt)
+#   ssh/              - SSH host configs for multi-device sync
+#   login/            - Auth tokens (gh, rclone.conf)
+#   hub/              - Scheduled job definitions
+#   notes/            - Quick notes from `a n "text"`
+#   workspace/        - Projects and commands lists
+#     projects/       - Project definitions (Name, Path, Repo)
+#     cmds/           - Custom command definitions
+#   docs/             - Documentation files
+#   tasks/            - Task items for `a task`
+#
+# Local only (gitignored):
+#   backup/           - Local backup mirror of above folders
+#   logs/             - Agent session logs (synced to gdrive via rclone)
+#   .archive/         - Old/deleted files
+#
+# File naming: {name}_{YYYYMMDDTHHMMSS.nnnnnnnnn}.txt
+#   - Timestamp ensures uniqueness, no merge conflicts
+#   - get_latest() finds most recent version by prefix
+#
+# ============================================================================
+# TROUBLESHOOTING GUIDE
+# ============================================================================
+#
+# DIAGNOSTIC COMMANDS:
+#   cd ~/projects/a-sync
+#   git remote -v              # Should show origin -> a-git.git
+#   git status                 # Should be clean or show untracked files
+#   git log --oneline -5       # Should show "sync" commits, not just "init"
+#   git fetch origin           # Test connection to remote
+#
+# COMMON ISSUES:
+#
+# 1. "No remote configured" / fetch fails
+#    Symptom: git remote -v shows nothing or wrong URL
+#    Fix:
+#      git remote add origin https://github.com/seanpattencode/a-git.git
+#      # or if wrong URL:
+#      git remote set-url origin https://github.com/seanpattencode/a-git.git
+#
+# 2. "Diverged" / local has different commits than remote
+#    Symptom: git log shows "init" but remote has "sync" commits
+#    Fix:
+#      git fetch origin
+#      git reset --hard origin/main    # Gets remote files, keeps untracked
+#      git add -A && git commit -m "merge local and remote"
+#      git push origin main
+#
+# 3. "Push rejected" / remote has newer commits
+#    Symptom: Push fails with "non-fast-forward"
+#    Fix: Run `a sync` again (pulls first, then pushes)
+#
+# 4. Missing files / wrong count
+#    Check: ls tasks/*.txt | wc -l
+#    Compare with: git ls-tree --name-only origin/main tasks/ | wc -l
+#    If remote has more, reset to remote (see #2 above)
+#
+# 5. Auth issues
+#    Symptom: "Permission denied" or "Could not read from remote"
+#    Fix:
+#      gh auth status           # Check GitHub auth
+#      gh auth login            # Re-authenticate if needed
+#
+# EXPECTED FILE COUNTS (approximate):
+#   tasks:    60-120 files
+#   hub:      20-40 files
+#   ssh:      5-10 files
+#   notes:    300-500 files
+#   projects: 15-25 files
+#
+# QUICK HEALTH CHECK:
+#   a sync                     # Should show "synced" status
+#   # If URL is empty or status is CONFLICT, something is wrong
+#
+# NUCLEAR OPTION (re-clone from scratch):
+#   mv ~/projects/a-sync ~/projects/a-sync-backup
+#   gh repo clone seanpattencode/a-git ~/projects/a-sync
+#   # Then manually merge any local-only files from backup
+#
+# ============================================================================
