@@ -475,3 +475,112 @@ Humans don't block the fast path - they audit and correct.
 **This is the core alignment problem restated as a systems design question.**
 
 The append-only sync solves the technical layer. The governance layer remains unsolved.
+
+---
+
+## Tiered Decision Architecture
+
+### Transcript (verbatim)
+
+> could have a tiered sysfem where time criticality and core functinalify is dyermined. faster can work onkg if doesmf touch constitition which does sfuff loke gsurnteee life. but other decisions can have human inoit when time cwn be used to make better dcision.
+
+---
+
+### Core Claims
+
+1. **Tiered system** based on time criticality + core functionality
+
+2. **Constitution tier** - inviolable (e.g., guarantee life) - AI cannot touch fast
+
+3. **Fast tier** - time-critical, non-constitutional - AI moves at full speed
+
+4. **Deliberation tier** - non-time-critical - human input improves decision quality
+
+---
+
+### Analysis
+
+#### The Three Tiers
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  CONSTITUTION (inviolable)                              │
+│  - Guarantee life                                       │
+│  - Fundamental rights                                   │
+│  - Never modified without full deliberation             │
+│  - AI hard-blocked from touching                        │
+├─────────────────────────────────────────────────────────┤
+│  FAST (time-critical, non-constitutional)               │
+│  - AI operates at full speed                            │
+│  - Logged, auditable, reversible                        │
+│  - Human reviews async in batches                       │
+├─────────────────────────────────────────────────────────┤
+│  DELIBERATION (time available)                          │
+│  - Human input sought before decision                   │
+│  - Better quality from slower process                   │
+│  - AI proposes, human disposes                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Analogies
+
+| Domain | Constitution | Fast | Deliberation |
+|--------|--------------|------|--------------|
+| OS | Kernel, protected memory | System calls | User config |
+| Law | Constitutional law | Emergency powers | Legislation |
+| Military | Rules of engagement | Tactical decisions | Strategy |
+| Code | Type system, invariants | Runtime execution | Design review |
+
+#### Classification Criteria
+
+| Factor | → Constitution | → Fast | → Deliberation |
+|--------|----------------|--------|----------------|
+| Reversibility | Irreversible | Reversible | Either |
+| Time pressure | None | High | Low |
+| Stakes | Existential | Operational | Quality |
+| Consensus need | Universal | None | Majority |
+
+#### Implementation
+
+```python
+def decide(action, context):
+    if touches_constitution(action):
+        return BLOCK  # hard stop, require human deliberation
+
+    if time_critical(context):
+        result = ai_decide(action)
+        log(result)  # append-only for audit
+        return result
+
+    else:
+        proposal = ai_propose(action)
+        return await human_review(proposal)  # async, batched
+```
+
+#### What Goes in Constitution?
+
+Candidates for inviolable tier:
+- Right to life (no AI can authorize killing)
+- Human override authority (kill switch always works)
+- Transparency (decisions must be logged)
+- Reversibility (no permanent actions without deliberation)
+- Privacy boundaries (certain data untouchable)
+
+The constitution is **small and slow to change** - that's the point. Everything else can move fast.
+
+#### The Speed/Quality Tradeoff
+
+```
+Constitution:   infinite time, maximum consensus, never wrong on fundamentals
+Fast:           zero time, AI judgment, occasionally wrong but fixable
+Deliberation:   some time, human input, higher quality than fast alone
+```
+
+Not every decision needs maximum quality. Most decisions are:
+- Low stakes
+- Reversible
+- Time-sensitive
+
+Let those go fast. Protect the few things that matter absolutely.
+
+**The constitution is the boundary condition. Everything else is optimization.**
