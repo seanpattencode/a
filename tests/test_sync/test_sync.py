@@ -1,119 +1,32 @@
 """
-Sync test with production-ready logic (subprocess-based).
-Core functions can be copy-pasted to a_cmd/sync.py.
+Sync test - imports directly from a_cmd/sync.py for dual testing/usage.
+Changes to sync.py are automatically tested here via monte carlo sim.
+
+Usage:
+    python test_sync.py monte    # Run monte carlo (n=1000)
+    python test_sync.py race     # Test race condition
+    python test_sync.py          # List available tests
 """
-import subprocess as sp, time, shlex, random
+import sys, random
 from pathlib import Path
 
-# === TEST HARNESS (not for production) ===
-ROOT, DEVICES = Path(__file__).parent / 'devices', ('device_a', 'device_b', 'device_c')
+# Import production sync functions directly - this ensures tests match production
+sys.path.insert(0, str(Path(__file__).parents[2]))
+from a_cmd.sync import q, ts, is_conflict, resolve_conflicts, add_timestamps, soft_delete, _sync, MAX_RETRIES
+import subprocess as sp
+
+# === TEST HARNESS ===
+ROOT = Path(__file__).parent / 'devices'
+DEVICES = ('device_a', 'device_b', 'device_c')
 
 def setup():
+    """Create fresh test repos"""
     sp.run(f'rm -rf {q(ROOT)} && mkdir -p {q(ROOT/"origin")} && git -C {q(ROOT/"origin")} init -q -b main --bare', shell=True)
     for d in DEVICES:
         sp.run(f'mkdir -p {q(ROOT/d)} && git -C {q(ROOT/d)} init -q -b main && git -C {q(ROOT/d)} remote add origin {q(ROOT/"origin")}', shell=True)
 
-# === PRODUCTION-READY FUNCTIONS (copy to sync.py) ===
-
-MAX_RETRIES = 3
-
-def q(p):
-    """Quote path for shell"""
-    return shlex.quote(str(p))
-
-def ts():
-    """Generate timestamp with nanosecond precision"""
-    return time.strftime('%Y%m%dT%H%M%S') + f'.{time.time_ns() % 1000000000:09d}'
-
-def is_conflict(text):
-    """Detect all git conflict/error types"""
-    t = text.lower()
-    return any(x in t for x in ['conflict', 'diverged', 'rejected', 'overwritten', 'unmerged', 'aborting'])
-
-def add_timestamps(path, recursive=False):
-    """Add timestamps to any files missing them"""
-    timestamp = ts()
-    pattern = '**/*.txt' if recursive else '*.txt'
-    for p in Path(path).glob(pattern):
-        if '_20' in p.stem or p.name.startswith('.'):
-            continue
-        p.rename(p.with_name(f'{p.stem}_{timestamp}{p.suffix}'))
-
-def resolve_conflicts(path):
-    """Auto-resolve conflicts: edit wins (accept theirs)"""
-    p = q(path)
-    # Get list of unmerged files
-    r = sp.run(f'cd {p} && git diff --name-only --diff-filter=U', shell=True, capture_output=True, text=True)
-    unmerged = [f for f in r.stdout.strip().split('\n') if f]
-    for f in unmerged:
-        # Edit wins: accept theirs (remote has edits), fallback to ours, fallback to remove
-        sp.run(f'cd {p} && git checkout --theirs {shlex.quote(f)} 2>/dev/null || git checkout --ours {shlex.quote(f)} 2>/dev/null || git rm -f {shlex.quote(f)} 2>/dev/null', shell=True, capture_output=True)
-    # Accept all incoming changes for any remaining conflicts
-    sp.run(f'cd {p} && git checkout --theirs . 2>/dev/null', shell=True, capture_output=True)
-    sp.run(f'cd {p} && git add -A', shell=True, capture_output=True)
-
-def _sync(path, silent=False, folders=None):
-    """
-    Sync with auto-resolution. Returns (success, had_conflict).
-
-    - Retries up to MAX_RETRIES times on push rejection
-    - Auto-resolves merge conflicts (edit wins)
-    - Timestamps files before sync to prevent filename collisions
-    """
-    p = q(path)
-    had_conflict = False
-
-    # Auto-timestamp files in specified folders (or root if none)
-    if folders:
-        for f in folders:
-            folder_path = Path(path) / f
-            if folder_path.exists():
-                add_timestamps(folder_path)
-
-    for attempt in range(MAX_RETRIES):
-        # Step 1: Commit local changes first (prevents "overwritten" errors)
-        sp.run(f'cd {p} && git add -A && git commit -qm sync', shell=True, capture_output=True)
-
-        # Step 2: Pull with merge (not rebase)
-        pull = sp.run(f'cd {p} && git pull --no-rebase origin main', shell=True, capture_output=True, text=True)
-
-        if is_conflict(pull.stderr + pull.stdout):
-            had_conflict = True
-            resolve_conflicts(path)
-            sp.run(f'cd {p} && git commit -qm "auto-resolve: edit wins"', shell=True, capture_output=True)
-
-        # Step 3: Push
-        push = sp.run(f'cd {p} && git push -q origin main', shell=True, capture_output=True, text=True)
-
-        if push.returncode == 0:
-            return True, had_conflict
-
-        # Retry if rejected (remote has newer commits)
-        if 'rejected' in (push.stderr + push.stdout).lower():
-            had_conflict = True
-            continue
-
-        # Other errors: fail
-        if not silent:
-            print(f"Sync error: {(push.stderr + push.stdout)[:200]}")
-        return False, had_conflict
-
-    if not silent:
-        print(f"Sync failed after {MAX_RETRIES} retries")
-    return False, had_conflict
-
-def soft_delete(path, filepath):
-    """Archive instead of hard delete (prevents edit vs delete conflicts)"""
-    arc = Path(path) / '.archive'
-    arc.mkdir(exist_ok=True)
-    f = Path(filepath)
-    if f.exists():
-        f.rename(arc / f.name)
-
-# === TEST HELPERS ===
-
 def pull(device):
-    """Pull with auto-commit and conflict resolution"""
+    """Pull with auto-commit and conflict resolution (uses production functions)"""
     d = ROOT / device
     p = q(d)
     sp.run(f'cd {p} && git add -A && git commit -qm "pre-pull"', shell=True, capture_output=True)
@@ -123,13 +36,15 @@ def pull(device):
         sp.run(f'cd {p} && git commit -qm "auto-resolve"', shell=True, capture_output=True)
 
 def create_file(device, name, content=''):
+    """Create timestamped file and push"""
     p = ROOT / device / f'{name}_{ts()}.txt'
     p.write_text(content or f'created by {device}')
     sp.run(f'cd {q(ROOT/device)} && git add -A && git commit -qm "add {p.name}" && git push -u origin main', shell=True, capture_output=True)
     return p.name
 
 def sync(device, silent=True):
-    return _sync(ROOT / device, silent=silent)
+    """Sync device using production _sync (without auto_timestamp for test control)"""
+    return _sync(ROOT / device, silent=silent, auto_timestamp=False)
 
 def sync_edit(device, silent=True):
     """Sync with edit detection: rename modified files to new timestamp"""
@@ -137,18 +52,15 @@ def sync_edit(device, silent=True):
     t = ts()
     arc = d / '.archive'
     arc.mkdir(exist_ok=True)
-    # Find modified files and rename them (preserves both versions)
     for p in d.glob('*.txt'):
-        r = sp.run(f'git -C {q(d)} diff --quiet {shlex.quote(p.name)}', shell=True)
+        r = sp.run(f'git -C {q(d)} diff --quiet {q(str(p.name))}', shell=True)
         if r.returncode:  # file was modified
-            # Archive old version from git
-            old = sp.run(f'git -C {q(d)} show HEAD:{shlex.quote(p.name)}', shell=True, capture_output=True, text=True)
+            old = sp.run(f'git -C {q(d)} show HEAD:{q(str(p.name))}', shell=True, capture_output=True, text=True)
             if old.stdout:
                 (arc / p.name).write_text(old.stdout)
-            # Rename to new timestamp
             base = p.stem.rsplit('_', 1)[0] if '_20' in p.stem else p.stem
             p.rename(p.with_name(f'{base}_{t}{p.suffix}'))
-    return _sync(d, silent=silent)
+    return _sync(d, silent=silent, auto_timestamp=False)
 
 # === CONFLICT TESTS ===
 
@@ -225,6 +137,7 @@ def test_edit_delete_race():
 # === MONTE CARLO ===
 
 def monte_carlo(n=1000, verbose=False):
+    """Random operations across devices - should result in 0 conflicts and all match"""
     setup(); create_file('device_a', 'seed'); [pull(d) for d in DEVICES]
     for d in DEVICES:
         (ROOT/d/'nested').mkdir(exist_ok=True)
@@ -313,7 +226,7 @@ TESTS = {
     'monte': monte_carlo,
 }
 
-def sim(name=None, timeout=10):
+def sim(name=None, timeout=60):
     """Run a test with timeout. Usage: sim('race') or sim()"""
     import signal
     if name is None:
@@ -333,8 +246,8 @@ def sim(name=None, timeout=10):
         return {'error': str(e)}
 
 if __name__ == '__main__':
-    import sys, json
+    import json
     if len(sys.argv) > 1:
-        print(json.dumps(sim(sys.argv[1], timeout=60), indent=2))
+        print(json.dumps(sim(sys.argv[1]), indent=2))
     else:
         sim()

@@ -52,6 +52,41 @@ from pathlib import Path
 from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone
 
 FOLDERS = 'common ssh login hub notes workspace docs tasks'.split()
+MAX_RETRIES = 3  # retry count for sync
+
+# =============================================================================
+# CORE SYNC FUNCTIONS
+# These are imported by tests/test_sync/test_sync.py for dual testing/usage.
+# Changes here are automatically tested by the monte carlo sim.
+# =============================================================================
+
+def is_conflict(text):
+    """Detect all git conflict/error types"""
+    t = text.lower()
+    return any(x in t for x in ['conflict', 'diverged', 'rejected', 'overwritten', 'unmerged', 'aborting'])
+
+def resolve_conflicts(path):
+    """Auto-resolve conflicts: edit wins (accept theirs)"""
+    p = q(path)
+    # Get list of unmerged files
+    r = sp.run(f'cd {p} && git diff --name-only --diff-filter=U', shell=True, capture_output=True, text=True)
+    unmerged = [f for f in r.stdout.strip().split('\n') if f]
+    for f in unmerged:
+        # Edit wins: accept theirs (remote has edits), fallback to ours, fallback to remove
+        sp.run(f'cd {p} && git checkout --theirs {shlex.quote(f)} 2>/dev/null || git checkout --ours {shlex.quote(f)} 2>/dev/null || git rm -f {shlex.quote(f)} 2>/dev/null', shell=True, capture_output=True)
+    # Accept all incoming changes for any remaining conflicts
+    sp.run(f'cd {p} && git checkout --theirs . 2>/dev/null', shell=True, capture_output=True)
+    sp.run(f'cd {p} && git add -A', shell=True, capture_output=True)
+
+def soft_delete(path, filepath):
+    """Archive instead of hard delete (prevents edit vs delete conflicts)"""
+    arc = Path(path) / '.archive'
+    arc.mkdir(exist_ok=True)
+    f = Path(filepath)
+    if f.exists():
+        f.rename(arc / f.name)
+
+# =============================================================================
 
 def _broadcast():
     """Non-blocking: fork to ping all devices 3x at 3s intervals"""
@@ -99,57 +134,59 @@ def get_latest(path, name):
     matches = sorted(path.glob(f'{name}_*.txt'))
     return matches[-1] if matches else None
 
-def _sync(path=None, silent=False):
+def _sync(path=None, silent=False, auto_timestamp=True):
     """
-    Append-only sync with conflict detection.
-    Returns (success, conflict_detected)
+    Sync with auto-resolution. Returns (success, had_conflict).
 
-    Flow: pull first, then commit local changes, then push.
+    - Retries up to MAX_RETRIES times on push rejection
+    - Auto-resolves merge conflicts (edit wins)
+    - Timestamps files before sync to prevent filename collisions
+
+    This function is tested by tests/test_sync/test_sync.py monte carlo sim.
     """
     path = path or SYNC_ROOT
     p = q(path)
+    had_conflict = False
 
-    # Step 1: Pull remote changes first
-    pull = sp.run(f'cd {p} && git pull -q --no-rebase origin main', shell=True, capture_output=True, text=True)
+    # Auto-timestamp files in FOLDERS to prevent filename collisions
+    if auto_timestamp:
+        for f in FOLDERS:
+            folder_path = Path(path) / f
+            if folder_path.exists():
+                add_timestamps(folder_path)
 
-    if pull.returncode != 0:
-        err = (pull.stderr + pull.stdout).lower()
-        if 'conflict' in err or 'diverged' in err:
-            if not silent:
-                print(f"""
-! Sync conflict (this shouldn't happen with append-only)
+    for attempt in range(MAX_RETRIES):
+        # Step 1: Commit local changes first (prevents "overwritten" errors)
+        sp.run(f'cd {p} && git add -A && git commit -qm sync', shell=True, capture_output=True)
 
-If you're SURE this device has the latest data:
-  cd {path} && git add -A && git commit -m fix && git push --force
+        # Step 2: Pull with merge (not rebase)
+        pull = sp.run(f'cd {p} && git pull --no-rebase origin main', shell=True, capture_output=True, text=True)
 
-If unsure, ask AI:
-  a c "help me resolve sync conflict in {path}"
+        if is_conflict(pull.stderr + pull.stdout):
+            had_conflict = True
+            resolve_conflicts(path)
+            sp.run(f'cd {p} && git commit -qm "auto-resolve: edit wins"', shell=True, capture_output=True)
 
-Error: {(pull.stderr + pull.stdout)[:200]}
-""")
-            return False, True
-
-    # Step 2: Add and commit local changes (ok if nothing to commit)
-    sp.run(f'cd {p} && git add -A', shell=True, capture_output=True)
-    commit = sp.run(f'cd {p} && git commit -qm sync', shell=True, capture_output=True, text=True)
-
-    # Step 3: Push if we have commits to push
-    if commit.returncode == 0:
+        # Step 3: Push
         push = sp.run(f'cd {p} && git push -q origin main', shell=True, capture_output=True, text=True)
-        if push.returncode != 0:
-            err = (push.stderr + push.stdout).lower()
-            if 'rejected' in err:
-                if not silent:
-                    print(f"""
-! Push rejected (remote has changes, try sync again)
 
-Error: {(push.stderr + push.stdout)[:200]}
-""")
-                return False, True
-            return False, False
-        _broadcast()  # notify other devices
+        if push.returncode == 0:
+            _broadcast()  # notify other devices
+            return True, had_conflict
 
-    return True, False
+        # Retry if rejected (remote has newer commits)
+        if 'rejected' in (push.stderr + push.stdout).lower():
+            had_conflict = True
+            continue
+
+        # Other errors: fail
+        if not silent:
+            print(f"Sync error: {(push.stderr + push.stdout)[:200]}")
+        return False, had_conflict
+
+    if not silent:
+        print(f"Sync failed after {MAX_RETRIES} retries")
+    return False, had_conflict
 
 def _merge_rclone():
     import re
