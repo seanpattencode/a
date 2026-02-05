@@ -14,6 +14,7 @@ def run():
                 t = next((l.split(':',1)[1].strip() for f in sorted((SYNC_ROOT/'login').glob('gh_*.txt'), key=lambda f: -f.stat().st_mtime) for l in f.read_text().splitlines() if l.startswith('Token:')), None)
                 t and sp.run(f'echo "{t}"|gh auth login --with-token', shell=True, capture_output=True) and print("✓ gh auth from sync")
             print(f"Cloning {repo}..."); sp.run(['git','clone',repo,p]).returncode and sys.exit(1)
+        os.path.isdir(p) or sys.exit(f"x {p}")
         print(f"Opening project {idx}: {p}")
         sp.Popen(f'git -C "{p}" ls-remote --exit-code origin HEAD>/dev/null 2>&1&&touch "{_OK}"', shell=True, stdout=sp.DEVNULL, stderr=sp.DEVNULL)
         os.chdir(p); cfg=load_cfg(); _ghost_spawn(p,load_sess(cfg),cfg); os.execvp(sh:=os.environ.get('SHELL','/bin/bash'),[sh])
