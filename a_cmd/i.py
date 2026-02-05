@@ -27,15 +27,14 @@ def run():
     ix = {}
     for i, u in enumerate(items):
         for p in set(u[j:j+2].lower() for j in range(len(u)-1)): ix.setdefault(p, []).append(i)
-    def search(q): q=q.lower(); return sorted([items[i] for i in ix.get(q[:2],range(len(items))) if q in items[i].lower()], key=lambda x:(q not in x.lower()[:len(q)],x.lower().find(q)))[:10]
+    def search(q): q=q.lower(); return sorted([items[i] for i in ix.get(q[:2],range(len(items))) if q in items[i].lower()], key=lambda x:(q not in x.lower()[:len(q)],x.lower().find(q)))
 
-    help_txt = open(HELP_CACHE).read().strip() if os.path.exists(HELP_CACHE) else ""
-    h_lines = help_txt.count('\n') + 4  # +separator, filter, blank, prompt
-    max_show = min(10, max(3, os.get_terminal_size().lines - h_lines))
-    print(help_txt + "\n" + "-"*40 + "\nFilter (Tab=cycle, Enter=run, Esc=quit)\n"); buf, sel = "", 0
+    print((open(HELP_CACHE).read().strip() if os.path.exists(HELP_CACHE) else "") + "\n" + "-"*40)
+    rows = os.get_terminal_size().lines; max_show = max(3, rows - 2)
+    sys.stdout.write("\033[2J\033[HFilter (Tab=cycle, Enter=run, Esc=quit)\n"); buf, sel = "", 0
 
     while True:
-        matches = (search(buf) if buf else items[:10])[:max_show]
+        matches = (search(buf) if buf else items[:max_show])[:max_show]
         sel = min(sel, len(matches)-1) if matches else 0
 
         # Render search at bottom
