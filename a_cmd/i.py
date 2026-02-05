@@ -29,7 +29,9 @@ def run():
         for p in set(u[j:j+2].lower() for j in range(len(u)-1)): ix.setdefault(p, []).append(i)
     def search(q): q=q.lower(); return sorted([items[i] for i in ix.get(q[:2],range(len(items))) if q in items[i].lower()], key=lambda x:(q not in x.lower()[:len(q)],x.lower().find(q)))
 
-    max_show = max(3, os.get_terminal_size().lines - 3)
+    rows = os.get_terminal_size().lines
+    if os.environ.get('TERMUX_VERSION'): rows //= 2
+    max_show = max(3, rows - 3)
     print("Filter (Tab=cycle, Enter=run, Esc=quit)\n"); buf, sel = "", 0
 
     while True:
