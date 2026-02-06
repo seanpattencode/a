@@ -5,7 +5,7 @@ from pathlib import Path
 
 # Constants
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-ADATA_ROOT = Path(SCRIPT_DIR).parent / 'adata'
+ADATA_ROOT = Path(SCRIPT_DIR).parent.parent / 'adata'
 PROMPTS_DIR = ADATA_ROOT / 'git' / 'common' / 'prompts'
 DATA_DIR = os.path.expanduser("~/.local/share/a")
 DB_PATH = os.path.join(DATA_DIR, "aio.db")

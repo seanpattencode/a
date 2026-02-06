@@ -1,6 +1,7 @@
 """aio gdrive - Cloud sync"""
 import sys, os, subprocess as sp
-from . _common import cloud_login, cloud_logout, cloud_sync, cloud_status, _configured_remotes, RCLONE_BACKUP_PATH, DATA_DIR
+from . _common import cloud_login, cloud_logout, cloud_sync, cloud_status, _configured_remotes, RCLONE_BACKUP_PATH, DATA_DIR, SYNC_ROOT
+from .sync import cloud_sync as cloud_sync_tar
 
 def _pull_auth():
     rem = _configured_remotes(); rem or (print("Login first: aio gdrive login"), exit(1))
@@ -17,6 +18,7 @@ HELP = """a gdrive - Google Drive backup (unlimited accounts)
   a gdrive sync         Backup to GDrive:
                           ~/.local/share/a/ → adata/backup/data/
                           gh+rclone auth → adata/backup/auth/
+                          adata/git/ → adata/backup/{device}/git.tar.zst
   a gdrive init         Pull auth from GDrive (new device setup)
 
   Logs: use 'a log sync' (tar.zst to adata/backup/{device}/)"""
@@ -26,6 +28,9 @@ def run():
     wdb = sys.argv[3] if len(sys.argv) > 3 else None
     if wda == 'login': cloud_login(custom=wdb == 'custom')
     elif wda == 'logout': cloud_logout()
-    elif wda == 'sync': cloud_sync(wait=True); print("✓ Synced data + logs + auth to GDrive")
+    elif wda == 'sync':
+        cloud_sync(wait=True)
+        ok, msg = cloud_sync_tar(str(SYNC_ROOT), 'git')
+        print(f"✓ Synced data + auth + git ({msg}) to GDrive")
     elif wda == 'init': _pull_auth()
     else: cloud_status(); print(f"\n{HELP}")
