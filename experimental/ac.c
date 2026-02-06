@@ -933,7 +933,6 @@ static int cmd_scan(int argc, char **argv) { fallback_py(argc, argv); }
 /* ── attach ── */
 static int cmd_attach(int argc, char **argv) {
     init_db();
-    char out[B]; pcmd("SELECT id,repo FROM multi_runs ORDER BY created_at DESC LIMIT 10", out, B);
     /* Simple: list multi_runs */
     sqlite3_stmt *st; sqlite3 *d = dbopen();
     sqlite3_prepare_v2(d, "SELECT id,repo FROM multi_runs ORDER BY created_at DESC LIMIT 10", -1, &st, 0);

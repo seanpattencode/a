@@ -516,8 +516,115 @@ static int cmd_diff(int argc, char **argv) {
         }
         pclose(fp); printf("\nTotal: %+d tokens\n", total); return 0;
     }
-    /* Full diff mode - delegate to python for color output */
-    fallback(argc, argv);
+    /* Full diff mode with color and token counts */
+    system("git fetch origin 2>/dev/null");
+    char cwd[1024]; getcwd(cwd, sizeof(cwd));
+    char branch[128]; run_cap("git rev-parse --abbrev-ref HEAD 2>/dev/null", branch, sizeof(branch)); chomp(branch);
+    char target[128];
+    if (sel) snprintf(target, sizeof(target), "origin/%s", sel);
+    else if (!strncmp(branch, "wt-", 3)) strcpy(target, "origin/main");
+    else snprintf(target, sizeof(target), "origin/%s", branch);
+
+    /* Get committed + uncommitted diff */
+    char dcmd[256];
+    snprintf(dcmd, sizeof(dcmd), "git diff %s..HEAD 2>/dev/null", target);
+    char *committed = NULL; { FILE *fp = popen(dcmd, "r"); if (fp) { size_t cap = 65536, len = 0; committed = malloc(cap); char buf[4096]; size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) { if (len+n >= cap) { cap *= 2; committed = realloc(committed, cap); } memcpy(committed+len, buf, n); len += n; }
+        committed[len] = '\0'; pclose(fp); } }
+    char *uncommitted = NULL; { FILE *fp = popen("git diff HEAD --diff-filter=d 2>/dev/null", "r"); if (fp) { size_t cap = 65536, len = 0; uncommitted = malloc(cap); char buf[4096]; size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) { if (len+n >= cap) { cap *= 2; uncommitted = realloc(uncommitted, cap); } memcpy(uncommitted+len, buf, n); len += n; }
+        uncommitted[len] = '\0'; pclose(fp); } }
+    char untracked[8192]; run_cap("git ls-files --others --exclude-standard 2>/dev/null", untracked, sizeof(untracked)); chomp(untracked);
+
+    if (sel) printf("%s -> %s\n", branch, target);
+    else printf("%s\n%s -> %s\n", cwd, branch, target);
+
+    int has_diff = (committed && committed[0]) || (uncommitted && uncommitted[0]);
+    if (!has_diff && !untracked[0]) { puts("No changes"); free(committed); free(uncommitted); return 0; }
+
+    /* Parse and display colored diff */
+    #define G "\033[48;2;26;84;42m"
+    #define R "\033[48;2;117;34;27m"
+    #define X "\033[0m"
+
+    /* Track per-file stats */
+    typedef struct { char name[256]; int add_bytes, del_bytes, add_lines, del_lines; } fstat_t;
+    fstat_t fstats[128]; int nf = 0;
+    char cur_file[256] = {0};
+
+    char *all_diff = malloc((committed ? strlen(committed) : 0) + (uncommitted ? strlen(uncommitted) : 0) + 2);
+    all_diff[0] = '\0';
+    if (committed) strcat(all_diff, committed);
+    if (uncommitted) strcat(all_diff, uncommitted);
+
+    char *line_buf = strdup(all_diff);
+    for (char *line = strtok(line_buf, "\n"); line; line = strtok(NULL, "\n")) {
+        if (!strncmp(line, "diff --git", 10)) {
+            char *b = strstr(line, " b/");
+            if (b) { snprintf(cur_file, sizeof(cur_file), "%s", b+3);
+                if (nf < 128) { snprintf(fstats[nf].name, sizeof(fstats[nf].name), "%s", cur_file); fstats[nf].add_bytes = fstats[nf].del_bytes = fstats[nf].add_lines = fstats[nf].del_lines = 0; nf++; }
+            }
+        } else if (!strncmp(line, "@@", 2)) {
+            char *plus = strchr(line + 2, '+');
+            if (plus) printf("\n%s line %.*s:\n", cur_file, (int)(strchr(plus, ',') ? strchr(plus, ',') - plus : strchr(plus, ' ') ? strchr(plus, ' ') - plus : (int)strlen(plus)), plus);
+        } else if (line[0] == '+' && line[1] != '+') {
+            printf("  " G "+ %s" X "\n", line+1);
+            if (nf > 0) { fstats[nf-1].add_lines++; fstats[nf-1].add_bytes += strlen(line) - 1; }
+        } else if (line[0] == '-' && line[1] != '-') {
+            printf("  " R "- %s" X "\n", line+1);
+            if (nf > 0) { fstats[nf-1].del_lines++; fstats[nf-1].del_bytes += strlen(line) - 1; }
+        }
+    }
+    free(line_buf);
+
+    /* Untracked files */
+    int ut_files = 0, ut_bytes = 0, ut_lines = 0;
+    if (untracked[0]) {
+        printf("\nUntracked:\n");
+        char *ut_copy = strdup(untracked);
+        for (char *f = strtok(ut_copy, "\n"); f; f = strtok(NULL, "\n")) {
+            if (!f[0]) continue;
+            printf("  " G "+ %s" X "\n", f);
+            ut_files++;
+            FILE *fp = fopen(f, "r"); if (fp) { fseek(fp, 0, SEEK_END); long sz = ftell(fp); fclose(fp);
+                ut_bytes += sz; char *data = read_file(f, NULL); if (data) { for (char *c = data; *c; c++) if (*c == '\n') ut_lines++; ut_lines++; free(data); }
+            }
+        }
+        free(ut_copy);
+    }
+
+    /* Summary */
+    printf("\n%s\n", "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80");
+    int total_add = 0, total_del = 0, total_add_b = 0, total_del_b = 0;
+    for (int i = 0; i < nf; i++) {
+        int tok = (fstats[i].add_bytes - fstats[i].del_bytes) / 4;
+        char *bn = strrchr(fstats[i].name, '/'); bn = bn ? bn+1 : fstats[i].name;
+        printf("%s: +%d/-%d lines, %+d tokens\n", bn, fstats[i].add_lines, fstats[i].del_lines, tok);
+        total_add += fstats[i].add_lines; total_del += fstats[i].del_lines;
+        total_add_b += fstats[i].add_bytes; total_del_b += fstats[i].del_bytes;
+    }
+    if (ut_files) {
+        char *ut2 = strdup(untracked);
+        for (char *f = strtok(ut2, "\n"); f; f = strtok(NULL, "\n")) {
+            if (!f[0]) continue; size_t sz = 0; char *data = read_file(f, &sz);
+            int lines = 0; if (data) { for (char *c = data; *c; c++) if (*c == '\n') lines++; lines++; free(data); }
+            char *bn = strrchr(f, '/'); bn = bn ? bn+1 : f;
+            printf("%s: +%d lines, +%d tokens (untracked)\n", bn, lines, (int)sz/4);
+        }
+        free(ut2);
+    }
+    int total_files = nf + ut_files;
+    int net_tok = (total_add_b - total_del_b + ut_bytes) / 4;
+    printf("%s\n", "\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80");
+    printf("%d file%s, +%d/-%d lines%s | Net: %+d lines, %+d tokens\n",
+        total_files, total_files != 1 ? "s" : "",
+        total_add + ut_lines, total_del,
+        ut_files ? " (incl. untracked)" : "",
+        total_add + ut_lines - total_del, net_tok);
+    if (!sel) puts("\ndiff # = last #");
+
+    free(committed); free(uncommitted); free(all_diff);
+    return 0;
 }
 
 /* --- web --- */
@@ -632,7 +739,8 @@ static int cmd_send(int argc, char **argv) {
     for (int i = 3; i < argc; i++) {
         if (!strcmp(argv[i], "--wait")) { wait = 1; continue; }
         if (!strcmp(argv[i], "--no-enter")) { enter = 0; continue; }
-        if (prompt[0]) strcat(prompt, " "); strncat(prompt, argv[i], sizeof(prompt)-strlen(prompt)-2);
+        if (prompt[0]) strcat(prompt, " ");
+        strncat(prompt, argv[i], sizeof(prompt)-strlen(prompt)-2);
     }
     /* Send keys */
     char cmd[8192]; snprintf(cmd, sizeof(cmd), "tmux send-keys -l -t '%s' '%s'", sess, prompt);
@@ -760,14 +868,113 @@ static int cmd_tree(int argc, char **argv) {
 /* --- move --- */
 static int cmd_move(int argc, char **argv) {
     if (argc < 4 || !(argv[2][0]>='0'&&argv[2][0]<='9') || !(argv[3][0]>='0'&&argv[3][0]<='9')) { puts("Usage: a move <from> <to>"); return 1; }
-    /* Move is complex with workspace files - delegate to python for now */
+    /* Workspace files are sorted by name; move just re-shows list - delegate */
     fallback(argc, argv);
 }
 
 /* --- jobs --- */
 static int cmd_jobs(int argc, char **argv) {
-    /* Complex tmux + worktree queries, delegate for now */
-    fallback(argc, argv);
+    sqlite3 *db = dbopen(); if (!db) return 1;
+    char *wt_dir = db_get(db, "worktrees_dir");
+    if (!wt_dir) { wt_dir = malloc(512); snprintf(wt_dir, 512, "%s/projects/aWorktrees", HOME); }
+    sqlite3_close(db);
+
+    char *sel = NULL, *rm = NULL;
+    int running = 0;
+    for (int i = 2; i < argc; i++) {
+        if (!strcmp(argv[i], "-r") || !strcmp(argv[i], "--running")) running = 1;
+        else if (!strcmp(argv[i], "rm") && i + 1 < argc) rm = argv[++i];
+        else sel = argv[i];
+    }
+
+    /* Get tmux sessions with their pane paths */
+    typedef struct { char name[128]; char path[512]; } tmux_sess_t;
+    tmux_sess_t sessions[64]; int ns = 0;
+    char buf[4096]; run_cap("tmux list-sessions -F '#{session_name}' 2>/dev/null", buf, sizeof(buf));
+    for (char *l = strtok(buf, "\n"); l && ns < 64; l = strtok(NULL, "\n")) {
+        if (!l[0]) continue;
+        snprintf(sessions[ns].name, sizeof(sessions[ns].name), "%s", l);
+        char cmd[256], path[512];
+        snprintf(cmd, sizeof(cmd), "tmux display-message -p -t '%s' '#{pane_current_path}' 2>/dev/null", l);
+        run_cap(cmd, path, sizeof(path)); chomp(path);
+        snprintf(sessions[ns].path, sizeof(sessions[ns].path), "%s", path);
+        ns++;
+    }
+
+    /* Collect worktree dirs + session associations */
+    typedef struct { char path[512]; char name[256]; char sess[10][128]; int nsess; int active; char age[16]; } job_t;
+    job_t jobs[64]; int nj = 0;
+
+    /* Add worktree dirs */
+    DIR *d = opendir(wt_dir); struct dirent *e;
+    if (d) { while ((e = readdir(d)) && nj < 64) {
+        if (e->d_name[0] == '.' || e->d_type != DT_DIR) continue;
+        job_t *j = &jobs[nj];
+        snprintf(j->path, sizeof(j->path), "%s/%s", wt_dir, e->d_name);
+        snprintf(j->name, sizeof(j->name), "%s", e->d_name);
+        j->nsess = 0; j->active = 0; j->age[0] = '\0';
+        /* Find sessions in this dir */
+        for (int s = 0; s < ns; s++)
+            if (!strcmp(sessions[s].path, j->path) && j->nsess < 10)
+                snprintf(j->sess[j->nsess++], 128, "%s", sessions[s].name);
+        /* Check activity */
+        for (int s = 0; s < j->nsess; s++) {
+            char acmd[256], act[64]; snprintf(acmd, sizeof(acmd), "tmux display-message -p -t '%s' '#{window_activity}' 2>/dev/null", j->sess[s]);
+            run_cap(acmd, act, sizeof(act)); chomp(act);
+            if (act[0] && time(NULL) - atol(act) < 10) j->active = 1;
+        }
+        /* Parse age from dirname (YYYYMMDD-HHMMSS pattern) */
+        char *p = j->name; while (*p && !(*p >= '0' && *p <= '9')) p++;
+        /* Find 8-digit date followed by dash and 6-digit time */
+        for (char *s = j->name; *s; s++) {
+            if (s[0]>='0' && s[0]<='9' && strlen(s) >= 15 && s[8] == '-') {
+                struct tm tm = {0};
+                if (sscanf(s, "%4d%2d%2d-%2d%2d%2d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &tm.tm_hour, &tm.tm_min, &tm.tm_sec) == 6) {
+                    tm.tm_year -= 1900; tm.tm_mon -= 1;
+                    time_t ct = mktime(&tm); double td = difftime(time(NULL), ct);
+                    if (td < 3600) snprintf(j->age, sizeof(j->age), "%dm", (int)(td/60));
+                    else if (td < 86400) snprintf(j->age, sizeof(j->age), "%dh", (int)(td/3600));
+                    else snprintf(j->age, sizeof(j->age), "%dd", (int)(td/86400));
+                }
+                break;
+            }
+        }
+        if (!running || j->active) nj++;
+    } closedir(d); }
+
+    if (!nj) { puts("No jobs"); free(wt_dir); return 0; }
+
+    /* Handle rm */
+    if (rm && rm[0] >= '0' && rm[0] <= '9') {
+        int idx = atoi(rm);
+        if (idx < nj) {
+            for (int s = 0; s < jobs[idx].nsess; s++) { char cmd[256]; snprintf(cmd, sizeof(cmd), "tmux kill-session -t '%s' 2>/dev/null", jobs[idx].sess[s]); system(cmd); }
+            char cmd[600]; snprintf(cmd, sizeof(cmd), "rm -rf '%s'", jobs[idx].path); system(cmd);
+            printf("\xe2\x9c\x93 %s\n", jobs[idx].name);
+        }
+        free(wt_dir); return 0;
+    }
+
+    /* Handle select */
+    if (sel && sel[0] >= '0' && sel[0] <= '9') {
+        int idx = atoi(sel);
+        if (idx < nj) {
+            if (jobs[idx].nsess > 0) {
+                char cmd[256]; snprintf(cmd, sizeof(cmd), "tmux %s -t '%s'", getenv("TMUX") ? "switch-client" : "attach", jobs[idx].sess[0]);
+                execlp("sh", "sh", "-c", cmd, NULL);
+            }
+            chdir(jobs[idx].path); char *sh = getenv("SHELL"); if (!sh) sh = "/bin/bash";
+            execvp(sh, (char*[]){sh, NULL});
+        }
+    }
+
+    puts("Agent worktrees with sessions\n");
+    for (int i = 0; i < nj; i++) {
+        printf("  %d  %s %.40s%s%s\n", i, jobs[i].active ? "\xe2\x97\x8f" : "\xe2\x97\x8b",
+            jobs[i].name, jobs[i].age[0] ? " " : "", jobs[i].age);
+    }
+    puts("\nSelect:\n  a jobs 0\n  a jobs rm 0");
+    free(wt_dir); return 0;
 }
 
 /* --- cleanup --- */
@@ -800,8 +1007,58 @@ static int cmd_cleanup(int argc, char **argv) {
 
 /* --- log --- */
 static int cmd_log(int argc, char **argv) {
-    /* Complex with rclone + cloud sync - delegate to python */
-    fallback(argc, argv);
+    char *sub = argc > 2 ? argv[2] : NULL;
+    mkdir(LOG_DIR_, 0755);
+
+    /* tail - view latest log */
+    if (sub && !strcmp(sub, "tail")) {
+        /* Find most recent log */
+        glob_t g; char pat[800]; snprintf(pat, sizeof(pat), "%s/*.log", LOG_DIR_);
+        if (glob(pat, 0, NULL, &g) || !g.gl_pathc) { puts("No logs"); return 0; }
+        /* Find newest by mtime */
+        const char *newest = g.gl_pathv[0]; time_t best = 0;
+        for (size_t i = 0; i < g.gl_pathc; i++) { struct stat st; if (!stat(g.gl_pathv[i], &st) && st.st_mtime > best) { best = st.st_mtime; newest = g.gl_pathv[i]; } }
+        int idx = argc > 3 && argv[3][0] >= '0' && argv[3][0] <= '9' ? atoi(argv[3]) : -1;
+        if (idx >= 0 && idx < (int)g.gl_pathc) newest = g.gl_pathv[idx]; /* TODO: sorted */
+        execlp("tail", "tail", "-f", newest, NULL);
+        globfree(&g); return 1;
+    }
+    if (sub && !strcmp(sub, "clean")) {
+        int days = argc > 3 ? atoi(argv[3]) : 7;
+        glob_t g; char pat[800]; snprintf(pat, sizeof(pat), "%s/*.log", LOG_DIR_);
+        if (!glob(pat, 0, NULL, &g)) { for (size_t i = 0; i < g.gl_pathc; i++) { struct stat st; if (!stat(g.gl_pathv[i], &st) && time(NULL) - st.st_mtime > days*86400) unlink(g.gl_pathv[i]); } globfree(&g); }
+        puts("\xe2\x9c\x93 cleaned"); return 0;
+    }
+    /* View by index */
+    if (sub && sub[0] >= '0' && sub[0] <= '9') { fallback(argc, argv); }
+    /* sync/grab - delegate */
+    if (sub && (!strcmp(sub,"sync") || !strcmp(sub,"grab"))) { fallback(argc, argv); }
+
+    /* List logs */
+    glob_t g; char pat[800]; snprintf(pat, sizeof(pat), "%s/*.log", LOG_DIR_);
+    if (glob(pat, 0, NULL, &g) || !g.gl_pathc) { puts("No logs"); return 0; }
+    /* Sort by mtime descending */
+    typedef struct { const char *path; time_t mtime; off_t size; } logf_t;
+    logf_t *logs = malloc(g.gl_pathc * sizeof(logf_t)); int nl = 0;
+    for (size_t i = 0; i < g.gl_pathc; i++) {
+        struct stat st; if (stat(g.gl_pathv[i], &st)) continue;
+        logs[nl].path = g.gl_pathv[i]; logs[nl].mtime = st.st_mtime; logs[nl].size = st.st_size; nl++;
+    }
+    for (int i = 0; i < nl-1; i++) for (int j = i+1; j < nl; j++) if (logs[j].mtime > logs[i].mtime) { logf_t t = logs[i]; logs[i] = logs[j]; logs[j] = t; }
+
+    long total = 0; for (int i = 0; i < nl; i++) total += logs[i].size;
+    printf("\nLocal: %d logs, %ldMB\n", nl, total/1024/1024);
+    for (int i = 0; i < nl && i < 12; i++) {
+        /* Extract session name from filename (device__session.log) */
+        const char *bn = strrchr(logs[i].path, '/'); bn = bn ? bn+1 : logs[i].path;
+        const char *dbl = strstr(bn, "__"); char sn[64];
+        if (dbl) snprintf(sn, sizeof(sn), "%.26s", dbl+2); else snprintf(sn, sizeof(sn), "%.26s", bn);
+        char *dot = strrchr(sn, '.'); if (dot) *dot = '\0';
+        struct tm *tm = localtime(&logs[i].mtime);
+        printf("%2d %02d/%02d %02d:%02d %-26s %5ldK\n", i, tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, sn, logs[i].size/1024);
+    }
+    if (nl) puts("\na log #  view | a log sync");
+    free(logs); globfree(&g); return 0;
 }
 
 /* --- update --- */
@@ -814,13 +1071,64 @@ static int cmd_update(int argc, char **argv) {
         proj_t P[64]; app_t A[32]; int np = load_projects(P,64), na = load_apps(A,32);
         refresh_cache(P, np, A, na); puts("\xe2\x9c\x93 Cache"); return 0;
     }
-    /* For full update, delegate to python (needs shell refresh, git pull, etc) */
-    fallback(argc, argv);
+    if (sub && (!strcmp(sub,"bash")||!strcmp(sub,"zsh")||!strcmp(sub,"shell"))) {
+        proj_t P[64]; app_t A[32]; int np = load_projects(P,64), na = load_apps(A,32);
+        refresh_cache(P, np, A, na); puts("\xe2\x9c\x93 Cache");
+        /* Shell refresh would need the install.sh block logic - delegate */
+        fallback(argc, argv);
+    }
+    /* Full update: git pull + refresh */
+    char script_repo[600]; snprintf(script_repo, sizeof(script_repo), "%s/..", SCRIPT);
+    char *rp = realpath(script_repo, NULL);
+    if (!rp) { puts("x Can't find repo"); return 1; }
+    char chk[64], gcmd[700]; snprintf(gcmd, sizeof(gcmd), "git -C '%s' rev-parse --git-dir 2>/dev/null", rp);
+    if (run_cap(gcmd, chk, sizeof(chk))) { puts("x Not in git repo"); free(rp); return 1; }
+    printf("Checking...\n");
+    char before[16]; snprintf(gcmd, sizeof(gcmd), "git -C '%s' rev-parse HEAD 2>/dev/null", rp); run_cap(gcmd, before, sizeof(before)); chomp(before); before[8] = '\0';
+    snprintf(gcmd, sizeof(gcmd), "git -C '%s' fetch 2>/dev/null", rp); system(gcmd);
+    char status[256]; snprintf(gcmd, sizeof(gcmd), "git -C '%s' status -uno 2>/dev/null", rp); run_cap(gcmd, status, sizeof(status));
+    if (!strstr(status, "behind")) {
+        printf("\xe2\x9c\x93 Up to date (%s)\n", before);
+    } else {
+        printf("Downloading...\n");
+        snprintf(gcmd, sizeof(gcmd), "git -C '%s' pull --ff-only 2>/dev/null", rp); system(gcmd);
+        char after[16]; snprintf(gcmd, sizeof(gcmd), "git -C '%s' rev-parse HEAD 2>/dev/null", rp); run_cap(gcmd, after, sizeof(after)); chomp(after); after[8] = '\0';
+        printf("\xe2\x9c\x93 %s -> %s\n", before, after);
+    }
+    proj_t P[64]; app_t A[32]; int np = load_projects(P,64), na = load_apps(A,32);
+    refresh_cache(P, np, A, na); puts("\xe2\x9c\x93 Cache");
+    free(rp); return 0;
 }
 
 /* --- note --- */
 static int cmd_note(int argc, char **argv) {
-    /* Complex interactive + sync - delegate to python */
+    /* Quick add path - most common usage */
+    if (argc > 2 && argv[2][0] != '?') {
+        char text[4096] = {0};
+        for (int i = 2; i < argc; i++) { if (i > 2) strcat(text, " "); strncat(text, argv[i], sizeof(text)-strlen(text)-2); }
+        /* Save as file in SYNC/notes/ */
+        char notes_dir[700]; snprintf(notes_dir, sizeof(notes_dir), "%s/notes", SYNC);
+        mkdir(notes_dir, 0755);
+        unsigned int h = 0; for (char *c = text; *c; c++) h = h * 31 + *c;
+        char ts[32]; time_t t = time(NULL); struct tm *tm = localtime(&t);
+        strftime(ts, sizeof(ts), "%Y%m%d%H%M%S", tm);
+        char fname[800]; snprintf(fname, sizeof(fname), "%s/%08x_%s.txt", notes_dir, h, ts);
+        FILE *fp = fopen(fname, "w"); if (!fp) { puts("x write failed"); return 1; }
+        /* Get device id */
+        char dev[128] = {0}, devf[700]; snprintf(devf, sizeof(devf), "%s/.device", DATA);
+        { char *d = read_file(devf, NULL); if (d) { chomp(d); snprintf(dev, sizeof(dev), "%s", d); free(d); } }
+        char now[32]; strftime(now, sizeof(now), "%Y-%m-%d %H:%M", tm);
+        fprintf(fp, "Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n", text, dev, now);
+        fclose(fp);
+        /* Background sync */
+        pid_t pid = fork();
+        if (pid == 0) { setsid(); int null = open("/dev/null", O_RDWR); dup2(null,0); dup2(null,1); dup2(null,2);
+            char cmd[1024]; snprintf(cmd, sizeof(cmd), "cd '%s' && git add -A && git commit -m 'note' --allow-empty 2>/dev/null && git pull --rebase 2>/dev/null && git push 2>/dev/null", SYNC);
+            execl("/bin/sh", "sh", "-c", cmd, NULL); _exit(1);
+        }
+        puts("\xe2\x9c\x93"); return 0;
+    }
+    /* Interactive mode - delegate to python */
     fallback(argc, argv);
 }
 
