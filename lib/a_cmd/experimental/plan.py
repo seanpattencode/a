@@ -2,4 +2,4 @@
 import os
 def run():
     print("Planning...", flush=True)
-    os.system('(cat ~/projects/a-sync/task_context.txt 2>/dev/null; echo; a task l) | gemini -p "For each task: #. [one sentence plan]"')
+    os.system('(cat ~/projects/adata/git/task_context.txt 2>/dev/null; echo; a task l) | gemini -p "For each task: #. [one sentence plan]"')

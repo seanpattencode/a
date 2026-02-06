@@ -100,7 +100,7 @@ def _broadcast():
         for h, pw in hosts:
             try:
                 p = h.rsplit(':', 1)
-                cmd = (['sshpass', '-p', pw] if pw else []) + ['ssh', '-oConnectTimeout=2', '-oStrictHostKeyChecking=no'] + (['-p', p[1]] if len(p) > 1 else []) + [p[0], 'cd ~/projects/a-sync 2>/dev/null && git pull -q origin main || cd ~/a-sync && git pull -q origin main']
+                cmd = (['sshpass', '-p', pw] if pw else []) + ['ssh', '-oConnectTimeout=2', '-oStrictHostKeyChecking=no'] + (['-p', p[1]] if len(p) > 1 else []) + [p[0], 'cd ~/projects/adata/git 2>/dev/null && git pull -q origin main || cd ~/adata/git && git pull -q origin main']
                 sp.run(cmd, capture_output=True, timeout=5)
             except: pass
     threading.Thread(target=_ping, daemon=True).start()
@@ -202,7 +202,7 @@ def cloud_sync(local_path, name):
     tar = f'{os.getenv("TMPDIR", "/tmp")}/{name}-{DEVICE_ID}.tar.zst'
     if sp.run(f'tar -cf - -C {local_path} . 2>/dev/null | zstd -q > {tar}', shell=True).returncode > 1:
         return False, "tar failed"
-    ok = [r for r in _configured_remotes() if sp.run([rc, 'copyto', tar, f'{r}:{RCLONE_BACKUP_PATH}/{name}/{DEVICE_ID}.tar.zst', '-q']).returncode == 0]
+    ok = [r for r in _configured_remotes() if sp.run([rc, 'copyto', tar, f'{r}:{RCLONE_BACKUP_PATH}/backup/{DEVICE_ID}/{name}.tar.zst', '-q']).returncode == 0]
     Path(tar).unlink(missing_ok=True)
     return bool(ok), f"{'✓'*len(ok) or 'x'} {','.join(ok) or 'fail'}"
 

@@ -22,7 +22,7 @@ def run():
     rc = get_rclone() or CI(); MR(); C = rc and CR()
     C or print("gdrive: no login"if rc else"gdrive: no rclone")
     for r in C or []:
-        try: t = {x['Name']:x for x in json.loads(sp.run([rc,'lsjson',f'{r}:{RCLONE_BACKUP_PATH}/logs'],capture_output=True,text=True,timeout=15).stdout)}.get(f'{DEVICE_ID}.tar.zst'); print(f"{r}: {t['Size']//1024//1024}MB @ {D.fromisoformat(t['ModTime'][:19]+'Z').astimezone():%m-%d %H:%M} drive.google.com/file/d/{t['ID']}"if t else f"{r}: ✓ no sync")
+        try: t = {x['Name']:x for x in json.loads(sp.run([rc,'lsjson',f'{r}:{RCLONE_BACKUP_PATH}/backup/{DEVICE_ID}'],capture_output=True,text=True,timeout=15).stdout)}.get('logs.tar.zst'); print(f"{r}: {t['Size']//1024//1024}MB @ {D.fromisoformat(t['ModTime'][:19]+'Z').astimezone():%m-%d %H:%M} drive.google.com/file/d/{t['ID']}"if t else f"{r}: ✓ no sync")
         except: print(f"{r}: timeout")
     print(f"\nLocal: {len(logs)} logs, {sum(f.stat().st_size for f in logs)//1024//1024}MB")
     for i, f in enumerate(logs[:12]):

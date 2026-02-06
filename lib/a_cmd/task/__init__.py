@@ -37,12 +37,12 @@ a task d #      archive task by number
 a task t        interactive review (bash TUI)
 a task sync     sync tasks repo
 a task 0        AI pick top priority
-a task 1        AI session: analyze & help (~/a-sync/common/prompts/task1.txt)
+a task 1        AI session: analyze & help (~/projects/adata/git/common/prompts/task1.txt)
 a task p        AI plan each
 a task do       AI do tasks
 a task s        AI suggest
 
-context: ~/a-sync/tasks/
+context: ~/projects/adata/git/tasks/
 https://github.com/seanpattencode/a-git""")
         return
 

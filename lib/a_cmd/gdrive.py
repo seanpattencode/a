@@ -5,7 +5,7 @@ from . _common import cloud_login, cloud_logout, cloud_sync, cloud_status, _conf
 def _pull_auth():
     rem = _configured_remotes(); rem or (print("Login first: aio gdrive login"), exit(1))
     for f, d in [('hosts.yml', '~/.config/gh'), ('rclone.conf', '~/.config/rclone')]:
-        os.makedirs(os.path.expanduser(d), exist_ok=True); sp.run(['rclone', 'copy', f'{rem[0]}:{RCLONE_BACKUP_PATH}/auth/{f}', os.path.expanduser(d), '-q'])
+        os.makedirs(os.path.expanduser(d), exist_ok=True); sp.run(['rclone', 'copy', f'{rem[0]}:{RCLONE_BACKUP_PATH}/backup/auth/{f}', os.path.expanduser(d), '-q'])
     open(f"{DATA_DIR}/.auth_shared","w").close(); os.path.exists(f"{DATA_DIR}/.auth_local") and os.remove(f"{DATA_DIR}/.auth_local"); print("✓ Auth synced (shared)")
 
 HELP = """a gdrive - Google Drive backup (unlimited accounts)
@@ -15,11 +15,11 @@ HELP = """a gdrive - Google Drive backup (unlimited accounts)
   a gdrive login custom Add account (your own client_id, faster)
   a gdrive logout       Remove last account
   a gdrive sync         Backup to GDrive:
-                          ~/.local/share/a/ → a-backup/
-                          gh+rclone auth → a-backup/auth/
+                          ~/.local/share/a/ → adata/backup/data/
+                          gh+rclone auth → adata/backup/auth/
   a gdrive init         Pull auth from GDrive (new device setup)
 
-  Logs: use 'a log sync' (tar.zst to a-backup/logs/)"""
+  Logs: use 'a log sync' (tar.zst to adata/backup/{device}/)"""
 
 def run():
     wda = sys.argv[2] if len(sys.argv) > 2 else None

@@ -46,7 +46,7 @@
 #define MS 48
 
 /* ═══ GLOBALS ═══ */
-static char HOME[P], DDIR[P], DBPATH[P], SROOT[P], SDIR[P], PYPATH[P], DEV[128], LOGDIR[P];
+static char HOME[P], DDIR[P], DBPATH[P], AROOT[P], SROOT[P], SDIR[P], PYPATH[P], DEV[128], LOGDIR[P];
 static int G_argc; static char **G_argv;
 
 typedef struct { char path[512], repo[512], name[128]; } proj_t;
@@ -74,12 +74,11 @@ static void init_paths(void) {
         if (s) { *s = 0; snprintf(SDIR, P, "%s", self);
             /* binary is at projects/a/a → strip to projects/ */
             s = strrchr(self, '/');
-            if (s) { *s = 0; snprintf(SROOT, P, "%s/a-sync", self); }
+            if (s) { *s = 0; snprintf(AROOT, P, "%s/adata", self); snprintf(SROOT, P, "%s/git", AROOT); }
         }
     }
-    if (!SROOT[0]) snprintf(SROOT, P, "%s/projects/a-sync", h);
+    if (!SROOT[0]) { snprintf(AROOT, P, "%s/projects/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
     snprintf(PYPATH, P, "%s/lib/a.py", SDIR);
-    snprintf(LOGDIR, P, "%s/logs", SROOT);
     /* device id */
     char df[P]; snprintf(df, P, "%s/.device", DDIR);
     FILE *f = fopen(df, "r");
@@ -88,6 +87,21 @@ static void init_paths(void) {
         gethostname(DEV, 128);
         char c[P]; snprintf(c, P, "mkdir -p '%s'", DDIR); (void)!system(c);
         f = fopen(df, "w"); if (f) { fputs(DEV, f); fclose(f); }
+    }
+    snprintf(LOGDIR, P, "%s/backup/%s", AROOT, DEV);
+    /* ensure adata README exists */
+    char rm[P]; snprintf(rm, P, "%s/README", AROOT);
+    struct stat st;
+    if (stat(rm, &st) != 0) {
+        f = fopen(rm, "w");
+        if (f) {
+            fputs("adata/ - 4-tier data sync\n\n"
+                  "  git/      git push/pull       all devices     text <15M\n"
+                  "  sync/     rclone copy <->      all devices     large files <5G\n"
+                  "  vault/    rclone copy on-demand big devices     models/datasets\n"
+                  "  backup/   rclone move ->        all devices     logs+state, upload+purge\n", f);
+            fclose(f);
+        }
     }
 }
 

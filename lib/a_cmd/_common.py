@@ -5,11 +5,11 @@ from pathlib import Path
 
 # Constants
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-PROMPTS_DIR = Path(SCRIPT_DIR).parent / 'a-sync' / 'common' / 'prompts'
+ADATA_ROOT = Path(SCRIPT_DIR).parent / 'adata'
+PROMPTS_DIR = ADATA_ROOT / 'git' / 'common' / 'prompts'
 DATA_DIR = os.path.expanduser("~/.local/share/a")
 DB_PATH = os.path.join(DATA_DIR, "aio.db")
-SYNC_ROOT = Path(SCRIPT_DIR).parent / 'a-sync'
-LOG_DIR = str(SYNC_ROOT / 'logs')
+SYNC_ROOT = ADATA_ROOT / 'git'
 def _get_dev():
     f = os.path.expanduser('~/.local/share/a/.device')
     if os.path.exists(f): return open(f).read().strip()
@@ -17,13 +17,14 @@ def _get_dev():
     os.makedirs(os.path.dirname(f), exist_ok=True); open(f,'w').write(d)
     return d
 DEVICE_ID = _get_dev()
+LOG_DIR = str(ADATA_ROOT / 'backup' / DEVICE_ID)
 _GP, _GT = '_aio_ghost_', 300
 _GM = {'c': 'l', 'l': 'l', 'g': 'g', 'o': 'l', 'co': 'c', 'cp': 'c', 'lp': 'l', 'gp': 'g'}
 _AIO_DIR = os.path.expanduser('~/.a')
 _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
 _SRC_LINE = 'source-file ~/.a/tmux.conf  # a'
-RCLONE_REMOTE_PREFIX, RCLONE_BACKUP_PATH = 'a-gdrive', 'a-backup'
+RCLONE_REMOTE_PREFIX, RCLONE_BACKUP_PATH = 'a-gdrive', 'adata'
 
 # Basic helpers
 def _git(path, *a, **k): return sp.run(['git', '-C', path] + list(a), capture_output=True, text=True, **k)
@@ -230,9 +231,9 @@ def cloud_sync(wait=False):
     def _sync():
         ok = True
         for rem in remotes:
-            r = sp.run([rc, 'sync', DATA_DIR, f'{rem}:{RCLONE_BACKUP_PATH}', '-q', '--exclude', '*.db*', '--exclude', '*cache*', '--exclude', 'timing.jsonl', '--exclude', '.device', '--exclude', '.git/**', '--exclude', 'logs/**'], capture_output=True, text=True)
+            r = sp.run([rc, 'copy', DATA_DIR, f'{rem}:{RCLONE_BACKUP_PATH}/backup/data', '-q', '--exclude', '*.db*', '--exclude', '*cache*', '--exclude', 'timing.jsonl', '--exclude', '.device', '--exclude', '.git/**', '--exclude', 'logs/**'], capture_output=True, text=True)
             for f in ['~/.config/gh/hosts.yml', '~/.config/rclone/rclone.conf']:
-                p = os.path.expanduser(f); os.path.exists(p) and sp.run([rc, 'copy', p, f'{rem}:{RCLONE_BACKUP_PATH}/auth/', '-q'], capture_output=True)
+                p = os.path.expanduser(f); os.path.exists(p) and sp.run([rc, 'copy', p, f'{rem}:{RCLONE_BACKUP_PATH}/backup/auth/', '-q'], capture_output=True)
             ok = ok and r.returncode == 0
         Path(DATA_DIR, '.gdrive_sync').touch() if ok else None; return ok
     return (True, _sync()) if wait else (__import__('threading').Thread(target=_sync, daemon=True).start(), (True, None))[1]
