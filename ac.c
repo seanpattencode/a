@@ -55,14 +55,13 @@ static void init_paths(void) {
         self[n] = 0;
         char *s = strrchr(self, '/');
         if (s) { *s = 0; snprintf(SDIR, P, "%s", self);
+            /* binary is at projects/a/ac → parent is projects/ */
             s = strrchr(self, '/');
-            if (s) { *s = 0; s = strrchr(self, '/');
-                if (s) snprintf(SROOT, P, "%s/a-sync", self);
-            }
+            if (s) snprintf(SROOT, P, "%s/a-sync", self);
         }
     }
     if (!SROOT[0]) snprintf(SROOT, P, "%s/projects/a-sync", h);
-    snprintf(PYPATH, P, "%s/../a.py", SDIR);
+    snprintf(PYPATH, P, "%s/archive/a.py", SDIR);
     snprintf(LOGDIR, P, "%s/logs", SROOT);
     /* device id */
     char df[P]; snprintf(df, P, "%s/.device", DDIR);
@@ -1324,7 +1323,7 @@ static int cmd_sync(int argc, char **argv) {
     }
     if (argc > 2 && !strcmp(argv[2], "all")) {
         puts("\n--- Broadcasting to SSH hosts ---");
-        char bc[B]; snprintf(bc, B, "%s/../a.py", SDIR);
+        char bc[B]; snprintf(bc, B, "%s/archive/a.py", SDIR);
         char cmd[B]; snprintf(cmd, B, "python3 '%s' ssh all 'a sync'", bc); (void)!system(cmd);
     }
     return 0;

@@ -19,3 +19,13 @@ __pycache__/
 .local/
 
 .aider*
+
+# C binaries
+/ac
+*.o
+/bench_dispatch
+/bench_real
+
+# Reference source trees
+experimental/git-src/
+experimental/linux-src/
