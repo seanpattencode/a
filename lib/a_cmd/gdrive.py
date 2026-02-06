@@ -8,21 +8,23 @@ def _pull_auth():
         os.makedirs(os.path.expanduser(d), exist_ok=True); sp.run(['rclone', 'copy', f'{rem[0]}:{RCLONE_BACKUP_PATH}/auth/{f}', os.path.expanduser(d), '-q'])
     open(f"{DATA_DIR}/.auth_shared","w").close(); os.path.exists(f"{DATA_DIR}/.auth_local") and os.remove(f"{DATA_DIR}/.auth_local"); print("✓ Auth synced (shared)")
 
-HELP = """a gdrive - Google Drive backup (2 account slots)
+HELP = """a gdrive - Google Drive backup (unlimited accounts)
 
-  a gdrive          Status + help
-  a gdrive login    Add account (up to 2 for redundancy)
-  a gdrive logout   Remove last account
-  a gdrive sync     Backup to GDrive:
-                      ~/.local/share/a/ → a-backup/
-                      gh+rclone auth → a-backup/auth/
-  a gdrive init     Pull auth from GDrive (new device setup)
+  a gdrive              Status + help
+  a gdrive login        Add account (shared rclone key)
+  a gdrive login custom Add account (your own client_id, faster)
+  a gdrive logout       Remove last account
+  a gdrive sync         Backup to GDrive:
+                          ~/.local/share/a/ → a-backup/
+                          gh+rclone auth → a-backup/auth/
+  a gdrive init         Pull auth from GDrive (new device setup)
 
   Logs: use 'a log sync' (tar.zst to a-backup/logs/)"""
 
 def run():
     wda = sys.argv[2] if len(sys.argv) > 2 else None
-    if wda == 'login': cloud_login()
+    wdb = sys.argv[3] if len(sys.argv) > 3 else None
+    if wda == 'login': cloud_login(custom=wdb == 'custom')
     elif wda == 'logout': cloud_logout()
     elif wda == 'sync': cloud_sync(wait=True); print("✓ Synced data + logs + auth to GDrive")
     elif wda == 'init': _pull_auth()

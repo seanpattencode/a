@@ -49,7 +49,7 @@ All files use append-only timestamps."""
 
 import os, subprocess as sp, time, shlex, threading
 from pathlib import Path
-from ._common import SYNC_ROOT, RCLONE_REMOTES, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone
+from ._common import SYNC_ROOT, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone, _configured_remotes
 
 FOLDERS = 'common ssh login hub notes workspace docs tasks'.split()
 MAX_RETRIES = 3  # retry count for sync
@@ -202,7 +202,7 @@ def cloud_sync(local_path, name):
     tar = f'{os.getenv("TMPDIR", "/tmp")}/{name}-{DEVICE_ID}.tar.zst'
     if sp.run(f'tar -cf - -C {local_path} . 2>/dev/null | zstd -q > {tar}', shell=True).returncode > 1:
         return False, "tar failed"
-    ok = [r for r in RCLONE_REMOTES if sp.run([rc, 'copyto', tar, f'{r}:{RCLONE_BACKUP_PATH}/{name}/{DEVICE_ID}.tar.zst', '-q']).returncode == 0]
+    ok = [r for r in _configured_remotes() if sp.run([rc, 'copyto', tar, f'{r}:{RCLONE_BACKUP_PATH}/{name}/{DEVICE_ID}.tar.zst', '-q']).returncode == 0]
     Path(tar).unlink(missing_ok=True)
     return bool(ok), f"{'✓'*len(ok) or 'x'} {','.join(ok) or 'fail'}"
 

@@ -23,7 +23,7 @@ _AIO_DIR = os.path.expanduser('~/.a')
 _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
 _SRC_LINE = 'source-file ~/.a/tmux.conf  # a'
-RCLONE_REMOTES, RCLONE_BACKUP_PATH = ('a-gdrive', 'a-gdrive2'), 'a-backup'
+RCLONE_REMOTE_PREFIX, RCLONE_BACKUP_PATH = 'a-gdrive', 'a-backup'
 
 # Basic helpers
 def _git(path, *a, **k): return sp.run(['git', '-C', path] + list(a), capture_output=True, text=True, **k)
@@ -211,7 +211,8 @@ def get_rclone(): return shutil.which('rclone') or next((p for p in ['/usr/bin/r
 def _configured_remotes():
     if not (rc := get_rclone()): return []
     r = sp.run([rc, 'listremotes'], capture_output=True, text=True)
-    return [rem for rem in RCLONE_REMOTES if r.returncode == 0 and f'{rem}:' in r.stdout]
+    if r.returncode != 0: return []
+    return [l.rstrip(':') for l in r.stdout.splitlines() if l.rstrip(':').startswith(RCLONE_REMOTE_PREFIX)]
 def cloud_configured(): return bool(_configured_remotes())
 def cloud_account(remote=None):
     if not (rc := get_rclone()): return "(no rclone)"
@@ -241,12 +242,35 @@ def cloud_install():
     if sp.run(f'curl -sL https://downloads.rclone.org/rclone-current-{s}-{arch}.zip -o /tmp/rclone.zip && unzip -qjo /tmp/rclone.zip "*/rclone" -d {bd} && chmod +x {bd}/rclone', shell=True).returncode == 0:
         print(f"✓ Installed"); return f'{bd}/rclone'
     return None
-def cloud_login(remote=None):
+def _next_remote_name():
+    existing = _configured_remotes()
+    if RCLONE_REMOTE_PREFIX not in existing: return RCLONE_REMOTE_PREFIX
+    i = 2
+    while f'{RCLONE_REMOTE_PREFIX}{i}' in existing: i += 1
+    return f'{RCLONE_REMOTE_PREFIX}{i}'
+def cloud_login(remote=None, custom=False):
     rc = get_rclone() or cloud_install()
     if not rc: print("✗ rclone install failed"); return False
-    rem = remote or next((r for r in RCLONE_REMOTES if r not in _configured_remotes()), None)
-    if not rem: print("✗ All slots full. Run: a gdrive logout"); return False
-    sp.run([rc, 'config', 'create', rem, 'drive'])
+    rem = remote or _next_remote_name()
+    cmd = [rc, 'config', 'create', rem, 'drive']
+    if custom:
+        print("""Setup your own Google OAuth key (faster, dedicated quota):
+
+  1. Go to https://console.cloud.google.com/
+  2. Create a project (or pick one)
+  3. APIs & Services → Enable "Google Drive API"
+  4. APIs & Services → OAuth consent screen → Get Started
+     - App name: anything, your email for support/contact
+     - Audience: External → add your email as test user (lowercase)
+  5. APIs & Services → Credentials → Create Credentials → OAuth client ID
+     - Type: Desktop app
+     - Name: anything (e.g. "rclone")
+  6. Copy the client_id and client_secret below
+""")
+        cid = input("client_id: ").strip(); csec = input("client_secret: ").strip()
+        if not cid or not csec: print("✗ Both client_id and client_secret required"); return False
+        cmd += ['client_id', cid, 'client_secret', csec]
+    sp.run(cmd)
     if rem not in _configured_remotes(): print("✗ Login failed - try again"); return False
     print(f"✓ Logged in {rem} as {cloud_account(rem) or 'unknown'}"); cloud_sync(wait=True); open(f"{DATA_DIR}/.auth_local", "w").close(); Path(f"{DATA_DIR}/.auth_shared").unlink(missing_ok=True)
     aio = os.path.join(SCRIPT_DIR, 'aio.py')
@@ -280,17 +304,16 @@ def _all_drive_remotes():
         return {k: v for k, v in d.items() if v.get('type') == 'drive'}
     except: return {}
 def cloud_status():
-    remotes, slots = _configured_remotes(), len(RCLONE_REMOTES)
+    remotes = _configured_remotes()
     all_rem = _all_drive_remotes()
     if all_rem:
         for rem, cfg in all_rem.items():
             tag = "✓" if rem in remotes else "·"
             key = "custom" if cfg.get('client_id') else "shared"
             print(f"{tag} {rem}: {cloud_account(rem)}{_cloud_storage(rem)} [{key} key]")
-        free = slots - len(remotes)
-        free and print(f"\n{free} slot{'s' if free > 1 else ''} available. Add another account: aio gdrive login")
+        print(f"\n{len(remotes)} synced. Add more: a gdrive login")
         return True
-    print(f"✗ Not logged in ({slots} slots for redundancy)\n\nSetup: aio gdrive login"); return False
+    print("✗ Not logged in\n\nSetup: a gdrive login"); return False
 
 # Worktrees
 def _wt_items(wt_dir): return sorted([d for d in os.listdir(wt_dir) if os.path.isdir(os.path.join(wt_dir, d))]) if os.path.exists(wt_dir) else []
