@@ -21,6 +21,7 @@ a task add <t>  add a task
 a task d #      delete task by number
 a task sync     sync tasks repo
 a task 0        AI pick top priority
+a task 1        AI session: analyze & help (~/a-sync/common/prompts/task1.txt)
 a task p        AI plan each
 a task do       AI do tasks
 a task s        AI suggest
@@ -42,7 +43,7 @@ https://github.com/seanpattencode/a-git""")
         return
 
     # Add task
-    if cmd in ('add', 'a') or (cmd not in ('d', 'del', 'delete', 'sync', 'l', 'ls', 'list', '0', 'p', 'do', 's', 't', 'h', '--help', '-h')):
+    if cmd in ('add', 'a') or (cmd not in ('d', 'del', 'delete', 'sync', 'l', 'ls', 'list', '0', '1', 'p', 'do', 's', 't', 'h', '--help', '-h')):
         text = ' '.join(a[1:]) if cmd in ('add', 'a') else ' '.join(a)
         if not text:
             print("Usage: a task add <task description>")
@@ -91,6 +92,18 @@ https://github.com/seanpattencode/a-git""")
     if cmd in ('0', 'p', 'do', 's'):
         import subprocess
         subprocess.run(['a', 'x.' + {'0': 'priority', 'p': 'plan', 'do': 'do', 's': 'suggest'}[cmd]])
+        return
+
+    # AI session with task prompt
+    if cmd == '1':
+        import os, subprocess as sp
+        pf = SYNC_ROOT / 'common' / 'prompts' / 'task1.txt'
+        if not pf.exists():
+            print(f"x No prompt: {pf}")
+            return
+        prompt = pf.read_text().strip()
+        print(f"Prompt: {pf}")
+        os.execvp('a', ['a', 'c', prompt])
         return
 
     # Help / passthrough to t command
