@@ -118,7 +118,8 @@ if [[ -f "$A_SRC" ]]; then
     fi
     CC=clang; command -v clang &>/dev/null || CC=gcc
     $CC -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
-        $SQLITE_FLAGS -o "$BIN/a" "$A_SRC" -lsqlite3 && ok "a compiled ($CC, $(wc -c < "$BIN/a") bytes)"
+        $SQLITE_FLAGS -o "$SCRIPT_DIR/a" "$A_SRC" -lsqlite3 && ok "a compiled ($CC, $(wc -c < "$SCRIPT_DIR/a") bytes)"
+    ln -sf "$SCRIPT_DIR/a" "$BIN/a"
 else
     warn "a.c not found at $A_SRC"
 fi
