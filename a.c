@@ -1883,6 +1883,7 @@ int main(int argc, char **argv) {
     if (!strcmp(arg,"docs")||!strcmp(arg,"doc")) return cmd_docs(argc, argv);
     if (!strcmp(arg,"run")) return cmd_run(argc, argv);
     if (!strcmp(arg,"agent")) return cmd_agent(argc, argv);
+    if (!strcmp(arg,"work")||!strcmp(arg,"wor")) { fallback_py(argc, argv); }
     if (!strcmp(arg,"all")) return cmd_all(argc, argv);
 
     /* x.* experimental commands */
