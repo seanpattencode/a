@@ -26,6 +26,10 @@ def save(name, output):
     fn=f'{name}_{ts}_{DEVICE_ID}.txt'
     header=f'Agent: {name}\nDate: {now:%Y-%m-%d %H:%M}\nDevice: {DEVICE_ID}\n---\n'
     (AGENTS_DIR/fn).write_text(header+output+'\n')
+    ad=AGENTS_DIR.parent/'activity'; ad.mkdir(parents=True,exist_ok=True)
+    snippet=(output.strip().split('\n')[-1])[:60]
+    (ad/f'{ts}.{int(now.timestamp()*1000)%1000:03d}_{DEVICE_ID}.txt').write_text(f'{now:%m/%d %H:%M} {DEVICE_ID} agent:{name} → {snippet} {os.getcwd()}\n')
+    subprocess.Popen([os.path.join(os.path.dirname(P),'a'),'sync'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 
 def get_creds():
     db=sqlite3.connect(DB);db.execute("CREATE TABLE IF NOT EXISTS c(f,t,p)")
