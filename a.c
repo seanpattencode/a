@@ -1483,7 +1483,7 @@ static int cmd_update(int argc, char **argv) {
         return 0;
     }
     if (sub && (!strcmp(sub,"bash")||!strcmp(sub,"zsh")||!strcmp(sub,"shell")||!strcmp(sub,"cache"))) {
-        init_db(); load_cfg(); list_all(1, 0);
+        init_db(); load_cfg(); list_all(1, 1);
         /* Refresh i_cache.txt */
         load_proj(); load_apps();
         char ic[P]; snprintf(ic, P, "%s/i_cache.txt", DDIR);
@@ -1509,20 +1509,20 @@ static int cmd_update(int argc, char **argv) {
         puts("\xe2\x9c\x93 Cache"); return 0;
     }
     /* Full update */
-    char c[B]; snprintf(c, B, "git -C '%s/..' rev-parse --git-dir 2>/dev/null", SDIR);
+    char c[B]; snprintf(c, B, "git -C '%s' rev-parse --git-dir >/dev/null 2>&1", SDIR);
     if (system(c) != 0) { puts("x Not in git repo"); return 0; }
-    snprintf(c, B, "git -C '%s/..' fetch 2>/dev/null", SDIR); (void)!system(c);
-    snprintf(c, B, "git -C '%s/..' status -uno 2>/dev/null", SDIR);
+    snprintf(c, B, "git -C '%s' fetch 2>/dev/null", SDIR); (void)!system(c);
+    snprintf(c, B, "git -C '%s' status -uno 2>/dev/null", SDIR);
     char out[B]; pcmd(c, out, B);
     if (!strstr(out, "behind")) {
         printf("\xe2\x9c\x93 Up to date\n");
     } else {
         puts("Downloading...");
-        snprintf(c, B, "git -C '%s/..' pull --ff-only 2>/dev/null", SDIR); (void)!system(c);
+        snprintf(c, B, "git -C '%s' pull --ff-only 2>/dev/null", SDIR); (void)!system(c);
     }
     /* Refresh shell + caches */
-    snprintf(c, B, "bash '%s/../install.sh' --shell 2>/dev/null", SDIR); (void)!system(c);
-    init_db(); load_cfg(); list_all(1, 0);
+    snprintf(c, B, "bash '%s/install.sh' --shell 2>/dev/null", SDIR); (void)!system(c);
+    init_db(); load_cfg(); list_all(1, 1);
     /* Also sync */
     sync_repo();
     if (sub && !strcmp(sub, "all")) {
