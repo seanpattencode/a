@@ -407,6 +407,7 @@ static const char *HELP_FULL =
     "  a ls                List tmux sessions\n"
     "  a attach            Reconnect to session\n"
     "  a kill              Kill all sessions\n"
+    "  a task              Tasks (priority, review, subfolders)\n"
     "  a n \"text\"          Quick note\n"
     "  a log               View agent logs\n"
     "  a config            View/set settings\n"
@@ -1199,7 +1200,7 @@ static void task_add(const char *dir, const char *t) {
 }
 static int cmd_task(int argc, char **argv) {
     char dir[P]; snprintf(dir,P,"%s/tasks",SROOT); mkdirp(dir); const char *sub=argc>2?argv[2]:NULL;
-    if(!sub){puts("a task [l|add|d|pri|sync] <text>");return 0;}
+    if(!sub){puts("a task [l|rev|add|d|pri|sync] <text>");return 0;}
     if(*sub=='l'){sync_repo();int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
         for(int i=0;i<n;i++) printf("  %d. %s %.55s\n",i+1,_tp[i],_tt[i]);return 0;}
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # XXXX");return 1;}

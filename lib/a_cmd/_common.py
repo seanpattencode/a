@@ -581,6 +581,7 @@ OTHER
   a ls                List tmux sessions
   a attach            Reconnect to session
   a kill              Kill all sessions
+  a task              Tasks (priority, review, subfolders)
   a n "text"          Quick note
   a log               View agent logs
   a config            View/set settings
