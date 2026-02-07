@@ -490,6 +490,10 @@ static void sync_repo(void) {
         "git -C '%s' push -q origin main 2>/dev/null", SROOT, SROOT, SROOT, SROOT);
     (void)!system(c);
 }
+static void sync_bg(void) {
+    pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
+    if(fork()>0)_exit(0);setsid();sync_repo();_exit(0);
+}
 
 /* ═══ FALLBACK ═══ */
 __attribute__((noreturn))
@@ -1178,8 +1182,8 @@ static void task_add(const char*dir,const char*t){
     char sl[64];snprintf(sl,64,"%.32s",t);for(char*p=sl;*p;p++)*p=*p==' '||*p=='/'?'-':*p>='A'&&*p<='Z'?*p+32:*p;
     struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);
     char ts[32],td[P],fn[P],buf[B];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
-    snprintf(td,P,"%s/50000-%s_%s",dir,sl,ts);mkdirp(td);
-    char sd[P];snprintf(sd,P,"%s/task",td);mkdirp(sd);snprintf(sd,P,"%s/context",td);mkdirp(sd);snprintf(sd,P,"%s/prompt",td);mkdirp(sd);
+    snprintf(td,P,"%s/50000-%s_%s",dir,sl,ts);mkdir(td,0755);
+    char sd[P];snprintf(sd,P,"%s/task",td);mkdir(sd,0755);
     snprintf(fn,P,"%s/task/%s.%09ld_%s.txt",td,ts,tp.tv_nsec,DEV);
     snprintf(buf,B,"Text: %s\nDevice: %s\nCreated: %s\n",t,DEV,ts);writef(fn,buf);
 }
@@ -1248,12 +1252,12 @@ static int cmd_task(int argc,char**argv){
         if(i>=n)puts("Done");return 0;}
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # N");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1;if(x<0||x>=n){puts("x Invalid");return 1;}
-        task_repri(x,atoi(argv[4]));sync_repo();return 0;}
+        task_repri(x,atoi(argv[4]));sync_bg();return 0;}
     if(!strcmp(sub,"add")||!strcmp(sub,"a")){if(argc<4){puts("a task add <text>");return 1;}
         char t[B]="";for(int i=3;i<argc;i++){if(i>3)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
-        task_add(dir,t);sync_repo();printf("\xe2\x9c\x93 P50000 %s\n",t);return 0;}
+        task_add(dir,t);printf("\xe2\x9c\x93 P50000 %s\n",t);sync_bg();return 0;}
     if(*sub=='d'){if(argc<4){puts("a task d #");return 1;}int n=load_tasks(dir),x=atoi(argv[3])-1;
-        if(x<0||x>=n){puts("x Invalid");return 1;}do_archive(T[x].d);sync_repo();printf("\xe2\x9c\x93 %.40s\n",T[x].t);return 0;}
+        if(x<0||x>=n){puts("x Invalid");return 1;}do_archive(T[x].d);printf("\xe2\x9c\x93 %.40s\n",T[x].t);sync_bg();return 0;}
     if(!strcmp(sub,"sync")){sync_repo();puts("\xe2\x9c\x93");return 0;}
     if(!strcmp(sub,"0")||!strcmp(sub,"s")||!strcmp(sub,"p")||!strcmp(sub,"do")){
         const char*x=*sub=='0'?"priority":!strcmp(sub,"s")?"suggest":!strcmp(sub,"p")?"plan":"do";
@@ -1270,9 +1274,9 @@ static int cmd_task(int argc,char**argv){
         char ts[32],fn[P];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
         char t[B]="";for(int i=4;i<argc;i++){if(i>4)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
         snprintf(fn,P,"%s/%s.%09ld_%s.txt",sd,ts,tp.tv_nsec,DEV);writef(fn,t);
-        sync_repo();printf("\xe2\x9c\x93 %s: %.40s\n",sub,t);return 0;}
+        printf("\xe2\x9c\x93 %s: %.40s\n",sub,t);sync_bg();return 0;}
     char t[B]="";for(int i=2;i<argc;i++){if(i>2)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
-    task_add(dir,t);sync_repo();printf("\xe2\x9c\x93 P50000 %s\n",t);return 0;
+    task_add(dir,t);printf("\xe2\x9c\x93 P50000 %s\n",t);sync_bg();return 0;
 }
 
 /* ── ssh ── */
