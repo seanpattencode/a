@@ -2,7 +2,7 @@
 import sys, os, time, subprocess as sp, shutil, json
 from pathlib import Path
 from datetime import datetime as D
-from ._common import init_db, LOG_DIR, DEVICE_ID, RCLONE_BACKUP_PATH, get_rclone, _configured_remotes as CR, cloud_install as CI
+from ._common import init_db, LOG_DIR, DEVICE_ID, RCLONE_BACKUP_PATH, get_rclone, _configured_remotes as CR, cloud_install as CI, alog
 from .sync import cloud_sync,_merge_rclone as MR
 CD = Path.home()/'.claude'
 
@@ -13,8 +13,13 @@ def run():
         dst = Path(LOG_DIR)/'claude'/DEVICE_ID; dst.mkdir(parents=True, exist_ok=True); n = 0
         if (h := CD/'history.jsonl').exists(): shutil.copy2(h, dst/'history.jsonl'); n += 1
         for f in CD.glob('projects/**/*.jsonl'): rel = f.relative_to(CD/'projects'); (dst/'projects'/rel.parent).mkdir(parents=True, exist_ok=True); shutil.copy2(f, dst/'projects'/rel); n += 1
-        ok, msg = cloud_sync(LOG_DIR, 'logs'); print(f"{'✓' if ok else 'x'} {n} files {msg}"); return
-    if s == 'sync': ok, msg = cloud_sync(LOG_DIR, 'logs'); print(f"{'✓' if ok else 'x'} {msg}"); return
+        ok, msg = cloud_sync(LOG_DIR, 'logs'); print(f"{'✓' if ok else 'x'} {n} files {msg}")
+        if ok: alog(f"log grab+sync → gdrive:{RCLONE_BACKUP_PATH}/backup/{DEVICE_ID}/logs.tar.zst ({n} claude files)")
+        return
+    if s == 'sync':
+        ok, msg = cloud_sync(LOG_DIR, 'logs'); print(f"{'✓' if ok else 'x'} {msg}")
+        if ok: alog(f"log sync → gdrive:{RCLONE_BACKUP_PATH}/backup/{DEVICE_ID}/logs.tar.zst")
+        return
     logs = sorted(Path(LOG_DIR).glob('*.log'), key=lambda x: x.stat().st_mtime, reverse=True)
     if s == 'clean': days = int(sys.argv[3]) if len(sys.argv) > 3 else 7; [f.unlink() for f in logs if (time.time() - f.stat().st_mtime) > days*86400]; print(f"✓ cleaned"); return
     if s == 'tail': f = logs[int(sys.argv[3])] if len(sys.argv) > 3 and sys.argv[3].isdigit() else (logs[0] if logs else None); f and os.execvp('tail', ['tail', '-f', str(f)]); return

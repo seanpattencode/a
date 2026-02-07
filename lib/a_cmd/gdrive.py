@@ -1,6 +1,6 @@
 """aio gdrive - Cloud sync"""
 import sys, os, subprocess as sp
-from . _common import cloud_login, cloud_logout, cloud_sync, cloud_status, _configured_remotes, RCLONE_BACKUP_PATH, DATA_DIR, SYNC_ROOT
+from . _common import cloud_login, cloud_logout, cloud_sync, cloud_status, _configured_remotes, RCLONE_BACKUP_PATH, DATA_DIR, SYNC_ROOT, DEVICE_ID, alog
 from .sync import cloud_sync as cloud_sync_tar
 
 def _pull_auth():
@@ -32,5 +32,6 @@ def run():
         cloud_sync(wait=True)
         ok, msg = cloud_sync_tar(str(SYNC_ROOT), 'git')
         print(f"✓ Synced data + auth + git ({msg}) to GDrive")
+        if ok: alog(f"gdrive sync → gdrive:{RCLONE_BACKUP_PATH}/backup/data/ + auth/ + {DEVICE_ID}/git.tar.zst")
     elif wda == 'init': _pull_auth()
     else: cloud_status(); print(f"\n{HELP}")

@@ -45,6 +45,8 @@
 #define MA 64
 #define MS 48
 
+static void alog(const char *cmd, const char *cwd, const char *extra);
+
 /* ═══ GLOBALS ═══ */
 static char HOME[P], DDIR[P], DBPATH[P], AROOT[P], SROOT[P], SDIR[P], PYPATH[P], DEV[128], LOGDIR[P];
 static int G_argc; static char **G_argv;
@@ -515,6 +517,8 @@ static void create_sess(const char *sn, const char *wd, const char *cmd) {
     char c[B]; snprintf(c, B, "mkdir -p '%s'", LOGDIR); (void)!system(c);
     char lf[P]; snprintf(lf, P, "%s/%s__%s.log", LOGDIR, DEV, sn);
     snprintf(c, B, "tmux pipe-pane -t '%s' 'cat >> %s'", sn, lf); (void)!system(c);
+    char al[B]; snprintf(al, B, "session:%s log:%s", sn, lf);
+    alog(al, wd, NULL);
     /* agent_logs */
     sqlite3_stmt *st;
     sqlite3_prepare_v2(dbopen(), "INSERT OR REPLACE INTO agent_logs VALUES(?,?,?,?)", -1, &st, 0);
@@ -1290,25 +1294,53 @@ static int cmd_hub(int argc, char **argv) { fallback_py(argc, argv); }
 
 /* ── log ── */
 static int cmd_log(int argc, char **argv) {
-    mkdirp(LOGDIR);
     const char *sub = argc > 2 ? argv[2] : NULL;
     if (sub && !strcmp(sub, "sync")) { fallback_py(argc, argv); }
     if (sub && !strcmp(sub, "grab")) { fallback_py(argc, argv); }
-    /* List logs */
-    char c[B], out[B*4];
-    snprintf(c, B, "ls -t '%s'/*.log 2>/dev/null | head -12", LOGDIR);
-    pcmd(c, out, sizeof(out));
-    if (!out[0]) { puts("No logs"); return 0; }
-    printf("Local logs:\n%s", out);
+
+    char adir[P]; snprintf(adir, P, "%s/git/activity", AROOT);
+
+    if (sub && !strcmp(sub, "all")) {
+        char c[B]; snprintf(c, B, "cat $(ls '%s'/*.txt 2>/dev/null | sort) 2>/dev/null", adir);
+        (void)!system(c); return 0;
+    }
+
     if (sub && sub[0] >= '0' && sub[0] <= '9') {
-        /* View log by number */
-        char *lines[12]; int n = 0; char *p = out;
-        while (*p && n < 12) { lines[n++] = p; char *e = strchr(p,'\n'); if(e){*e=0;p=e+1;}else break; }
+        /* View transcript by number */
+        mkdirp(LOGDIR);
+        char c[B], out[B*4];
+        snprintf(c, B, "ls -t '%s'/*.log 2>/dev/null | head -20", LOGDIR);
+        pcmd(c, out, sizeof(out));
+        char *lines[20]; int n = 0; char *p = out;
+        while (*p && n < 20) { lines[n++] = p; char *e = strchr(p,'\n'); if(e){*e=0;p=e+1;}else break; }
         int idx = atoi(sub);
         if (idx >= 0 && idx < n) {
-            snprintf(c, B, "tmux new-window 'cat \"%s\"; read'", lines[idx]); (void)!system(c);
+            snprintf(c, B, "tmux new-window 'cat \"%s\"; read'", lines[idx]); return (void)!system(c), 0;
         }
+        return 0;
     }
+
+    /* Default: recent activity with AM/PM display + header */
+    char c[B], out[256];
+    printf("%-5s %-7s %-16s %-20s %-30s %s\n", "DATE", "TIME", "DEVICE", "CMD", "CWD", "GIT");
+    fflush(stdout);
+    snprintf(c, B, "cat $(ls '%s'/*.txt 2>/dev/null | sort | tail -30) 2>/dev/null"
+        " | awk '{split($2,t,\":\"); h=int(t[1]); m=t[2]; ap=\"AM\"; if(h>=12){ap=\"PM\"; if(h>12)h-=12} if(h==0)h=12; $2=h\":\"m ap} 1'", adir);
+    (void)!system(c);
+
+    /* Git remote for activity log */
+    snprintf(c, B, "git -C '%s/git' remote get-url origin 2>/dev/null", AROOT);
+    pcmd(c, out, 256); out[strcspn(out, "\n")] = 0;
+    snprintf(c, B, "ls '%s'/*.txt 2>/dev/null | wc -l", adir);
+    char nout[64]; pcmd(c, nout, 64);
+    printf("\nActivity: %s/ (%d files)\n  git: %s\n  gdrive: adata/backup/git.tar.zst (via a gdrive sync)\n", adir, atoi(nout), out[0] ? out : "(no remote)");
+
+    /* LLM transcript count + gdrive info */
+    mkdirp(LOGDIR);
+    snprintf(c, B, "ls '%s'/*.log 2>/dev/null | wc -l", LOGDIR);
+    pcmd(c, out, 256); int nlogs = atoi(out);
+    if (nlogs) printf("LLM transcripts: %s/ (%d files)\n  gdrive: adata/backup/%s/\n  view: a log <#> | sync: a log sync\n", LOGDIR, nlogs, DEV);
+
     return 0;
 }
 
@@ -1632,12 +1664,44 @@ static int cmd_i(int argc, char **argv) {
     return 0;
 }
 
+/* ═══ ACTIVITY LOG ═══ */
+static void alog(const char *cmd, const char *cwd, const char *extra) {
+    char dir[P]; snprintf(dir, P, "%s/git/activity", AROOT);
+    mkdirp(dir);
+    time_t t = time(NULL); struct tm *tm = localtime(&t);
+    struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
+    char lf[P]; snprintf(lf, P, "%s/%04d%02d%02dT%02d%02d%02d.%03ld_%s.txt", dir,
+        tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
+        ts.tv_nsec / 1000000, DEV);
+    FILE *f = fopen(lf, "w"); if (!f) return;
+    char repo[512] = "";
+    if (git_in_repo(cwd)) {
+        char c[B], out[512];
+        snprintf(c, B, "git -C '%s' remote get-url origin 2>/dev/null", cwd);
+        pcmd(c, out, 512); out[strcspn(out, "\n")] = 0;
+        if (out[0]) snprintf(repo, 512, " git:%s", out);
+    }
+    fprintf(f, "%02d/%02d %02d:%02d %s %s %s%s\n",
+        tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min,
+        DEV, cmd, cwd, repo);
+    fclose(f);
+}
+
 /* ═══ MAIN DISPATCH ═══ */
 int main(int argc, char **argv) {
     init_paths();
     G_argc = argc; G_argv = argv;
 
     if (argc < 2) return cmd_help(argc, argv);
+
+    /* Log every command */
+    char acmd[B] = "";
+    for (int i = 1; i < argc && strlen(acmd) < B - 256; i++) {
+        if (i > 1) strcat(acmd, " ");
+        strncat(acmd, argv[i], B - strlen(acmd) - 2);
+    }
+    char wd[P]; if (!getcwd(wd, P)) snprintf(wd, P, "%s", HOME);
+    alog(acmd, wd, NULL);
 
     const char *arg = argv[1];
 

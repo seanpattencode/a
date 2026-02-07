@@ -25,6 +25,20 @@ _AIO_CONF = os.path.join(_AIO_DIR, 'tmux.conf')
 _USER_CONF = os.path.expanduser('~/.tmux.conf')
 _SRC_LINE = 'source-file ~/.a/tmux.conf  # a'
 RCLONE_REMOTE_PREFIX, RCLONE_BACKUP_PATH = 'a-gdrive', 'adata'
+ACTIVITY_DIR = ADATA_ROOT / 'git' / 'activity'
+
+def alog(msg):
+    """Append activity log entry (individual file, append-only)"""
+    ACTIVITY_DIR.mkdir(parents=True, exist_ok=True)
+    now = datetime.now()
+    ms = int(now.timestamp() * 1000) % 1000
+    fn = now.strftime(f'%Y%m%dT%H%M%S.{ms:03d}_{DEVICE_ID}.txt')
+    cwd = os.getcwd()
+    repo = ''
+    if os.path.isdir(os.path.join(cwd, '.git')):
+        r = sp.run(['git', 'remote', 'get-url', 'origin'], capture_output=True, text=True, cwd=cwd)
+        if r.returncode == 0 and r.stdout.strip(): repo = f' git:{r.stdout.strip()}'
+    (ACTIVITY_DIR / fn).write_text(f'{now:%m/%d %H:%M} {DEVICE_ID} {msg} {cwd}{repo}\n')
 
 # Basic helpers
 def _git(path, *a, **k): return sp.run(['git', '-C', path] + list(a), capture_output=True, text=True, **k)
