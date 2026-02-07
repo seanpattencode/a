@@ -1200,7 +1200,13 @@ static void task_add(const char *dir, const char *t) {
 }
 static int cmd_task(int argc, char **argv) {
     char dir[P]; snprintf(dir,P,"%s/tasks",SROOT); mkdirp(dir); const char *sub=argc>2?argv[2]:NULL;
-    if(!sub){puts("a task [l|rev|add|d|pri|sync] <text>");return 0;}
+    if(!sub){puts("a task l            list all tasks\n"
+        "a task rev          review by priority (full detail)\n"
+        "a task add <t>      add task\n"
+        "a task d #          archive task\n"
+        "a task pri # XXXX   set priority (4 letters, A=high Z=low)\n"
+        "a task <cat> # <t>  add to subfolder (context, prompt, ...)\n"
+        "a task sync         sync");return 0;}
     if(*sub=='l'){sync_repo();int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
         for(int i=0;i<n;i++) printf("  %d. %s %.55s\n",i+1,_tp[i],_tt[i]);return 0;}
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # XXXX");return 1;}
@@ -1218,6 +1224,9 @@ static int cmd_task(int argc, char **argv) {
     if(*sub=='d'){if(argc<4){puts("a task d #");return 1;} int n=load_tasks(dir),x=atoi(argv[3])-1;
         if(x<0||x>=n){puts("x Invalid");return 1;} do_archive(_td[x]);sync_repo();printf("\xe2\x9c\x93 %.40s\n",_tt[x]);return 0;}
     if(!strcmp(sub,"sync")){sync_repo();puts("\xe2\x9c\x93");return 0;}
+    /* Python-only subcommands */
+    if(!strcmp(sub,"rev")||!strcmp(sub,"review")||!strcmp(sub,"t")||(argc>3&&argv[3][0]>='0'&&argv[3][0]<='9'
+        &&strcmp(sub,"add")&&strcmp(sub,"a")&&*sub!='d')) fallback_py(argc,argv);
     char t[B]="";for(int i=2;i<argc;i++){if(i>2)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
     task_add(dir,t);sync_repo();printf("\xe2\x9c\x93 MMMM %s\n",t);return 0;
 }
