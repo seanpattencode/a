@@ -20,25 +20,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
         sed -i -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
         cat >> "$RC" << 'AFUNC'
 a() {
-    local cache=~/.local/share/a/help_cache.txt projects=~/.local/share/a/projects.txt
-    # No args: print cached help (builtin read, 0ms)
-    if [[ -z "$1" ]]; then
-        [[ -f "$cache" ]] && printf '%s\n' "$(<"$cache")" || command a
-        return
-    fi
-    # Number: cd to project (builtin mapfile, 0ms)
+    local dd=~/.local/share/a
+    [[ -z "$1" ]] && { [[ -f $dd/help_cache.txt ]] && printf '%s\n' "$(<"$dd/help_cache.txt")" || command a; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then
-        local -a lines; mapfile -t lines < "$projects" 2>/dev/null
-        local dir="${lines[$1]}"
-        [[ -n "$dir" && -d "$dir" ]] && { printf '📂 %s\n' "$dir"; cd "$dir"; return; }
+        local -a lines; mapfile -t lines < $dd/projects.txt 2>/dev/null
+        local dir="${lines[$1]}"; [[ -n "$dir" && -d "$dir" ]] && { printf '📂 %s\n' "$dir"; cd "$dir"; return; }
     fi
-    # Directory: cd into it (0ms)
     local d="${1/#\~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"
     [[ -d "$d" ]] && { printf '📂 %s\n' "$d"; cd "$d"; return; }
-    # .py file: time it
-    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/a/timing.jsonl; return $r; }
-    # Everything else: C binary
-    command a "$@"
+    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> $dd/timing.jsonl; return $r; }
+    command a "$@"; [[ -f $dd/cd_target ]] && { read -r d < $dd/cd_target; rm $dd/cd_target; cd "$d" 2>/dev/null; }
 }
 aio() { a "$@"; }
 ai() { a "$@"; }
@@ -144,25 +135,16 @@ for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
     sed -i -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
     cat >> "$RC" << 'AFUNC'
 a() {
-    local cache=~/.local/share/a/help_cache.txt projects=~/.local/share/a/projects.txt
-    # No args: print cached help (builtin read, 0ms)
-    if [[ -z "$1" ]]; then
-        [[ -f "$cache" ]] && printf '%s\n' "$(<"$cache")" || command a
-        return
-    fi
-    # Number: cd to project (builtin mapfile, 0ms)
+    local dd=~/.local/share/a
+    [[ -z "$1" ]] && { [[ -f $dd/help_cache.txt ]] && printf '%s\n' "$(<"$dd/help_cache.txt")" || command a; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then
-        local -a lines; mapfile -t lines < "$projects" 2>/dev/null
-        local dir="${lines[$1]}"
-        [[ -n "$dir" && -d "$dir" ]] && { printf '📂 %s\n' "$dir"; cd "$dir"; return; }
+        local -a lines; mapfile -t lines < $dd/projects.txt 2>/dev/null
+        local dir="${lines[$1]}"; [[ -n "$dir" && -d "$dir" ]] && { printf '📂 %s\n' "$dir"; cd "$dir"; return; }
     fi
-    # Directory: cd into it (0ms)
     local d="${1/#\~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"
     [[ -d "$d" ]] && { printf '📂 %s\n' "$d"; cd "$d"; return; }
-    # .py file: time it
-    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/a/timing.jsonl; return $r; }
-    # Everything else: C binary
-    command a "$@"
+    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> $dd/timing.jsonl; return $r; }
+    command a "$@"; [[ -f $dd/cd_target ]] && { read -r d < $dd/cd_target; rm $dd/cd_target; cd "$d" 2>/dev/null; }
 }
 aio() { a "$@"; }
 ai() { a "$@"; }
