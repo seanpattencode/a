@@ -1358,7 +1358,7 @@ static int cmd_sync(int argc, char **argv) {
     pcmd(c, t, 256); t[strcspn(t,"\n")] = 0;
     printf("  %s\n  Last: %s\n  Status: synced\n", out, t);
     /* Count files per folder */
-    const char *folders[] = {"common","ssh","login","hub","notes","workspace","docs","tasks"};
+    const char *folders[] = {"common","ssh","login","agents","notes","workspace","docs","tasks"};
     for (int i = 0; i < 8; i++) {
         char d[P]; snprintf(d, P, "%s/%s", SROOT, folders[i]);
         if (!dexists(d)) continue;
