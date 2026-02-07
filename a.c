@@ -1207,7 +1207,7 @@ static int cmd_task(int argc, char **argv) {
         "a task pri # N      set priority (1=high, 99999=low)\n"
         "a task <cat> # <t>  add to subfolder (context, prompt, ...)\n"
         "a task sync         sync");return 0;}
-    if(*sub=='l'){sync_repo();int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
+    if(*sub=='l'){int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
         for(int i=0;i<n;i++) printf("  %d. P%s %.55s\n",i+1,_tp[i],_tt[i]);return 0;}
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # N");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1; if(x<0||x>=n){puts("x Invalid");return 1;}
