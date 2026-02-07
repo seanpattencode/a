@@ -41,10 +41,8 @@
 #
 # ============================================================================
 
-"""a-sync folder sync:
-  git+github:  ~/a-sync/ -> a-git repo (common ssh login hub notes workspace docs tasks)
-  local only:  backup/ (gitignored)
-  cloud only:  logs/ (rclone to gdrive, gitignored)
+"""adata/git sync:
+  git+github:  ~/projects/adata/git/ -> a-git repo (common ssh login hub notes workspace docs tasks)
 All files use append-only timestamps."""
 
 import os, subprocess as sp, time, shlex, threading
@@ -247,7 +245,7 @@ HELP = """a sync - Append-only sync to GitHub (no conflicts possible)
   a sync all       Sync + broadcast to SSH hosts
   a sync help      Show this help
 
-Data: ~/a-sync/ -> github.com/seanpattencode/a-git
+Data: ~/projects/adata/git/ -> github.com/seanpattencode/a-git
 Folders: common ssh login hub notes workspace docs tasks"""
 
 def run():
@@ -258,7 +256,7 @@ def run():
         print(HELP); return
 
     # Clean stale poll daemon PID file
-    pf = Path.home() / '.a-sync-poll.pid'
+    pf = Path.home() / '.adata-poll.pid'
     pf.unlink(missing_ok=True)
 
     _init_repo()
@@ -287,7 +285,7 @@ def run():
 # FOLDER STRUCTURE
 # ============================================================================
 #
-# Location: ~/projects/a-sync/ (sibling to ~/projects/a/)
+# Location: ~/projects/adata/git/ (data tier 1)
 # Remote:   github.com/seanpattencode/a-git (private repo)
 #
 # Synced folders (git tracked):
@@ -316,7 +314,7 @@ def run():
 # ============================================================================
 #
 # DIAGNOSTIC COMMANDS:
-#   cd ~/projects/a-sync
+#   cd ~/projects/adata/git
 #   git remote -v              # Should show origin -> a-git.git
 #   git status                 # Should be clean or show untracked files
 #   git log --oneline -5       # Should show "sync" commits, not just "init"
@@ -366,8 +364,8 @@ def run():
 #   # If URL is empty or status is CONFLICT, something is wrong
 #
 # NUCLEAR OPTION (re-clone from scratch):
-#   mv ~/projects/a-sync ~/projects/a-sync-backup
-#   gh repo clone seanpattencode/a-git ~/projects/a-sync
+#   mv ~/projects/adata/git ~/projects/adata/git-backup
+#   gh repo clone seanpattencode/a-git ~/projects/adata/git
 #   # Then manually merge any local-only files from backup
 #
 # ============================================================================
