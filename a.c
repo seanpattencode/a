@@ -481,9 +481,9 @@ static int git_in_repo(const char *p) {
 static void sync_repo(void) {
     char c[B*2];
     snprintf(c, sizeof(c),
-        "cd '%s' && git add -A && git commit -qm sync 2>/dev/null;"
-        "git pull --no-rebase -q origin main 2>/dev/null;"
-        "git push -q origin main 2>/dev/null", SROOT);
+        "git -C '%s' add -A 2>/dev/null && git -C '%s' commit -qm sync 2>/dev/null;"
+        "git -C '%s' pull --no-rebase -q origin main 2>/dev/null;"
+        "git -C '%s' push -q origin main 2>/dev/null", SROOT, SROOT, SROOT, SROOT);
     (void)!system(c);
 }
 
