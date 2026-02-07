@@ -6,8 +6,7 @@ CACHING: The 'a' command shows instantly despite Python startup (~100ms) because
   1. Shell function (installed in ~/.bashrc by install.sh) intercepts calls
   2. For 'a' with no args: does 'cat ~/.local/share/a/help_cache.txt' (~1ms)
   3. For 'a <num>': reads projects.txt directly in bash
-  4. For 'a t' (tasks): delegates to pure-bash 't' script (~3ms)
-  5. Only falls back to Python when cache miss or complex commands
+  4. Only falls back to Python when cache miss or complex commands
   Cache files: help_cache.txt, projects.txt, i_cache.txt, t_cache
   Regenerate: 'a update' or install.sh
 """
@@ -33,7 +32,7 @@ CMDS = {
     'all': 'multi', 'a': 'multi', 'ai': 'multi', 'aio': 'multi', 'backup': 'backup', 'bak': 'backup', 'scan': 'scan', 'sca': 'scan',
     'e': 'e', 'x': 'x', 'p': 'push', 'copy': 'copy', 'cop': 'copy', 'log': 'log', 'logs': 'log', 'done': 'done',
     'agent': 'agent', 'tree': 'tree', 'tre': 'tree', 'dir': 'dir', 'web': 'web', 'ssh': 'ssh', 'run': 'run', 'hub': 'hub', 'ask': 'ask',
-    'task': 'task', 'tas': 'task', 't': 'task', 'ui': 'ui', 'review': 'review',
+    'ui': 'ui', 'review': 'review',
     'n': 'note', 'note': 'note', 'i': 'i', 'rebuild': 'rebuild', 'repo': 'repo', 'sync': 'sync', 'syn': 'sync', 'login': 'login', 'docs': 'docs', 'doc': 'docs',
     'hi': 'hi',
 }
