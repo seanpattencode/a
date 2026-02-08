@@ -1220,18 +1220,19 @@ static void ts_human(const char*ts,char*out,int sz){
     char tmp[32];snprintf(tmp,32," %d:%02d%s",h,t.tm_min,ap);
     strncat(out,tmp,sz-strlen(out)-1);
 }
-typedef struct{char sid[128];char tmx[128];char ts[32];int st;}Sess;
+typedef struct{char sid[128];char tmx[128];char ts[32];char wd[P];int st;}Sess;
 static int load_sessions(const char*td,Sess*ss,int max){
     DIR*d=opendir(td);if(!d)return 0;struct dirent*e;int ns=0;
     while((e=readdir(d))&&ns<max){
         if(strncmp(e->d_name,"session_",8)||!strstr(e->d_name,".txt"))continue;
         char fp[P];snprintf(fp,P,"%s/%s",td,e->d_name);
         size_t l;char*r=readf(fp,&l);if(!r)continue;
-        ss[ns].sid[0]=ss[ns].tmx[0]=ss[ns].ts[0]=0;
+        ss[ns].sid[0]=ss[ns].tmx[0]=ss[ns].ts[0]=ss[ns].wd[0]=0;
         for(char*p=r;;){char*nl=strchr(p,'\n');if(nl)*nl=0;
             if(!strncmp(p,"SessionID: ",11))snprintf(ss[ns].sid,128,"%s",p+11);
             if(!strncmp(p,"TmuxSession: ",13))snprintf(ss[ns].tmx,128,"%s",p+13);
             if(!strncmp(p,"Started: ",9))snprintf(ss[ns].ts,32,"%s",p+9);
+            if(!strncmp(p,"Cwd: ",5))snprintf(ss[ns].wd,P,"%s",p+5);
             if(!nl)break;p=nl+1;}
         free(r);
         /* check live or review */
@@ -1254,7 +1255,7 @@ static void task_show(int i,int n){
     /* collect all non-session .txt files with timestamps for chrono sort */
     Ent all[256];int na=0;
     DIR*d=opendir(T[i].d);if(!d)return;struct dirent*e;
-    while((e=readdir(d))&&na<256){if(e->d_name[0]=='.'||!strncmp(e->d_name,"session_",8))continue;
+    while((e=readdir(d))&&na<256){if(e->d_name[0]=='.'||!strncmp(e->d_name,"session_",8)||!strncmp(e->d_name,"prompt_",7))continue;
         char fp[P];snprintf(fp,P,"%s/%s",T[i].d,e->d_name);
         if(e->d_type==DT_REG&&strstr(e->d_name,".txt")){
             snprintf(all[na].n,256,"%s",fp);
@@ -1262,7 +1263,7 @@ static void task_show(int i,int n){
             if(u&&strlen(u+1)>=15)snprintf(all[na].ts,32,"%.15s",u+1);
             else snprintf(all[na].ts,32,"0");
             na++;
-        }else if(e->d_type==DT_DIR){
+        }else if(e->d_type==DT_DIR&&strncmp(e->d_name,"prompt_",7)){
             DIR*s=opendir(fp);if(!s)continue;struct dirent*f;
             while((f=readdir(s))&&na<256){if(f->d_type!=DT_REG||!strstr(f->d_name,".txt"))continue;
                 snprintf(all[na].n,256,"%s/%s",fp,f->d_name);
@@ -1271,23 +1272,38 @@ static void task_show(int i,int n){
                 na++;}
             closedir(s);}}
     closedir(d);qsort(all,na,sizeof(Ent),entcmp);
-    for(int j=0;j<na;j++){const char*bn=strrchr(all[j].n,'/');bn=bn?bn+1:"";
-        if(!strncmp(bn,"prompt_",7))continue;char ht[48];
+    for(int j=0;j<na;j++){char ht[48];
         if(all[j].ts[0]!='0')ts_human(all[j].ts,ht,48);else snprintf(ht,48,"(original)");
         printf("\n  \033[90m%s\033[0m  text\n",ht);task_printbody(all[j].n);}
-    int pc=2;for(int j=0;j<na;j++){const char*bn=strrchr(all[j].n,'/');bn=bn?bn+1:"";
-        if(strncmp(bn,"prompt_",7))continue;char ht[48];
-        if(all[j].ts[0]!='0')ts_human(all[j].ts,ht,48);
-        else{struct stat fs;if(!stat(all[j].n,&fs)){struct tm*mt=localtime(&fs.st_mtime);
-            int h=mt->tm_hour%12;if(!h)h=12;
-            strftime(ht,48,"%b %-d",mt);char tmp[32];snprintf(tmp,32," %d:%02d%s",h,mt->tm_min,mt->tm_hour>=12?"pm":"am");
-            strncat(ht,tmp,48-strlen(ht)-1);}else snprintf(ht,48,"");}
-        printf("\n  \033[90m%s\033[0m  \033[35mprompt #%d\033[0m\n",ht,pc);task_printbody(all[j].n);pc++;}
+    /* show prompt candidates (dirs or legacy .txt files) */
+    int pc=2;DIR*pd=opendir(T[i].d);struct dirent*pe;
+    while(pd&&(pe=readdir(pd))){
+        if(strncmp(pe->d_name,"prompt_",7))continue;
+        char pp[P];snprintf(pp,P,"%s/%s",T[i].d,pe->d_name);
+        struct stat ps;if(stat(pp,&ps))continue;
+        char ht[48];struct tm*mt=localtime(&ps.st_mtime);
+        int h=mt->tm_hour%12;if(!h)h=12;
+        strftime(ht,48,"%b %-d",mt);char tmp[32];snprintf(tmp,32," %d:%02d%s",h,mt->tm_min,mt->tm_hour>=12?"pm":"am");
+        strncat(ht,tmp,48-strlen(ht)-1);
+        if(S_ISDIR(ps.st_mode)){
+            char fv[P]="",mv[64]="",cfp[P];
+            snprintf(cfp,P,"%s/folder.txt",pp);{size_t l;char*c=readf(cfp,&l);if(c){snprintf(fv,P,"%s",c);fv[strcspn(fv,"\n")]=0;free(c);}}
+            snprintf(cfp,P,"%s/model.txt",pp);{size_t l;char*c=readf(cfp,&l);if(c){snprintf(mv,64,"%s",c);mv[strcspn(mv,"\n")]=0;free(c);}}
+            snprintf(cfp,P,"%s/prompt.txt",pp);
+            printf("\n  \033[90m%s\033[0m  \033[35mprompt #%d\033[0m  \033[90m%s  %s\033[0m\n",ht,pc,mv,fv);
+            task_printbody(cfp);
+        }else if(S_ISREG(ps.st_mode)){
+            printf("\n  \033[90m%s\033[0m  \033[35mprompt #%d\033[0m\n",ht,pc);
+            task_printbody(pp);
+        }else continue;
+        pc++;}
+    if(pd)closedir(pd);
     /* show all sessions */
     if(ns){for(int j=0;j<ns;j++){
             char ht[48];ts_human(ss[j].ts,ht,48);
             const char*stl=ss[j].st==1?"\033[32mLIVE\033[0m":"\033[33mREVIEW\033[0m";
-            printf("  %s  %s  claude -r %s\n",stl,ht,ss[j].sid);}}
+            if(ss[j].wd[0])printf("  %s  %s  cd %s && claude -r %s\n",stl,ht,ss[j].wd,ss[j].sid);
+            else printf("  %s  %s  claude -r %s\n",stl,ht,ss[j].sid);}}
 }
 static void task_repri(int x,int pv){
     if(pv<0)pv=0;if(pv>99999)pv=99999;char np[8];snprintf(np,8,"%05d",pv);
@@ -1335,8 +1351,18 @@ static int cmd_task(int argc,char**argv){
                 printf("  Prompt text: ");fflush(stdout);
                 char pt[B];if(!fgets(pt,B,stdin)||!pt[0]||pt[0]=='\n'){show=0;continue;}
                 pt[strcspn(pt,"\n")]=0;
-                char pf[P];snprintf(pf,P,"%s/prompt_%s.txt",T[i].d,nm);
-                writef(pf,pt);printf("\xe2\x9c\x93 Added prompt: %s\n",nm);
+                printf("  Folder [cwd]: ");fflush(stdout);
+                char fd[P];if(!fgets(fd,P,stdin))fd[0]=0;fd[strcspn(fd,"\n")]=0;
+                if(!fd[0])getcwd(fd,P);
+                printf("  Model [opus]: ");fflush(stdout);
+                char md[64];if(!fgets(md,64,stdin))md[0]=0;md[strcspn(md,"\n")]=0;
+                if(!md[0])snprintf(md,64,"opus");
+                char pd[P];snprintf(pd,P,"%s/prompt_%s",T[i].d,nm);mkdir(pd,0755);
+                char pf[P];
+                snprintf(pf,P,"%s/prompt.txt",pd);writef(pf,pt);
+                snprintf(pf,P,"%s/folder.txt",pd);writef(pf,fd);
+                snprintf(pf,P,"%s/model.txt",pd);writef(pf,md);
+                printf("\xe2\x9c\x93 Added prompt: %s\n",nm);
                 task_show(i,n);show=0;}
             else if(k=='r'){
                 /* pick prompt candidate */
@@ -1351,7 +1377,7 @@ static int cmd_task(int argc,char**argv){
                         char fp[P];snprintf(fp,P,"%s/%s",T[i].d,ee->d_name);
                         if(ee->d_type==DT_REG&&strstr(ee->d_name,".txt")&&!strstr(ee->d_name,"session")&&!strstr(ee->d_name,"prompt_")){
                             size_t fl;char*fc=readf(fp,&fl);if(fc){bl+=snprintf(body+bl,B-bl,"%s\n",fc);free(fc);}}
-                        else if(ee->d_type==DT_DIR){DIR*sd=opendir(fp);struct dirent*ff;
+                        else if(ee->d_type==DT_DIR&&strncmp(ee->d_name,"prompt_",7)){DIR*sd=opendir(fp);struct dirent*ff;
                             while(sd&&(ff=readdir(sd))){if(ff->d_type!=DT_REG||!strstr(ff->d_name,".txt"))continue;
                                 char sfp[P];snprintf(sfp,P,"%s/%s",fp,ff->d_name);
                                 size_t fl;char*fc=readf(sfp,&fl);if(fc){bl+=snprintf(body+bl,B-bl,"%s\n",fc);free(fc);}}
@@ -1359,24 +1385,50 @@ static int cmd_task(int argc,char**argv){
                     if(dd)closedir(dd);
                 }else{bl=snprintf(body,B,"%s",T[i].t);}
                 /* build prompt from candidate */
-                char prompt[B];
+                char prompt[B],pmodel[64]="opus",pfolder[P]="";
+                getcwd(pfolder,P);
                 if(ci==1){snprintf(prompt,B,"%s",body);}
                 else{int cp=2;DIR*pd=opendir(T[i].d);struct dirent*pe;int found=0;
                     while(pd&&(pe=readdir(pd))){
-                        if(!strncmp(pe->d_name,"prompt_",7)&&strstr(pe->d_name,".txt")){
-                            if(cp==ci){char cfp[P];snprintf(cfp,P,"%s/%s",T[i].d,pe->d_name);
+                        if(strncmp(pe->d_name,"prompt_",7))continue;
+                        char pp[P];snprintf(pp,P,"%s/%s",T[i].d,pe->d_name);
+                        struct stat ps;if(stat(pp,&ps))continue;
+                        if(S_ISDIR(ps.st_mode)){
+                            if(cp==ci){char cfp[P];
+                                snprintf(cfp,P,"%s/prompt.txt",pp);
                                 size_t cl;char*cc=readf(cfp,&cl);
-                                if(cc){snprintf(prompt,B,"%s\n\nTASK:\n%s",cc,body);free(cc);found=1;}break;}
-                            cp++;}}
+                                if(cc){snprintf(prompt,B,"%s\n\nTASK:\n%s",cc,body);free(cc);found=1;}
+                                snprintf(cfp,P,"%s/model.txt",pp);cc=readf(cfp,&cl);
+                                if(cc){snprintf(pmodel,64,"%s",cc);pmodel[strcspn(pmodel,"\n")]=0;free(cc);}
+                                snprintf(cfp,P,"%s/folder.txt",pp);cc=readf(cfp,&cl);
+                                if(cc){snprintf(pfolder,P,"%s",cc);pfolder[strcspn(pfolder,"\n")]=0;free(cc);}
+                                break;}
+                        }else if(S_ISREG(ps.st_mode)){
+                            if(cp==ci){size_t cl;char*cc=readf(pp,&cl);
+                                if(cc){snprintf(prompt,B,"%s\n\nTASK:\n%s",cc,body);free(cc);found=1;}
+                                break;}
+                        }else continue;
+                        cp++;}
                     if(pd)closedir(pd);
                     if(!found){printf("  x Invalid prompt #\n");show=0;continue;}}
-                /* preview */
-                printf("\n\033[1m\xe2\x94\x80\xe2\x94\x80 Preview: exactly what claude receives \xe2\x94\x80\xe2\x94\x80\033[0m\n");
+                /* preview loop — edit folder/model before confirming */
+                for(;;){
+                printf("\n\033[1m\xe2\x94\x80\xe2\x94\x80 Preview \xe2\x94\x80\xe2\x94\x80\033[0m\n");
+                struct stat fs;int fok=!stat(pfolder,&fs)&&S_ISDIR(fs.st_mode);
+                printf("  \033[1mFolder:\033[0m %s%s\n",pfolder,fok?"":" \033[31m(not found)\033[0m");
+                printf("  \033[1mModel:\033[0m  %s\n",pmodel);
                 printf("\033[36m%s\033[0m\n",prompt);
                 printf("\033[1m\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\033[0m\n");
-                printf("  Send to claude? [y/n] ");fflush(stdout);
+                printf("  [y]send [f]older [m]odel [n]cancel ");fflush(stdout);
                 int ck=task_getkey();putchar('\n');
-                if(ck!='y'&&ck!='Y'){printf("  Cancelled.\n");show=0;continue;}
+                if(ck=='f'){printf("  Folder [%s]: ",pfolder);fflush(stdout);
+                    char nf[P];if(fgets(nf,P,stdin)&&nf[0]&&nf[0]!='\n'){nf[strcspn(nf,"\n")]=0;snprintf(pfolder,P,"%s",nf);}
+                    continue;}
+                if(ck=='m'){printf("  Model [%s]: ",pmodel);fflush(stdout);
+                    char nm[64];if(fgets(nm,64,stdin)&&nm[0]&&nm[0]!='\n'){nm[strcspn(nm,"\n")]=0;snprintf(pmodel,64,"%s",nm);}
+                    continue;}
+                if(ck!='y'&&ck!='Y'){printf("  Cancelled.\n");break;}
+                if(!fok){printf("  \033[31mx Folder does not exist\033[0m\n");continue;}
                 /* confirmed — spawn */
                 char sid[64];sid[0]=0;
                 {char ub[48];if(!pcmd("uuidgen",ub,48)){ub[strcspn(ub,"\n")]=0;snprintf(sid,64,"%s",ub);}}
@@ -1384,16 +1436,17 @@ static int cmd_task(int argc,char**argv){
                 char tss[32];strftime(tss,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
                 char tmx[64];snprintf(tmx,64,"task-%d-%ld",i+1,tp.tv_sec);
                 char sf[P];snprintf(sf,P,"%s/session_%s_%s.txt",T[i].d,tss,DEV);
-                char sm[B];snprintf(sm,B,"SessionID: %s\nTmuxSession: %s\nModel: sonnet\nStarted: %s\nDevice: %s\n",sid,tmx,tss,DEV);
+                char sm[B];snprintf(sm,B,"SessionID: %s\nTmuxSession: %s\nModel: %s\nStarted: %s\nDevice: %s\nCwd: %s\n",sid,tmx,pmodel,tss,DEV,pfolder);
                 writef(sf,sm);
                 char pf[P];snprintf(pf,P,"/tmp/a_prompt_%s.txt",tss);
                 writef(pf,prompt);
-                char cmd[B];snprintf(cmd,B,
-                    "tmux new-session -d -s '%s' "
-                    "\"bash -c 'claude --session-id %s --model sonnet --dangerously-skip-permissions -p \\\"$(cat %s)\\\"; sleep 5'\"",
-                    tmx,sid,pf);
+                char rf[P];snprintf(rf,P,"/tmp/a_run_%s.sh",tss);
+                char rs[B];snprintf(rs,B,"#!/bin/sh\ncd '%s'\nclaude --session-id %s --model %s --dangerously-skip-permissions \"$(cat %s)\"\n",pfolder,sid,pmodel,pf);
+                writef(rf,rs);chmod(rf,0755);
+                char cmd[B];snprintf(cmd,B,"tmux new-session -d -s '%s' '%s'",tmx,rf);
                 system(cmd);
-                printf("\xe2\x9c\x93 Running with claude (sonnet)\n  tmux attach -t %s\n  claude -r %s\n",tmx,sid);
+                printf("\xe2\x9c\x93 Running with claude (%s)\n  tmux attach -t %s\n  cd %s && claude -r %s\n",pmodel,tmx,pfolder,sid);
+                break;}/* end preview loop */
                 show=0;}
             else if(k=='g'){
                 /* go: attach most recent live, or resume most recent dead */
