@@ -1224,10 +1224,6 @@ static void ts_human(const char*ts,char*out,int sz){
     char tmp[32];snprintf(tmp,32," %d:%02d%s",h,t.tm_min,ap);
     strncat(out,tmp,sz-strlen(out)-1);
 }
-static char TL[64][128];static int TLN=-1;
-static void tmux_cache(void){TLN=0;FILE*f=popen("tmux list-sessions -F '#{session_name}' 2>/dev/null","r");
-    if(!f)return;char b[128];while(fgets(b,128,f)&&TLN<64){b[strcspn(b,"\n")]=0;snprintf(TL[TLN++],128,"%s",b);}pclose(f);}
-static int tmux_live(const char*s){if(TLN<0)tmux_cache();for(int i=0;i<TLN;i++)if(!strcmp(TL[i],s))return 1;return 0;}
 typedef struct{char sid[128];char tmx[128];char ts[32];char wd[P];int st;}Sess;
 static int load_sessions(const char*td,Sess*ss,int max){
     DIR*d=opendir(td);if(!d)return 0;struct dirent*e;int ns=0;
@@ -1243,7 +1239,7 @@ static int load_sessions(const char*td,Sess*ss,int max){
             if(!strncmp(p,"Cwd: ",5))snprintf(ss[ns].wd,P,"%s",p+5);
             if(!nl)break;p=nl+1;}
         free(r);
-        ss[ns].st=ss[ns].tmx[0]&&tmux_live(ss[ns].tmx)?1:2;
+        ss[ns].st=2;
         ns++;}
     closedir(d);
     /* sort by timestamp ascending */
@@ -1252,11 +1248,9 @@ static int load_sessions(const char*td,Sess*ss,int max){
 }
 static void task_todir(char*p){char tmp[P];snprintf(tmp,P,"%s.tmp",p);rename(p,tmp);mkdir(p,0755);
     char dst[P];snprintf(dst,P,"%s/task.txt",p);rename(tmp,dst);}
-static void task_show(int i,int n){TLN=-1;
+static void task_show(int i,int n){
     Sess ss[32];int ns=load_sessions(T[i].d,ss,32);
-    /* headline status: any LIVE? else any REVIEW? else not run */
-    int best=0;for(int j=0;j<ns;j++)if(ss[j].st==1){best=1;break;}else best=2;
-    const char*sl=best==0?"\033[90mnot run\033[0m":best==1?"\033[32mLIVE\033[0m":"\033[33mREVIEW\033[0m";
+    char sl[32];if(ns)snprintf(sl,32,"\033[33m%d sess\033[0m",ns);else snprintf(sl,32,"\033[90mnot run\033[0m");
     int dd=task_dl(T[i].d);char dv[32]="";if(dd>=0)snprintf(dv,32,"  %s%dd\033[0m",dd<=1?"\033[31m":dd<=7?"\033[33m":"\033[90m",dd);
     printf("\n\033[1m\xe2\x94\x81\xe2\x94\x81\xe2\x94\x81 %d/%d [P%s] %.50s\033[0m  %s%s\n",i+1,n,T[i].p,T[i].t,sl,dv);
     struct stat st;if(stat(T[i].d,&st)||!S_ISDIR(st.st_mode)){task_printbody(T[i].d);return;}
@@ -1307,11 +1301,9 @@ static void task_show(int i,int n){TLN=-1;
         pc++;}
     if(pd)closedir(pd);
     /* show all sessions */
-    if(ns){for(int j=0;j<ns;j++){
-            char ht[48];ts_human(ss[j].ts,ht,48);
-            const char*stl=ss[j].st==1?"\033[32mLIVE\033[0m":"\033[33mREVIEW\033[0m";
-            if(ss[j].wd[0])printf("  %s  %s  cd %s && claude -r %s\n",stl,ht,ss[j].wd,ss[j].sid);
-            else printf("  %s  %s  claude -r %s\n",stl,ht,ss[j].sid);}}
+    for(int j=0;j<ns;j++){char ht[48];ts_human(ss[j].ts,ht,48);
+        if(ss[j].wd[0])printf("  \033[33msess\033[0m  %s  cd %s && claude -r %s\n",ht,ss[j].wd,ss[j].sid);
+        else printf("  \033[33msess\033[0m  %s  claude -r %s\n",ht,ss[j].sid);}
 }
 static void task_repri(int x,int pv){
     if(pv<0)pv=0;if(pv>99999)pv=99999;char np[8];snprintf(np,8,"%05d",pv);
@@ -1544,13 +1536,10 @@ static int cmd_task(int argc,char**argv){
         printf("load_tasks(%d): %.0f us avg (x100)\n",n,((t1.tv_sec-t0.tv_sec)*1e9+(t1.tv_nsec-t0.tv_nsec))/100/1e3);
         fflush(stdout);int fd=dup(1);freopen("/dev/null","w",stdout);
         int m=n<10?n:10;
-        clock_gettime(CLOCK_MONOTONIC,&t0);for(int j=0;j<m;j++){TLN=-1;task_show(j,n);}
+        clock_gettime(CLOCK_MONOTONIC,&t0);for(int j=0;j<m;j++)task_show(j,n);
         clock_gettime(CLOCK_MONOTONIC,&t1);fflush(stdout);dup2(fd,1);close(fd);stdout=fdopen(1,"w");
         double us=((t1.tv_sec-t0.tv_sec)*1e9+(t1.tv_nsec-t0.tv_nsec))/1e3;
         printf("task_show(x%d): %.0f us total, %.0f us/task\n",m,us,us/m);
-        clock_gettime(CLOCK_MONOTONIC,&t0);tmux_cache();
-        clock_gettime(CLOCK_MONOTONIC,&t1);
-        printf("tmux_cache: %.0f us (%d sessions)\n",((t1.tv_sec-t0.tv_sec)*1e9+(t1.tv_nsec-t0.tv_nsec))/1e3,TLN);
         return 0;}
     if(!strcmp(sub,"sync")){sync_repo();puts("\xe2\x9c\x93");return 0;}
     if(!strcmp(sub,"0")||!strcmp(sub,"s")||!strcmp(sub,"p")||!strcmp(sub,"do")){
