@@ -1206,10 +1206,15 @@ static int task_counts(const char*dir,char*out,int sz){
     int p=snprintf(out,sz," [");for(int i=0;i<nd;i++)p+=snprintf(out+p,sz-p,"%s%d %s",i?", ":"",s[i].c,s[i].n);
     snprintf(out+p,sz-p,"]");return nd;
 }
+static void dl_norm(const char*in,char*out,int sz){
+    int y,m,d,h=23,mi=59;time_t now=time(NULL);struct tm*t=localtime(&now);
+    if(sscanf(in,"%d-%d-%d %d:%d",&y,&m,&d,&h,&mi)>=3){snprintf(out,sz,"%04d-%02d-%02d %02d:%02d",y,m,d,h,mi);}
+    else if(sscanf(in,"%d-%d %d:%d",&m,&d,&h,&mi)>=2){snprintf(out,sz,"%04d-%02d-%02d %02d:%02d",t->tm_year+1900,m,d,h,mi);}
+    else snprintf(out,sz,"%s",in);}
 static int task_dl(const char*td){char df[P];snprintf(df,P,"%s/deadline.txt",td);
-    size_t l;char*c=readf(df,&l);if(!c)return-1;struct tm d={0};
-    if(sscanf(c,"%d-%d-%d",&d.tm_year,&d.tm_mon,&d.tm_mday)!=3){free(c);return-1;}
-    d.tm_year-=1900;d.tm_mon--;free(c);return(int)((mktime(&d)-time(NULL))/86400);}
+    size_t l;char*c=readf(df,&l);if(!c)return-1;struct tm d={0};int h=23,mi=59;
+    if(sscanf(c,"%d-%d-%d %d:%d",&d.tm_year,&d.tm_mon,&d.tm_mday,&h,&mi)<3){free(c);return-1;}
+    d.tm_year-=1900;d.tm_mon--;d.tm_hour=h;d.tm_min=mi;free(c);return(int)((mktime(&d)-time(NULL))/86400);}
 typedef struct{char n[256];char ts[32];}Ent;
 static int entcmp(const void*a,const void*b){return strcmp(((Ent*)a)->ts,((Ent*)b)->ts);}
 static void ts_human(const char*ts,char*out,int sz){
@@ -1336,8 +1341,11 @@ static int cmd_task(int argc,char**argv){
     if(*sub=='l'){int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
         for(int i=0;i<n;i++){char ct[256];task_counts(T[i].d,ct,256);
             printf("  %d. P%s %.50s%s\n",i+1,T[i].p,T[i].t,ct);}return 0;}
-    if(isdigit(*sub)||!strcmp(sub,"rev")||!strcmp(sub,"review")||!strcmp(sub,"r")||!strcmp(sub,"t")){
-        int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}int i=isdigit(*sub)?atoi(sub)-1:argc>3?atoi(argv[3])-1:0;if(i<0||i>=n)i=0;int show=1;
+    int _rn=0;
+    if(0){review:;} /* due r jumps here with T[] pre-loaded */
+    if(_rn||isdigit(*sub)||!strcmp(sub,"rev")||!strcmp(sub,"review")||!strcmp(sub,"r")||!strcmp(sub,"t")){
+        int n=_rn?_rn:load_tasks(dir);if(!n){puts("No tasks");return 0;}
+        {int i=isdigit(*sub)?atoi(sub)-1:argc>3?atoi(argv[3])-1:0;if(i<0||i>=n)i=0;int show=1;
         while(i<n){if(show)task_show(i,n);show=1;
             printf("\n  [e]archive [a]dd [c]prompt [r]un [g]o [d]eadline [p]ri  [j]next [k]back [q]uit  ");fflush(stdout);
             int k=task_getkey();putchar('\n');
@@ -1503,14 +1511,16 @@ static int cmd_task(int argc,char**argv){
                     show=0;}}
             else if(k=='p'){printf("  Priority (1-99999): ");fflush(stdout);
                 char buf[16];if(fgets(buf,16,stdin)){task_repri(i,atoi(buf));sync_bg();n=load_tasks(dir);}}
-            else if(k=='d'){struct stat st;if(stat(T[i].d,&st)||!S_ISDIR(st.st_mode)){show=0;continue;}
-                printf("  Deadline (YYYY-MM-DD): ");fflush(stdout);
-                char db[16];if(fgets(db,16,stdin)&&db[0]&&db[0]!='\n'){db[strcspn(db,"\n")]=0;
-                    char df[P];snprintf(df,P,"%s/deadline.txt",T[i].d);writef(df,db);printf("\xe2\x9c\x93 %s\n",db);sync_bg();}
+            else if(k=='d'){
+                {struct stat st;if(!stat(T[i].d,&st)&&!S_ISDIR(st.st_mode))task_todir(T[i].d);}
+                printf("  Deadline (MM-DD [HH:MM]): ");fflush(stdout);
+                char db[32];if(fgets(db,32,stdin)&&db[0]&&db[0]!='\n'){db[strcspn(db,"\n")]=0;
+                    char dn[32];dl_norm(db,dn,32);
+                    char df[P];snprintf(df,P,"%s/deadline.txt",T[i].d);writef(df,dn);printf("\xe2\x9c\x93 %s\n",dn);sync_bg();}
                 task_show(i,n);show=0;}
             else if(k=='k'){if(i>0)i--;else{printf("  (first task)\n");show=0;}}
             else if(k=='q'||k==3||k==27)break;else if(k=='j')i++;else{show=0;}}
-        if(i>=n)puts("Done");return 0;}
+        if(i>=n)puts("Done");return 0;}}
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # N");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1;if(x<0||x>=n){puts("x Invalid");return 1;}
         task_repri(x,atoi(argv[4]));sync_bg();return 0;}
@@ -1522,14 +1532,19 @@ static int cmd_task(int argc,char**argv){
         task_add(dir,t,pri);printf("\xe2\x9c\x93 P%05d %s\n",pri,t);sync_bg();return 0;}
     if(*sub=='d'&&!sub[1]){if(argc<4){puts("a task d #");return 1;}int n=load_tasks(dir),x=atoi(argv[3])-1;
         if(x<0||x>=n){puts("x Invalid");return 1;}do_archive(T[x].d);printf("\xe2\x9c\x93 %.40s\n",T[x].t);sync_bg();return 0;}
-    if(!strcmp(sub,"deadline")){if(argc<5){puts("a task deadline # YYYY-MM-DD");return 1;}
+    if(!strcmp(sub,"deadline")){if(argc<5){puts("a task deadline # MM-DD [HH:MM]");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1;if(x<0||x>=n){puts("x Invalid");return 1;}
-        char df[P];snprintf(df,P,"%s/deadline.txt",T[x].d);writef(df,argv[4]);printf("\xe2\x9c\x93 %s\n",argv[4]);sync_bg();return 0;}
+        char raw[64]="";for(int j=4;j<argc;j++){if(j>4)strcat(raw," ");strncat(raw,argv[j],63-strlen(raw));}
+        char dn[32];dl_norm(raw,dn,32);
+        char df[P];snprintf(df,P,"%s/deadline.txt",T[x].d);writef(df,dn);printf("\xe2\x9c\x93 %s\n",dn);sync_bg();return 0;}
     if(!strcmp(sub,"due")){int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
-        int ix[512],dl[512],nd=0;for(int i=0;i<n;i++){int d=task_dl(T[i].d);if(d>=0){ix[nd]=i;dl[nd]=d;nd++;}}
+        int ix[256];int dl[256];int nd=0;
+        for(int i=0;i<n;i++){int d=task_dl(T[i].d);if(d>=0){ix[nd]=i;dl[nd]=d;nd++;}}
         if(!nd){puts("No deadlines");return 0;}
         for(int a=0;a<nd-1;a++)for(int b=a+1;b<nd;b++)if(dl[a]>dl[b]){int t=ix[a];ix[a]=ix[b];ix[b]=t;t=dl[a];dl[a]=dl[b];dl[b]=t;}
-        for(int j=0;j<nd;j++){int i=ix[j];printf("  %s%dd\033[0m P%s %.50s\n",dl[j]<=1?"\033[31m":dl[j]<=7?"\033[33m":"\033[90m",dl[j],T[i].p,T[i].t);}return 0;}
+        Tk D[256];for(int j=0;j<nd;j++)D[j]=T[ix[j]];memcpy(T,D,nd*sizeof(Tk));
+        if(argc>3&&(*argv[3]=='r'||*argv[3]=='t')){sub="r";_rn=nd;goto review;}
+        for(int j=0;j<nd;j++)printf("  %s%dd\033[0m P%s %.50s\n",dl[j]<=1?"\033[31m":dl[j]<=7?"\033[33m":"\033[90m",dl[j],T[j].p,T[j].t);return 0;}
     if(!strcmp(sub,"bench")){struct timespec t0,t1;
         clock_gettime(CLOCK_MONOTONIC,&t0);int n;for(int j=0;j<100;j++)n=load_tasks(dir);
         clock_gettime(CLOCK_MONOTONIC,&t1);
