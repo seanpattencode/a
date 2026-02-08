@@ -1765,6 +1765,27 @@ static int cmd_sync(int argc, char **argv) {
     return 0;
 }
 
+static void gen_icache(void) {
+    load_proj(); load_apps();
+    char ic[P]; snprintf(ic, P, "%s/i_cache.txt", DDIR);
+    FILE *f = fopen(ic, "w"); if (!f) return;
+    for (int i=0;i<NPJ;i++) fprintf(f, "%d: %s (%s)\n", i, bname(PJ[i].path), PJ[i].path);
+    for (int i=0;i<NAP;i++) fprintf(f, "%d: %s\n", NPJ+i, AP[i].name);
+    static const char *cmds[] = {"help","update","jobs","kill","attach","cleanup","config","ls","diff","send","watch",
+        "push","pull","revert","set","install","uninstall","deps","prompt","gdrive","add","remove","move",
+        "dash","all","backup","scan","copy","log","done","agent","tree","dir","web","ssh","run","hub",
+        "task","ui","review","note"};
+    for (int i=0;i<(int)(sizeof(cmds)/sizeof(*cmds));i++) fprintf(f, "%s\n", cmds[i]);
+    char sd[P]; snprintf(sd, P, "%s/ssh", SROOT);
+    char sp[32][P]; int sn = listdir(sd, sp, 32);
+    for (int i=0,hi=0;i<sn;i++) {
+        kvs_t kv = kvfile(sp[i]);
+        const char *nm = kvget(&kv,"Name"); if (!nm) continue;
+        fprintf(f, "ssh %d: %s (%s)\n", hi++, nm, kvget(&kv,"Host")?:"");
+    }
+    fclose(f);
+}
+
 /* ── update ── */
 static int cmd_update(int argc, char **argv) {
     const char *sub = argc > 2 ? argv[2] : NULL;
@@ -1774,28 +1795,7 @@ static int cmd_update(int argc, char **argv) {
     }
     if (sub && (!strcmp(sub,"bash")||!strcmp(sub,"zsh")||!strcmp(sub,"shell")||!strcmp(sub,"cache"))) {
         init_db(); load_cfg(); list_all(1, 1);
-        /* Refresh i_cache.txt */
-        load_proj(); load_apps();
-        char ic[P]; snprintf(ic, P, "%s/i_cache.txt", DDIR);
-        FILE *f = fopen(ic, "w"); if (f) {
-            for (int i=0;i<NPJ;i++) fprintf(f, "%d: %s (%s)\n", i, bname(PJ[i].path), PJ[i].path);
-            for (int i=0;i<NAP;i++) fprintf(f, "%d: %s\n", NPJ+i, AP[i].name);
-            const char *cmds[] = {"help","update","jobs","kill","attach","cleanup","config","ls","diff","send","watch",
-                "push","pull","revert","set","install","uninstall","deps","prompt","gdrive","add","remove","move",
-                "dash","all","backup","scan","copy","log","done","agent","tree","dir","web","ssh","run","hub",
-                "task","ui","review","note"};
-            for (int i=0;i<(int)(sizeof(cmds)/sizeof(*cmds));i++) fprintf(f, "%s\n", cmds[i]);
-            /* SSH hosts */
-            char sd[P]; snprintf(sd, P, "%s/ssh", SROOT);
-            char sp[32][P]; int sn = listdir(sd, sp, 32);
-            for (int i=0,hi=0;i<sn;i++) {
-                kvs_t kv = kvfile(sp[i]);
-                const char *nm = kvget(&kv,"Name"); if (!nm) continue;
-                const char *ho = kvget(&kv,"Host");
-                fprintf(f, "ssh %d: %s (%s)\n", hi++, nm, ho?ho:"");
-            }
-            fclose(f);
-        }
+        gen_icache();
         puts("\xe2\x9c\x93 Cache"); return 0;
     }
     /* Full update */
@@ -1992,9 +1992,10 @@ static int cmd_dir_file(int argc, char **argv) {
 
 /* ── interactive picker ── */
 static int cmd_i(int argc, char **argv) {
+    init_db(); gen_icache();
     char cache[P]; snprintf(cache, P, "%s/i_cache.txt", DDIR);
     size_t len; char *raw = readf(cache, &len);
-    if (!raw) { puts("No cache - run: a update cache"); return 1; }
+    if (!raw) { puts("No cache"); return 1; }
     /* Parse lines */
     char *lines[512]; int n = 0;
     for (char *p = raw, *end = raw + len; p < end && n < 512;) {
