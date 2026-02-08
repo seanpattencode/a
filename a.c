@@ -671,18 +671,16 @@ static int cmd_e(int argc, char **argv) {
 static int cmd_project_num(int argc, char **argv, int idx) {
     init_db(); load_cfg(); load_proj(); load_apps();
     if (idx >= 0 && idx < NPJ) {
-        if (!dexists(PJ[idx].path) && PJ[idx].repo[0]) {
-            printf("Cloning %s...\n", PJ[idx].repo);
-            char c[B]; snprintf(c, B, "git clone '%s' '%s'", PJ[idx].repo, PJ[idx].path); (void)!system(c);
+        proj_t *p=&PJ[idx]; char c[B];
+        if (!dexists(p->path) && p->repo[0]) {
+            strcpy(c,p->path); char *sl=strrchr(c,'/'); if(sl)*sl=0;
+            if(!dexists(c))snprintf(p->path,512,"%s/projects/%s",HOME,p->name);
+            printf("Cloning %s...\n", p->repo);
+            snprintf(c, B, "git clone '%s' '%s'", p->repo, p->path); (void)!system(c);
         }
-        if (!dexists(PJ[idx].path)) { printf("x %s\n", PJ[idx].path); return 1; }
-        char tp[P]; snprintf(tp,P,"%s/cd_target",DDIR);
-        FILE *f=fopen(tp,"w"); if(f){fputs(PJ[idx].path,f);fclose(f);} printf("%s\n",PJ[idx].path);
-        snprintf(tp, P, "%s/logs/push.ok", DDIR);
-        if (fork() == 0) {
-            char c[B]; snprintf(c, B, "git -C '%s' ls-remote --exit-code origin HEAD>/dev/null 2>&1 && touch '%s'", PJ[idx].path, tp);
-            (void)!system(c); _exit(0);
-        }
+        if (!dexists(p->path)) { printf("x %s\n", p->path); return 1; }
+        snprintf(c,B,"%s/cd_target",DDIR); writef(c,p->path); printf("%s\n",p->path);
+        if(!fork()){snprintf(c,B,"git -C '%s' ls-remote --exit-code origin HEAD>/dev/null 2>&1&&touch '%s/logs/push.ok'",p->path,DDIR);(void)!system(c);_exit(0);}
         return 0;
     }
     int ai = idx - NPJ;
