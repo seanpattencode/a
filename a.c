@@ -1344,9 +1344,9 @@ static int cmd_task(int argc,char**argv){
     if(isdigit(*sub)||!strcmp(sub,"rev")||!strcmp(sub,"review")||!strcmp(sub,"r")||!strcmp(sub,"t")){
         int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}int i=isdigit(*sub)?atoi(sub)-1:argc>3?atoi(argv[3])-1:0;if(i<0||i>=n)i=0;int show=1;
         while(i<n){if(show)task_show(i,n);show=1;
-            printf("\n  [d]archive  [a]dd text  [c]add prompt  [r]un claude  [g]o  [b]ack  [n]ext  [p]ri  [q]uit  ");fflush(stdout);
+            printf("\n  [e]archive [a]dd [c]prompt [r]un [g]o [d]eadline [p]ri  j:next k:back [q]uit  ");fflush(stdout);
             int k=task_getkey();putchar('\n');
-            if(k=='d'){do_archive(T[i].d);printf("\xe2\x9c\x93 Archived: %.40s\n",T[i].t);
+            if(k=='e'){do_archive(T[i].d);printf("\xe2\x9c\x93 Archived: %.40s\n",T[i].t);
                 sync_bg();n=load_tasks(dir);if(i>=n)i=n-1;if(i<0)break;}
             else if(k=='a'){
                 struct stat st;if(stat(T[i].d,&st)||!S_ISDIR(st.st_mode)){printf("x Not a folder task\n");show=0;continue;}
@@ -1507,9 +1507,14 @@ static int cmd_task(int argc,char**argv){
                         printf("  Resuming claude session...\n");system(cmd);}
                     show=0;}}
             else if(k=='p'){printf("  Priority (1-99999): ");fflush(stdout);
-                char buf[16];if(fgets(buf,16,stdin)){task_repri(i,atoi(buf));sync_repo();n=load_tasks(dir);i=0;}}
-            else if(k=='b'){if(i>0)i--;else{printf("  (first task)\n");show=0;}}
-            else if(k=='q'||k==3||k==27)break;else i++;}
+                char buf[16];if(fgets(buf,16,stdin)){task_repri(i,atoi(buf));sync_bg();n=load_tasks(dir);}}
+            else if(k=='d'){struct stat st;if(stat(T[i].d,&st)||!S_ISDIR(st.st_mode)){show=0;continue;}
+                printf("  Deadline (YYYY-MM-DD): ");fflush(stdout);
+                char db[16];if(fgets(db,16,stdin)&&db[0]&&db[0]!='\n'){db[strcspn(db,"\n")]=0;
+                    char df[P];snprintf(df,P,"%s/deadline.txt",T[i].d);writef(df,db);printf("\xe2\x9c\x93 %s\n",db);sync_bg();}
+                task_show(i,n);show=0;}
+            else if(k=='k'){if(i>0)i--;else{printf("  (first task)\n");show=0;}}
+            else if(k=='q'||k==3||k==27)break;else if(k=='j')i++;else{show=0;}}
         if(i>=n)puts("Done");return 0;}
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # N");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1;if(x<0||x>=n){puts("x Invalid");return 1;}
