@@ -1224,6 +1224,10 @@ static void ts_human(const char*ts,char*out,int sz){
     char tmp[32];snprintf(tmp,32," %d:%02d%s",h,t.tm_min,ap);
     strncat(out,tmp,sz-strlen(out)-1);
 }
+static char TL[64][128];static int TLN=-1;
+static void tmux_cache(void){TLN=0;FILE*f=popen("tmux list-sessions -F '#{session_name}' 2>/dev/null","r");
+    if(!f)return;char b[128];while(fgets(b,128,f)&&TLN<64){b[strcspn(b,"\n")]=0;snprintf(TL[TLN++],128,"%s",b);}pclose(f);}
+static int tmux_live(const char*s){if(TLN<0)tmux_cache();for(int i=0;i<TLN;i++)if(!strcmp(TL[i],s))return 1;return 0;}
 typedef struct{char sid[128];char tmx[128];char ts[32];char wd[P];int st;}Sess;
 static int load_sessions(const char*td,Sess*ss,int max){
     DIR*d=opendir(td);if(!d)return 0;struct dirent*e;int ns=0;
@@ -1239,10 +1243,7 @@ static int load_sessions(const char*td,Sess*ss,int max){
             if(!strncmp(p,"Cwd: ",5))snprintf(ss[ns].wd,P,"%s",p+5);
             if(!nl)break;p=nl+1;}
         free(r);
-        /* check live or review */
-        ss[ns].st=2;
-        if(ss[ns].tmx[0]){char cmd[P];snprintf(cmd,P,"tmux has-session -t '%s' 2>/dev/null",ss[ns].tmx);
-            if(!system(cmd))ss[ns].st=1;}
+        ss[ns].st=ss[ns].tmx[0]&&tmux_live(ss[ns].tmx)?1:2;
         ns++;}
     closedir(d);
     /* sort by timestamp ascending */
@@ -1251,7 +1252,7 @@ static int load_sessions(const char*td,Sess*ss,int max){
 }
 static void task_todir(char*p){char tmp[P];snprintf(tmp,P,"%s.tmp",p);rename(p,tmp);mkdir(p,0755);
     char dst[P];snprintf(dst,P,"%s/task.txt",p);rename(tmp,dst);}
-static void task_show(int i,int n){
+static void task_show(int i,int n){TLN=-1;
     Sess ss[32];int ns=load_sessions(T[i].d,ss,32);
     /* headline status: any LIVE? else any REVIEW? else not run */
     int best=0;for(int j=0;j<ns;j++)if(ss[j].st==1){best=1;break;}else best=2;
@@ -1537,6 +1538,20 @@ static int cmd_task(int argc,char**argv){
         if(!nd){puts("No deadlines");return 0;}
         for(int a=0;a<nd-1;a++)for(int b=a+1;b<nd;b++)if(dl[a]>dl[b]){int t=ix[a];ix[a]=ix[b];ix[b]=t;t=dl[a];dl[a]=dl[b];dl[b]=t;}
         for(int j=0;j<nd;j++){int i=ix[j];printf("  %s%dd\033[0m P%s %.50s\n",dl[j]<=1?"\033[31m":dl[j]<=7?"\033[33m":"\033[90m",dl[j],T[i].p,T[i].t);}return 0;}
+    if(!strcmp(sub,"bench")){struct timespec t0,t1;
+        clock_gettime(CLOCK_MONOTONIC,&t0);int n;for(int j=0;j<100;j++)n=load_tasks(dir);
+        clock_gettime(CLOCK_MONOTONIC,&t1);
+        printf("load_tasks(%d): %.0f us avg (x100)\n",n,((t1.tv_sec-t0.tv_sec)*1e9+(t1.tv_nsec-t0.tv_nsec))/100/1e3);
+        fflush(stdout);int fd=dup(1);freopen("/dev/null","w",stdout);
+        int m=n<10?n:10;
+        clock_gettime(CLOCK_MONOTONIC,&t0);for(int j=0;j<m;j++){TLN=-1;task_show(j,n);}
+        clock_gettime(CLOCK_MONOTONIC,&t1);fflush(stdout);dup2(fd,1);close(fd);stdout=fdopen(1,"w");
+        double us=((t1.tv_sec-t0.tv_sec)*1e9+(t1.tv_nsec-t0.tv_nsec))/1e3;
+        printf("task_show(x%d): %.0f us total, %.0f us/task\n",m,us,us/m);
+        clock_gettime(CLOCK_MONOTONIC,&t0);tmux_cache();
+        clock_gettime(CLOCK_MONOTONIC,&t1);
+        printf("tmux_cache: %.0f us (%d sessions)\n",((t1.tv_sec-t0.tv_sec)*1e9+(t1.tv_nsec-t0.tv_nsec))/1e3,TLN);
+        return 0;}
     if(!strcmp(sub,"sync")){sync_repo();puts("\xe2\x9c\x93");return 0;}
     if(!strcmp(sub,"0")||!strcmp(sub,"s")||!strcmp(sub,"p")||!strcmp(sub,"do")){
         const char*x=*sub=='0'?"priority":!strcmp(sub,"s")?"suggest":!strcmp(sub,"p")?"plan":"do";
