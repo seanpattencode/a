@@ -39,6 +39,9 @@
 #include <sys/ioctl.h>
 #include <ctype.h>
 #include <sqlite3.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 #define P 1024
 #define B 4096
@@ -70,7 +73,13 @@ static void init_paths(void) {
     snprintf(HOME, P, "%s", h);
     snprintf(DDIR, P, "%s/.local/share/a", h);
     snprintf(DBPATH, P, "%s/aio.db", DDIR);
-    char self[P]; ssize_t n = readlink("/proc/self/exe", self, P - 1);
+    char self[P]; ssize_t n = -1;
+#ifdef __APPLE__
+    uint32_t sz = P - 1;
+    if (_NSGetExecutablePath(self, &sz) == 0) { n = strlen(self); char rp[P]; if (realpath(self, rp)) { snprintf(self, P, "%s", rp); n = strlen(self); } }
+#else
+    n = readlink("/proc/self/exe", self, P - 1);
+#endif
     if (n > 0) {
         self[n] = 0;
         char *s = strrchr(self, '/');
@@ -624,7 +633,7 @@ static int cmd_set(int argc, char **argv) {
 }
 
 static int cmd_install(void) {
-    char s[P]; snprintf(s, P, "%s/../install.sh", SDIR);
+    char s[P]; snprintf(s, P, "%s/install.sh", SDIR);
     if (fexists(s)) execlp("bash", "bash", s, (char*)NULL);
     return 1;
 }
@@ -1807,6 +1816,7 @@ static int cmd_update(int argc, char **argv) {
     } else {
         puts("Downloading...");
         snprintf(c, B, "git -C '%s' pull --ff-only 2>/dev/null", SDIR); (void)!system(c);
+        snprintf(c, B, "make -C '%s' 2>/dev/null", SDIR); (void)!system(c);
     }
     /* Refresh shell + caches */
     snprintf(c, B, "bash '%s/install.sh' --shell 2>/dev/null", SDIR); (void)!system(c);
