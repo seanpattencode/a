@@ -1816,7 +1816,6 @@ static int cmd_update(int argc, char **argv) {
     } else {
         puts("Downloading...");
         snprintf(c, B, "git -C '%s' pull --ff-only 2>/dev/null", SDIR); (void)!system(c);
-        snprintf(c, B, "make -C '%s' 2>/dev/null", SDIR); (void)!system(c);
     }
     /* Self-build: prefer clang, fall back to gcc */
     snprintf(c, B, "cd '%s' && { command -v clang >/dev/null 2>&1 && clang -O2 -o a a.c -lsqlite3 || gcc -O2 -o a a.c -lsqlite3; }", SDIR);
