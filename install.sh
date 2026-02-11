@@ -100,7 +100,7 @@ esac
 AIO_URL="https://raw.githubusercontent.com/seanpattencode/aio/main/a.py"
 if [[ -f "$SCRIPT_DIR/a.c" ]]; then
     CC=gcc; [[ "$OS" == termux ]] && CC=clang
-    $CC -O2 -w -DSRC="\"$SCRIPT_DIR\"" -o "$BIN/a" "$SCRIPT_DIR/a.c" && ok "a installed (C binary)" || {
+    $CC -O3 -march=native -flto -w -DSRC="\"$SCRIPT_DIR\"" -o "$BIN/a" "$SCRIPT_DIR/a.c" && ok "a installed (C binary)" || {
         warn "C compile failed, falling back to Python symlink"
         ln -sf "$SCRIPT_DIR/a.py" "$BIN/a" && chmod +x "$BIN/a" && ok "a installed (local)"
     }
