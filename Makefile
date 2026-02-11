@@ -12,10 +12,11 @@
 # binary from pass 2 is discarded.
 #
 # Result: strictest possible validation with zero cost to the binary.
-#   make          bare -O2 binary, validated by -Weverything + hardening
+#   make          bare -O3 -march=native -flto binary, validated by -Weverything + hardening
 #   make debug    all flags combined + ASan/UBSan/IntSan -O1 -g
 
 CC = clang
+SRC_DEF = -DSRC='"$(CURDIR)"'
 SQLITE_INC = $(HOME)/micromamba/include
 WARN = -std=c17 -Werror -Weverything \
        -Wno-padded -Wno-disabled-macro-expansion -Wno-reserved-id-macro \
@@ -31,12 +32,12 @@ LDFLAGS = $(if $(wildcard $(SYS_SQLITE)),$(SYS_SQLITE),-L$(HOME)/micromamba/lib 
 comma := ,
 
 a: a.c
-	$(CC) $(WARN) $(HARDEN) -fsyntax-only $< & P1=$$!; \
-	$(CC) -isystem $(SQLITE_INC) -O2 -w -o $@ $< $(LDFLAGS) & P2=$$!; \
+	$(CC) $(WARN) $(HARDEN) $(SRC_DEF) -O3 -fsyntax-only $< & P1=$$!; \
+	$(CC) $(SRC_DEF) -isystem $(SQLITE_INC) -O3 -march=native -flto -w -o $@ $< $(LDFLAGS) & P2=$$!; \
 	wait $$P1 && wait $$P2
 
 debug: a.c
-	$(CC) $(WARN) $(HARDEN) $(LINK_HARDEN) -O1 -g -fsanitize=address,undefined,integer -o a $< $(LDFLAGS)
+	$(CC) $(WARN) $(HARDEN) $(SRC_DEF) $(LINK_HARDEN) -O1 -g -fsanitize=address,undefined,integer -o a $< $(LDFLAGS)
 
 clean:
 	rm -f a
