@@ -1547,11 +1547,13 @@ static int cmd_ssh(int argc, char **argv) {
     if (!sub) {
         char url[B]; snprintf(url, B, "git -C '%s' remote get-url origin 2>/dev/null", dir);
         char urlout[512]; pcmd(url, urlout, 512); urlout[strcspn(urlout,"\n")] = 0;
-        printf("SSH\n  %s\n  %s\nHosts:\n", dir, urlout);
+        int sshd_on=!system("pgrep -x sshd >/dev/null 2>&1");
+        printf("SSH  sshd: %s\n  %s\n  %s\n\n", sshd_on?"\033[32mon\033[0m":"\033[31moff\033[0m  a ssh start", dir, urlout);
+        printf("  \033[1m*\033[0m %s (self)%s\n", DEV, sshd_on?"":" [off]");
         for (int i = 0; i < nh; i++)
             printf("  %d. %s: %s%s\n", i, hosts[i].name, hosts[i].host, hosts[i].pw[0]?" [pw]":"");
-        if (!nh) puts("  (none)");
-        puts("\nConnect: a ssh <#>\nRun:     a ssh <#> <cmd>\nSetup:   a ssh setup\nAdd:     a ssh add          (interactive: host, name, password)");
+        if (!nh) puts("  (no remotes)");
+        puts("\nConnect: a ssh <#>          Start: a ssh start\nRun:     a ssh <#> <cmd>    Stop:  a ssh stop\nSetup:   a ssh setup\nAdd:     a ssh add          (interactive: host, name, password)");
         return 0;
     }
     /* start/stop/status */
