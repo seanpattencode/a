@@ -1626,7 +1626,7 @@ static int cmd_ssh(int argc, char **argv) {
         for (int i = 0; i < nh; i++)
             printf("  %d. %s: %s%s\n", i, hosts[i].name, hosts[i].host, hosts[i].pw[0]?" [pw]":"");
         if (!nh) puts("  (none)");
-        puts("\nConnect: a ssh <#>\nRun:     a ssh <#> <cmd>");
+        puts("\nConnect: a ssh <#>\nRun:     a ssh <#> <cmd>\nSetup:   a ssh setup");
         return 0;
     }
     /* start/stop/status */
@@ -1653,8 +1653,8 @@ static int cmd_ssh(int argc, char **argv) {
         }
         return 0;
     }
-    /* self */
-    if (!strcmp(sub,"self")) { fallback_py(argc, argv); }
+    /* self/setup */
+    if (!strcmp(sub,"self") || !strcmp(sub,"setup")) { fallback_py(argc, argv); }
     /* all "cmd" */
     if ((!strcmp(sub,"all") || !strcmp(sub,"*")) && argc > 3) {
         char cmd[B] = ""; for (int i=3;i<argc;i++) { if(i>3) strcat(cmd," "); strncat(cmd,argv[i],B-strlen(cmd)-2); }
