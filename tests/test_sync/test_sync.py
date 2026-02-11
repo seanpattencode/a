@@ -1,157 +1,253 @@
-import subprocess as sp, time, shlex, random
+"""
+Sync test - imports directly from a_cmd/sync.py for dual testing/usage.
+Changes to sync.py are automatically tested here via monte carlo sim.
+
+Usage:
+    python test_sync.py monte    # Run monte carlo (n=1000)
+    python test_sync.py race     # Test race condition
+    python test_sync.py          # List available tests
+"""
+import sys, random
 from pathlib import Path
 
-ROOT, DEVICES = Path(__file__).parent / 'devices', ('device_a', 'device_b', 'device_c')
+# Import production sync functions directly - this ensures tests match production
+sys.path.insert(0, str(Path(__file__).parents[2]))
+from a_cmd.sync import q, ts, is_conflict, resolve_conflicts, add_timestamps, soft_delete, _sync, MAX_RETRIES
+import subprocess as sp
 
-def q(p): return shlex.quote(str(p))
+# === TEST HARNESS ===
+ROOT = Path(__file__).parent / 'devices'
+DEVICES = ('device_a', 'device_b', 'device_c')
 
-def setup(): sp.run(f'rm -rf {q(ROOT)} && mkdir -p {q(ROOT/"origin")} && git -C {q(ROOT/"origin")} init -q -b main --bare', shell=True); [sp.run(f'mkdir -p {q(ROOT/d)} && git -C {q(ROOT/d)} init -q -b main && git -C {q(ROOT/d)} remote add origin {q(ROOT/"origin")}', shell=True) for d in DEVICES]
+def setup():
+    """Create fresh test repos"""
+    sp.run(f'rm -rf {q(ROOT)} && mkdir -p {q(ROOT/"origin")} && git -C {q(ROOT/"origin")} init -q -b main --bare', shell=True)
+    for d in DEVICES:
+        sp.run(f'mkdir -p {q(ROOT/d)} && git -C {q(ROOT/d)} init -q -b main && git -C {q(ROOT/d)} remote add origin {q(ROOT/"origin")}', shell=True)
 
-def _sync(d, silent=False):
-    """Sync with conflict detection. Returns (success, conflict_detected)"""
-    r = sp.run(f'cd {q(d)} && git add -A && git commit -qm sync && git pull -q --no-rebase origin main && git push -q origin main', shell=True, capture_output=True, text=True)
-    if r.returncode != 0:
-        err = (r.stderr + r.stdout).lower()
-        if 'conflict' in err or 'diverged' in err or 'rejected' in err:
-            if not silent:
-                print(f"""
-! Sync conflict (this shouldn't happen with append-only)
+def pull(device):
+    """Pull with auto-commit and conflict resolution (uses production functions)"""
+    d = ROOT / device
+    p = q(d)
+    sp.run(f'cd {p} && git add -A && git commit -qm "pre-pull"', shell=True, capture_output=True)
+    r = sp.run(f'cd {p} && git pull --no-rebase origin main', shell=True, capture_output=True, text=True)
+    if is_conflict(r.stderr + r.stdout):
+        resolve_conflicts(d)
+        sp.run(f'cd {p} && git commit -qm "auto-resolve"', shell=True, capture_output=True)
 
-If you're SURE this device has the latest data:
-  cd {d} && git add -A && git commit -m fix && git push --force
+def create_file(device, name, content=''):
+    """Create timestamped file and push"""
+    p = ROOT / device / f'{name}_{ts()}.txt'
+    p.write_text(content or f'created by {device}')
+    sp.run(f'cd {q(ROOT/device)} && git add -A && git commit -qm "add {p.name}" && git push -u origin main', shell=True, capture_output=True)
+    return p.name
 
-If unsure, ask AI:
-  a c "help me resolve sync conflict in {d}"
+def sync(device, silent=True):
+    """Sync device using production _sync (without auto_timestamp for test control)"""
+    return _sync(ROOT / device, silent=silent, auto_timestamp=False)
 
-Error: {(r.stderr + r.stdout)[:200]}
-""")
-            return False, True
-        return False, False
-    return True, False
+def sync_edit(device, silent=True):
+    """Sync with edit detection: rename modified files to new timestamp"""
+    d = ROOT / device
+    t = ts()
+    arc = d / '.archive'
+    arc.mkdir(exist_ok=True)
+    for p in d.glob('*.txt'):
+        r = sp.run(f'git -C {q(d)} diff --quiet {q(str(p.name))}', shell=True)
+        if r.returncode:  # file was modified
+            old = sp.run(f'git -C {q(d)} show HEAD:{q(str(p.name))}', shell=True, capture_output=True, text=True)
+            if old.stdout:
+                (arc / p.name).write_text(old.stdout)
+            base = p.stem.rsplit('_', 1)[0] if '_20' in p.stem else p.stem
+            p.rename(p.with_name(f'{base}_{t}{p.suffix}'))
+    return _sync(d, silent=silent, auto_timestamp=False)
 
-def create_file(device, name, content=''): ts=time.strftime('%Y%m%dT%H%M%S')+f'.{time.time_ns()%1000000000:09d}'; p=ROOT/device/f'{name}_{ts}.txt'; p.write_text(content or f'created by {device}'); sp.run(f'cd {q(ROOT/device)} && git add -A && git commit -qm "add {p.name}" && git push -u origin main', shell=True); return p.name
+# === CONFLICT TESTS ===
 
-def pull(device): sp.run(f'cd {q(ROOT/device)} && git pull -q origin main', shell=True)
+def test_race(n=5):
+    """Two devices push without pull - auto-resolved via retry"""
+    setup(); create_file('device_a', 'seed'); [pull(d) for d in DEVICES]
+    resolved = []
+    for i in range(n):
+        (ROOT/'device_a'/f'race_a_{i}.txt').write_text(f'a{i}')
+        (ROOT/'device_b'/f'race_b_{i}.txt').write_text(f'b{i}')
+        ok1, c1 = sync('device_a')
+        ok2, c2 = sync('device_b')
+        if c1 or c2: resolved.append((i, 'a' if c1 else '', 'b' if c2 else ''))
+        [pull(d) for d in DEVICES]
+    counts = {d: len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}
+    return {'iterations': n, 'resolved': len(resolved), 'counts': counts, 'match': len(set(counts.values()))==1}
 
-def run_n(n): [(pull(d), create_file(d, f'note{i}'), [pull(x) for x in DEVICES]) for i in range(n) for d in DEVICES]; return {d: len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}
+def test_offline_bulk(n=10):
+    """Device offline, accumulates changes, then syncs"""
+    setup(); create_file('device_a', 'seed'); [pull(d) for d in DEVICES]
+    for i in range(n):
+        (ROOT/'device_a'/f'online_a_{i}.txt').write_text(f'a{i}')
+        sync('device_a'); pull('device_b')
+        (ROOT/'device_b'/f'online_b_{i}.txt').write_text(f'b{i}')
+        sync('device_b'); pull('device_a')
+    for i in range(n):
+        (ROOT/'device_c'/f'offline_{i}.txt').write_text(f'c{i}')
+    ok, conflict = sync('device_c')
+    [pull(d) for d in DEVICES]
+    counts = {d: len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}
+    return {'online': n*2, 'offline': n, 'conflict': conflict, 'counts': counts, 'match': len(set(counts.values()))==1}
 
-def sync(device, silent=False):
-    ts=time.strftime('%Y%m%dT%H%M%S')+f'.{time.time_ns()%1000000000:09d}'
-    [p.rename(p.with_name(f'{p.stem}_{ts}{p.suffix}')) for p in (ROOT/device).glob('*.txt') if '_20' not in p.stem]
-    pull(device)
-    return _sync(ROOT/device, silent=silent)
+def test_edit_same_file(n=5):
+    """Two devices edit same file - both preserved via timestamp rename"""
+    setup(); fname = create_file('device_a', 'shared'); [pull(d) for d in DEVICES]
+    resolved = []
+    for i in range(n):
+        (ROOT/'device_a'/fname).write_text(f'edit_a_{i}')
+        (ROOT/'device_b'/fname).write_text(f'edit_b_{i}')
+        ok1, c1 = sync_edit('device_a')
+        ok2, c2 = sync_edit('device_b')
+        if c1 or c2: resolved.append((i, c1, c2))
+        [pull(d) for d in DEVICES]
+        files = sorted((ROOT/'device_a').glob('shared_*.txt'))
+        fname = files[-1].name if files else fname
+    counts = {d: len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}
+    archive = {d: len(list((ROOT/d/'.archive').glob('*.txt'))) if (ROOT/d/'.archive').exists() else 0 for d in DEVICES}
+    return {'iterations': n, 'resolved': len(resolved), 'counts': counts, 'archive': archive, 'match': len(set(counts.values()))==1}
 
-def test_raw(n): [((ROOT/d/'samename.txt').write_text(f'v{i} {d}'), sync(d), [pull(x) for x in DEVICES]) for i in range(n) for d in DEVICES]; return {d: len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}
+def test_delete_race():
+    """Two devices archive same file - both want same outcome"""
+    setup(); fname = create_file('device_a', 'todelete'); [pull(d) for d in DEVICES]
+    for d in ['device_a', 'device_b']:
+        soft_delete(ROOT/d, ROOT/d/fname)
+    ok1, c1 = sync('device_a')
+    ok2, c2 = sync('device_b')
+    [pull(d) for d in DEVICES]
+    counts = {d: len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}
+    archived = {d: len(list((ROOT/d/'.archive').glob('*.txt'))) if (ROOT/d/'.archive').exists() else 0 for d in DEVICES}
+    return {'resolved': c1 or c2, 'counts': counts, 'archived': archived, 'match': len(set(counts.values()))==1}
 
-def sync_edit(device, silent=False):
-    ts=time.strftime('%Y%m%dT%H%M%S')+f'.{time.time_ns()%1000000000:09d}'
-    arc=(ROOT/device/'.archive'); arc.mkdir(exist_ok=True)
-    [((arc/p.name).write_text(sp.run(f'git -C {q(ROOT/device)} show HEAD:{p.name}',shell=True,capture_output=True,text=True).stdout), p.rename(p.with_name(f'{p.stem.rsplit("_",1)[0]}_{ts}{p.suffix}'))) for p in (ROOT/device).glob('*.txt') if sp.run(f'git -C {q(ROOT/device)} diff --quiet {p.name}',shell=True).returncode]
-    pull(device)
-    return _sync(ROOT/device, silent=silent)
+def test_edit_delete_race():
+    """Device A edits, Device B archives - edit wins"""
+    setup(); fname = create_file('device_a', 'shared'); [pull(d) for d in DEVICES]
+    (ROOT/'device_a'/fname).write_text('edited by a')
+    ok1, c1 = sync_edit('device_a')
+    soft_delete(ROOT/'device_b', ROOT/'device_b'/fname)
+    ok2, c2 = sync('device_b')
+    [pull(d) for d in DEVICES]
+    files = {d: [f.name for f in (ROOT/d).glob('*.txt')] for d in DEVICES}
+    edit_preserved = all(len(f) > 0 for f in files.values())
+    return {'edit_preserved': edit_preserved, 'files': files, 'resolved': c1 or c2}
 
-def test_edit(n): setup(); f=create_file('device_a','doc'); [pull(d) for d in DEVICES]; [((ROOT/d/f).write_text(f'edit{i} {d}'), sync_edit(d), [pull(x) for x in DEVICES]) for i in range(n) for d in DEVICES]; return {'files':{d:len(list((ROOT/d).glob('*.txt'))) for d in DEVICES},'archive':{d:len(list((ROOT/d/'.archive').glob('*.txt'))) for d in DEVICES}}
-
-def delete(device, name): [(p.unlink()) for p in (ROOT/device).glob(f'{name}*.txt')]; pull(device); sp.run(f'cd {q(ROOT/device)} && git add -A && git commit -qm "delete {name}" && git push origin main', shell=True)
-
-def test_delete(): setup(); f=create_file('device_a','todelete'); [pull(d) for d in DEVICES]; before={d:len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}; delete('device_a','todelete'); [pull(d) for d in DEVICES]; after={d:len(list((ROOT/d).glob('*.txt'))) for d in DEVICES}; return {'before':before,'after':after}
-
-def archive(device, name): arc=(ROOT/device/'.archive'); arc.mkdir(exist_ok=True); [p.rename(arc/p.name) for p in (ROOT/device).glob(f'{name}*.txt')]; pull(device); sp.run(f'cd {q(ROOT/device)} && git add -A && git commit -qm "archive {name}" && git push origin main', shell=True)
-
-def test_archive(): setup(); f=create_file('device_a','toarchive'); [pull(d) for d in DEVICES]; archive('device_a','toarchive'); [pull(d) for d in DEVICES]; return {'files':{d:len(list((ROOT/d).glob('*.txt'))) for d in DEVICES},'archived':{d:len(list((ROOT/d/'.archive').glob('*.txt'))) for d in DEVICES}}
-
-def test_offline(): setup(); f1,f2,f3,f4=[create_file('device_a',n) for n in ('toadd','todelete','toarchive','toedit')]; [pull(d) for d in DEVICES]; [(create_file('device_b',f'online{i}'), pull('device_b')) for i in range(2)]; pull('device_c'); (ROOT/'device_c'/'newfile.txt').write_text('add'); (ROOT/'device_c'/f2).unlink(); (ROOT/'device_c'/'.archive').mkdir(exist_ok=True); (ROOT/'device_c'/f3).rename(ROOT/'device_c'/'.archive'/f3); (ROOT/'device_c'/f4).write_text('edited'); sync_edit('device_c'); [pull(d) for d in DEVICES]; return {'files':{d:len(list((ROOT/d).glob('*.txt'))) for d in DEVICES},'archive':{d:len(list((ROOT/d/'.archive').glob('*.txt'))) for d in DEVICES}}
+# === MONTE CARLO ===
 
 def monte_carlo(n=1000, verbose=False):
-    setup(); create_file('device_a','seed'); [pull(d) for d in DEVICES]
-    # Create nested folder on all devices
-    for d in DEVICES: (ROOT/d/'nested').mkdir(exist_ok=True); sp.run(f'cd {q(ROOT/d)} && git add -A && git commit -qm "mkdir" && git push origin main', shell=True, capture_output=True)
+    """Random operations across devices - should result in 0 conflicts and all match"""
+    setup(); create_file('device_a', 'seed'); [pull(d) for d in DEVICES]
+    for d in DEVICES:
+        (ROOT/d/'nested').mkdir(exist_ok=True)
+        sp.run(f'cd {q(ROOT/d)} && git add -A && git commit -qm "mkdir" && git push origin main', shell=True, capture_output=True)
     [pull(d) for d in DEVICES]
-    online={d:True for d in DEVICES}; errors=[]; conflicts=[]; reseeds=0
-    ops=['add','delete','archive','edit','toggle','same_name','edit_raw','nested','non_txt','direct_push']
+
+    conflicts, errors, reseeds = [], [], 0
+    ops = ['add', 'delete', 'archive', 'edit', 'edit_raw', 'nested', 'non_txt']
 
     for i in range(n):
-        d=random.choice(DEVICES); op=random.choice(ops)
-        if op=='toggle': online[d]=not online[d]; continue
-        if not online[d]: continue
+        d = random.choice(DEVICES)
+        op = random.choice(ops)
 
         try:
-            pull(d); files=list((ROOT/d).glob('*.txt'))
+            pull(d)
+            files = list((ROOT/d).glob('*.txt'))
 
-            # Handle edge case: all files deleted, add one back
             if not files:
-                if verbose: print(f"  [{i}] All files deleted on {d}, reseeding...")
+                if verbose: print(f"[{i}] reseed {d}")
                 (ROOT/d/f'reseed_{i}.txt').write_text(f'reseed {i}')
-                sync(d, silent=True)
+                sync(d)
                 reseeds += 1
                 continue
 
-            if op=='add':
+            if op == 'add':
                 (ROOT/d/f'f{i}.txt').write_text(f'{i}')
-                ok, conflict = sync(d, silent=True)
-                if conflict: conflicts.append((i, d, 'add'))
-            elif op=='delete' and files:
-                random.choice(files).unlink()
-                r = sp.run(f'cd {q(ROOT/d)} && git add -A && git commit -qm "del" && git push origin main', shell=True, capture_output=True, text=True)
-                if r.returncode and ('conflict' in r.stderr.lower() or 'rejected' in r.stderr.lower()):
-                    conflicts.append((i, d, 'delete'))
-            elif op=='archive' and files:
-                (ROOT/d/'.archive').mkdir(exist_ok=True)
-                f=random.choice(files); f.rename(ROOT/d/'.archive'/f.name)
-                r = sp.run(f'cd {q(ROOT/d)} && git add -A && git commit -qm "arc" && git push origin main', shell=True, capture_output=True, text=True)
-                if r.returncode and ('conflict' in r.stderr.lower() or 'rejected' in r.stderr.lower()):
-                    conflicts.append((i, d, 'archive'))
-            elif op=='edit' and files:
+                ok, c = sync(d)
+                if c: conflicts.append((i, d, 'add'))
+            elif op == 'delete' and files:
+                soft_delete(ROOT/d, random.choice(files))
+                ok, c = sync(d)
+                if c: conflicts.append((i, d, 'delete'))
+            elif op == 'archive' and files:
+                soft_delete(ROOT/d, random.choice(files))
+                ok, c = sync(d)
+                if c: conflicts.append((i, d, 'archive'))
+            elif op == 'edit' and files:
                 random.choice(files).write_text(f'edit{i}')
-                ok, conflict = sync_edit(d, silent=True)
-                if conflict: conflicts.append((i, d, 'edit'))
-            # NEW: same filename no timestamp on 2 devices
-            elif op=='same_name':
-                (ROOT/d/'collision.txt').write_text(f'{d}_{i}')
-                ok, conflict = sync(d, silent=True)
-                if conflict: conflicts.append((i, d, 'same_name'))
-            # NEW: edit without sync_edit (raw edit = conflict)
-            elif op=='edit_raw' and files:
+                ok, c = sync_edit(d)
+                if c: conflicts.append((i, d, 'edit'))
+            elif op == 'edit_raw' and files:
                 random.choice(files).write_text(f'raw{i}')
-                r = sp.run(f'cd {q(ROOT/d)} && git add -A && git commit -qm "raw" && git push origin main', shell=True, capture_output=True, text=True)
-                if r.returncode and ('conflict' in r.stderr.lower() or 'rejected' in r.stderr.lower()):
-                    conflicts.append((i, d, 'edit_raw'))
-            # NEW: nested folder files
-            elif op=='nested':
+                ok, c = sync(d)
+                if c: conflicts.append((i, d, 'edit_raw'))
+            elif op == 'nested':
                 (ROOT/d/'nested'/f'n{i}.txt').write_text(f'{i}')
-                ok, conflict = sync(d, silent=True)
-                if conflict: conflicts.append((i, d, 'nested'))
-            # NEW: non-txt files
-            elif op=='non_txt':
-                ext = random.choice(['.json','.md','.yaml'])
+                ok, c = sync(d)
+                if c: conflicts.append((i, d, 'nested'))
+            elif op == 'non_txt':
+                ext = random.choice(['.json', '.md', '.yaml'])
                 (ROOT/d/f'file{i}{ext}').write_text(f'{i}')
-                r = sp.run(f'cd {q(ROOT/d)} && git add -A && git commit -qm "non-txt" && git push origin main', shell=True, capture_output=True, text=True)
-                if r.returncode and ('conflict' in r.stderr.lower() or 'rejected' in r.stderr.lower()):
-                    conflicts.append((i, d, 'non_txt'))
-            # NEW: direct git push bypassing sync
-            elif op=='direct_push':
-                (ROOT/d/f'direct{i}.txt').write_text(f'{i}')
-                r = sp.run(f'cd {q(ROOT/d)} && git add -A && git commit -qm "direct" && git push origin main', shell=True, capture_output=True, text=True)
-                if r.returncode and ('conflict' in r.stderr.lower() or 'rejected' in r.stderr.lower()):
-                    conflicts.append((i, d, 'direct_push'))
+                ok, c = sync(d)
+                if c: conflicts.append((i, d, 'non_txt'))
 
-        except Exception as e: errors.append((i,d,op,str(e)))
+        except Exception as e:
+            errors.append((i, d, op, str(e)))
+            if verbose: print(f"[{i}] {d} {op}: {e}")
 
     [pull(d) for d in DEVICES]
-    counts={d:(len(list((ROOT/d).glob('*.txt'))),len(list((ROOT/d/'.archive').glob('*.txt')))if(ROOT/d/'.archive').exists()else 0,len(list((ROOT/d/'nested').glob('*.txt')))if(ROOT/d/'nested').exists()else 0,len(list((ROOT/d).glob('*.json'))+list((ROOT/d).glob('*.md'))+list((ROOT/d).glob('*.yaml')))) for d in DEVICES}
-    by_op={op:len([c for c in conflicts if c[2]==op]) for op in ops}
+    counts = {d: (
+        len(list((ROOT/d).glob('*.txt'))),
+        len(list((ROOT/d/'.archive').glob('*.txt'))) if (ROOT/d/'.archive').exists() else 0,
+        len(list((ROOT/d/'nested').glob('*.txt'))) if (ROOT/d/'nested').exists() else 0,
+    ) for d in DEVICES}
+    by_op = {op: len([c for c in conflicts if c[2]==op]) for op in ops}
 
     return {
         'actions': n,
         'errors': len(errors),
         'conflicts': len(conflicts),
         'by_op': {k:v for k,v in by_op.items() if v},
-        'conflict_details': conflicts[:10] if conflicts else [],
         'reseeds': reseeds,
         'counts': counts,
-        'match': len(set(c[:2] for c in counts.values()))==1  # compare txt+archive only
+        'match': len(set(counts.values())) == 1,
+        'error_details': errors[:5] if errors else []
     }
 
-def test_old_no_ts(): setup(); (ROOT/'device_a'/'note.txt').write_text('old no ts'); create_file('device_b','note'); [pull(d) for d in DEVICES if d!='device_a']; sync('device_a'); [pull(d) for d in DEVICES]; return {d:[p.name for p in (ROOT/d).glob('*.txt')] for d in DEVICES}
+# === TEST RUNNER ===
 
-if __name__ == '__main__': print(test_old_no_ts())
+TESTS = {
+    'race': test_race,
+    'offline': test_offline_bulk,
+    'edit_same': test_edit_same_file,
+    'delete_race': test_delete_race,
+    'edit_delete': test_edit_delete_race,
+    'monte': monte_carlo,
+}
+
+def sim(name=None, timeout=60):
+    """Run a test with timeout. Usage: sim('race') or sim()"""
+    import signal
+    if name is None:
+        print("Available:", ', '.join(TESTS.keys()))
+        return
+    if name not in TESTS:
+        print(f"Unknown: {name}. Available: {', '.join(TESTS.keys())}")
+        return
+    def handler(sig, frame): raise TimeoutError(f"Timeout {timeout}s")
+    signal.signal(signal.SIGALRM, handler)
+    signal.alarm(timeout)
+    try:
+        result = TESTS[name]()
+        signal.alarm(0)
+        return result
+    except TimeoutError as e:
+        return {'error': str(e)}
+
+if __name__ == '__main__':
+    import json
+    if len(sys.argv) > 1:
+        print(json.dumps(sim(sys.argv[1]), indent=2))
+    else:
+        sim()

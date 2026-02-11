@@ -17,19 +17,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
     for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
         touch "$RC"
         grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
-        sed -i '' -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
+        sed -i -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
         cat >> "$RC" << 'AFUNC'
 a() {
-    local cache=~/.local/share/a/help_cache.txt projects=~/.local/share/a/projects.txt icache=~/.local/share/a/i_cache.txt
-    [[ "$1" == "a" || "$1" == "ai" || "$1" == "aio" || "$1" == "all" ]] && { command ~/.local/bin/a "$@"; return; }
-    if [[ "$1" =~ ^[0-9]+$ ]]; then local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null); [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; return; }; fi
-    local d="${1/#~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"; [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; ls; return; }
-    [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command ~/.local/bin/a "$@"; return; }
-    [[ "$1" == "i" ]] && { printf "Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n"; awk '/^[^<=>]/{if(++n<=8)print (n==1?" > ":"   ")$0}' "$icache" 2>/dev/null; [[ -t 0 ]] && printf '\033[?25l' && _AIO_I=1 command ~/.local/bin/a "$@"; printf '\033[?25h'; return; }
-    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/a/timing.jsonl; return $r; }
-    command ~/.local/bin/a "$@"
+    local dd=~/.local/share/a
+    [[ -z "$1" ]] && { [[ -f $dd/help_cache.txt ]] && printf '%s\n' "$(<"$dd/help_cache.txt")" || command a; return; }
+    if [[ "$1" =~ ^[0-9]+$ ]]; then
+        local -a lines; mapfile -t lines < $dd/projects.txt 2>/dev/null
+        local dir="${lines[$1]}"; [[ -n "$dir" && -d "$dir" ]] && { printf '📂 %s\n' "$dir"; cd "$dir"; return; }
+    fi
+    local d="${1/#\~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"
+    [[ -d "$d" ]] && { printf '📂 %s\n' "$d"; cd "$d"; return; }
+    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> $dd/timing.jsonl; return $r; }
+    command a "$@"; [[ -f $dd/cd_target ]] && { read -r d < $dd/cd_target; rm $dd/cd_target; cd "$d" 2>/dev/null; }
 }
 aio() { a "$@"; }
+ai() { a "$@"; }
 AFUNC
     done
     ok "shell functions (bash + zsh)"
@@ -80,35 +83,40 @@ case $OS in
     debian)
         if [[ -n "$SUDO" ]]; then
             export DEBIAN_FRONTEND=noninteractive
-            $SUDO apt update -qq && $SUDO apt install -yqq tmux git curl nodejs npm python3-pip sshpass rclone gh 2>/dev/null || true
+            $SUDO apt update -qq && $SUDO apt install -yqq tmux git curl nodejs npm python3-pip sshpass rclone gh libsqlite3-dev 2>/dev/null || true
             ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; fi
         ;;
     arch)
-        if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip sshpass rclone github-cli 2>/dev/null && ok "pkgs"
+        if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip sshpass rclone github-cli sqlite 2>/dev/null && ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi
         ;;
     fedora)
-        if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip sshpass rclone gh 2>/dev/null && ok "pkgs"
+        if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip sshpass rclone gh sqlite-devel 2>/dev/null && ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi
         ;;
     termux) pkg update -y && pkg install -y tmux nodejs git python openssh sshpass gh rclone && ok "pkgs" ;;
     *) install_node; warn "Unknown OS - install tmux manually" ;;
 esac
 
-# aio itself
-AIO_URL="https://raw.githubusercontent.com/seanpattencode/aio/main/a.py"
-if [[ -f "$SCRIPT_DIR/a.c" ]]; then
-    CC=gcc; [[ "$OS" == termux ]] && CC=clang
-    $CC -O3 -march=native -flto -w -DSRC="\"$SCRIPT_DIR\"" -o "$BIN/a" "$SCRIPT_DIR/a.c" && ok "a installed (C binary)" || {
-        warn "C compile failed, falling back to Python symlink"
-        ln -sf "$SCRIPT_DIR/a.py" "$BIN/a" && chmod +x "$BIN/a" && ok "a installed (local)"
-    }
-    ln -sf "$SCRIPT_DIR/a-i" "$BIN/a-i" && chmod +x "$BIN/a-i" && ok "a-i installed (local)"
+# Compile ac (C binary)
+A_SRC="$SCRIPT_DIR/a.c"
+if [[ -f "$A_SRC" ]]; then
+    # Find sqlite3 headers
+    SQLITE_FLAGS=""
+    if [[ -d "$HOME/micromamba/include" ]]; then
+        SQLITE_FLAGS="-I$HOME/micromamba/include -L$HOME/micromamba/lib -Wl,-rpath,$HOME/micromamba/lib"
+    fi
+    CC=clang; command -v clang &>/dev/null || CC=gcc
+    $CC -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
+        $SQLITE_FLAGS -o "$SCRIPT_DIR/a" "$A_SRC" -lsqlite3 && ok "a compiled ($CC, $(wc -c < "$SCRIPT_DIR/a") bytes)"
+    ln -sf "$SCRIPT_DIR/a" "$BIN/a"
 else
-    curl -fsSL "$AIO_URL" -o "$BIN/a" && chmod +x "$BIN/a" && ok "a installed (remote)"
-    curl -fsSL "${AIO_URL%a.py}a-i" -o "$BIN/a-i" && chmod +x "$BIN/a-i" && ok "a-i installed (remote)"
+    warn "a.c not found at $A_SRC"
 fi
+
+# a-i helper
+[[ -f "$SCRIPT_DIR/a-i" ]] && ln -sf "$SCRIPT_DIR/a-i" "$BIN/a-i" && chmod +x "$BIN/a-i" && ok "a-i installed"
 
 # e editor (fast minimal editor)
 E_SRC="$HOME/projects/editor/e.c"
@@ -120,23 +128,26 @@ else
     curl -fsSL "$E_URL" -o /tmp/e.c && { [[ "$OS" == termux ]] && clang -w -o "$BIN/e" /tmp/e.c || gcc -w -std=gnu89 -o "$BIN/e" /tmp/e.c; } && ok "e editor (remote)"
 fi
 
-# PATH + aio function in both shells
+# PATH + shell function in both shells
 for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
     touch "$RC"
     grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
-    sed -i '' -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
+    sed -i -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
     cat >> "$RC" << 'AFUNC'
 a() {
-    local cache=~/.local/share/a/help_cache.txt projects=~/.local/share/a/projects.txt icache=~/.local/share/a/i_cache.txt
-    [[ "$1" == "a" || "$1" == "ai" || "$1" == "aio" || "$1" == "all" ]] && { command ~/.local/bin/a "$@"; return; }
-    if [[ "$1" =~ ^[0-9]+$ ]]; then local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null); [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; return; }; fi
-    local d="${1/#~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"; [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; ls; return; }
-    [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command ~/.local/bin/a "$@"; return; }
-    [[ "$1" == "i" ]] && { printf "Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n"; awk '/^[^<=>]/{if(++n<=8)print (n==1?" > ":"   ")$0}' "$icache" 2>/dev/null; [[ -t 0 ]] && printf '\033[?25l' && _AIO_I=1 command ~/.local/bin/a "$@"; printf '\033[?25h'; return; }
-    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/a/timing.jsonl; return $r; }
-    command ~/.local/bin/a "$@"
+    local dd=~/.local/share/a
+    [[ -z "$1" ]] && { [[ -f $dd/help_cache.txt ]] && printf '%s\n' "$(<"$dd/help_cache.txt")" || command a; return; }
+    if [[ "$1" =~ ^[0-9]+$ ]]; then
+        local -a lines; mapfile -t lines < $dd/projects.txt 2>/dev/null
+        local dir="${lines[$1]}"; [[ -n "$dir" && -d "$dir" ]] && { printf '📂 %s\n' "$dir"; cd "$dir"; return; }
+    fi
+    local d="${1/#\~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"
+    [[ -d "$d" ]] && { printf '📂 %s\n' "$d"; cd "$d"; return; }
+    [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> $dd/timing.jsonl; return $r; }
+    command a "$@"; [[ -f $dd/cd_target ]] && { read -r d < $dd/cd_target; rm $dd/cd_target; cd "$d" 2>/dev/null; }
 }
 aio() { a "$@"; }
+ai() { a "$@"; }
 AFUNC
 done
 ok "shell functions (bash + zsh)"
@@ -160,7 +171,7 @@ install_cli "@anthropic-ai/claude-code" "claude"
 install_cli "@openai/codex" "codex"
 install_cli "@google/gemini-cli" "gemini"
 
-# Python extras (optional)
+# Python extras (optional, needed for fallback commands)
 PIP_PKGS="pexpect prompt_toolkit"; [[ "$OS" == mac ]] && PIP_FLAGS="--break-system-packages" || PIP_FLAGS=""
 if command -v pip3 &>/dev/null; then pip3 install --user $PIP_FLAGS -q $PIP_PKGS 2>/dev/null && ok "python extras"
 elif command -v pip &>/dev/null; then pip install --user $PIP_FLAGS -q $PIP_PKGS 2>/dev/null && ok "python extras"
@@ -174,14 +185,14 @@ if ! command -v ollama &>/dev/null; then
     else warn "ollama needs sudo - run: curl -fsSL https://ollama.com/install.sh | sudo sh"; fi
 else ok "ollama (exists)"; fi
 
-# Enable aio tmux config if no existing tmux.conf (adds mouse support, status bar)
+# Enable tmux config if no existing tmux.conf
 [[ ! -s "$HOME/.tmux.conf" ]] && "$BIN/a" config tmux_conf y 2>/dev/null && ok "tmux config (mouse enabled)"
 
 # Generate cache
-python3 "$BIN/a" >/dev/null 2>&1 && ok "cache generated"
+"$BIN/a" >/dev/null 2>&1 && ok "cache generated"
 
 # Setup sync (prompt gh login if needed)
-command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && read -p "Login? (y/n): " yn && [[ "$yn" =~ ^[Yy] ]] && gh auth login && gh auth setup-git; }; gh auth status &>/dev/null && python3 "$BIN/a" backup setup 2>/dev/null && ok "sync configured"; }
+command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && read -p "Login? (y/n): " yn && [[ "$yn" =~ ^[Yy] ]] && gh auth login && gh auth setup-git; }; gh auth status &>/dev/null && "$BIN/a" backup setup 2>/dev/null && ok "sync configured"; }
 
 # Final message
 echo ""
