@@ -1554,7 +1554,7 @@ static int cmd_ssh(int argc, char **argv) {
             printf("  %d. %s%s%s: %s%s%s\n", i, self?"\033[32m":"", hosts[i].name, self?" (self)\033[0m":"", hosts[i].host, hosts[i].pw[0]?" [pw]":"", self&&!sshd_on?" [off]":"");
         }
         if (!nh) puts("  (none)");
-        puts("\nConnect: a ssh <#>          Self:  a ssh self\nRun:     a ssh <#> <cmd>    Start: a ssh start\nSetup:   a ssh setup        Stop:  a ssh stop\nAdd:     a ssh add          (interactive)");
+        puts("\nConnect: a ssh <#>\nRun:     a ssh <#> <cmd>\nAdd:     a ssh add\nSelf:    a ssh self\nStart:   a ssh start\nStop:    a ssh stop\nSetup:   a ssh setup");
         return 0;
     }
     /* start/stop/status */
