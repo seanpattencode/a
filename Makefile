@@ -6,7 +6,8 @@ WARN = -std=c17 -Werror -Weverything \
        -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused \
        --system-header-prefix=/usr/include \
        -isystem /usr/local/include -isystem $(SQLITE_INC)
-HARDEN = -fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=2
+HARDEN = -fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=2 \
+         -fstack-clash-protection -fcf-protection -Wl,-z,relro,-z,now
 SYS_SQLITE = /usr/lib/x86_64-linux-gnu/libsqlite3.so.0
 LDFLAGS = $(if $(wildcard $(SYS_SQLITE)),$(SYS_SQLITE),-L$(HOME)/micromamba/lib -lsqlite3 -Wl$(comma)-rpath$(comma)$(HOME)/micromamba/lib)
 comma := ,
