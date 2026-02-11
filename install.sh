@@ -21,13 +21,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
         cat >> "$RC" << 'AFUNC'
 a() {
     local cache=~/.local/share/a/help_cache.txt projects=~/.local/share/a/projects.txt icache=~/.local/share/a/i_cache.txt
-    [[ "$1" == "a" || "$1" == "ai" || "$1" == "aio" || "$1" == "all" ]] && { command python3 ~/.local/bin/a "$@"; return; }
+    [[ "$1" == "a" || "$1" == "ai" || "$1" == "aio" || "$1" == "all" ]] && { command ~/.local/bin/a "$@"; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null); [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; return; }; fi
     local d="${1/#~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"; [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; ls; return; }
-    [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command python3 ~/.local/bin/a "$@"; return; }
-    [[ "$1" == "i" ]] && { printf "Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n"; awk '/^[^<=>]/{if(++n<=8)print (n==1?" > ":"   ")$0}' "$icache" 2>/dev/null; [[ -t 0 ]] && printf '\033[?25l' && _AIO_I=1 command python3 ~/.local/bin/a "$@"; printf '\033[?25h'; return; }
+    [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command ~/.local/bin/a "$@"; return; }
+    [[ "$1" == "i" ]] && { printf "Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n"; awk '/^[^<=>]/{if(++n<=8)print (n==1?" > ":"   ")$0}' "$icache" 2>/dev/null; [[ -t 0 ]] && printf '\033[?25l' && _AIO_I=1 command ~/.local/bin/a "$@"; printf '\033[?25h'; return; }
     [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/a/timing.jsonl; return $r; }
-    command python3 ~/.local/bin/a "$@"
+    command ~/.local/bin/a "$@"
 }
 aio() { a "$@"; }
 AFUNC
@@ -98,8 +98,12 @@ esac
 
 # aio itself
 AIO_URL="https://raw.githubusercontent.com/seanpattencode/aio/main/a.py"
-if [[ -f "$SCRIPT_DIR/a.py" ]]; then
-    ln -sf "$SCRIPT_DIR/a.py" "$BIN/a" && chmod +x "$BIN/a" && ok "a installed (local)"
+if [[ -f "$SCRIPT_DIR/a.c" ]]; then
+    CC=gcc; [[ "$OS" == termux ]] && CC=clang
+    $CC -O2 -w -DSRC="\"$SCRIPT_DIR\"" -o "$BIN/a" "$SCRIPT_DIR/a.c" && ok "a installed (C binary)" || {
+        warn "C compile failed, falling back to Python symlink"
+        ln -sf "$SCRIPT_DIR/a.py" "$BIN/a" && chmod +x "$BIN/a" && ok "a installed (local)"
+    }
     ln -sf "$SCRIPT_DIR/a-i" "$BIN/a-i" && chmod +x "$BIN/a-i" && ok "a-i installed (local)"
 else
     curl -fsSL "$AIO_URL" -o "$BIN/a" && chmod +x "$BIN/a" && ok "a installed (remote)"
@@ -124,13 +128,13 @@ for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
     cat >> "$RC" << 'AFUNC'
 a() {
     local cache=~/.local/share/a/help_cache.txt projects=~/.local/share/a/projects.txt icache=~/.local/share/a/i_cache.txt
-    [[ "$1" == "a" || "$1" == "ai" || "$1" == "aio" || "$1" == "all" ]] && { command python3 ~/.local/bin/a "$@"; return; }
+    [[ "$1" == "a" || "$1" == "ai" || "$1" == "aio" || "$1" == "all" ]] && { command ~/.local/bin/a "$@"; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then local dir=$(sed -n "$((${1}+1))p" "$projects" 2>/dev/null); [[ -d "$dir" ]] && { echo "📂 $dir"; cd "$dir"; return; }; fi
     local d="${1/#~/$HOME}"; [[ "$1" == /projects/* ]] && d="$HOME$1"; [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; ls; return; }
-    [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command python3 ~/.local/bin/a "$@"; return; }
-    [[ "$1" == "i" ]] && { printf "Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n"; awk '/^[^<=>]/{if(++n<=8)print (n==1?" > ":"   ")$0}' "$icache" 2>/dev/null; [[ -t 0 ]] && printf '\033[?25l' && _AIO_I=1 command python3 ~/.local/bin/a "$@"; printf '\033[?25h'; return; }
+    [[ -z "$1" ]] && { cat "$cache" 2>/dev/null || command ~/.local/bin/a "$@"; return; }
+    [[ "$1" == "i" ]] && { printf "Type to filter, Tab=cycle, Enter=run, Esc=quit\n\n> \033[s\n"; awk '/^[^<=>]/{if(++n<=8)print (n==1?" > ":"   ")$0}' "$icache" 2>/dev/null; [[ -t 0 ]] && printf '\033[?25l' && _AIO_I=1 command ~/.local/bin/a "$@"; printf '\033[?25h'; return; }
     [[ "$1" == *.py && -f "$1" ]] && { local s=$(($(date +%s%N)/1000000)); python3 "$@"; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> ~/.local/share/a/timing.jsonl; return $r; }
-    command python3 ~/.local/bin/a "$@"
+    command ~/.local/bin/a "$@"
 }
 aio() { a "$@"; }
 AFUNC
