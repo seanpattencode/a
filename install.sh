@@ -83,16 +83,16 @@ case $OS in
     debian)
         if [[ -n "$SUDO" ]]; then
             export DEBIAN_FRONTEND=noninteractive
-            $SUDO apt update -qq && $SUDO apt install -yqq tmux git curl nodejs npm python3-pip sshpass rclone gh libsqlite3-dev 2>/dev/null || true
+            $SUDO apt update -qq && $SUDO apt install -yqq tmux git curl nodejs npm python3-pip sshpass rclone gh 2>/dev/null || true
             ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; fi
         ;;
     arch)
-        if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip sshpass rclone github-cli sqlite 2>/dev/null && ok "pkgs"
+        if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip sshpass rclone github-cli 2>/dev/null && ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi
         ;;
     fedora)
-        if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip sshpass rclone gh sqlite-devel 2>/dev/null && ok "pkgs"
+        if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip sshpass rclone gh 2>/dev/null && ok "pkgs"
         else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi
         ;;
     termux) pkg update -y && pkg install -y tmux nodejs git python openssh sshpass gh rclone && ok "pkgs" ;;
@@ -102,14 +102,9 @@ esac
 # Compile ac (C binary)
 A_SRC="$SCRIPT_DIR/a.c"
 if [[ -f "$A_SRC" ]]; then
-    # Find sqlite3 headers
-    SQLITE_FLAGS=""
-    if [[ -d "$HOME/micromamba/include" ]]; then
-        SQLITE_FLAGS="-I$HOME/micromamba/include -L$HOME/micromamba/lib -Wl,-rpath,$HOME/micromamba/lib"
-    fi
     CC=clang; command -v clang &>/dev/null || CC=gcc
-    $CC -O2 -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
-        $SQLITE_FLAGS -o "$SCRIPT_DIR/a" "$A_SRC" -lsqlite3 && ok "a compiled ($CC, $(wc -c < "$SCRIPT_DIR/a") bytes)"
+    $CC -O3 -march=native -flto -Wall -Wextra -Wno-unused-parameter -Wno-unused-result \
+        -o "$SCRIPT_DIR/a" "$A_SRC" && ok "a compiled ($CC, $(wc -c < "$SCRIPT_DIR/a") bytes)"
     ln -sf "$SCRIPT_DIR/a" "$BIN/a"
 else
     warn "a.c not found at $A_SRC"

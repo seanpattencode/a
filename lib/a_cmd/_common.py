@@ -150,6 +150,9 @@ def init_db():
         c.commit()
 
 def load_cfg():
+    p = os.path.join(DATA_DIR, "config.txt")
+    if os.path.exists(p):
+        return {k.strip(): v.strip().replace('\\n', '\n') for line in open(p).read().splitlines() if ':' in line for k, v in [line.split(':', 1)]}
     with db() as c: return dict(c.execute("SELECT key, value FROM config").fetchall())
 
 def load_proj():
@@ -172,7 +175,12 @@ def resolve_cmd(cmd):
     return re.sub(r'\{(\w+)\}', lambda m: projs.get(m.group(1), m.group(0)), cmd)
 
 def load_sess(cfg):
-    with db() as c: data = c.execute("SELECT key, name, command_template FROM sessions").fetchall()
+    p = os.path.join(DATA_DIR, "sessions.txt")
+    if os.path.exists(p):
+        data = [line.split('|', 2) for line in open(p).read().splitlines() if '|' in line]
+        data = [(r[0], r[1], r[2]) for r in data if len(r) == 3]
+    else:
+        with db() as c: data = c.execute("SELECT key, name, command_template FROM sessions").fetchall()
     dp, s = get_prompt('default'), {}
     esc = lambda p: cfg.get(p, dp or '').replace('\n', '\\n').replace('"', '\\"')
     for k, n, t in data:

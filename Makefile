@@ -2,7 +2,7 @@
 #   Pass 1: -Werror -Weverything + hardening flags, -fsyntax-only
 #            Validates all warnings and hardening compatibility.
 #            No binary emitted — pure compile-time checking (~60ms).
-#   Pass 2: -O2 -w, no extra flags
+#   Pass 2: -O3 -march=native -flto -w, no extra flags
 #            Emits the actual binary. Pure optimized code, no overhead
 #            from warnings or hardening codegen.
 #
@@ -23,13 +23,10 @@ WARN = -std=c17 -Werror -Weverything \
        -Wno-documentation -Wno-declaration-after-statement \
        -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused \
        --system-header-prefix=/usr/include \
-       -isystem /usr/local/include -isystem $(SQLITE_INC)
+       -isystem /usr/local/include
 HARDEN = -fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=2 \
          -fstack-clash-protection -fcf-protection
 LINK_HARDEN = -Wl,-z,relro,-z,now
-SYS_SQLITE = /usr/lib/x86_64-linux-gnu/libsqlite3.so.0
-LDFLAGS = $(if $(wildcard $(SYS_SQLITE)),$(SYS_SQLITE),-L$(HOME)/micromamba/lib -lsqlite3 -Wl$(comma)-rpath$(comma)$(HOME)/micromamba/lib)
-comma := ,
 
 a: a.c
 	$(CC) $(WARN) $(HARDEN) $(SRC_DEF) -O3 -fsyntax-only $< & P1=$$!; \
