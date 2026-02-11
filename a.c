@@ -1530,18 +1530,21 @@ static int cmd_task(int argc,char**argv){
 static int cmd_ssh(int argc, char **argv) {
     char dir[P]; snprintf(dir, P, "%s/ssh", SROOT); mkdirp(dir);
     sync_repo();
-    /* Load hosts */
+    /* Load hosts, dedup by name (keep latest file, archive older) */
     typedef struct { char name[128], host[256], pw[256]; } host_t;
-    host_t hosts[32]; int nh = 0;
+    host_t hosts[32]; int nh = 0; int arc=0;
     char paths[32][P]; int np = listdir(dir, paths, 32);
-    for (int i = 0; i < np && nh < 32; i++) {
+    for (int i = np-1; i >= 0 && nh < 32; i--) {
         kvs_t kv = kvfile(paths[i]);
         const char *n = kvget(&kv, "Name"); if (!n) continue;
+        int dup=0; for(int j=0;j<nh;j++)if(!strcmp(hosts[j].name,n)){dup=1;break;}
+        if(dup){do_archive(paths[i]);arc++;continue;}
         snprintf(hosts[nh].name, 128, "%s", n);
         const char *h = kvget(&kv, "Host"); snprintf(hosts[nh].host, 256, "%s", h?h:"");
         const char *p = kvget(&kv, "Password"); snprintf(hosts[nh].pw, 256, "%s", p?p:"");
         nh++;
     }
+    if(arc)sync_bg();
     const char *sub = argc > 2 ? argv[2] : NULL;
     /* No args: show status + hosts */
     if (!sub) {
