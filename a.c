@@ -1549,11 +1549,12 @@ static int cmd_ssh(int argc, char **argv) {
         char urlout[512]; pcmd(url, urlout, 512); urlout[strcspn(urlout,"\n")] = 0;
         int sshd_on=!system("pgrep -x sshd >/dev/null 2>&1");
         printf("SSH  sshd: %s\n  %s\n  %s\n\n", sshd_on?"\033[32mon\033[0m":"\033[31moff\033[0m  a ssh start", dir, urlout);
-        printf("  \033[1m*\033[0m %s (self)%s\n", DEV, sshd_on?"":" [off]");
-        for (int i = 0; i < nh; i++)
-            printf("  %d. %s: %s%s\n", i, hosts[i].name, hosts[i].host, hosts[i].pw[0]?" [pw]":"");
-        if (!nh) puts("  (no remotes)");
-        puts("\nConnect: a ssh <#>          Start: a ssh start\nRun:     a ssh <#> <cmd>    Stop:  a ssh stop\nSetup:   a ssh setup\nAdd:     a ssh add          (interactive: host, name, password)");
+        for (int i = 0; i < nh; i++) {
+            int self=!strcmp(hosts[i].name,DEV);
+            printf("  %d. %s%s%s: %s%s%s\n", i, self?"\033[32m":"", hosts[i].name, self?" (self)\033[0m":"", hosts[i].host, hosts[i].pw[0]?" [pw]":"", self&&!sshd_on?" [off]":"");
+        }
+        if (!nh) puts("  (none)");
+        puts("\nConnect: a ssh <#>          Self:  a ssh self\nRun:     a ssh <#> <cmd>    Start: a ssh start\nSetup:   a ssh setup        Stop:  a ssh stop\nAdd:     a ssh add          (interactive)");
         return 0;
     }
     /* start/stop/status */
@@ -1580,8 +1581,30 @@ static int cmd_ssh(int argc, char **argv) {
         }
         return 0;
     }
-    /* self/setup */
-    if (!strcmp(sub,"self") || !strcmp(sub,"setup")) { fallback_py(argc, argv); }
+    /* self: register this device */
+    if (!strcmp(sub,"self")) {
+        char user[128]="",ip[128]="",port[8]="22",host[256];
+        const char*u=getenv("USER");if(!u)u=getenv("LOGNAME");if(u)snprintf(user,128,"%s",u);
+        /* detect LAN IP */
+        char ipcmd[128];
+#ifdef __APPLE__
+        snprintf(ipcmd,128,"ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null");
+#else
+        snprintf(ipcmd,128,"hostname -I 2>/dev/null | awk '{print $1}'");
+#endif
+        pcmd(ipcmd,ip,128);ip[strcspn(ip,"\n")]=0;
+        /* detect sshd port */
+        char pp[64];if(!pcmd("grep -m1 '^Port ' /etc/ssh/sshd_config 2>/dev/null || grep -m1 '^Port ' $PREFIX/etc/ssh/sshd_config 2>/dev/null",pp,64)){
+            char*sp=pp;while(*sp&&!isdigit((unsigned char)*sp))sp++;pp[strcspn(pp,"\n")]=0;if(*sp)snprintf(port,8,"%s",sp);}
+        if(!strcmp(port,"22"))snprintf(host,256,"%s@%s",user,ip);
+        else snprintf(host,256,"%s@%s:%s",user,ip,port);
+        printf("Name: %s\nHost: %s\n",DEV,host);
+        char f[P];snprintf(f,P,"%s/%s.txt",dir,DEV);
+        char data[B];snprintf(data,B,"Name: %s\nHost: %s\n",DEV,host);
+        writef(f,data);sync_repo();printf("\xe2\x9c\x93 registered\n");return 0;
+    }
+    /* setup */
+    if (!strcmp(sub,"setup")) { fallback_py(argc, argv); }
     /* all "cmd" */
     if ((!strcmp(sub,"all") || !strcmp(sub,"*")) && argc > 3) {
         char cmd[B] = ""; for (int i=3;i<argc;i++) { if(i>3) strcat(cmd," "); strncat(cmd,argv[i],B-strlen(cmd)-2); }
