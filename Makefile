@@ -24,9 +24,12 @@ WARN = -std=c17 -Werror -Weverything \
        -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused \
        --system-header-prefix=/usr/include \
        -isystem /usr/local/include
-ifeq ($(shell uname),Darwin)
-WARN += -Wno-poison-system-directories
-endif
+# clang 21+ C++ compat warnings: idiomatic C doesn't cast malloc/memchr
+WARN += $(shell $(CC) -Wno-implicit-void-ptr-cast -x c -c /dev/null -o /dev/null 2>/dev/null && echo -Wno-implicit-void-ptr-cast)
+# Bionic libc _Nullable annotations (Android/Termux only)
+WARN += $(shell $(CC) -Wno-nullable-to-nonnull-conversion -x c -c /dev/null -o /dev/null 2>/dev/null && echo -Wno-nullable-to-nonnull-conversion)
+# cross-compiler system directory warnings (Darwin + Termux)
+WARN += $(shell $(CC) -Wno-poison-system-directories -x c -c /dev/null -o /dev/null 2>/dev/null && echo -Wno-poison-system-directories)
 HARDEN = -fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=2
 ifneq ($(shell uname),Darwin)
 HARDEN += -fstack-clash-protection -fcf-protection
