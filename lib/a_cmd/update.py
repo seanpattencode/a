@@ -1,7 +1,9 @@
 """aio update - Update aio"""
 import os, subprocess as sp
 from pathlib import Path
-from . _common import _sg, list_all, init_db, SCRIPT_DIR, DATA_DIR, load_proj, load_apps, HELP_SHORT
+from . _common import _sg, list_all, init_db, SCRIPT_DIR, DATA_DIR, load_proj, load_apps, HELP_SHORT, SYNC_ROOT, ADATA_ROOT
+
+ADATA_REMOTE = 'https://github.com/seanpattencode/a-git.git'
 
 # === Unified cache & shell setup ===
 CMDS = ['help','update','jobs','kill','attach','cleanup','config','ls','diff','send','watch',
@@ -36,6 +38,44 @@ def setup_all():
     print(f"✓ {sh.title()} (updated)" if updated else f"• {sh.title()} (ok)")
     refresh_caches(); print("✓ Cache")
 
+def ensure_adata():
+    """Ensure adata/git exists, has correct remote, and is synced"""
+    git_dir = SYNC_ROOT / '.git'
+
+    # Clone if missing
+    if not git_dir.exists():
+        SYNC_ROOT.mkdir(parents=True, exist_ok=True)
+        r = sp.run(f'gh repo clone seanpattencode/a-git {SYNC_ROOT}',
+                   shell=True, capture_output=True, text=True)
+        if r.returncode == 0:
+            print(f"✓ Cloned adata/git")
+        else:
+            print(f"x Failed to clone adata/git: {r.stderr.strip()[:100]}")
+        return
+
+    # Fix remote if pointing at wrong repo
+    r = sp.run(['git', '-C', str(SYNC_ROOT), 'remote', 'get-url', 'origin'],
+               capture_output=True, text=True)
+    current = r.stdout.strip()
+    if current and 'a-git' not in current:
+        sp.run(['git', '-C', str(SYNC_ROOT), 'remote', 'set-url', 'origin', ADATA_REMOTE],
+               capture_output=True)
+        print(f"✓ Fixed adata remote: {current} -> a-git")
+
+    # Fetch and reset if behind or diverged
+    sp.run(['git', '-C', str(SYNC_ROOT), 'fetch', 'origin'], capture_output=True)
+    status = sp.run(['git', '-C', str(SYNC_ROOT), 'status', '-uno'], capture_output=True, text=True).stdout
+    log = sp.run(['git', '-C', str(SYNC_ROOT), 'log', '--oneline', '-1'], capture_output=True, text=True).stdout.strip()
+    remote_log = sp.run(['git', '-C', str(SYNC_ROOT), 'log', '--oneline', '-1', 'origin/main'],
+                        capture_output=True, text=True).stdout.strip()
+
+    if 'diverged' in status or (remote_log and log != remote_log and 'behind' in status):
+        sp.run(['git', '-C', str(SYNC_ROOT), 'reset', '--hard', 'origin/main'], capture_output=True)
+        print(f"✓ Reset adata/git to remote")
+    elif 'behind' in status:
+        sp.run(['git', '-C', str(SYNC_ROOT), 'pull', '--ff-only', 'origin', 'main'], capture_output=True)
+        print(f"✓ Updated adata/git")
+
 HELP = """a update - Update a from git + refresh caches
   a update        Pull latest, refresh shell/caches, sync repos
   a update all    Update local + broadcast to all SSH hosts
@@ -48,6 +88,7 @@ def run():
     if arg in ('help', '-h', '--help'): print(HELP); return
     if arg in ('bash', 'zsh', 'shell'): setup_all(); return
     if arg == 'cache': refresh_caches(); print("✓ Cache"); return
+    ensure_adata()
     if _sg('rev-parse', '--git-dir').returncode != 0: print("x Not in git repo"); return
     print("Checking..."); before = _sg('rev-parse', 'HEAD').stdout.strip()[:8]
     if not before or _sg('fetch').returncode != 0: return
