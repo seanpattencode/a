@@ -1436,7 +1436,8 @@ static int cmd_task(int argc,char**argv){
                 char pf[P];snprintf(pf,P,"/tmp/a_prompt_%s.txt",tss);
                 writef(pf,fprompt);
                 char rf[P];snprintf(rf,P,"/tmp/a_run_%s.sh",tss);
-                char rs[B];snprintf(rs,B,"#!/bin/sh\ncd '%s'\nclaude --session-id %s --model %s --dangerously-skip-permissions \"$(cat %s)\"\n",pfolder,sid,pmodel,pf);
+                char rf2[P];snprintf(rf2,P,"%s/result_%s_%s.txt",T[i].d,tss,DEV);
+                char rs[B];snprintf(rs,B,"#!/bin/sh\ncd '%s'\nclaude --session-id %s --model %s --dangerously-skip-permissions \"$(cat %s)\"\ntmux capture-pane -p -S -200 > '%s' 2>/dev/null\npython3 -c \"import sys;sys.path.insert(0,'%s/agents');from base import send;send('task done: %.30s',open('%s').read()[-500:])\" 2>/dev/null\n",pfolder,sid,pmodel,pf,rf2,SDIR,T[i].t,rf2);
                 writef(rf,rs);chmod(rf,0755);
                 char cmd[B];snprintf(cmd,B,"tmux new-session -d -s '%s' '%s'",tmx,rf);
                 (void)!system(cmd);
