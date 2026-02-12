@@ -1437,7 +1437,7 @@ static int cmd_task(int argc,char**argv){
                 writef(pf,fprompt);
                 char rf[P];snprintf(rf,P,"/tmp/a_run_%s.sh",tss);
                 char rf2[P];snprintf(rf2,P,"%s/result_%s_%s.txt",T[i].d,tss,DEV);
-                char rs[B];snprintf(rs,B,"#!/bin/sh\ncd '%s'\nclaude --session-id %s --model %s --dangerously-skip-permissions \"$(cat %s)\"\ntmux capture-pane -p -S -200 > '%s' 2>/dev/null\npython3 -c \"import sys;sys.path.insert(0,'%s/agents');from base import send;send('task done: %.30s',open('%s').read()[-500:])\" 2>/dev/null\n",pfolder,sid,pmodel,pf,rf2,SDIR,T[i].t,rf2);
+                char rs[B];snprintf(rs,B,"#!/bin/sh\ncd '%s'\nclaude -p --session-id %s --model %s --dangerously-skip-permissions \"$(cat %s)\" > '%s' 2>&1\npython3 -c \"import sys;sys.path.insert(0,'%s/agents');from base import send;send('task done: %.30s',open('%s').read()[-500:])\" 2>/dev/null\n",pfolder,sid,pmodel,pf,rf2,SDIR,T[i].t,rf2);
                 writef(rf,rs);chmod(rf,0755);
                 char cmd[B];snprintf(cmd,B,"tmux new-session -d -s '%s' '%s'",tmx,rf);
                 (void)!system(cmd);

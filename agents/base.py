@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Base module for agents — shared: save(), send(), ask_claude(), ask_gemini()"""
-import subprocess,smtplib,sqlite3,os,shutil,socket
+import subprocess,smtplib,os,shutil,socket
 from datetime import datetime
 from pathlib import Path
 from email.message import EmailMessage
 
 P=os.path.dirname(os.path.abspath(__file__))
-DB=os.path.join(P,"email.db")
 AIO=os.path.join(os.path.dirname(P),"lib","a.py")
+EMAIL_F=str(Path(P).parent.parent/'adata'/'git'/'email.txt')
 GOALS=os.path.join(P,"goals.md")
 FILTERS=os.path.join(P,"great_filters.md")
 
@@ -32,12 +32,13 @@ def save(name, output):
     subprocess.Popen([os.path.join(os.path.dirname(P),'a'),'sync'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 
 def get_creds():
-    db=sqlite3.connect(DB);db.execute("CREATE TABLE IF NOT EXISTS c(f,t,p)")
-    r=db.execute("SELECT*FROM c").fetchone()
-    if not r:
-        f,t,p=input("from: "),input("to: "),input("pass: ")
-        db.execute("INSERT INTO c VALUES(?,?,?)",(f,t,p));db.commit();r=(f,t,p)
-    return r
+    if os.path.exists(EMAIL_F):
+        kv={l.split(': ',1)[0]:l.split(': ',1)[1] for l in open(EMAIL_F).read().strip().split('\n') if ': ' in l}
+        return kv.get('From',''),kv.get('To',''),kv.get('Pass','')
+    f,t,p=input("from: "),input("to: "),input("pass: ")
+    os.makedirs(os.path.dirname(EMAIL_F),exist_ok=True)
+    open(EMAIL_F,'w').write(f'From: {f}\nTo: {t}\nPass: {p}\n')
+    return f,t,p
 
 def send(subj,body):
     f,t,p=get_creds()
