@@ -63,7 +63,7 @@ _shell_funcs() {
         sed -i -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
         cat >> "$RC" << 'AFUNC'
 a() {
-    local dd; dd="$(dirname "$(readlink -f "$(command -v a)")")/adata/local"
+    local dd; dd="$(dirname "$(readlink -f "$(type -P a)")")/adata/local"
     [[ -z "$1" ]] && { [[ -f $dd/help_cache.txt ]] && printf '%s\n' "$(<"$dd/help_cache.txt")" || command a; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then
         local -a lines; mapfile -t lines < $dd/projects.txt 2>/dev/null
