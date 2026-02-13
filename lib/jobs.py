@@ -36,3 +36,5 @@ def run():
         st = '●' if j['a'] else '○'; ctd = f" ({j['ctd']})" if j['ctd'] else ''
         print(f"  {i}  {st}       {j['r']:<12} {j['n'][:40]}{ctd}")
     print("\nSelect:\n  aio jobs 0\n  aio jobs rm 0")
+
+run()

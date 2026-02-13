@@ -35,3 +35,5 @@ def run():
         print(f"✓ Session: {sn}")
     else:
         os.execvp(tm.attach(sn)[0], tm.attach(sn))
+
+run()

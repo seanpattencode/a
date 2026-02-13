@@ -48,3 +48,5 @@ def run():
         if not sel or sel=='q': return
         idxs = list(range(len(repos)))if sel=='all'else[j for x in sel.replace(',',' ').split()for j in(range(int(x.split('-')[0]),int(x.split('-')[1])+1)if'-'in x else[int(x)])if 0<=j<len(repos)]
         for i in idxs: ok, _ = add_proj(str(repos[i])); print(f"{'✓' if ok else 'x'} {repos[i].name}")
+
+run()

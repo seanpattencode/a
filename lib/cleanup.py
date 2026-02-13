@@ -18,3 +18,5 @@ def run():
     [_git(p, 'worktree', 'prune') for p in PROJ if os.path.exists(p)]
     with db() as c: c.execute("DELETE FROM multi_runs"); c.commit()
     print("✓ Cleaned")
+
+run()

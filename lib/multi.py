@@ -40,3 +40,5 @@ def run():
     sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', cd], env=env); sp.run(['tmux', 'send-keys', '-t', sn, f'n={len(launched)}; while read -ep "> " c; do [ -n "$c" ] && for i in $(seq 0 $((n-1))); do tmux send-keys -l -t ":.$i" "$c"; tmux send-keys -t ":.$i" C-m; done; done', 'C-m'])
     sp.run(['tmux', 'select-layout', '-t', sn, 'even-horizontal'], env=env); ensure_tmux(cfg)
     print(f"\n+ '{sn}': {len(launched)}+broadcast"); print(f"   tmux switch-client -t {sn}") if "TMUX" in os.environ else os.execvp('tmux', ['tmux', 'attach', '-t', sn])
+
+run()

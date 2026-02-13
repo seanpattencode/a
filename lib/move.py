@@ -16,3 +16,5 @@ def run():
         for i, pid in enumerate(ids): c.execute("UPDATE projects SET display_order=? WHERE id=?", (i, pid))
         c.commit()
     _refresh_cache(); print(f"✓ Moved {fr} -> {to}"); list_all()
+
+run()

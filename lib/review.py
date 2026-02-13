@@ -13,3 +13,5 @@ def run():
     if act == 'm': sp.run(['gh', 'pr', 'merge', '--repo', repo, num, '--squash', '--delete-branch'])
     elif act == 'c': sp.run(['gh', 'pr', 'close', '--repo', repo, num, '--delete-branch'])
     elif act == 'o': print(f"/tmp/pr-{num}"); sp.run(['tmux', 'new-window', '-c', f'/tmp/pr-{num}'], capture_output=True)
+
+run()

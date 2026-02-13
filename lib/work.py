@@ -65,3 +65,5 @@ def run():
               sys.executable, str(AGENTS_DIR / 'work.py'), limit])
     alog(f"work:launched {sn}")
     print(f"+ Launched: {sn}\n  Monitor: tmux attach -t {sn}\n  Log:     a work log")
+
+run()

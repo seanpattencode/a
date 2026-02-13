@@ -24,3 +24,5 @@ def run():
 
     print(f"x Not found: {arg[1:]}")
     sys.exit(1)
+
+run()
