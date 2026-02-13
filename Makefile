@@ -71,10 +71,16 @@ a: a.c
 #
 # Skipped: optin.taint — flags getenv/argv passed to exec/system, but this
 # is a CLI tool that intentionally runs user commands. Taint is by design.
+#
+# Skipped: security.insecureAPI.DeprecatedOrUnsafeBufferHandling — wants C11
+# Annex K _s functions (snprintf_s, memcpy_s). glibc doesn't implement Annex K,
+# and snprintf/memcpy with explicit sizes are already bounded. 364 false positives.
 ANALYZE_CHECKERS = security,unix,nullability,optin.portability.UnixAPI
+ANALYZE_DISABLE = security.insecureAPI.DeprecatedOrUnsafeBufferHandling
 analyze: a.c
 	$(CC) $(WARN) $(SRC_DEF) --analyze \
-		-Xanalyzer -analyzer-checker=$(ANALYZE_CHECKERS) $<
+		-Xanalyzer -analyzer-checker=$(ANALYZE_CHECKERS) \
+		-Xanalyzer -analyzer-disable-checker=$(ANALYZE_DISABLE) $<
 
 clean:
 	rm -f a

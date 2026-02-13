@@ -889,11 +889,11 @@ static int cmd_add(int argc, char **argv) {
     if (na >= 2 && !dexists(args[0])) {
         char name[128], cmd[B] = "";
         snprintf(name, 128, "%s", args[0]);
-        for (int i = 1; i < na; i++) { if(i>1) strcat(cmd," "); strncat(cmd,args[i],B-strlen(cmd)-2); }
+        for(int i=1,l=0;i<na;i++) l+=snprintf(cmd+l,(size_t)(B-l),"%s%s",i>1?" ":"",args[i]);
         char d[P]; snprintf(d, P, "%s/workspace/cmds", SROOT); mkdirp(d);
         char f[P]; snprintf(f, P, "%s/%s.txt", d, name);
         if (fexists(f)) { printf("x Exists: %s\n", name); return 1; }
-        char cwd[P]; if (!getcwd(cwd,P)) strcpy(cwd,".");
+        char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
         char data[B]; snprintf(data, B, "Name: %s\nCommand: %s\n", name, cmd);
         writef(f, data); sync_repo();
         printf("\xe2\x9c\x93 Added: %s\n", name); list_all(1, 0); return 0;
@@ -1017,11 +1017,8 @@ static int cmd_copy(void) {
         if (strstr(lines[i], "$") && strstr(lines[i], "@")) {
             if (strstr(lines[i], "copy")) { last_prompt = i; continue; }
             /* Find output between this prompt and the 'copy' prompt */
-            char out[B] = "";
-            for (int j = i + 1; j < last_prompt && j < nl; j++) {
-                if (out[0]) strcat(out, "\n");
-                strncat(out, lines[j], B - strlen(out) - 2);
-            }
+            char out[B]=""; int ol=0;
+            for(int j=i+1;j<last_prompt&&j<nl;j++) ol+=snprintf(out+ol,(size_t)(B-ol),"%s%s",ol?"\n":"",lines[j]);
             /* Try to copy to clipboard */
             FILE *fp = popen("wl-copy 2>/dev/null || xclip -selection clipboard -i 2>/dev/null", "w");
             if (fp) { fputs(out, fp); pclose(fp); }
@@ -1034,7 +1031,7 @@ static int cmd_copy(void) {
 
 /* ── dash ── */
 static int cmd_dash(void) {
-    char wd[P]; if (!getcwd(wd, P)) strcpy(wd, HOME);
+    char wd[P]; if(!getcwd(wd,P)) snprintf(wd,P,"%s",HOME);
     if (!tm_has("dash")) {
         char c[B];
         snprintf(c, B, "tmux new-session -d -s dash -c '%s'", wd); (void)!system(c);
@@ -1053,7 +1050,7 @@ static int cmd_cleanup(int argc, char **argv) { fallback_py(argc, argv); }
 static int cmd_tree(int argc, char **argv) {
     init_db(); load_cfg(); load_proj();
     const char *wt = cfget("worktrees_dir"); if (!wt[0]) { char d[P]; snprintf(d,P,"%s/projects/aWorktrees",HOME); wt=d; }
-    char cwd[P]; if (!getcwd(cwd, P)) strcpy(cwd, HOME);
+    char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,"%s",HOME);
     const char *proj = cwd;
     if (argc > 2 && argv[2][0]>='0' && argv[2][0]<='9') { int idx=atoi(argv[2]); if(idx<NPJ) proj=PJ[idx].path; }
     if (!git_in_repo(proj)) { puts("x Not a git repo"); return 1; }
@@ -1090,7 +1087,7 @@ static int load_notes(const char *dir, const char *f) {
 }
 static int cmd_note(int argc, char **argv) {
     char dir[P]; snprintf(dir,P,"%s/notes",SROOT); mkdirp(dir);
-    if(argc>2&&argv[2][0]!='?'){char t[B]="";for(int i=2;i<argc;i++){if(i>2)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
+    if(argc>2&&argv[2][0]!='?'){char t[B]="";for(int i=2,l=0;i<argc;i++) l+=snprintf(t+l,(size_t)(B-l),"%s%s",i>2?" ":"",argv[i]);
         note_save(dir,t);sync_repo();puts("\xe2\x9c\x93");return 0;}
     sync_repo(); const char *f=(argc>2&&argv[2][0]=='?')?argv[2]+1:NULL; int n=load_notes(dir,f);
     if(!n){puts("a n <text>");return 0;} if(!isatty(STDIN_FILENO)){for(int i=0;i<n&&i<10;i++)puts(gnt[i]);return 0;}
@@ -1473,13 +1470,13 @@ static int cmd_task(int argc,char**argv){
         int pri=50000,si=3;
         if(strlen(argv[3])==5&&isdigit(argv[3][0])&&isdigit(argv[3][1])&&isdigit(argv[3][2])&&isdigit(argv[3][3])&&isdigit(argv[3][4])){
             pri=atoi(argv[3]);si=4;if(si>=argc){puts("a task add [PPPPP] <text>");return 1;}}
-        char t[B]="";for(int i=si;i<argc;i++){if(i>si)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
+        char t[B]="";for(int i=si,l=0;i<argc;i++) l+=snprintf(t+l,(size_t)(B-l),"%s%s",i>si?" ":"",argv[i]);
         task_add(dir,t,pri);printf("\xe2\x9c\x93 P%05d %s\n",pri,t);sync_bg();return 0;}
     if(*sub=='d'&&!sub[1]){if(argc<4){puts("a task d #");return 1;}int n=load_tasks(dir),x=atoi(argv[3])-1;
         if(x<0||x>=n){puts("x Invalid");return 1;}do_archive(T[x].d);printf("\xe2\x9c\x93 %.40s\n",T[x].t);sync_bg();return 0;}
     if(!strcmp(sub,"deadline")){if(argc<5){puts("a task deadline # MM-DD [HH:MM]");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1;if(x<0||x>=n){puts("x Invalid");return 1;}
-        char raw[64]="";for(int j=4;j<argc;j++){if(j>4)strcat(raw," ");strncat(raw,argv[j],63-strlen(raw));}
+        char raw[64]="";for(int j=4,l=0;j<argc;j++) l+=snprintf(raw+l,(size_t)(64-l),"%s%s",j>4?" ":"",argv[j]);
         char dn[32];dl_norm(raw,dn,32);
         char df[P];snprintf(df,P,"%s/deadline.txt",T[x].d);writef(df,dn);printf("\xe2\x9c\x93 %s\n",dn);sync_bg();return 0;}
     if(!strcmp(sub,"due")){int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
@@ -1516,13 +1513,13 @@ static int cmd_task(int argc,char**argv){
         char sd[P];snprintf(sd,P,"%s/%s",T[x].d,sub);mkdirp(sd);
         struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);
         char ts[32],fn[P];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
-        char t[B]="";for(int i=4;i<argc;i++){if(i>4)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
+        char t[B]="";for(int i=4,l=0;i<argc;i++) l+=snprintf(t+l,(size_t)(B-l),"%s%s",i>4?" ":"",argv[i]);
         snprintf(fn,P,"%s/%s.%09ld_%s.txt",sd,ts,tp.tv_nsec,DEV);writef(fn,t);
         printf("\xe2\x9c\x93 %s: %.40s\n",sub,t);sync_bg();return 0;}}
     {int pri=50000,si=2;
     if(argc>2&&strlen(argv[2])==5&&isdigit(argv[2][0])&&isdigit(argv[2][1])&&isdigit(argv[2][2])&&isdigit(argv[2][3])&&isdigit(argv[2][4])){
         pri=atoi(argv[2]);si=3;if(si>=argc){puts("a task [PPPPP] <text>");return 1;}}
-    char t[B]="";for(int i=si;i<argc;i++){if(i>si)strcat(t," ");strncat(t,argv[i],B-strlen(t)-2);}
+    char t[B]="";for(int i=si,l=0;i<argc;i++) l+=snprintf(t+l,(size_t)(B-l),"%s%s",i>si?" ":"",argv[i]);
     task_add(dir,t,pri);printf("\xe2\x9c\x93 P%05d %s\n",pri,t);sync_bg();return 0;}
 }
 
@@ -1589,7 +1586,7 @@ static int cmd_ssh(int argc, char **argv) {
         if(x>=0&&x<nh){char f[P];snprintf(f,P,"%s/%s.txt",dir,H[x].name);unlink(f);sync_repo();printf("\xe2\x9c\x93 rm %s\n",H[x].name);}return 0;}
     if(!strcmp(sub,"setup")){fallback_py(argc,argv);}
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
-        char cmd[B]="";for(int i=3;i<argc;i++){if(i>3)strcat(cmd," ");strncat(cmd,argv[i],B-strlen(cmd)-2);}
+        char cmd[B]="";for(int i=3,l=0;i<argc;i++) l+=snprintf(cmd+l,(size_t)(B-l),"%s%s",i>3?" ":"",argv[i]);
         char qc[B];snprintf(qc,B,"'bash -ic '\"'\"'%s'\"'\"''",cmd);
         for(int i=0;i<nh;i++){char hp[256],port[8];ssh_parse(H[i].host,hp,port);
             char c[B*2];int n=0;if(H[i].pw[0])n=snprintf(c,sizeof c,"sshpass -p '%s' ",H[i].pw);
@@ -1606,7 +1603,7 @@ static int cmd_ssh(int argc, char **argv) {
     if(!H[idx].pw[0]){char tc[B];snprintf(tc,B,"ssh -oBatchMode=yes -oConnectTimeout=3 -p %s '%s' true 2>/dev/null",port,hp);
         if(system(tc)){char pw[256];printf("Password for %s: ",H[idx].name);
             if(fgets(pw,256,stdin)){pw[strcspn(pw,"\n")]=0;if(pw[0]){snprintf(H[idx].pw,256,"%s",pw);ssh_save(dir,H[idx].name,H[idx].host,pw);}}}}
-    if(argc>3){char cmd[B]="";for(int i=3;i<argc;i++){if(i>3)strcat(cmd," ");strncat(cmd,argv[i],B-strlen(cmd)-2);}
+    if(argc>3){char cmd[B]="";for(int i=3,l=0;i<argc;i++) l+=snprintf(cmd+l,(size_t)(B-l),"%s%s",i>3?" ":"",argv[i]);
         char qc[B];snprintf(qc,B,"'bash -ic '\"'\"'%s'\"'\"''",cmd);
         ssh_cmd(H[idx].pw,hp,port,"-tt",qc);return 0;}
     printf("Connecting to %s...\n",H[idx].name);
@@ -1790,10 +1787,9 @@ static int cmd_agent(int argc, char **argv) {
     else { s = find_sess("g"); task = wda; /* default to gemini */ }
     if (!task || !task[0]) { puts("Usage: a agent [g|c|l] <task>"); return 1; }
     /* Build task string */
-    char taskstr[B] = "";
-    if (s && strcmp(wda, s->key) == 0) { for (int i=3;i<argc;i++){if(i>3)strcat(taskstr," ");strncat(taskstr,argv[i],B-strlen(taskstr)-2);} }
-    else { for (int i=2;i<argc;i++){if(i>2)strcat(taskstr," ");strncat(taskstr,argv[i],B-strlen(taskstr)-2);} }
-    char wd[P]; if (!getcwd(wd, P)) strcpy(wd, HOME);
+    char taskstr[B]=""; int si=(s&&!strcmp(wda,s->key))?3:2;
+    for(int i=si,l=0;i<argc;i++) l+=snprintf(taskstr+l,(size_t)(B-l),"%s%s",i>si?" ":"",argv[i]);
+    char wd[P]; if(!getcwd(wd,P)) snprintf(wd,P,"%s",HOME);
     char sn[256]; snprintf(sn, 256, "agent-%s-%ld", s->key, (long)time(NULL));
     printf("Agent: %s | Task: %.50s...\n", s->key, taskstr);
     create_sess(sn, wd, s->cmd);
@@ -1832,7 +1828,7 @@ static int cmd_sess(int argc, char **argv) {
     const char *key = argv[1];
     sess_t *s = find_sess(key);
     if (!s) return -1;  /* not a session key */
-    char wd[P]; if (!getcwd(wd, P)) strcpy(wd, HOME);
+    char wd[P]; if(!getcwd(wd,P)) snprintf(wd,P,"%s",HOME);
     const char *wda = argc > 2 ? argv[2] : NULL;
     /* If wda is a project number */
     if (wda && wda[0] >= '0' && wda[0] <= '9') {
@@ -1848,13 +1844,12 @@ static int cmd_sess(int argc, char **argv) {
         else snprintf(wd, P, "%s", wda);
     }
     /* Build prompt from remaining args */
-    char prompt[B] = ""; int is_prompt = 0;
+    char prompt[B]=""; int is_prompt=0,pl=0;
     int start = wda ? 3 : 2;
     if (wda && !(wda[0]>='0'&&wda[0]<='9') && !dexists(wda)) { start = 2; is_prompt = 1; }
     for (int i = start; i < argc; i++) {
         if (!strcmp(argv[i],"-w")||!strcmp(argv[i],"--new-window")||!strcmp(argv[i],"-t")||!strcmp(argv[i],"--with-terminal")) continue;
-        if (prompt[0]) strcat(prompt, " ");
-        strncat(prompt, argv[i], B-strlen(prompt)-2);
+        pl+=snprintf(prompt+pl,(size_t)(B-pl),"%s%s",pl?" ":"",argv[i]);
         is_prompt = 1;
     }
     /* Inside tmux + single char key = split pane mode */
@@ -2034,12 +2029,8 @@ int main(int argc, char **argv) {
     if (argc < 2) return cmd_help(argc, argv);
 
     /* Log every command */
-    char acmd[B] = "";
-    for (int i = 1; i < argc && strlen(acmd) < B - 256; i++) {
-        if (i > 1) strcat(acmd, " ");
-        strncat(acmd, argv[i], B - strlen(acmd) - 2);
-    }
-    char wd[P]; if (!getcwd(wd, P)) snprintf(wd, P, "%s", HOME);
+    char acmd[B]="";for(int i=1,l=0;i<argc;i++) l+=snprintf(acmd+l,(size_t)(B-l),"%s%s",i>1?" ":"",argv[i]);
+    char wd[P]; if(!getcwd(wd,P)) snprintf(wd,P,"%s",HOME);
     alog(acmd, wd, NULL);
 
     const char *arg = argv[1];
