@@ -2,7 +2,7 @@
 import sys, os, subprocess as sp
 from _common import init_db, load_cfg, load_proj, load_apps, load_sess, resolve_cmd, fmt_cmd, SYNC_ROOT, _ghost_spawn
 
-_OK = os.path.expanduser('~/.local/share/a/logs/push.ok')
+_OK = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'adata', 'local', 'logs', 'push.ok')
 
 def run():
     init_db(); PROJ = load_proj(); APPS = load_apps(); idx = int(sys.argv[1])

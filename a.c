@@ -63,7 +63,7 @@ _shell_funcs() {
         sed -i -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
         cat >> "$RC" << 'AFUNC'
 a() {
-    local dd=~/.local/share/a
+    local dd; dd="$(dirname "$(readlink -f "$(command -v a)")")/../adata/local"
     [[ -z "$1" ]] && { [[ -f $dd/help_cache.txt ]] && printf '%s\n' "$(<"$dd/help_cache.txt")" || command a; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then
         local -a lines; mapfile -t lines < $dd/projects.txt 2>/dev/null
@@ -262,21 +262,23 @@ exit 0
 /*
  * ═══ DATA LAYOUT ═══
  *
- * ~/.local/share/a/           DDIR — per-device state
- *   config.txt                  key:value settings (prompts, worktrees_dir)
- *   sessions.txt                session defs (key|name|cmd)
- *   projects.txt                one path per line, index = project number
- *   .device                     device identity (hostname on first run)
- *   help_cache.txt              cached help + project list
- *   i_cache.txt                 interactive picker cache
- *   cd_target                   temp file for shell cd
- *   agent_logs.txt              session start log (name, timestamp, device)
- *   timing.jsonl                command timing (from shell function)
- *   logs/push.ok                instant push flag (valid 10 min)
- * ~/.local/bin/a              symlink to compiled binary
+ * Principle: all persistence lives in adata/. If it's not in adata, nobody
+ * knows where it is. Maximum visibility for humans and LLMs — one place to
+ * look, one place to back up.
  *
- * ~/projects/adata/           AROOT — synced data (4-tier, NOT a git repo)
- *   git/                      SROOT — only this subdir is a git repo
+ * ~/projects/adata/           AROOT — all data (NOT itself a git repo)
+ *   local/                    DDIR — per-device state (not synced)
+ *     config.txt                key:value settings (prompts, worktrees_dir)
+ *     sessions.txt              session defs (key|name|cmd)
+ *     projects.txt              one path per line, index = project number
+ *     .device                   device identity (hostname on first run)
+ *     help_cache.txt            cached help + project list
+ *     i_cache.txt               interactive picker cache
+ *     cd_target                 temp file for shell cd
+ *     agent_logs.txt            session start log (name, timestamp, device)
+ *     timing.jsonl              command timing (from shell function)
+ *     logs/push.ok              instant push flag (valid 10 min)
+ *   git/                      SROOT — git push/pull, all devices (only git repo)
  *     activity/                 command log (one .txt per invocation)
  *     notes/                    quick notes (.txt, key:value)
  *     tasks/                    task dirs (priority-slug/, prompts, sessions)
@@ -290,6 +292,7 @@ exit 0
  *   vault/                    rclone copy on-demand, big devices, models
  *   backup/                   rclone move ->, all devices, logs+state
  *     {device}/               LOGDIR — session logs ({device}__{session}.log)
+ * ~/.local/bin/a              symlink to compiled binary
  */
 
 #define P 1024

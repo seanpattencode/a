@@ -7,11 +7,11 @@ from pathlib import Path
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ADATA_ROOT = next((p for p in [Path(SCRIPT_DIR).parent.parent / 'adata', Path.home() / 'projects' / 'adata', Path.home() / 'adata'] if p.exists()), Path(SCRIPT_DIR).parent.parent / 'adata')
 PROMPTS_DIR = ADATA_ROOT / 'git' / 'common' / 'prompts'
-DATA_DIR = os.path.expanduser("~/.local/share/a")
+DATA_DIR = str(ADATA_ROOT / 'local')
 DB_PATH = os.path.join(DATA_DIR, "aio.db")
 SYNC_ROOT = ADATA_ROOT / 'git'
 def _get_dev():
-    f = os.path.expanduser('~/.local/share/a/.device')
+    f = os.path.join(DATA_DIR, '.device')
     if os.path.exists(f): return open(f).read().strip()
     d = (sp.run(['getprop','ro.product.model'],capture_output=True,text=True).stdout.strip().replace(' ','-') or socket.gethostname()) if os.path.exists('/data/data/com.termux') else socket.gethostname()
     os.makedirs(os.path.dirname(f), exist_ok=True); open(f,'w').write(d)

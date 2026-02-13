@@ -2,7 +2,6 @@
 static void init_paths(void) {
     const char *h = getenv("HOME"); if (!h) h = "/tmp";
     snprintf(HOME, P, "%s", h);
-    snprintf(DDIR, P, "%s/.local/share/a", h);
     char self[P]; ssize_t n = -1;
 #ifdef __APPLE__
     uint32_t sz = P - 1;
@@ -20,6 +19,18 @@ static void init_paths(void) {
         }
     }
     if (!SROOT[0]) { snprintf(AROOT, P, "%s/projects/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
+    /* All local state lives in adata/ — if it's not in adata, nobody knows
+     * where it is. Maximum visibility for humans and LLMs. */
+    snprintf(DDIR, P, "%s/local", AROOT);
+    { char mc[P*2]; snprintf(mc, sizeof(mc), "mkdir -p '%s'", DDIR); (void)!system(mc); }
+    /* One-time migration from old ~/.local/share/a/ */
+    char old[P]; snprintf(old, P, "%s/.local/share/a/.device", h);
+    char new_dev[P]; snprintf(new_dev, P, "%s/.device", DDIR);
+    struct stat mst;
+    if (stat(old, &mst) == 0 && stat(new_dev, &mst) != 0) {
+        char mc[B]; snprintf(mc, B, "cp -rn '%s/.local/share/a/'* '%s/' 2>/dev/null", h, DDIR);
+        (void)!system(mc);
+    }
     /* device id */
     char df[P]; snprintf(df, P, "%s/.device", DDIR);
     FILE *f = fopen(df, "r");

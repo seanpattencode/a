@@ -12,7 +12,7 @@ GOALS=os.path.join(P,"goals.md")
 FILTERS=os.path.join(P,"great_filters.md")
 
 # Device ID (matches _common.py logic)
-_dev_file=os.path.expanduser("~/.local/share/a/.device")
+_dev_file=os.path.join(os.path.dirname(P),'adata','local','.device')
 DEVICE_ID=open(_dev_file).read().strip() if os.path.exists(_dev_file) else socket.gethostname()[:8]
 
 # Conversation save dir
