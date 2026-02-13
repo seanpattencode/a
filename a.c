@@ -20,7 +20,27 @@ ok() { echo -e "${G}✓${R} $1"; }
 info() { echo -e "${C}>${R} $1"; }
 warn() { echo -e "${Y}!${R} $1"; }
 
-CC=clang; command -v clang &>/dev/null || CC=gcc
+_ensure_cc() {
+    command -v clang &>/dev/null && { CC=clang; return 0; }
+    command -v gcc &>/dev/null && { CC=gcc; return 0; }
+    # Auto-install clang
+    info "No C compiler found — installing clang..."
+    if [[ -f /data/data/com.termux/files/usr/bin/bash ]]; then
+        pkg install -y clang
+    elif [[ -f /etc/debian_version ]]; then
+        sudo apt-get install -y clang
+    elif [[ -f /etc/arch-release ]]; then
+        sudo pacman -S --noconfirm clang
+    elif [[ -f /etc/fedora-release ]]; then
+        sudo dnf install -y clang
+    elif [[ "$OSTYPE" == darwin* ]]; then
+        xcode-select --install 2>/dev/null; echo "Run 'xcode-select --install' and retry"; exit 1
+    else
+        echo "ERROR: No C compiler (clang/gcc). Install one and retry."; exit 1
+    fi
+    command -v clang &>/dev/null && { CC=clang; return 0; }
+    echo "ERROR: clang install failed."; exit 1
+}
 
 _warn_flags() {
     WARN="-std=c17 -Werror -Weverything"
@@ -63,12 +83,14 @@ AFUNC
 
 case "${1:-build}" in
 build)
+    _ensure_cc
     _warn_flags
     $CC $WARN $HARDEN -DSRC="\"$D\"" -O3 -flto -fsyntax-only "$D/a.c" & P1=$!
     $CC -DSRC="\"$D\"" -isystem "$HOME/micromamba/include" -O3 -march=native -flto -w -o "$D/a" "$D/a.c" $LDFLAGS & P2=$!
     wait $P1 && wait $P2
     ;;
 analyze)
+    _ensure_cc
     _warn_flags
     $CC $WARN -DSRC="\"$D\"" --analyze \
         -Xanalyzer -analyzer-checker=security,unix,nullability,optin.portability.UnixAPI \
@@ -113,30 +135,31 @@ install)
         mac)
             command -v brew &>/dev/null || { info "Installing Homebrew..."; /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; }
             brew install tmux node gh sshpass rclone 2>/dev/null || brew upgrade tmux node gh sshpass rclone 2>/dev/null; brew tap hudochenkov/sshpass 2>/dev/null
+            command -v clang &>/dev/null || { xcode-select --install 2>/dev/null; warn "Run 'xcode-select --install' then retry"; }
             ok "tmux + node + gh + rclone" ;;
         debian)
             if [[ -n "$SUDO" ]]; then export DEBIAN_FRONTEND=noninteractive
-                $SUDO apt update -qq && $SUDO apt install -yqq tmux git curl nodejs npm python3-pip sshpass rclone gh 2>/dev/null || true; ok "pkgs"
+                $SUDO apt update -qq && $SUDO apt install -yqq clang tmux git curl nodejs npm python3-pip sshpass rclone gh 2>/dev/null || true; ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; fi ;;
         arch)
-            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm tmux nodejs npm git python-pip sshpass rclone github-cli 2>/dev/null && ok "pkgs"
+            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone github-cli 2>/dev/null && ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi ;;
         fedora)
-            if [[ -n "$SUDO" ]]; then $SUDO dnf install -y tmux nodejs npm git python3-pip sshpass rclone gh 2>/dev/null && ok "pkgs"
+            if [[ -n "$SUDO" ]]; then $SUDO dnf install -y clang tmux nodejs npm git python3-pip sshpass rclone gh 2>/dev/null && ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
-        termux) pkg update -y && pkg install -y tmux nodejs git python openssh sshpass gh rclone && ok "pkgs" ;;
+        termux) pkg update -y && pkg install -y clang tmux nodejs git python openssh sshpass gh rclone && ok "pkgs" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
     esac
+    _ensure_cc
     sh "$D/a.c" && ok "a compiled ($CC, $(wc -c < "$D/a") bytes)" || warn "Build failed"
     ln -sf "$D/a" "$BIN/a"
     [[ -f "$D/a-i" ]] && ln -sf "$D/a-i" "$BIN/a-i" && chmod +x "$BIN/a-i" && ok "a-i installed" || :
     E_SRC="$HOME/projects/editor/e.c"
     if [[ -f "$E_SRC" ]]; then
-        [[ "$OS" == termux ]] && clang -w -o "$BIN/e" "$E_SRC" || gcc -w -std=gnu89 -o "$BIN/e" "$E_SRC"
-        ok "e editor (local)"
+        $CC -w -o "$BIN/e" "$E_SRC" && ok "e editor (local)"
     else
         E_URL="https://raw.githubusercontent.com/seanpattencode/editor/main/e.c"
-        curl -fsSL "$E_URL" -o /tmp/e.c && { [[ "$OS" == termux ]] && clang -w -o "$BIN/e" /tmp/e.c || gcc -w -std=gnu89 -o "$BIN/e" /tmp/e.c; } && ok "e editor (remote)"
+        curl -fsSL "$E_URL" -o /tmp/e.c && $CC -w -o "$BIN/e" /tmp/e.c && ok "e editor (remote)"
     fi
     _shell_funcs
     install_cli() {
