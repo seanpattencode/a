@@ -259,6 +259,39 @@ exit 0
 #include <mach-o/dyld.h>
 #endif
 
+/*
+ * ═══ DATA LAYOUT ═══
+ *
+ * ~/.local/share/a/           DDIR — per-device state
+ *   config.txt                  key:value settings (prompts, worktrees_dir)
+ *   sessions.txt                session defs (key|name|cmd)
+ *   projects.txt                one path per line, index = project number
+ *   .device                     device identity (hostname on first run)
+ *   help_cache.txt              cached help + project list
+ *   i_cache.txt                 interactive picker cache
+ *   cd_target                   temp file for shell cd
+ *   agent_logs.txt              session start log (name, timestamp, device)
+ *   timing.jsonl                command timing (from shell function)
+ *   logs/push.ok                instant push flag (valid 10 min)
+ * ~/.local/bin/a              symlink to compiled binary
+ *
+ * ~/projects/adata/           AROOT — synced data (4-tier)
+ *   git/                      SROOT — git push/pull, all devices, text <15M
+ *     activity/                 command log (one .txt per invocation)
+ *     notes/                    quick notes (.txt, key:value)
+ *     tasks/                    task dirs (priority-slug/, prompts, sessions)
+ *     workspace/projects/       project registry (.txt per project)
+ *     workspace/cmds/           custom commands (.txt per command)
+ *     ssh/                      host registry (.txt per host)
+ *     common/prompts/           shared prompt templates
+ *     context/                  agent context files (.txt, togglable)
+ *     docs/                     user documents
+ *   sync/                     rclone copy <->, all devices, large files <5G
+ *   vault/                    rclone copy on-demand, big devices, models
+ *   backup/                   rclone move ->, all devices, logs+state
+ *     {device}/               LOGDIR — session logs ({device}__{session}.log)
+ */
+
 #define P 1024
 #define B 4096
 #define MP 256
@@ -268,25 +301,25 @@ exit 0
 static void alog(const char *cmd, const char *cwd, const char *extra);
 
 /* ═══ AMALGAMATION ═══ */
-#include "lib/globals.c"
-#include "lib/init.c"
-#include "lib/util.c"
-#include "lib/kv.c"
-#include "lib/data.c"
-#include "lib/tmux.c"
-#include "lib/git.c"
-#include "lib/session.c"
-#include "lib/alog.c"
-#include "lib/help.c"
-#include "lib/project.c"
-#include "lib/config.c"
-#include "lib/push.c"
-#include "lib/ls.c"
-#include "lib/note.c"
-#include "lib/ssh.c"
-#include "lib/net.c"
-#include "lib/agent.c"
-#include "lib/sess.c"
+#include "lib/globals.c"  /* state: paths, projects, sessions */
+#include "lib/init.c"     /* resolve paths + device id */
+#include "lib/util.c"     /* file/string/exec helpers */
+#include "lib/kv.c"       /* key:value parser + listdir */
+#include "lib/data.c"     /* config, projects, sessions db */
+#include "lib/tmux.c"     /* tmux has/go/new/send */
+#include "lib/git.c"      /* git helpers + adata sync */
+#include "lib/session.c"  /* create session + auto-prompt */
+#include "lib/alog.c"     /* activity log (async write) */
+#include "lib/help.c"     /* help, list, cache, misc cmds */
+#include "lib/project.c"  /* cd-to-project + add/remove/scan */
+#include "lib/config.c"   /* set, config, prompt, install */
+#include "lib/push.c"     /* push, pull, diff, revert */
+#include "lib/ls.c"       /* ls, kill, copy, send, jobs */
+#include "lib/note.c"     /* notes + tasks (priority/review) */
+#include "lib/ssh.c"      /* ssh connect/add/broadcast */
+#include "lib/net.c"      /* sync, update, log, login */
+#include "lib/agent.c"    /* autonomous agent + multi-run */
+#include "lib/sess.c"     /* session dispatch (c/g/co/etc) */
 
 /* ═══ MAIN DISPATCH ═══ */
 int main(int argc, char **argv) {
