@@ -63,7 +63,7 @@ _shell_funcs() {
         sed -i -e '/^a() {/,/^}/d' -e '/^aio() {/d' -e '/^ai() {/d' "$RC" 2>/dev/null||:
         cat >> "$RC" << 'AFUNC'
 a() {
-    local dd; dd="$(dirname "$(readlink -f "$(command -v a)")")/../adata/local"
+    local dd; dd="$(dirname "$(readlink -f "$(command -v a)")")/adata/local"
     [[ -z "$1" ]] && { [[ -f $dd/help_cache.txt ]] && printf '%s\n' "$(<"$dd/help_cache.txt")" || command a; return; }
     if [[ "$1" =~ ^[0-9]+$ ]]; then
         local -a lines; mapfile -t lines < $dd/projects.txt 2>/dev/null
@@ -187,7 +187,7 @@ install)
     "$BIN/a" >/dev/null 2>&1 && ok "cache generated" || :
     command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && read -p "Login? (y/n): " yn && [[ "$yn" =~ ^[Yy] ]] && gh auth login && gh auth setup-git; }; gh auth status &>/dev/null && "$BIN/a" backup setup 2>/dev/null && ok "sync configured"; } || :
     # Ensure adata/git exists (after gh auth so clone can work)
-    AROOT="$(dirname "$D")/adata"; SROOT="$AROOT/git"
+    AROOT="$D/adata"; SROOT="$AROOT/git"
     if [[ ! -d "$SROOT/.git" ]]; then
         mkdir -p "$AROOT"
         if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
@@ -264,9 +264,13 @@ exit 0
  *
  * Principle: all persistence lives in adata/. If it's not in adata, nobody
  * knows where it is. Maximum visibility for humans and LLMs — one place to
- * look, one place to back up.
+ * look, one place to back up. VS Code opens a/ and sees everything.
  *
- * ~/projects/adata/           AROOT — all data (NOT itself a git repo)
+ * adata/ lives inside the project dir but is .gitignored — the parent a/
+ * repo is completely blind to it. adata/git/ is its own independent git
+ * repo (NOT a submodule) with its own remote. Two repos, one directory tree.
+ *
+ * a/adata/                    AROOT — all data (.gitignored by parent)
  *   local/                    DDIR — per-device state (not synced)
  *     config.txt                key:value settings (prompts, worktrees_dir)
  *     sessions.txt              session defs (key|name|cmd)

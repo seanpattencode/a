@@ -5,7 +5,7 @@ from pathlib import Path
 
 # Constants
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-ADATA_ROOT = next((p for p in [Path(SCRIPT_DIR).parent.parent / 'adata', Path.home() / 'projects' / 'adata', Path.home() / 'adata'] if p.exists()), Path(SCRIPT_DIR).parent.parent / 'adata')
+ADATA_ROOT = next((p for p in [Path(SCRIPT_DIR) / 'adata', Path.home() / 'projects' / 'a' / 'adata', Path.home() / 'adata'] if p.exists()), Path(SCRIPT_DIR) / 'adata')
 PROMPTS_DIR = ADATA_ROOT / 'git' / 'common' / 'prompts'
 DATA_DIR = str(ADATA_ROOT / 'local')
 DB_PATH = os.path.join(DATA_DIR, "aio.db")

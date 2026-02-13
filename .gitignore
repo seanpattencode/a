@@ -20,6 +20,11 @@ __pycache__/
 
 .aider*
 
+# User data — adata/ is a separate world from the code repo.
+# adata/git/ is its own independent git repo (not a submodule).
+# .gitignore makes the parent repo completely blind to it.
+adata/
+
 # C binaries
 /a
 *.o

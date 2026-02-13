@@ -13,21 +13,31 @@ static void init_paths(void) {
         self[n] = 0;
         char *s = strrchr(self, '/');
         if (s) { *s = 0; snprintf(SDIR, P, "%s", self);
-            /* binary is at projects/a/a → strip to projects/ */
-            s = strrchr(self, '/');
-            if (s) { *s = 0; snprintf(AROOT, P, "%s/adata", self); snprintf(SROOT, P, "%s/git", AROOT); }
+            /* Von Neumann: code and data in the same space. adata/ lives inside
+             * the project dir (.gitignored) — one directory, one world. VS Code
+             * users see everything, LLMs see everything, 'a push' and data sync
+             * are independent git operations on the same tree. */
+            snprintf(AROOT, P, "%s/adata", self);
+            snprintf(SROOT, P, "%s/git", AROOT);
         }
     }
-    if (!SROOT[0]) { snprintf(AROOT, P, "%s/projects/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
+    if (!SROOT[0]) { snprintf(AROOT, P, "%s/projects/a/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
     /* All local state lives in adata/ — if it's not in adata, nobody knows
      * where it is. Maximum visibility for humans and LLMs. */
     snprintf(DDIR, P, "%s/local", AROOT);
     { char mc[P*2]; snprintf(mc, sizeof(mc), "mkdir -p '%s'", DDIR); (void)!system(mc); }
-    /* One-time migration from old ~/.local/share/a/ */
-    char old[P]; snprintf(old, P, "%s/.local/share/a/.device", h);
+    /* One-time migration: old sibling ~/projects/adata/ → inside project dir */
+    char old_sib[P]; snprintf(old_sib, P, "%.*s/adata", (int)(strlen(SDIR) - strlen("/a")), SDIR);
+    /* only migrate if old sibling exists and new doesn't have .device yet */
     char new_dev[P]; snprintf(new_dev, P, "%s/.device", DDIR);
     struct stat mst;
-    if (stat(old, &mst) == 0 && stat(new_dev, &mst) != 0) {
+    if (strcmp(old_sib, AROOT) != 0 && stat(old_sib, &mst) == 0 && stat(new_dev, &mst) != 0) {
+        char mc[B]; snprintf(mc, B, "cp -rn '%s/'* '%s/' 2>/dev/null", old_sib, AROOT);
+        (void)!system(mc);
+    }
+    /* Also migrate from old ~/.local/share/a/ */
+    char old_local[P]; snprintf(old_local, P, "%s/.local/share/a/.device", h);
+    if (stat(old_local, &mst) == 0 && stat(new_dev, &mst) != 0) {
         char mc[B]; snprintf(mc, B, "cp -rn '%s/.local/share/a/'* '%s/' 2>/dev/null", h, DDIR);
         (void)!system(mc);
     }
