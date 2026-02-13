@@ -163,6 +163,16 @@ install)
     [[ ! -s "$HOME/.tmux.conf" ]] && "$BIN/a" config tmux_conf y 2>/dev/null && ok "tmux config (mouse enabled)" || :
     "$BIN/a" >/dev/null 2>&1 && ok "cache generated" || :
     command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && read -p "Login? (y/n): " yn && [[ "$yn" =~ ^[Yy] ]] && gh auth login && gh auth setup-git; }; gh auth status &>/dev/null && "$BIN/a" backup setup 2>/dev/null && ok "sync configured"; } || :
+    # Ensure adata/git exists (after gh auth so clone can work)
+    AROOT="$(dirname "$D")/adata"; SROOT="$AROOT/git"
+    if [[ ! -d "$SROOT/.git" ]]; then
+        mkdir -p "$AROOT"
+        if command -v gh &>/dev/null && gh auth status &>/dev/null 2>&1; then
+            gh repo clone seanpattencode/a-git "$SROOT" 2>/dev/null && ok "adata/git cloned" || { git init -q "$SROOT" 2>/dev/null; ok "adata/git initialized (no remote)"; }
+        else
+            git init -q "$SROOT" 2>/dev/null; ok "adata/git initialized (gh auth login to enable sync)"
+        fi
+    fi
     echo ""
     echo -e "${G}══════════════════════════════════════════════════════════════${R}"
     echo -e "${G}  Installation complete!${R}"

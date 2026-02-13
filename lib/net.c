@@ -113,7 +113,8 @@ static int cmd_update(int argc, char **argv) {
     /* Refresh shell + caches */
     snprintf(c, B, "bash '%s/a.c' shell 2>/dev/null", SDIR); (void)!system(c);
     init_db(); load_cfg(); list_all(1, 1);
-    /* Also sync */
+    /* Ensure adata/git exists + sync */
+    ensure_adata();
     sync_repo();
     if (sub && !strcmp(sub, "all")) {
         puts("\n--- Broadcasting to SSH hosts ---");
