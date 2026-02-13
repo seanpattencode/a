@@ -1,5 +1,5 @@
 /* ── review ── */
-static int cmd_review(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_review(int argc, char **argv) { fallback_py("review", argc, argv); }
 
 /* ── docs ── */
 static int cmd_docs(int argc, char **argv) {
@@ -17,7 +17,7 @@ static int cmd_docs(int argc, char **argv) {
 }
 
 /* ── run (remote) ── */
-static int cmd_run(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_run(int argc, char **argv) { fallback_py("run", argc, argv); }
 
 /* ── agent ── */
 static int cmd_agent(int argc, char **argv) {
@@ -63,4 +63,4 @@ static int cmd_agent(int argc, char **argv) {
 }
 
 /* ── multi/all ── */
-static int cmd_all(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_all(int argc, char **argv) { fallback_py("multi", argc, argv); }

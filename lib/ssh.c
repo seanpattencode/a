@@ -59,7 +59,7 @@ static int cmd_ssh(int argc, char **argv) {
         ssh_save(dir,DEV,host,NULL);printf("\xe2\x9c\x93 %s %s\n",DEV,host);return 0;}
     if(!strcmp(sub,"rm")&&argc>3){int x=atoi(argv[3]);
         if(x>=0&&x<nh){char f[P];snprintf(f,P,"%s/%s.txt",dir,H[x].name);unlink(f);sync_repo();printf("\xe2\x9c\x93 rm %s\n",H[x].name);}return 0;}
-    if(!strcmp(sub,"setup")){fallback_py(argc,argv);}
+    if(!strcmp(sub,"setup")){fallback_py("ssh",argc,argv);}
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
         char cmd[B]="";for(int i=3,l=0;i<argc;i++) l+=snprintf(cmd+l,(size_t)(B-l),"%s%s",i>3?" ":"",argv[i]);
         char qc[B];snprintf(qc,B,"'bash -ic '\"'\"'%s'\"'\"''",cmd);

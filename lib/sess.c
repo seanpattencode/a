@@ -73,10 +73,10 @@ static int cmd_sess(int argc, char **argv) {
 }
 
 /* ── worktree ++ ── */
-static int cmd_wt_plus(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_wt_plus(int argc, char **argv) { fallback_py("wt_plus", argc, argv); }
 
 /* ── worktree w* ── */
-static int cmd_wt(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_wt(int argc, char **argv) { fallback_py("wt", argc, argv); }
 
 /* ── dir_file ── */
 static int cmd_dir_file(int argc, char **argv) { (void)argc;

@@ -90,10 +90,10 @@ int main(int argc, char **argv) {
     if (!strcmp(arg,"t")) return cmd_task(argc, argv);
     if (!strcmp(arg,"a")||!strcmp(arg,"ai")||!strcmp(arg,"aio")) return cmd_all(argc, argv);
     if (!strcmp(arg,"i")) return cmd_i(argc, argv);
-    if (!strcmp(arg,"gdrive")||!strcmp(arg,"gdr")) fallback_py(argc, argv);
-    if (!strcmp(arg,"ask")) fallback_py(argc, argv);
-    if (!strcmp(arg,"ui")) fallback_py(argc, argv);
-    if (!strcmp(arg,"mono")||!strcmp(arg,"monolith")) fallback_py(argc, argv);
+    if (!strcmp(arg,"gdrive")||!strcmp(arg,"gdr")) fallback_py("gdrive", argc, argv);
+    if (!strcmp(arg,"ask")) fallback_py("ask", argc, argv);
+    if (!strcmp(arg,"ui")) fallback_py("ui/__init__", argc, argv);
+    if (!strcmp(arg,"mono")||!strcmp(arg,"monolith")) fallback_py("mono", argc, argv);
     if (!strcmp(arg,"rebuild")) return cmd_rebuild();
     if (!strcmp(arg,"logs")) return cmd_log(argc, argv);
 
@@ -143,11 +143,14 @@ int main(int argc, char **argv) {
     if (!strcmp(arg,"docs")||!strcmp(arg,"doc")) return cmd_docs(argc, argv);
     if (!strcmp(arg,"run")) return cmd_run(argc, argv);
     if (!strcmp(arg,"agent")) return cmd_agent(argc, argv);
-    if (!strcmp(arg,"work")||!strcmp(arg,"wor")) { fallback_py(argc, argv); }
+    if (!strcmp(arg,"work")||!strcmp(arg,"wor")) { fallback_py("work", argc, argv); }
     if (!strcmp(arg,"all")) return cmd_all(argc, argv);
 
     /* x.* experimental commands */
-    if (arg[0] == 'x' && arg[1] == '.') fallback_py(argc, argv);
+    if (arg[0] == 'x' && arg[1] == '.') {
+        char mod[P]; snprintf(mod, P, "experimental/%s", arg + 2);
+        fallback_py(mod, argc, argv);
+    }
 
     /* Worktree: key++ */
     { size_t l = strlen(arg);
@@ -172,5 +175,5 @@ int main(int argc, char **argv) {
         return cmd_sess(argc, argv);
 
     /* Unknown - try python */
-    fallback_py(argc, argv);
+    fallback_py("sess", argc, argv);
 }

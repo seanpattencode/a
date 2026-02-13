@@ -103,7 +103,7 @@ static int cmd_diff(int argc, char **argv) {
         pclose(fp); printf("\nTotal: %+d tokens\n", total); return 0;
     }
     /* Full diff mode - delegate to python for color output */
-    fallback_py(argc, argv);
+    fallback_py("diff", argc, argv);
 }
 
 /* ── revert ── */

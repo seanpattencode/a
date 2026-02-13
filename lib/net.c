@@ -1,11 +1,11 @@
 /* ── hub ── */
-static int cmd_hub(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_hub(int argc, char **argv) { fallback_py("hub", argc, argv); }
 
 /* ── log ── */
 static int cmd_log(int argc, char **argv) {
     const char *sub = argc > 2 ? argv[2] : NULL;
-    if (sub && !strcmp(sub, "sync")) { fallback_py(argc, argv); }
-    if (sub && !strcmp(sub, "grab")) { fallback_py(argc, argv); }
+    if (sub && !strcmp(sub, "sync")) { fallback_py("log", argc, argv); }
+    if (sub && !strcmp(sub, "grab")) { fallback_py("log", argc, argv); }
 
     char adir[P]; snprintf(adir, P, "%s/git/activity", AROOT);
 
@@ -54,7 +54,7 @@ static int cmd_log(int argc, char **argv) {
 }
 
 /* ── login ── */
-static int cmd_login(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_login(int argc, char **argv) { fallback_py("login", argc, argv); }
 
 /* ── sync ── */
 static int cmd_sync(int argc, char **argv) {
@@ -117,7 +117,7 @@ static int cmd_update(int argc, char **argv) {
     sync_repo();
     if (sub && !strcmp(sub, "all")) {
         puts("\n--- Broadcasting to SSH hosts ---");
-        snprintf(c, B, "python3 '%s' ssh all 'a update'", PYPATH); (void)!system(c);
+        snprintf(c, B, "python3 '%s/lib/ssh.py' ssh all 'a update'", SDIR); (void)!system(c);
     }
     return 0;
 }

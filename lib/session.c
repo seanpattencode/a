@@ -1,8 +1,9 @@
 /* ═══ FALLBACK ═══ */
 __attribute__((noreturn))
-static void fallback_py(int argc, char **argv) {
+static void fallback_py(const char *mod, int argc, char **argv) {
+    char path[P]; snprintf(path, P, "%s/lib/%s.py", SDIR, mod);
     char **na = malloc(((unsigned)argc + 3) * sizeof(char *));
-    na[0] = "python3"; na[1] = PYPATH;
+    na[0] = "python3"; na[1] = path;
     for (int i = 1; i < argc; i++) na[i + 1] = argv[i];
     na[argc + 1] = NULL;
     execvp("python3", na);

@@ -20,7 +20,6 @@ static void init_paths(void) {
         }
     }
     if (!SROOT[0]) { snprintf(AROOT, P, "%s/projects/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
-    snprintf(PYPATH, P, "%s/lib/a.py", SDIR);
     /* device id */
     char df[P]; snprintf(df, P, "%s/.device", DDIR);
     FILE *f = fopen(df, "r");

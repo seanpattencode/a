@@ -157,8 +157,8 @@ static int cmd_remove(int argc, char **argv) {
 static int cmd_move(int argc, char **argv) {
     if (argc < 4) { puts("Usage: a move <from> <to>"); return 1; }
     /* Move is complex with display_order in sync files - delegate */
-    fallback_py(argc, argv);
+    fallback_py("move", argc, argv);
 }
 
 /* ── scan ── */
-static int cmd_scan(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_scan(int argc, char **argv) { fallback_py("scan", argc, argv); }

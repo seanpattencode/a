@@ -86,7 +86,7 @@ static int cmd_dash(void) {
 }
 
 /* ── attach ── */
-static int cmd_attach(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_attach(int argc, char **argv) { fallback_py("attach", argc, argv); }
 
 /* ── watch ── */
 static int cmd_watch(int argc, char **argv) {
@@ -142,10 +142,10 @@ static int cmd_send(int argc, char **argv) {
 }
 
 /* ── jobs ── */
-static int cmd_jobs(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_jobs(int argc, char **argv) { fallback_py("jobs", argc, argv); }
 
 /* ── cleanup ── */
-static int cmd_cleanup(int argc, char **argv) { fallback_py(argc, argv); }
+static int cmd_cleanup(int argc, char **argv) { fallback_py("cleanup", argc, argv); }
 
 /* ── tree ── */
 static int cmd_tree(int argc, char **argv) {
