@@ -23,10 +23,12 @@
 # total build time = bare compile time.
 #
 #   make          clean -O3 binary, validated by -Weverything + hardening
-#   make analyze  clang static analyzer (~4s) — deep checks like Rust's
-#                 borrow checker: use-after-free, null deref, leaks.
-#                 Not in default build because it's slow. Run on demand.
-#   make debug    single pass: all flags + ASan/UBSan/IntSan -O1 -g
+#   make analyze  static analyzer (~4s) — use-after-free, null deref, leaks, taint
+#
+# No runtime sanitizers (ASan/TSan/MSan). They require exercising every
+# code path to find bugs — too slow for dev. Everything here is static:
+# bugs caught at compile time, 100% source coverage. The users are devs
+# and the primary user is the primary dev, so crashes get fixed immediately.
 
 CC = clang
 SRC_DEF = -DSRC='"$(CURDIR)"'
@@ -43,12 +45,11 @@ WARN += $(shell $(CC) -Werror -Wno-implicit-void-ptr-cast -x c -c /dev/null -o /
 WARN += $(shell $(CC) -Werror -Wno-nullable-to-nonnull-conversion -x c -c /dev/null -o /dev/null 2>/dev/null && echo -Wno-nullable-to-nonnull-conversion)
 # cross-compiler system directory warnings (Darwin + Termux)
 WARN += $(shell $(CC) -Werror -Wno-poison-system-directories -x c -c /dev/null -o /dev/null 2>/dev/null && echo -Wno-poison-system-directories)
-HARDEN = -fstack-protector-strong -ftrivial-auto-var-init=zero -D_FORTIFY_SOURCE=3 \
-         -fsanitize=safe-stack -fsanitize=cfi -fvisibility=hidden
+HARDEN = -fstack-protector-strong -ftrivial-auto-var-init=zero -fno-common \
+         -D_FORTIFY_SOURCE=3 -fsanitize=safe-stack -fsanitize=cfi -fvisibility=hidden
 ifneq ($(shell uname),Darwin)
 HARDEN += -fstack-clash-protection -fcf-protection=full
 endif
-LINK_HARDEN = -Wl,-z,relro,-z,now
 
 a: a.c
 	# Pass 1: checker — strict warnings + hardening, syntax only, no binary
@@ -58,8 +59,6 @@ a: a.c
 	$(CC) $(SRC_DEF) -isystem $(SQLITE_INC) -O3 -march=native -flto -w -o $@ $< $(LDFLAGS) & P2=$$!; \
 	wait $$P1 && wait $$P2
 
-debug: a.c
-	$(CC) $(WARN) $(HARDEN) $(SRC_DEF) $(LINK_HARDEN) -O1 -g -fsanitize=address,undefined,integer -o a $< $(LDFLAGS)
 
 # Static analyzer — slow, not part of default build.
 # Runs with full WARN flags + all security/unix/nullability/taint checkers.
@@ -78,4 +77,4 @@ analyze: a.c
 clean:
 	rm -f a
 
-.PHONY: clean debug analyze
+.PHONY: clean analyze
