@@ -153,11 +153,21 @@ static int cmd_remove(int argc, char **argv) {
     printf("x Not found: %s\n", sel); list_all(0, 0); return 1;
 }
 
-/* ── move ── */
+/* ── move ── reorder projects, persist Order: N to .txt files */
 static int cmd_move(int argc, char **argv) {
     if (argc < 4) { puts("Usage: a move <from> <to>"); return 1; }
-    /* Move is complex with display_order in sync files - delegate */
-    fallback_py("move", argc, argv);
+    int fr = atoi(argv[2]), to = atoi(argv[3]);
+    init_db(); load_cfg(); load_proj();
+    if (fr<0||fr>=NPJ||to<0||to>=NPJ) { printf("x Invalid (0-%d)\n",NPJ-1); return 1; }
+    proj_t tmp = PJ[fr];
+    if (fr<to) for(int i=fr;i<to;i++) PJ[i]=PJ[i+1]; else for(int i=fr;i>to;i--) PJ[i]=PJ[i-1];
+    PJ[to] = tmp;
+    for(int i=0;i<NPJ;i++){char*d=readf(PJ[i].file,NULL);if(!d)continue;
+        char out[B]="";int ol=0;for(char*p=d;*p;){char*nl=strchr(p,'\n');
+            if(!nl){if(strncmp(p,"Order:",6))ol+=snprintf(out+ol,(size_t)(B-ol),"%s\n",p);break;}
+            if(strncmp(p,"Order:",6))ol+=snprintf(out+ol,(size_t)(B-ol),"%.*s\n",(int)(nl-p),p);p=nl+1;}
+        free(d);(void)snprintf(out+ol,(size_t)(B-ol),"Order: %d\n",i);writef(PJ[i].file,out);}
+    sync_repo(); load_proj(); list_all(1,0); printf("\xe2\x9c\x93 %d -> %d\n",fr,to); return 0;
 }
 
 /* ── scan ── */

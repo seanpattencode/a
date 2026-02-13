@@ -63,7 +63,7 @@ static const char *cfget(const char *key) {
     return "";
 }
 
-static int pj_cmp(const void *a, const void *b) { return strcmp(((const proj_t*)a)->name, ((const proj_t*)b)->name); }
+static int pj_cmp(const void *a, const void *b) { int d=((const proj_t*)a)->order-((const proj_t*)b)->order; return d?d:strcmp(((const proj_t*)a)->name,((const proj_t*)b)->name); }
 
 static void load_proj(void) {
     NPJ = 0;
@@ -75,12 +75,11 @@ static void load_proj(void) {
         const char *nm = kvget(&kv, "Name"); if (!nm) continue;
         const char *pa = kvget(&kv, "Path");
         const char *re = kvget(&kv, "Repo");
-        snprintf(PJ[NPJ].name, 128, "%s", nm);
-        if (pa) { /* expand ~ */
-            if (pa[0] == '~') snprintf(PJ[NPJ].path, 512, "%s%s", HOME, pa + 1);
-            else snprintf(PJ[NPJ].path, 512, "%s", pa);
-        } else snprintf(PJ[NPJ].path, 512, "%s/projects/%s", HOME, nm);
+        snprintf(PJ[NPJ].name, 128, "%s", nm); snprintf(PJ[NPJ].file, P, "%s", paths[i]);
+        if (pa) { if (pa[0]=='~') snprintf(PJ[NPJ].path,512,"%s%s",HOME,pa+1); else snprintf(PJ[NPJ].path,512,"%s",pa); }
+        else snprintf(PJ[NPJ].path, 512, "%s/projects/%s", HOME, nm);
         snprintf(PJ[NPJ].repo, 512, "%s", re ? re : "");
+        const char *ord = kvget(&kv, "Order"); PJ[NPJ].order = ord ? atoi(ord) : 9999;
         NPJ++;
     }
     qsort(PJ, (size_t)NPJ, sizeof(proj_t), pj_cmp);

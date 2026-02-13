@@ -102,8 +102,43 @@ static int cmd_diff(int argc, char **argv) {
         }
         pclose(fp); printf("\nTotal: %+d tokens\n", total); return 0;
     }
-    /* Full diff mode - delegate to python for color output */
-    fallback_py("diff", argc, argv);
+    /* Full diff — colored + stats */
+    char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
+    (void)!system("git fetch origin 2>/dev/null");
+    char br[128]; pcmd("git rev-parse --abbrev-ref HEAD 2>/dev/null",br,128); br[strcspn(br,"\n")]=0;
+    char tgt[256]; snprintf(tgt,256,"origin/%s",sel?sel:strncmp(br,"wt-",3)?br:"main");
+    char ts[64]; pcmd("git log -1 --format=%cd --date=format:'%Y-%m-%d %I:%M:%S %p' 2>/dev/null",ts,64); ts[strcspn(ts,"\n")]=0;
+    if(sel) printf("%s -> %s\n",br,tgt); else printf("%s\n%s -> %s\n%s\n",cwd,br,tgt,ts);
+    struct{char name[256];int al,dl,ab,db;}fs[256]; int nf=0,cf=-1;
+    #define FS(fn) do{cf=-1;for(int _i=0;_i<nf;_i++)if(!strcmp(fs[_i].name,fn)){cf=_i;break;} \
+        if(cf<0&&nf<256){cf=nf;memset(&fs[nf],0,sizeof(fs[0]));snprintf(fs[nf].name,256,"%s",fn);nf++;}}while(0)
+    #define DS(cmd) do{FILE*_f=popen(cmd,"r");if(_f){char _l[4096];while(fgets(_l,4096,_f)){_l[strcspn(_l,"\n")]=0; \
+        if(!strncmp(_l,"diff --git",10)){char*_b=strstr(_l," b/");if(_b)FS(_b+3);} \
+        else if(_l[0]=='@'&&_l[1]=='@'){char*_p=strchr(_l,'+');int _n=_p?(int)strtol(_p+1,NULL,10):0; \
+            if(cf>=0&&_n)printf("\n%s line %d:\n",fs[cf].name,_n);} \
+        else if(_l[0]=='+'&&_l[1]!='+'){printf("  \033[48;2;26;84;42m+ %s\033[0m\n",_l+1);if(cf>=0){fs[cf].al++;fs[cf].ab+=(int)strlen(_l)-1;}} \
+        else if(_l[0]=='-'&&_l[1]!='-'){printf("  \033[48;2;117;34;27m- %s\033[0m\n",_l+1);if(cf>=0){fs[cf].dl++;fs[cf].db+=(int)strlen(_l)-1;}}} \
+        pclose(_f);}}while(0)
+    {char c[B];snprintf(c,B,"git diff '%s..HEAD' 2>/dev/null",tgt);DS(c);}
+    {char c[B];snprintf(c,B,"git diff HEAD 2>/dev/null");DS(c);}
+    char ut[B]; pcmd("git ls-files --others --exclude-standard 2>/dev/null",ut,B); int nut=0;
+    if(ut[0]){printf("\nUntracked:\n");char*p=ut;while(*p){char*e=strchr(p,'\n');if(e)*e=0;if(*p){
+        printf("  \033[48;2;26;84;42m+ %s\033[0m\n",p);nut++;size_t sz;char*d=readf(p,&sz);
+        if(d){int nl=1;for(size_t j=0;j<sz;j++)if(d[j]=='\n')nl++;FS(p);if(cf>=0){fs[cf].al=nl;fs[cf].ab=(int)sz;}free(d);}
+    }if(e)p=e+1;else break;}}
+    if(!nf){puts("No changes");return 0;}
+    #define HR for(int _j=0;_j<60;_j++){putchar(0xe2);putchar(0x94);putchar(0x80);}putchar('\n')
+    int ti=0,td=0,ta=0,tb=0,nd=0; printf("\n"); HR;
+    for(int j=0;j<nf;j++){printf("%s: +%d/-%d lines, %+d tok\n",bname(fs[j].name),fs[j].al,fs[j].dl,(fs[j].ab-fs[j].db)/4);
+        ti+=fs[j].al;td+=fs[j].dl;ta+=fs[j].ab;tb+=fs[j].db;if(!fs[j].al&&fs[j].dl)nd++;}
+    HR; printf("%d file%s, +%d/-%d lines",nf,nf!=1?"s":"",ti,td);
+    if(nut)printf(" (incl. untracked)");if(nd)printf(", %d deleted",nd);
+    printf(" | Net: %+d lines, %+d tok\n",ti-td,(ta-tb)/4);
+    if(!sel) puts("\ndiff # = last #");
+    return 0;
+    #undef FS
+    #undef DS
+    #undef HR
 }
 
 /* ── revert ── */

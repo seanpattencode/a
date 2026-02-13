@@ -2,7 +2,7 @@
 static char HOME[P], DDIR[P], AROOT[P], SROOT[P], SDIR[P], DEV[128], LOGDIR[P];
 static int G_argc; static char **G_argv;
 
-typedef struct { char path[512], repo[512], name[128]; } proj_t;
+typedef struct { char path[512], repo[512], name[128], file[P]; int order; } proj_t;
 static proj_t PJ[MP]; static int NPJ;
 
 typedef struct { char name[128], cmd[512]; } app_t;

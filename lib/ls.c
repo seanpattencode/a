@@ -141,8 +141,61 @@ static int cmd_send(int argc, char **argv) {
     return 0;
 }
 
-/* ── jobs ── */
-static int cmd_jobs(int argc, char **argv) { fallback_py("jobs", argc, argv); }
+/* ── jobs ── list/attach/remove agent worktrees */
+static int cmd_jobs(int argc, char **argv) {
+    init_db(); load_cfg();
+    char wd[P]; {const char*w=cfget("worktrees_dir");snprintf(wd,P,"%s",w[0]?w:"");if(!w[0])snprintf(wd,P,"%s/projects/aWorktrees",HOME);}
+    const char *sel=NULL,*rm=NULL; int rf=0;
+    for(int i=2;i<argc;i++){if(!strcmp(argv[i],"-r")||!strcmp(argv[i],"--running"))rf=1;
+        else if(!strcmp(argv[i],"rm")&&i+1<argc)rm=argv[++i];else sel=argv[i];}
+    struct{char p[P],s[8][128],n[64],r[128];int ns,act;time_t ct;int wt;}J[64];int nj=0;
+    /* Tmux sessions -> paths */
+    char to[B]; pcmd("tmux list-sessions -F '#{session_name}' 2>/dev/null",to,B);
+    for(char*tp=to;*tp;){char*e=strchr(tp,'\n');if(e)*e=0;if(*tp){
+        char c[B],pp[P];snprintf(c,B,"tmux display-message -p -t '%s' '#{pane_current_path}' 2>/dev/null",tp);
+        pcmd(c,pp,P);pp[strcspn(pp,"\n")]=0;
+        int f=-1;for(int i=0;i<nj;i++)if(!strcmp(J[i].p,pp)){f=i;break;}
+        if(f<0&&nj<64){f=nj;snprintf(J[f].p,P,"%s",pp);J[f].ns=0;nj++;}
+        if(f>=0&&J[f].ns<8)snprintf(J[f].s[J[f].ns++],128,"%s",tp);
+    }if(e)tp=e+1;else break;}
+    if(dexists(wd)){DIR*d=opendir(wd);struct dirent*e;if(d){while((e=readdir(d))){if(e->d_name[0]=='.')continue;
+        char fp[P];snprintf(fp,P,"%s/%s",wd,e->d_name);struct stat st;if(stat(fp,&st)||!S_ISDIR(st.st_mode))continue;
+        int found=0;for(int i=0;i<nj;i++)if(!strcmp(J[i].p,fp)){found=1;break;}
+        if(!found&&nj<64){snprintf(J[nj].p,P,"%s",fp);J[nj].ns=0;nj++;}}closedir(d);}}
+    if(!nj){puts("No jobs");return 0;}
+    /* Enrich + filter */
+    int cnt=0;
+    for(int i=0;i<nj;i++){
+        if(!dexists(J[i].p)){for(int s=0;s<J[i].ns;s++){char c[B];snprintf(c,B,"tmux kill-session -t '%s' 2>/dev/null",J[i].s[s]);(void)!system(c);}continue;}
+        J[i].act=0;for(int s=0;s<J[i].ns&&!J[i].act;s++){char c[B],o[64];
+            snprintf(c,B,"tmux display-message -p -t '%s' '#{window_activity}' 2>/dev/null",J[i].s[s]);
+            pcmd(c,o,64);if(atoi(o)&&(int)time(NULL)-atoi(o)<10)J[i].act=1;}
+        if(rf&&!J[i].act)continue;
+        const char*bn=bname(J[i].p);snprintf(J[i].n,64,"%s",bn);
+        J[i].ct=0;for(const char*dp=bn+strlen(bn);dp>bn+15;dp--)if(dp[-7]=='-'&&dp[0]=='-'){struct tm t={0};
+            if(sscanf(dp-8,"%4d%2d%2d-%2d%2d%2d",&t.tm_year,&t.tm_mon,&t.tm_mday,&t.tm_hour,&t.tm_min,&t.tm_sec)==6){
+                t.tm_year-=1900;t.tm_mon--;t.tm_isdst=-1;J[i].ct=mktime(&t);break;}}
+        char c[B],go[512];snprintf(c,B,"git -C '%s' config --get remote.origin.url 2>/dev/null",J[i].p);
+        pcmd(c,go,512);go[strcspn(go,"\n")]=0;
+        if(go[0]){char*sl=strrchr(go,'/');snprintf(J[i].r,128,"%s",sl?sl+1:go);char*dt=strstr(J[i].r,".git");if(dt&&!dt[4])*dt=0;}
+        else{snprintf(J[i].r,128,"%s",bn);for(char*q=J[i].r;*q;q++)if(*q=='-'&&q[1]>='2'&&q[1]<='2'){*q=0;break;}}
+        J[i].wt=!strncmp(J[i].p,wd,strlen(wd));if(i!=cnt)J[cnt]=J[i];cnt++;
+    } nj=cnt;
+    for(int i=0;i<nj-1;i++)for(int j=i+1;j<nj;j++)if(J[i].ct>J[j].ct){__typeof__(J[0])t=J[i];J[i]=J[j];J[j]=t;}
+    int s0=nj>10?nj-10:0;cnt=nj-s0;
+    if(rm&&*rm>='0'&&*rm<='9'){int x=atoi(rm);if(x>=0&&x<cnt){int j=s0+x;
+        for(int s=0;s<J[j].ns;s++){char c[B];snprintf(c,B,"tmux kill-session -t '%s' 2>/dev/null",J[j].s[s]);(void)!system(c);}
+        if(J[j].wt){char c[B];snprintf(c,B,"rm -rf '%s'",J[j].p);(void)!system(c);}
+        printf("\xe2\x9c\x93 %s\n",J[j].n);}else printf("x Invalid (0-%d)\n",cnt-1);return 0;}
+    if(sel&&*sel>='0'&&*sel<='9'){int x=atoi(sel);if(x>=0&&x<cnt){int j=s0+x;
+        if(J[j].ns)tm_go(J[j].s[0]);if(chdir(J[j].p)==0){const char*sh=getenv("SHELL");execlp(sh?sh:"/bin/bash",sh?sh:"bash",(char*)NULL);}}return 0;}
+    if(!cnt){puts("No jobs");return 0;}
+    puts("  #  Active  Repo         Worktree");
+    for(int i=0;i<cnt;i++){int j=s0+i;char td[16]="";if(J[j].ct){int d=(int)(time(NULL)-J[j].ct);
+        if(d<3600)snprintf(td,16," (%dm)",d/60);else if(d<86400)snprintf(td,16," (%dh)",d/3600);else snprintf(td,16," (%dd)",d/86400);}
+        printf("  %d  %s       %-12s %.40s%s\n",i,J[j].act?"\xe2\x97\x8f":"\xe2\x97\x8b",J[j].r,J[j].n,td);}
+    puts("\nSelect:\n  a jobs 0\n  a jobs rm 0");return 0;
+}
 
 /* ── cleanup ── */
 static int cmd_cleanup(int argc, char **argv) { fallback_py("cleanup", argc, argv); }
