@@ -87,7 +87,12 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
     if (dexists(expanded)) { printf("%s\n", expanded); execlp("ls", "ls", expanded, (char*)NULL); }
     else if (fexists(expanded)) {
         const char *ext = strrchr(expanded, '.');
-        if (ext && !strcmp(ext, ".py")) { execvp("python3", (char*[]){ "python3", expanded, NULL }); }
+        if (ext && !strcmp(ext, ".py")) {
+            char py[P]="python3"; const char *ve=getenv("VIRTUAL_ENV");
+            if(ve) snprintf(py,P,"%s/bin/python",ve);
+            else if(!access(".venv/bin/python",X_OK)) snprintf(py,P,".venv/bin/python");
+            execvp(py, (char*[]){ py, expanded, NULL });
+        }
         else { const char *ed = getenv("EDITOR"); if (!ed) ed = "e"; execlp(ed, ed, expanded, (char*)NULL); }
     }
     return 0;
