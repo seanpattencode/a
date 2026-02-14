@@ -32,9 +32,7 @@ static int cmd_sess(int argc, char **argv) {
     if (getenv("TMUX") && strlen(key) == 1 && key[0] != 'a') {
         char cmd[B*2]; snprintf(cmd, sizeof(cmd), "%s", s->cmd);
         if (is_prompt && prompt[0]) {
-            const char *dp = cfget("default_prompt");
-            char full[B]; snprintf(full, B, "%s%s%s", dp[0]?dp:"", dp[0]?" ":"", prompt);
-            size_t cl = strlen(cmd); snprintf(cmd + cl, sizeof(cmd) - cl, " '%s'", full);
+            size_t cl = strlen(cmd); snprintf(cmd+cl, sizeof(cmd)-cl, " '%s%s'", dprompt(), prompt);
         }
         /* Split pane */
         char c[B*2]; snprintf(c, sizeof(c), "tmux split-window -hfP -F '#{pane_id}' -c '%s' '%s'", wd, cmd);
@@ -62,9 +60,7 @@ static int cmd_sess(int argc, char **argv) {
     /* Create new session */
     char cmd[B*2]; snprintf(cmd, sizeof(cmd), "%s", s->cmd);
     if (is_prompt && prompt[0]) {
-        const char *dp = cfget("default_prompt");
-        char full[B]; snprintf(full, B, "%s%s%s", dp[0]?dp:"", dp[0]?" ":"", prompt);
-        size_t cl = strlen(cmd); snprintf(cmd + cl, sizeof(cmd) - cl, " '%s'", full);
+        size_t cl = strlen(cmd); snprintf(cmd+cl, sizeof(cmd)-cl, " '%s%s'", dprompt(), prompt);
     }
     create_sess(sn, wd, cmd);
     if (!is_prompt) send_prefix_bg(sn, s->name, wd);

@@ -83,18 +83,17 @@ static int cmd_config(int argc, char **argv) {
 
 /* ── prompt ── */
 static int cmd_prompt(int argc, char **argv) {
-    init_db(); load_cfg();
-    char val[B] = "";
-    if(argc>2)for(int i=2,l=0;i<argc;i++) l+=snprintf(val+l,(size_t)(B-l),"%s%s",i>2?" ":"",argv[i]);
-    else {
-        printf("Current: %s\n", cfget("default_prompt")[0] ? cfget("default_prompt") : "(none)");
-        printf("New (empty to clear): "); if (!fgets(val, B, stdin)) return 0;
-        val[strcspn(val,"\n")] = 0;
+    char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
+    if(argc>2 && !strcmp(argv[2],"edit")) {
+        char t[P]; snprintf(t,P,"%s/cd_target",DDIR); writef(t,d);
+        char c[B]; snprintf(c,B,"echo 'default.txt = session prepend' && ls '%s'",d); return system(c);
     }
-    if (!strcmp(val,"off")||!strcmp(val,"none")) val[0]=0;
-    cfset("default_prompt", val);
-    load_cfg(); list_all(1, 1);
-    printf("\xe2\x9c\x93 %s\n", val[0] ? val : "(cleared)"); return 0;
+    char val[B]="",df[P]; snprintf(df,P,"%s/default.txt",d);
+    if(argc>2)for(int i=2,l=0;i<argc;i++) l+=snprintf(val+l,(size_t)(B-l),"%s%s",i>2?" ":"",argv[i]);
+    else { printf("%.80s\n <text>|edit: ",dprompt());
+        if(!fgets(val,B,stdin)||val[0]=='\n') return 0; val[strcspn(val,"\n")]=0;
+    }
+    writef(df,val); printf("\xe2\x9c\x93 %s\n",val[0]?val:"(cleared)"); return 0;
 }
 
 /* ── add ── */

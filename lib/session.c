@@ -36,9 +36,8 @@ static void create_sess(const char *sn, const char *wd, const char *cmd) {
 }
 
 static void send_prefix_bg(const char *sn, const char *agent, const char *wd) {
-    const char *dp = cfget("default_prompt");
     const char *cp = strstr(agent, "claude") ? cfget("claude_prefix") : "";
-    char pre[B]; snprintf(pre, B, "%s%s%s", dp[0] ? dp : "", dp[0] ? " " : "", cp);
+    char pre[B]; snprintf(pre, B, "%s%s", dprompt(), cp);
     /* Check for AGENTS.md */
     char af[P]; snprintf(af, P, "%s/AGENTS.md", wd);
     char *amd = readf(af, NULL);
