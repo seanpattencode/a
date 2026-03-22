@@ -1,15 +1,5 @@
-Cut 171 tokens (-687 bytes) from a.c and lib/note.c while preserving all functionality.
-
-Changes:
-- GA macro: deduplicated buffer grow+append pattern in cmd_cat mode 3
-- is5d(): replaced 3 verbose 5-digit priority checks with strspn helper
-- task_todir(): folded stat/isdir guard into function, simplified 4 callsites
-- task_add_p(): merged duplicate task-add code paths into shared helper
+test: agent session confirmed working
 
 Test commands:
-  sh a.c                          # build (should succeed silently)
-  A_BENCH=1 ./adata/local/a help  # basic dispatch
-  A_BENCH=1 ./adata/local/a task l | head -5  # task listing (uses is5d, task_add_p)
-  A_BENCH=1 ./adata/local/a hi    # trivial cmd
-  ./adata/local/a diff main       # verify negative tokens
-  cat adata/local/.chk 2>/dev/null || echo OK  # no checker errors
+sh a.c build
+sh a.c check
