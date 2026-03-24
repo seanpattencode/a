@@ -1,0 +1,11 @@
+*.o
+*.s
+bench_goto
+bench_goto_O0
+bench_goto_O2
+bench_goto_O3
+bench_goto_O3_native
+bench_goto_clang_O0
+bench_goto_clang_O2
+bench_goto_tcc
+goto_vs_func_tcc
