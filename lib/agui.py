@@ -2106,155 +2106,70 @@ def drfetch(url=None, watch=False): asyncio.run(drfetch_async(url, watch))
 # DEEP RESEARCH - Parallel launch, save URLs, exit
 # ═══════════════════════════════════════════════════════════════════
 
-async def _launch_deep_gemini(page, query):
-    """Activate Gemini Deep Research, type query, return conversation URL"""
-    await page.wait_for_selector('button[aria-label="Tools"]', timeout=10000)
-    await asyncio.sleep(2)
-
-    # Tools button has empty innerText, only aria-label; menu items use mixed-case "Deep research"
-    await page.evaluate('document.querySelector(\'button[aria-label="Tools"]\').click()')
-    await asyncio.sleep(1)
-    await page.evaluate("(()=>{const e=Array.from(document.querySelectorAll('*')).find(x=>x.children.length===0 && /^deep research$/i.test((x.innerText||'').trim()));if(e)e.click()})()")
-    print(f"  ✓ [Gemini] Deep Research mode active")
-    await asyncio.sleep(1)
-
-    # Type and submit
-    elem = page.locator('div[role="textbox"]').last
-    await elem.click(timeout=2000)
-    await elem.fill(query)
-    await page.keyboard.press('Enter')
-    print(f"  ✓ [Gemini] Query submitted")
-
-    # Wait for research plan, then confirm start
-    await asyncio.sleep(8)
-    try:
-        btn = page.locator('button:has-text("Start research")')
-        await btn.click(timeout=8000)
-        print(f"  ✓ [Gemini] Start research clicked")
-    except:
-        try:
-            elem2 = page.locator('div[role="textbox"]').last
-            await elem2.click(timeout=2000)
-            await elem2.fill("Start research")
-            await page.keyboard.press('Enter')
-            print(f"  ✓ [Gemini] Start research typed")
-        except:
-            print(f"  ⚠ [Gemini] Could not confirm start - check manually")
-
-    await asyncio.sleep(3)
-    return page.url
-
-
-async def _launch_deep_chatgpt(page, query):
-    """Activate ChatGPT Deep Research, type query, return conversation URL"""
-    await page.wait_for_selector('#prompt-textarea, [contenteditable="true"]', timeout=10000)
-    await asyncio.sleep(2)
-
-    # Activate deep research mode
-    try:
-        await page.locator('button:has(svg):near([contenteditable])').first.click(timeout=2000)
-        await page.wait_for_selector('text="Deep research"', timeout=2000)
-        await page.locator('text="Deep research"').click(timeout=2000)
-        print(f"  ✓ [ChatGPT] Deep Research mode active")
-    except:
-        try:
-            box = await page.locator('[contenteditable="true"]').first.bounding_box()
-            if box:
-                await page.mouse.click(box['x'] - 25, box['y'] + box['height'] / 2)
-            await page.wait_for_selector('text="Deep research"', timeout=2000)
-            await page.locator('text="Deep research"').click(timeout=2000)
-            print(f"  ✓ [ChatGPT] Deep Research mode active (fallback)")
-        except:
-            print(f"  ⚠ [ChatGPT] Could not activate mode - continuing with prompt")
-
-    await asyncio.sleep(1)
-
-    # Type query (ProseMirror needs keyboard events)
-    elem = page.locator('#prompt-textarea, [contenteditable="true"]').last
-    await elem.click(timeout=2000)
-    await elem.press_sequentially(query, delay=5)
-    await page.keyboard.press('Enter')
-    print(f"  ✓ [ChatGPT] Query submitted")
-
-    # Modern ChatGPT DR auto-runs after submit; if a "Start research" button appears,
-    # click it once. Never type "Start research" as a chat msg (creates phantom 2nd prompt).
-    await asyncio.sleep(8)
-    try:
-        await page.locator('button:has-text("Start research")').first.click(timeout=4000)
-        print(f"  ✓ [ChatGPT] Start research clicked")
-    except: pass  # auto-run path
-    await asyncio.sleep(3)
-    return page.url
-
-
-async def _launch_deep_claude(page, query):
-    """Activate REAL Claude Deep Research: + menu (Add files, connectors, and more) → Research."""
-    await page.wait_for_selector('div[contenteditable="true"]', timeout=15000)
-    await asyncio.sleep(2)
-    # Open the + menu
-    await page.evaluate("(()=>{const b=Array.from(document.querySelectorAll('button')).find(x=>(x.ariaLabel||'').toLowerCase().includes('add files'));if(b)b.click()})()")
-    await asyncio.sleep(1)
-    # Click the Research menuitem (case-insensitive exact match to avoid 'Web search'/'Use style')
-    clicked = await page.evaluate("(()=>{const e=Array.from(document.querySelectorAll('[role=menuitem],button,div')).find(x=>x.children.length===0&&/^research$/i.test((x.innerText||'').trim()));if(e){e.click();return true}return false})()")
-    if clicked: print(f"  ✓ [Claude] Deep Research mode activated (+ menu → Research)")
-    else: print(f"  ⚠ [Claude] Research item not found in + menu")
-    await asyncio.sleep(1)
-    elem = page.locator('div[contenteditable="true"]').last
-    await elem.click(timeout=3000)
-    await elem.press_sequentially(query, delay=5)
-    await page.keyboard.press('Enter')
-    print(f"  ✓ [Claude] Query submitted")
-    await asyncio.sleep(5)
-    return page.url
-
-
-async def _launch_deep_perplexity(page, query):
-    """Activate REAL Perplexity Deep Research: + menu (Add files or tools) → Deep research item.
-    Uses CDP Input.dispatchMouseEvent — Playwright .click() and JS .click() both miss the
-    React handler on Perplexity's button. Pro tier required for Deep research item to appear."""
-    await page.wait_for_selector('button[aria-label="Add files or tools"]', timeout=15000)
-    await asyncio.sleep(2)
-    # Dismiss cookie modal if present
-    await page.evaluate("(()=>{const b=Array.from(document.querySelectorAll('button')).find(x=>(x.innerText||'').trim()==='Got it');if(b)b.click()})()")
-    await asyncio.sleep(0.5)
-    cdp = await page.context.new_cdp_session(page)
-    async def _cdp_click(sel):
-        box = await page.evaluate(f"(()=>{{const e=document.querySelector({sel!r});if(!e)return null;const r=e.getBoundingClientRect();return{{x:r.x+r.width/2,y:r.y+r.height/2}}}})()")
-        if not box: return False
-        await cdp.send('Input.dispatchMouseEvent',{'type':'mouseMoved','x':box['x'],'y':box['y']})
-        await cdp.send('Input.dispatchMouseEvent',{'type':'mousePressed','x':box['x'],'y':box['y'],'button':'left','clickCount':1})
-        await cdp.send('Input.dispatchMouseEvent',{'type':'mouseReleased','x':box['x'],'y':box['y'],'button':'left','clickCount':1})
-        return True
-    # 1) Open + menu via CDP click
-    await _cdp_click('button[aria-label="Add files or tools"]')
-    await asyncio.sleep(1.5)
-    # 2) Click "Deep research" menu item by text match
-    found = await page.evaluate("(()=>{const e=Array.from(document.querySelectorAll('[role=menuitem],div,button,span')).find(x=>x.children.length===0&&/^deep research$/i.test((x.innerText||'').trim()));if(e){const r=e.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}}return null})()")
-    if found:
-        await cdp.send('Input.dispatchMouseEvent',{'type':'mousePressed','x':found['x'],'y':found['y'],'button':'left','clickCount':1})
-        await cdp.send('Input.dispatchMouseEvent',{'type':'mouseReleased','x':found['x'],'y':found['y'],'button':'left','clickCount':1})
-        print(f"  ✓ [Perplexity] Deep Research mode activated")
-    else:
-        print(f"  ⚠ [Perplexity] Deep research item not found (Pro tier required?)")
-    await asyncio.sleep(1)
-    # 3) Type prompt + submit via Playwright keyboard
-    elem = page.locator('textarea, div[contenteditable="true"]').first
-    await elem.click(timeout=3000)
-    await asyncio.sleep(0.3)
-    await page.keyboard.type(query, delay=10)
-    await asyncio.sleep(0.5)
-    await page.keyboard.press('Enter')
-    print(f"  ✓ [Perplexity] Query submitted")
-    await asyncio.sleep(5)
-    return page.url
-
-
-_deep_launchers = {
-    'ChatGPT': _launch_deep_chatgpt,
-    'Gemini': _launch_deep_gemini,
-    'Claude': _launch_deep_claude,
-    'Perplexity': _launch_deep_perplexity,
+_DEEP = {
+    'Gemini':     {'wait':'button[aria-label="Tools"]',                'menu':'button[aria-label="Tools"]',              'item':'deep research','editor':'div[role="textbox"]','start':'start research'},
+    'ChatGPT':    {'wait':'#prompt-textarea, [contenteditable="true"]','menu':'button:has(svg):near([contenteditable])','item':'deep research','editor':'#prompt-textarea, [contenteditable="true"]'},
+    'Perplexity': {'wait':'button[aria-label="Add files or tools"]',   'menu':'button[aria-label="Add files or tools"]', 'item':'deep research','editor':'textarea, div[contenteditable="true"]','cdp':True},
 }
+
+# Browsers are nondeterministic: a menu opens but the click registers on the
+# closing animation, text types but focus moved, Enter submits but a modal ate
+# the keypress. Every step below is verified against observable page state —
+# if any step's effect didn't land, the whole sequence restarts from the top.
+async def _launch_deep(page, query, name):
+    c = _DEEP[name]; q = query.strip()[:50]
+    async def _bbox(js): return await page.evaluate(f"(()=>{{const e={js};if(!e)return null;const r=e.getBoundingClientRect();return{{x:r.x+r.width/2,y:r.y+r.height/2}}}})()")
+    async def _text_el(txt): return await _bbox(f"Array.from(document.querySelectorAll('*')).find(x=>x.children.length===0&&/^{txt}$/i.test((x.innerText||'').trim()))")
+    async def _in_input():
+        try: return await page.evaluate(f"(()=>{{for(const e of document.querySelectorAll('div[contenteditable=\"true\"],textarea,div[role=\"textbox\"]')){{const t=(e.innerText||e.value||'').trim();if(t&&t.includes({q!r}))return true}}return false}})()")
+        except: return False
+    for attempt in range(3):
+        try:
+            if attempt: await page.reload(wait_until='domcontentloaded'); await asyncio.sleep(3)
+            await page.wait_for_selector(c['wait'], timeout=15000); await asyncio.sleep(2)
+            # Perplexity's deep-research menu item is click-registered but no-op when
+            # the viewport is too small — the click lands visually but the mode never
+            # activates. Zooming to 80% shrinks the layout enough that the menu and
+            # composer both fit, and the click actually takes. Confirmed working when
+            # the submitted response is labeled "prepared by deep research".
+            if name == 'Perplexity':
+                await page.evaluate("document.body.style.zoom='0.8'")
+            cdp = await page.context.new_cdp_session(page) if c.get('cdp') else None
+            async def _click(b):
+                for t in ('mousePressed','mouseReleased'): await cdp.send('Input.dispatchMouseEvent',{'type':t,'x':b['x'],'y':b['y'],'button':'left','clickCount':1})
+            # Open menu + verify item appeared
+            if cdp:
+                mb = await _bbox(f"document.querySelector({c['menu']!r})")
+                if not mb: raise RuntimeError('menu btn missing')
+                await _click(mb)
+            else:
+                try: await page.locator(c['menu']).first.click(timeout=3000)
+                except Exception as ex: raise RuntimeError(f'menu open: {ex}')
+            await asyncio.sleep(1.5)
+            it = c['item']; ib = await _text_el(it)
+            if not ib: raise RuntimeError(f"item '{it}' not visible")
+            # Click item. After-click, item text often persists as a mode pill, and
+            # overlay wrappers vary per site — rely on downstream editor-clickable + text-
+            # lands-in-input checks to detect a missed click (menu blocking = editor dead).
+            if cdp: await _click(ib)
+            else: await page.evaluate(f"(()=>{{const e=Array.from(document.querySelectorAll('*')).find(x=>x.children.length===0&&/^{it}$/i.test((x.innerText||'').trim()));if(e)e.click()}})()")
+            await asyncio.sleep(1.5)
+            # Type + verify text landed + submit + verify input cleared
+            try: await page.locator(c['editor']).last.click(timeout=3000)
+            except: await page.keyboard.press('Escape'); await page.locator(c['editor']).last.click(timeout=2000)
+            await page.keyboard.type(query, delay=5); await asyncio.sleep(0.8)
+            if not await _in_input(): raise RuntimeError('text not in input after type')
+            await page.keyboard.press('Enter'); await asyncio.sleep(2)
+            if await _in_input(): raise RuntimeError('input not cleared after Enter')
+            # Optional post-submit button (Gemini: Start research — appears after 15-45s plan generation)
+            if c.get('start'):
+                try: await page.locator(f'button:has-text("{c["start"]}")').first.click(timeout=60000)
+                except Exception as ex: raise RuntimeError(f"'{c['start']}' button not found: {ex}")
+                await asyncio.sleep(3)
+            return page.url
+        except Exception as e:
+            print(f"  ⚠ [{name}] attempt {attempt+1}/3: {e}")
+    raise RuntimeError(f"{name}: all 3 attempts failed")
 
 
 async def deep_research_async(query, only=None):
@@ -2267,10 +2182,9 @@ async def deep_research_async(query, only=None):
     print(f"\n  → Query: {query[:100]}{'...' if len(query)>100 else ''}\n")
 
     # Platform list (extensible)
-    platforms = [
+    platforms = [  # Claude omitted: hits usage limits fast in DR mode
         ('ChatGPT', 'https://chatgpt.com/'),
         ('Gemini', 'https://gemini.google.com/app'),
-        ('Claude', 'https://claude.ai/'),
         ('Perplexity', 'https://www.perplexity.ai/'),
     ]
     if only:
@@ -2318,23 +2232,15 @@ async def deep_research_async(query, only=None):
                 f.write(content if content else '')
             return p
 
-        launcher = _deep_launchers.get(name)
-        if not launcher:
-            print(f"  ✗ [{name}] No deep research launcher")
+        if name not in _DEEP:
             _save('meta.txt', f"PLATFORM: {name}\nSTATUS: no_launcher\n")
             return (name, None, _platform_dir)
-
         try:
-            url = await launcher(page, query)
+            url = await _launch_deep(page, query, name)
+            print(f"  ✓ [{name}] SUBMITTED=True")
             await page.screenshot(path=os.path.join(_platform_dir, 'launch.png'))
             _save('url.txt', url or page.url)
-            _save('meta.txt', (
-                f"PLATFORM: {name}\n"
-                f"URL: {url or page.url}\n"
-                f"QUERY: {query}\n"
-                f"TIMESTAMP: {_dt.now().isoformat()}\n"
-                f"STATUS: launched\n"
-            ))
+            _save('meta.txt', f"PLATFORM: {name}\nURL: {url or page.url}\nQUERY: {query}\nTIMESTAMP: {_dt.now().isoformat()}\nSTATUS: launched\nSUBMITTED: True\n")
             return (name, url or page.url, _platform_dir)
         except Exception as e:
             print(f"  ✗ [{name}] Launch failed: {str(e)[:60]}")
