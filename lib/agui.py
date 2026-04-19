@@ -2061,27 +2061,100 @@ async def drfetch_async(url=None, watch=False, max_seconds=900):
             try: txt = subprocess.check_output(['pdftotext', '-layout', pdfp, '-']).decode(errors='replace')
             finally: os.unlink(pdfp)
             return txt
-        # Gemini / Claude: longest text in any plausible response container
-        return await page.evaluate("(()=>{const sels=['.markdown','.standard-markdown','.font-claude-message','.prose','[data-test-render-count]'];let b='';for(const s of sels)for(const m of document.querySelectorAll(s)){const t=m.innerText||'';if(t.length>b.length)b=t}return b})()") or ''
+        # Gemini / Perplexity / Claude: longest innerText across plausible response
+        # containers. Gemini DR streams progress into <main> (not the seed-message
+        # .markdown), so we include main / [class*=content] and pick the longest.
+        return await page.evaluate("(()=>{const sels=['.markdown','.standard-markdown','.font-claude-message','.prose','[data-test-render-count]','main','[class*=\"content\"]','article'];let b='';for(const s of sels)for(const m of document.querySelectorAll(s)){const t=m.innerText||'';if(t.length>b.length)b=t}return b})()") or ''
     # Create the output file upfront so a kill at any point leaves partial text on disk.
     out = os.path.join(_AGUI_DIR, 'drfetch'); os.makedirs(out, exist_ok=True)
     ts = time.strftime('%Y%m%d_%H%M%S')
     f = os.path.join(out, ts+'.txt'); open(f,'w').write('')
     print(f"  saving: {f}")
-    last_len = -1; rep = ''; t0 = time.time(); timed_out = False
-    while True:
+    rep = ''; t0 = time.time(); timed_out = False
+    # First extract gives us the starting baseline (and creates the file).
+    rep = await _extract()
+    if rep: open(f,'w').write(rep)
+    print(f"  report: {len(rep)} chars t+0s (initial)")
+    if not watch:
+        pass
+    else:
+        # Event-driven: a MutationObserver injected into the page resolves a Promise
+        # the moment the completion DOM appears (no Stop/Generating + a Copy button
+        # for ChatGPT; no spinner + stable .markdown grow-then-pause for Gemini/PPLX).
+        # Concurrently a saver coroutine writes the latest extracted text every 15s
+        # so any kill leaves the most recent text on disk. Browser MutationObserver
+        # fires on real DOM changes, not on a Python-side timer.
+        done_js = """(timeoutMs) => new Promise(resolve => {
+            const isChatGPT = location.host.includes('chatgpt');
+            // ChatGPT: real DR output is in a cross-origin iframe; we can't measure
+            // its length from here. Use "iframe exists AND no Stop AND no busy text
+            // for 60s" as the done signal.
+            // Gemini/PPLX: use longest innerText across main/.markdown/etc. — DR
+            // streams progress into <main>; require growth-then-60s-stable above 8000 chars.
+            let lastLen = 0, lastChange = Date.now(), startedAt = Date.now();
+            const longestText = () => {
+                const sels=['.markdown','.standard-markdown','.font-claude-message','.prose','[data-test-render-count]','main','[class*="content"]','article'];
+                let b=''; for(const s of sels) for(const m of document.querySelectorAll(s)) {
+                    const t=m.innerText||''; if(t.length>b.length) b=t;
+                }
+                return b;
+            };
+            const check = () => {
+                const elapsed = Date.now() - startedAt;
+                const txt = document.body.innerText || '';
+                const stop = document.querySelector('[aria-label*="Stop"], [aria-label*="stop generating" i]');
+                const busy = /\\b(Searching|Researching|Thinking|Generating|Reading|Browsing|Analyzing|Working|Identifying|Surveying)\\b/i.test(txt);
+                // Strong positive signals: explicit completion text the platforms emit when done.
+                const completedText = /Completed\\s+\\d+\\s+steps?/i.test(txt) || /research complete/i.test(txt);
+                if (isChatGPT) {
+                    // Need at least 30s of runtime so we don't fire on the prior page state.
+                    // ChatGPT's real content is in cross-origin iframe — can't measure. Best
+                    // we can do: iframe present + idle for a while.
+                    const drFrame = document.querySelector('iframe[title*="deep-research" i]');
+                    if (drFrame && !stop && !busy && elapsed > 30000) return true;
+                    return false;
+                }
+                const cur = longestText().length;
+                if (cur !== lastLen) { lastLen = cur; lastChange = Date.now(); }
+                // Strong: explicit "Completed N steps" + sufficient content + no Stop.
+                // Don't require !busy here — busy keywords ("working", "analyzing") legitimately
+                // appear inside finished answer prose; trust the explicit completion signal.
+                if (completedText && cur > 2000 && !stop) return true;
+                // Generic: above threshold, no Stop, no growth for 60s, runtime > 60s.
+                // (Don't require !busy: keywords like "researching"/"working" legitimately
+                // occur inside finished answers; the Stop button is the authoritative signal.)
+                if (cur > 4000 && !stop && (Date.now() - lastChange) > 60000 && elapsed > 60000) return true;
+                return false;
+            };
+            if (check()) return resolve('done');
+            const obs = new MutationObserver(() => { if (check()) { obs.disconnect(); resolve('done'); } });
+            obs.observe(document.body, {childList:true, subtree:true, characterData:true});
+            // Timer fallback in case the page stops mutating but we never hit a "done" condition.
+            const tick = setInterval(() => { if (check()) { clearInterval(tick); obs.disconnect(); resolve('done'); } }, 5000);
+            setTimeout(() => { clearInterval(tick); obs.disconnect(); resolve('timeout'); }, timeoutMs);
+        })"""
+        async def saver():
+            try:
+                while True:
+                    await asyncio.sleep(15)
+                    r = await _extract()
+                    if r:
+                        open(f,'w').write(r)
+                        print(f"  report: {len(r)} chars t+{int(time.time()-t0)}s (saving)")
+            except asyncio.CancelledError:
+                return
+        save_task = asyncio.create_task(saver())
+        try:
+            verdict = await page.evaluate(done_js, max_seconds * 1000)
+            timed_out = (verdict == 'timeout')
+            print(f"  ⚡ {('time limit '+str(max_seconds)+'s reached') if timed_out else 'completion event fired'}"
+                  f" t+{int(time.time()-t0)}s")
+        finally:
+            save_task.cancel()
+            try: await save_task
+            except: pass
         rep = await _extract()
-        cur = len(rep)
-        if rep: open(f,'w').write(rep)  # incremental: overwrite each poll with latest
-        elapsed = int(time.time() - t0)
-        print(f"  report: {cur} chars t+{elapsed}s{'' if not watch else ' (watching)'}")
-        if not watch: break
-        if cur and cur == last_len: print('  stable — done'); break
-        if elapsed >= max_seconds:
-            print(f'  ⏱ time limit {max_seconds}s reached — showing what was gathered')
-            timed_out = True; break
-        last_len = cur
-        await asyncio.sleep(15)
+        if rep: open(f,'w').write(rep)
     if timed_out and rep:
         print('\n--- gathered so far ---')
         print(rep[:4000] + (f'\n... (+{len(rep)-4000} chars in {f})' if len(rep) > 4000 else ''))
