@@ -2030,10 +2030,12 @@ def _latest_gemini_url():
             if u: return u
     return None
 
-async def drfetch_async(url=None, watch=False):
+async def drfetch_async(url=None, watch=False, max_seconds=900):
     """Resume DR conversation. Gemini: longest .markdown element. ChatGPT: response is in a
     cross-origin sandbox iframe — extract via printToPDF + pdftotext. Claude: longest .markdown
-    or .font-claude-message. watch=True polls every 15s until length stabilizes."""
+    or .font-claude-message. watch=True polls every 15s until length stabilizes OR max_seconds
+    elapsed. Report is written incrementally each poll so a Ctrl-C / SIGKILL / network drop
+    still leaves the latest gathered text on disk at the printed path."""
     url = url or _latest_gemini_url()
     if not url: print("x no saved url; provide one or run 'deep' first"); return
     print(f"  url: {url}")
@@ -2061,19 +2063,30 @@ async def drfetch_async(url=None, watch=False):
             return txt
         # Gemini / Claude: longest text in any plausible response container
         return await page.evaluate("(()=>{const sels=['.markdown','.standard-markdown','.font-claude-message','.prose','[data-test-render-count]'];let b='';for(const s of sels)for(const m of document.querySelectorAll(s)){const t=m.innerText||'';if(t.length>b.length)b=t}return b})()") or ''
-    last_len = -1; rep = ''
+    # Create the output file upfront so a kill at any point leaves partial text on disk.
+    out = os.path.join(_AGUI_DIR, 'drfetch'); os.makedirs(out, exist_ok=True)
+    ts = time.strftime('%Y%m%d_%H%M%S')
+    f = os.path.join(out, ts+'.txt'); open(f,'w').write('')
+    print(f"  saving: {f}")
+    last_len = -1; rep = ''; t0 = time.time(); timed_out = False
     while True:
         rep = await _extract()
         cur = len(rep)
-        print(f"  report: {cur} chars{'' if not watch else ' (watching)'}")
+        if rep: open(f,'w').write(rep)  # incremental: overwrite each poll with latest
+        elapsed = int(time.time() - t0)
+        print(f"  report: {cur} chars t+{elapsed}s{'' if not watch else ' (watching)'}")
         if not watch: break
         if cur and cur == last_len: print('  stable — done'); break
+        if elapsed >= max_seconds:
+            print(f'  ⏱ time limit {max_seconds}s reached — showing what was gathered')
+            timed_out = True; break
         last_len = cur
         await asyncio.sleep(15)
+    if timed_out and rep:
+        print('\n--- gathered so far ---')
+        print(rep[:4000] + (f'\n... (+{len(rep)-4000} chars in {f})' if len(rep) > 4000 else ''))
+        print('--- end ---\n')
     if rep:
-        out = os.path.join(_AGUI_DIR, 'drfetch'); os.makedirs(out, exist_ok=True)
-        ts = time.strftime('%Y%m%d_%H%M%S')
-        f = os.path.join(out, ts+'.txt'); open(f,'w').write(rep)
         # Try to extract answer: <answer> tag, or first big number in executive summary
         import re as _re
         ans = None
@@ -2100,7 +2113,7 @@ async def drfetch_async(url=None, watch=False):
     _profile_dir = None; _chrome_process = None
     await pw.stop()
 
-def drfetch(url=None, watch=False): asyncio.run(drfetch_async(url, watch))
+def drfetch(url=None, watch=False, max_seconds=900): asyncio.run(drfetch_async(url, watch, max_seconds))
 
 # ═══════════════════════════════════════════════════════════════════
 # DEEP RESEARCH - Parallel launch, save URLs, exit
@@ -2693,6 +2706,7 @@ if __name__ == "__main__":
     parser.add_argument('--deepthink', action='store_true', help='Gemini Deep Think (probes /u/0..2 + caches)')
     parser.add_argument('--drfetch', nargs='?', const='', help='Resume DR conversation (URL or latest), extract report; combine with --watch for live')
     parser.add_argument('--watch', action='store_true', help='Poll DR report until stable (used with --drfetch)')
+    parser.add_argument('--max-time', type=int, default=900, help='Watch time limit in seconds (default 900=15min); on hit, prints gathered text and exits. Incremental save means the file is up-to-date on any exit.')
     args, extra = parser.parse_known_args(); args.ask = args.ask or (' '.join(extra) if extra and not args.say else None)
 
     if args.demo: show_examples(); sys.exit(0)
@@ -2716,7 +2730,7 @@ if __name__ == "__main__":
             if not p: print("x need --ask or --say with prompt"); sys.exit(1)
             gemini_deepthink(p)
         elif args.drfetch is not None:
-            drfetch(url=args.drfetch or None, watch=args.watch)
+            drfetch(url=args.drfetch or None, watch=args.watch, max_seconds=args.max_time)
         elif args.log: launch_browser_with_positioning(); input("\n✓ Sign in anywhere. Press Enter or Ctrl+C to save & exit.\n")
         elif args.go: google_workflow()
         elif args.deep or (args.say and not args.all):
