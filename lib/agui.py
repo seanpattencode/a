@@ -1341,121 +1341,6 @@ def google_workflow():
         except KeyboardInterrupt:
             print("\n✓ Session saved")
 
-def bing_workflow(num_searches=1):
-    """Bing search workflow with window positioning (library glue)"""
-    print("═" * 50)
-    print("Bing Search (Wayland + XWayland Tools)")
-    print("═" * 50 + "\n")
-
-    print("  → Launching browser with positioning...")
-    launch_browser_with_positioning()
-
-    # Random queries from /usr/share/dict or fallback
-    _wf = '/usr/share/dict/words'
-    words = open(_wf).read().split() if os.path.exists(_wf) else ['python','linux','music','science','history','cooking','travel','space','ocean','weather']
-
-    for i in range(1, num_searches + 1):
-        print(f"\n→ Search {i}/{num_searches}")
-
-        query = ' '.join(random.sample(words, min(3, len(words))))
-        print(f"  → Query: {query}")
-
-        # Navigate to Bing with robust navigation (library glue)
-        success, final_url = navigate_to_robust('https://www.bing.com', max_retries=3)
-        if not success:
-            print("  ⚠ Failed to load Bing directly, trying search engine fallback...")
-            success, final_url, engine = navigate_with_search_fallback()
-            if not success:
-                print(f"  ✗ Search {i} failed - all navigation attempts failed")
-                continue
-            print(f"  ✓ Loaded via {engine}: {final_url}")
-
-        # Search (library glue)
-        selectors = ['input[name="q"]', '#sb_form_q', 'textarea[name="q"]']
-        for selector in selectors:
-            if fill_input(selector, query):
-                print(f"  ✓ Entered query")
-                press_key('Enter')
-                time.sleep(2)
-
-                # Auto-click result (library glue)
-                tabs = random.randint(1, 10)
-                print(f"  → Tabbing {tabs} times...")
-                for _ in range(tabs):
-                    press_key('Tab')
-                    time.sleep(0.1)
-                press_key('Enter')
-                time.sleep(2)
-                print(f"  ✓ Search {i} complete")
-                break
-
-    print("\n═" * 50)
-    print("✓ Searches complete")
-    print("Press Ctrl+C to exit...")
-    print("═" * 50)
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n✓ Closing...")
-        close_browser()
-
-def pixai_workflow():
-    """Pixai.art workflow with window positioning (library glue)"""
-    print("═" * 50)
-    print("Pixai.art (Wayland + XWayland Tools)")
-    print("═" * 50 + "\n")
-
-    print("  → Launching browser with positioning...")
-    launch_browser_with_positioning()
-
-    print("  → Navigating to Pixai...")
-    success, final_url = navigate_to_robust('https://pixai.art/@user-1613147501301664178/artworks', max_retries=3)
-    if not success:
-        print("  ⚠ Failed to load Pixai directly, trying home page...")
-        success, final_url = navigate_to_robust('https://pixai.art', max_retries=2)
-        if not success:
-            print("  ✗ All navigation attempts failed")
-            return
-
-    print("  → Checking sign-in...")
-    is_signed_in = check_text_exists('Sign out') or check_text_exists('Logout')
-
-    if is_signed_in:
-        print("  ✓ Already signed in")
-    else:
-        print("  → Not signed in, clicking sign-in...")
-        if click_text('Sign in') or click_text('Log in'):
-            time.sleep(1)
-            click_text('Continue with Google')
-            print("  ✓ Sign-in flow initiated")
-
-    print("  → Checking daily rewards...")
-    if check_text_exists('Daily Quest') and not check_text_exists('Claimed'):
-        if click_text('Claim'):
-            print("  ✓ Claimed daily reward")
-            time.sleep(1)
-            click_text('OK')  # Close modal
-    else:
-        print("  → No rewards available")
-
-    screenshot_path = '/tmp/pixai_wayland.png'
-    print(f"  → Screenshot: {screenshot_path}")
-    take_screenshot(screenshot_path)
-
-    print("\n═" * 50)
-    print("✓ Workflow complete")
-    print("Press Ctrl+C to exit...")
-    print("═" * 50)
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n✓ Closing...")
-        close_browser()
-
 def _kill_old_sessions():
     """Kill any stale automation processes (library glue)"""
     profile_pattern = 'agui/chrome-profile' if IS_MAC else 'chrome-profile-wayland'
@@ -2642,107 +2527,6 @@ def test_navigation_workflow():
         print("\n✓ Closing...")
         close_browser()
 
-def pixai_bing_loop_workflow():
-    """Pixai once + Bing 30x with random delays (library glue)"""
-    print("═" * 50)
-    print("Pixai + Bing Loop (0-3min random delays)")
-    print("═" * 50 + "\n")
-
-    print("  → Launching browser with positioning...")
-    launch_browser_with_positioning()
-
-    # Run Pixai once (library glue)
-    print("\n→ Running Pixai workflow...")
-    print("  → Navigating to Pixai...")
-    success, final_url = navigate_to_robust('https://pixai.art/@user-1613147501301664178/artworks', max_retries=3)
-    if not success:
-        print("  ⚠ Failed to load Pixai directly, trying home page...")
-        success, final_url = navigate_to_robust('https://pixai.art', max_retries=2)
-
-    if success:
-        print("  → Checking sign-in...")
-        is_signed_in = check_text_exists('Sign out') or check_text_exists('Logout')
-        if is_signed_in:
-            print("  ✓ Already signed in")
-        else:
-            print("  → Not signed in, clicking sign-in...")
-            if click_text('Sign in') or click_text('Log in'):
-                time.sleep(1)
-                click_text('Continue with Google')
-                print("  ✓ Sign-in flow initiated")
-
-        print("  → Checking daily rewards...")
-        if check_text_exists('Daily Quest') and not check_text_exists('Claimed'):
-            if click_text('Claim'):
-                print("  ✓ Claimed daily reward")
-                time.sleep(1)
-                click_text('OK')
-        else:
-            print("  → No rewards available")
-
-        take_screenshot('/tmp/pixai_loop.png')
-        print("  ✓ Pixai complete")
-    else:
-        print("  ✗ Pixai failed, continuing to Bing...")
-
-    # Run Bing 30 times with random delays (library glue)
-    from wordfreq import top_n_list
-    words = top_n_list('en', 10000)
-
-    for i in range(1, 31):
-        # Random delay 0-3 minutes (library glue)
-        delay = random.randint(0, 180)
-        print(f"\n→ Search {i}/30 (waiting {delay}s)...")
-        time.sleep(delay)
-
-        # Generate query (library glue)
-        four_words = random.sample(words, 4)
-        print(f"  → Word options: {four_words}")
-        response = requests.post('http://localhost:11434/api/generate', json={
-            'model': 'gemma3',
-            'prompt': f'Pick ONE word from {four_words} that best relates to AI agent management systems for saving the world. Create a search query using that word to help research launching an AI agent platform. Output only the query in quotes.',
-            'stream': False
-        })
-        query = response.json().get('response', four_words[0]).strip().strip('"').strip("'")
-        print(f"  → Query: {query}")
-
-        # Navigate to Bing (library glue)
-        success, final_url = navigate_to_robust('https://www.bing.com', max_retries=3)
-        if not success:
-            print(f"  ✗ Search {i} failed - navigation failed")
-            continue
-
-        # Search (library glue)
-        selectors = ['input[name="q"]', '#sb_form_q', 'textarea[name="q"]']
-        for selector in selectors:
-            if fill_input(selector, query):
-                print(f"  ✓ Entered query")
-                press_key('Enter')
-                time.sleep(2)
-
-                # Auto-click result (library glue)
-                tabs = random.randint(1, 10)
-                print(f"  → Tabbing {tabs} times...")
-                for _ in range(tabs):
-                    press_key('Tab')
-                    time.sleep(0.1)
-                press_key('Enter')
-                time.sleep(2)
-                print(f"  ✓ Search {i} complete")
-                break
-
-    print("\n═" * 50)
-    print("✓ Loop complete (Pixai + 30 Bing searches)")
-    print("Press Ctrl+C to exit...")
-    print("═" * 50)
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n✓ Closing...")
-        close_browser()
-
 # ═══════════════════════════════════════════════════════════
 # WEB MONITOR - Track rankings in SQLite (library glue)
 # ═══════════════════════════════════════════════════════════
@@ -2981,13 +2765,9 @@ if __name__ == "__main__":
         epilog="Run with --multi-ai for interactive mode, or see examples above"
     )
     parser.add_argument('--go', '--google', action='store_true', help='Google verification')
-    parser.add_argument('--bing', action='store_true', help='Bing search')
-    parser.add_argument('--runs', '--num-searches', type=int, default=1, help='Number of Bing searches')
     parser.add_argument('--side', '--right', action='store_true', help='Open on rightmost monitor')
     parser.add_argument('--hide', '--headless', action='store_true', help='Headless mode (no window)')
     parser.add_argument('--solo', '--isolated', action='store_true', help='Isolated profile (no cookies)')
-    parser.add_argument('--art', '--pixai', action='store_true', help='Pixai.art workflow')
-    parser.add_argument('--loop', '--pixai-bing-loop', action='store_true', help='Pixai + Bing 30x loop')
     parser.add_argument('--deep', '--deep-research', action='store_true', help='Deep Research (ChatGPT + Gemini parallel)')
     parser.add_argument('--all', '--multi-ai', action='store_true', help='Multi-AI (8 LLMs parallel)')
     parser.add_argument('--test', '--test-nav', action='store_true', help='Test navigation')
@@ -3033,9 +2813,6 @@ if __name__ == "__main__":
             drfetch(url=args.drfetch or None, watch=args.watch)
         elif args.log: launch_browser_with_positioning(); input("\n✓ Sign in anywhere. Press Enter or Ctrl+C to save & exit.\n")
         elif args.go: google_workflow()
-        elif args.bing: bing_workflow(args.runs)
-        elif args.art: pixai_workflow()
-        elif args.loop: pixai_bing_loop_workflow()
         elif args.deep or (args.say and not args.all):
             prompt = args.say or args.ask or None
             if pasted_content: prompt = f"{prompt}\n\n{pasted_content}" if prompt else pasted_content
