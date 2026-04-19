@@ -10,7 +10,7 @@ static int vm_android(void){
     snprintf(c,B,"%s -avd %s -no-window -no-audio -no-snapshot >/tmp/avd.log 2>&1 &",em,avd);system(c);
     printf("> booting %s...\n",avd);fflush(stdout);
     system("adb -s emulator-5554 wait-for-device shell 'until getprop sys.boot_completed|grep -q 1;do sleep 1;done' 2>/dev/null");
-    puts("+ ready: adb -s emulator-5554 shell");return 0;
+    execlp("adb","adb","-s","emulator-5554","shell","-t","cd /data/local/tmp;exec sh",(char*)0);return 1;
 }
 typedef struct{const char*name,*url,*user,*cloudinit;}vmos_t;
 static const vmos_t VMOS[]={
