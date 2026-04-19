@@ -2,14 +2,14 @@
 #define TMS "a"
 #define ACAT "a cat"
 static void tm_restore(void);
-static void tm_save_win(const char *sn, const char *wd) {
+static void tm_save_win(const char *sn, const char *wd, const char *cmd) {
     char sf[P];snprintf(sf,P,"%s/tmux_wins.txt",DDIR);
     char*d=readf(sf,NULL);FILE*f=fopen(sf,"w");if(!f){free(d);return;}
     if(d){int sl=(int)strlen(sn);for(char*l=d,*nl;*l;l=nl?nl+1:l+strlen(l)){
         nl=strchr(l,'\n');int ll=nl?(int)(nl-l):(int)strlen(l);
         if(ll>0&&!(ll>=sl&&l[sl]=='|'&&!memcmp(l,sn,(size_t)sl)))fprintf(f,"%.*s\n",ll,l);}free(d);}
-    if(wd)fprintf(f,"%s|%s\n",sn,wd);fclose(f);}
-static void tm_unsave_win(const char*sn){tm_save_win(sn,NULL);}
+    if(wd)fprintf(f,"%s|%s%s%s\n",sn,wd,cmd?"|":"",cmd?cmd:"");fclose(f);}
+static void tm_unsave_win(const char*sn){tm_save_win(sn,NULL,NULL);}
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
@@ -44,7 +44,8 @@ static void tm_sk(const char*w,const char*s,int l){char t[256];tm_t(w,t);pid_t p
 #define tm_key(w,s) tm_sk(w,s,0)
 static int tm_read(const char*w,char*buf,int len){char t[256];tm_t(w,t);
     char c[B];snprintf(c,B,"tmux capture-pane -t '%s' -p 2>/dev/null",t);return pcmd(c,buf,len);}
-/* write default prompt + tools info to file */
+/* write default prompt + tools info to file. source=off skips intro+a-cat. */
+#define SRC_ON strcmp(cfget("source"),"off")
 static int write_prompt_file(const char *path, const char *wd, const char *extra) {
     FILE *f=fopen(path,"w");if(!f)return 0;
     const char *dp=dprompt(),*cp=cfget("claude_prefix");
@@ -52,6 +53,9 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     if(cp[0])fprintf(f,"%s\n",cp);
     fprintf(f,"When work finished, run the a done command with a message to notify human."
         " a tools: a done <msg> a help a diff a push [msg] a note <text> a cat 2|3 a ssh\n");
+    if(SRC_ON){char ip[P];snprintf(ip,P,"%s/common/prompts/intro.txt",SROOT);
+        char*in=readf(ip,NULL);if(!in){const char*d="This is the code for a, the agent manager system you have been spawned from. You can use these tools and any other to acomplish your goal. User specific tools are in /adata/git/my. If you find an error in one of the /lib tools or /a, it is recommended to fix it on the spot to be shorter or the same length and send a pull request so all users may benefit from the fix. You can also use \"a task\" to help the user track deadlines for things which are in the future and can't be done in this session.";writef(ip,d);in=strdup(d);}
+        fprintf(f,"%s\n",in);free(in);}
     char af[P];snprintf(af,P,"%s/AGENTS.md",wd);
     char *amd=readf(af,NULL);if(amd){fprintf(f,"%s\n",amd);free(amd);}
     if(extra&&extra[0])fprintf(f,"\nTask: %s\n",extra);

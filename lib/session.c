@@ -32,9 +32,10 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
         else if(is_gemini)snprintf(csuf,512," --prompt-interactive \"$(cat '%s')\"",ctxf);
         else if(is_codex)snprintf(csuf,512," \"$(cat '%s')\"",ctxf);
     }
-    /* claude: a cat appends codebase to prompt file; others: prompt file already complete */
+    /* claude reads ctxf via file flag; codex/gemini inline $(cat) — ARG_MAX caps ~128KB, can't fit codebase */
+    char src_pfx[P+32]="";if(is_claude&&SRC_ON)snprintf(src_pfx,sizeof(src_pfx),"%s >>%s 2>/dev/null;",ACAT,ctxf);
     if (ai) snprintf(wcmd, sizeof(wcmd),
-        "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%s%s%stmux wait-for -S rdy-%s;while :;do %s%s;e=$?;[ $e -eq 0 ]&&break;echo \"$(date) $e $(pwd)\">>%s/crashes.log;echo -e \"\\n! crash $e [R]estart/[Q]uit:\";read -n1 k;[[ $k =~ [Rr] ]]||break;done", is_claude?ACAT " >>":"",ctxf,is_claude?" 2>/dev/null;":"",sn,acmd,csuf,LOGDIR);
+        "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%stmux wait-for -S rdy-%s;while :;do %s%s;e=$?;[ $e -eq 0 ]&&break;echo \"$(date) $e $(pwd)\">>%s/crashes.log;echo -e \"\\n! crash $e [R]estart/[Q]uit:\";read -n1 k;[[ $k =~ [Rr] ]]||break;done", src_pfx,sn,acmd,csuf,LOGDIR);
     else snprintf(wcmd, sizeof(wcmd), "%s", cmd ? cmd : "");
     tm_ensure_conf();
     int r = tm_new(sn, wd, wcmd);
@@ -51,7 +52,7 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
         char al[B]; snprintf(al, B, "session:%s log:%s", sn, lf);
         alog(al, wd);
     }
-    tm_save_win(sn, wd);
+    tm_save_win(sn, wd, cmd);
     return r;
 }
 
@@ -62,14 +63,15 @@ static void tm_restore(void) {
     for(char*l=d,*nl;*l;l=nl?nl+1:l+strlen(l)){
         nl=strchr(l,'\n');if(nl)*nl=0;
         char*s=strchr(l,'|');if(!s)continue;*s++=0;
-        char*s2=strchr(s,'|');if(s2)*s2=0;
+        char*bc=strchr(s,'|');if(bc)*bc++=0;
         if(!dexists(s))continue;
-        char key[16]="",*dash=strchr(l,'-');
-        if(dash)snprintf(key,16,"%.*s",(int)(dash-l),l);
-        sess_t*se=find_sess(key);if(!se)continue;
+        const char*base=bc&&*bc?bc:NULL;
+        if(!base){char key[16]="",*dash=strchr(l,'-');
+            if(dash)snprintf(key,16,"%.*s",(int)(dash-l),l);
+            sess_t*se=find_sess(key);if(!se)continue;base=se->cmd;}
         char cmd[1024];
-        int resume=strstr(se->cmd,"claude")||strstr(se->cmd,"gemini");
-        snprintf(cmd,1024,resume?"%s --continue":"%s",se->cmd);
+        int resume=strstr(base,"claude")&&!strstr(base,"--continue");
+        snprintf(cmd,1024,resume?"%s --continue":"%s",base);
         create_sess(l,s,cmd,NULL);}
     free(d);}
 
