@@ -35,7 +35,7 @@ static void _html_gen(void){
     /* build commands JSON from a i */
     char cmds[4096]="[]";
     {char out[8192];int pp[2];pipe(pp);pid_t ch=fork();
-    if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","i",(char*)0);_exit(1);}
+    if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execl("/proc/self/exe","a","i",(char*)0);_exit(1);}
     close(pp[1]);int ol=0;{int r;while((r=(int)read(pp[0],out+ol,(size_t)(8191-ol)))>0)ol+=r;}
     close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
     /* parse tab-separated lines into JSON array */
@@ -70,7 +70,7 @@ static void _html_gen(void){
     _shtml[_shlen]=0;free(src);
 }
 static void _sresp(int c,int code,const char*ct,const char*body,int bl){
-    char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl);
+    char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-cache\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl);
     (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
 }
 static int _ws_upgrade(int c,const char*req){
@@ -171,7 +171,7 @@ static void _handle(int c){
             fclose(f);}closedir(d);}
         _sresp(c,200,"text/html",html,hl);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
-        static const char H[]="<!doctype html><style>body,#m{display:flex;flex-direction:column;margin:0}body{background:#000;color:#fff;font:16px system-ui;height:100vh}#m{flex:1;overflow:auto;padding:16px}#m>div{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:75%;white-space:pre-wrap;background:#1f2937}.u{background:#1e3a8a!important;align-self:flex-end}#i{margin:8px;padding:14px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;width:calc(100% - 16px);box-sizing:border-box}</style><div id=m></div><input id=i autofocus placeholder=\"talk to a\" onkeydown=\"event.key=='Enter'&&S(i.value.trim())\"><script>S=v=>{if(!v)return;let u=document.createElement('div');u.className='u';u.textContent=v;m.appendChild(u);i.value='';let a=document.createElement('div');a.textContent='\\u2026';m.appendChild(a);m.scrollTop=1e9;fetch('/op/msg',{method:'POST',body:'q='+encodeURIComponent(v)}).then(async r=>{const rd=r.body.getReader(),dc=new TextDecoder();let buf='';a.textContent='';for(;;){const{done,value}=await rd.read();if(done)break;buf+=dc.decode(value,{stream:true});const i=buf.lastIndexOf('\f');if(i>=0){a.textContent=buf.slice(i+1);m.scrollTop=1e9}}})}</script>";
+        static const char H[]="<!doctype html><style>body,#m{display:flex;flex-direction:column;margin:0}body{background:#000;color:#fff;font:16px system-ui;height:100vh}#m{flex:1;overflow:auto;padding:16px}#m>div{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:75%;white-space:pre-wrap;background:#1f2937}.u{background:#1e3a8a!important;align-self:flex-end}#i{margin:8px;padding:14px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;width:calc(100% - 16px);box-sizing:border-box;outline:none}</style><div id=m></div><form id=f><input id=i autofocus placeholder=\"talk to a\"></form><script>S=v=>{let a=document.createElement('div');if(v){let u=document.createElement('div');u.className='u';u.textContent=v;m.appendChild(u)}m.appendChild(a);m.scrollTop=1e9;fetch('/op/msg',{method:'POST',body:'q='+encodeURIComponent(v||'')}).then(async r=>{const rd=r.body.getReader(),dc=new TextDecoder();let b='';for(;;){const{done,value}=await rd.read();if(done)break;b+=dc.decode(value,{stream:true});const k=b.lastIndexOf('\f');if(k>=0){a.textContent=b.slice(k+1);m.scrollTop=1e9}}})};f.onsubmit=e=>{e.preventDefault();S(i.value.trim());i.value=''};S('')</script>";
         _sresp(c,200,"text/html",H,sizeof H-1);return;}
     if(!strncmp(req,"POST /op/msg",12)){
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
@@ -193,19 +193,19 @@ static void _handle(int c){
         /* FIFO + poll: native event-driven, no inotify watch limit */
         mkfifo("/tmp/op_a.fifo",0644);
         (void)!system("tmux pipe-pane -t a:op-a.0;tmux pipe-pane -t a:op-a.0 'cat >/tmp/op_a.fifo'");
-        int ifd=open("/tmp/op_a.fifo",O_RDONLY|O_NONBLOCK);
-        pid_t pid=fork();
-        if(!pid){execlp("tmux","tmux","send-keys","-l","-t","a:op-a.0","--",msg,(char*)0);_exit(1);}
-        waitpid(pid,NULL,0);(void)!system("tmux send-keys -t a:op-a.0 Enter");
+        int ifd=open("/tmp/op_a.fifo",O_RDWR|O_NONBLOCK);
+        if(mi){pid_t pid=fork();
+            if(!pid){execlp("tmux","tmux","send-keys","-l","-t","a:op-a.0","--",msg,(char*)0);_exit(1);}
+            waitpid(pid,NULL,0);(void)!system("tmux send-keys -t a:op-a.0 Enter");}
         /* stream chunked: each inotify event → capture → emit delta. ms-level UX. */
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-cache\r\n\r\n";
         (void)!write(c,SH,sizeof SH-1);
         struct pollfd pf={.fd=ifd,.events=POLLIN};int got=0,last_len=0;
-        for(;;){int to=got?300:30000;int n=poll(&pf,1,to);
+        for(;;){int to=got?300:(mi?30000:50);int n=poll(&pf,1,to);
             if(n>0){char b[4096];while(read(ifd,b,4096)>0)got=1;}
             DRAIN(cur);
-            char*p=NULL,*s=cur;while((s=strstr(s,msg)))p=s,s+=strlen(msg);
-            char*r=p?p+strlen(msg):cur;int ci=0;
+            char*r=cur,*p=NULL,*s=cur;while(*msg&&(s=strstr(s,msg)))p=s,s+=strlen(msg);
+            if(p)r=p+strlen(msg);int ci=0;
             for(int i=0;r[i]&&ci<CAP-1;i++){
                 if(r[i]==0x1b&&r[i+1]=='['){i+=2;while(r[i]&&!isalpha((unsigned char)r[i]))i++;}
                 else if(r[i]=='\n'&&(unsigned char)r[i+1]==0xE2&&(unsigned char)r[i+2]==0x94)break;
