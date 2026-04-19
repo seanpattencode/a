@@ -170,6 +170,56 @@ static void _handle(int c){
                 hl+=snprintf(html+hl,(size_t)(16383-hl),"<div class=ni><span>%s</span></div>",ln+6);break;}}
             fclose(f);}closedir(d);}
         _sresp(c,200,"text/html",html,hl);return;}
+    if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
+        static const char H[]="<!doctype html><style>body,#m{display:flex;flex-direction:column;margin:0}body{background:#000;color:#fff;font:16px system-ui;height:100vh}#m{flex:1;overflow:auto;padding:16px}#m>div{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:75%;white-space:pre-wrap;background:#1f2937}.u{background:#1e3a8a!important;align-self:flex-end}#i{margin:8px;padding:14px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;width:calc(100% - 16px);box-sizing:border-box}</style><div id=m></div><input id=i autofocus placeholder=\"talk to a\" onkeydown=\"event.key=='Enter'&&S(i.value.trim())\"><script>S=v=>{if(!v)return;let u=document.createElement('div');u.className='u';u.textContent=v;m.appendChild(u);i.value='';let a=document.createElement('div');a.textContent='\\u2026';m.appendChild(a);m.scrollTop=1e9;fetch('/op/msg',{method:'POST',body:'q='+encodeURIComponent(v)}).then(async r=>{const rd=r.body.getReader(),dc=new TextDecoder();let buf='';a.textContent='';for(;;){const{done,value}=await rd.read();if(done)break;buf+=dc.decode(value,{stream:true});const i=buf.lastIndexOf('\f');if(i>=0){a.textContent=buf.slice(i+1);m.scrollTop=1e9}}})}</script>";
+        _sresp(c,200,"text/html",H,sizeof H-1);return;}
+    if(!strncmp(req,"POST /op/msg",12)){
+        char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
+        body+=4;char*q=strstr(body,"q=");if(!q){_sresp(c,400,"text/plain","no q",4);return;}
+        q+=2;char msg[2048];int mi=0;
+        for(;q[mi]&&q[mi]!='&'&&mi<2046;mi++){
+            if(q[mi]=='+')msg[mi]=' ';
+            else if(q[mi]=='%'&&q[mi+1]&&q[mi+2]){char h[3]={q[mi+1],q[mi+2],0};msg[mi]=(char)strtol(h,NULL,16);q+=2;}
+            else msg[mi]=q[mi];}msg[mi]=0;
+        /* sends to live `a o` tmux window (op-a) — same session user attaches with `a o` */
+        if(system("tmux has-session -t a:op-a 2>/dev/null")){
+            char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH setsid a o </dev/null >/dev/null 2>&1 &",SDIR);(void)!system(tc);
+            for(int i=0;i<15&&system("tmux has-session -t a:op-a 2>/dev/null");i++)sleep(1);
+            sleep(4);}
+        #define CAP 65536
+        static char cur[CAP],cln[CAP],last[CAP];last[0]=0;
+        #define DRAIN(buf) do{FILE*pf=popen("tmux capture-pane -t a:op-a.0 -p -S -200","r");size_t cl=0;\
+            if(pf){size_t r;while(cl<CAP-1&&(r=fread(buf+cl,1,CAP-1-cl,pf)))cl+=r;pclose(pf);}buf[cl]=0;}while(0)
+        /* FIFO + poll: native event-driven, no inotify watch limit */
+        mkfifo("/tmp/op_a.fifo",0644);
+        (void)!system("tmux pipe-pane -t a:op-a.0;tmux pipe-pane -t a:op-a.0 'cat >/tmp/op_a.fifo'");
+        int ifd=open("/tmp/op_a.fifo",O_RDONLY|O_NONBLOCK);
+        pid_t pid=fork();
+        if(!pid){execlp("tmux","tmux","send-keys","-l","-t","a:op-a.0","--",msg,(char*)0);_exit(1);}
+        waitpid(pid,NULL,0);(void)!system("tmux send-keys -t a:op-a.0 Enter");
+        /* stream chunked: each inotify event → capture → emit delta. ms-level UX. */
+        static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-cache\r\n\r\n";
+        (void)!write(c,SH,sizeof SH-1);
+        struct pollfd pf={.fd=ifd,.events=POLLIN};int got=0,last_len=0;
+        for(;;){int to=got?300:30000;int n=poll(&pf,1,to);
+            if(n>0){char b[4096];while(read(ifd,b,4096)>0)got=1;}
+            DRAIN(cur);
+            char*p=NULL,*s=cur;while((s=strstr(s,msg)))p=s,s+=strlen(msg);
+            char*r=p?p+strlen(msg):cur;int ci=0;
+            for(int i=0;r[i]&&ci<CAP-1;i++){
+                if(r[i]==0x1b&&r[i+1]=='['){i+=2;while(r[i]&&!isalpha((unsigned char)r[i]))i++;}
+                else if(r[i]=='\n'&&(unsigned char)r[i+1]==0xE2&&(unsigned char)r[i+2]==0x94)break;
+                else if((unsigned char)r[i]==0xE2&&(unsigned char)r[i+1]==0x97&&(unsigned char)r[i+2]==0x8F&&r[i+3]==' ')i+=3;
+                else cln[ci++]=r[i];}
+            cln[ci]=0;
+            int diff=ci!=last_len||memcmp(cln,last,(size_t)ci);
+            if(diff){
+                char hh[16];int hl=snprintf(hh,16,"%x\r\n",ci+1);
+                (void)!write(c,hh,(size_t)hl);(void)!write(c,"\f",1);(void)!write(c,cln,(size_t)ci);(void)!write(c,"\r\n",2);
+                memcpy(last,cln,(size_t)ci);last_len=ci;}
+            int spin=strstr(cur,"\xe2\x80\xa6 (")!=NULL;
+            if(n==0&&(!got||!spin))break;}
+        close(ifd);(void)!write(c,"0\r\n\r\n",5);return;}
     _sresp(c,404,"text/plain","not found",9);
 }
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
