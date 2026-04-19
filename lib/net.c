@@ -76,11 +76,6 @@ static int cmd_log(int argc, char **argv) {
         if(!stat(_p,&_s)&&_s.st_mtime>newest)newest=_s.st_mtime;}}closedir(_d);} } while(0)
     mkdirp(LOGDIR);
     int nlogs; time_t llm_new; DCOUNT(LOGDIR,".log",nlogs,llm_new);
-    char jdir[P]; snprintf(jdir,P,"%s/git/jobs",AROOT);
-    int jlogs; time_t job_new; DCOUNT(jdir,".log",jlogs,job_new);
-    char gurl[256]=""; { char gp[P]; snprintf(gp,P,"%s/git/.git/config",AROOT);
-        char *gc=readf(gp,NULL); if(gc){char *u=strstr(gc,"url = ");if(u){u+=6;char*nl=strchr(u,'\n');if(nl)*nl=0;snprintf(gurl,256,"%s",u);}free(gc);} }
-    int git_ok=gurl[0]!=0;
     /* count backup subdirs + newest .jsonl across them */
     int nbak=0; time_t bak_new=0; { char bd[P]; snprintf(bd,P,"%s/backup",AROOT);
         DIR*d=opendir(bd); struct dirent*e; if(d){while((e=readdir(d))){if(e->d_name[0]=='.')continue;
@@ -99,7 +94,6 @@ static int cmd_log(int argc, char **argv) {
         printf("%s %-18s %3d  %-28s last: %s\n",n?"✓":"x",l,n,p,ago); if(u)printf("  → %s\n",u); }
     putchar('\n');
     ROW(llm_new,nlogs,"LLM transcripts",bpath,gdu[0]?gdu:NULL)
-    ROW(job_new,jlogs,"Job tmux logs","adata/git/jobs/",git_ok?gurl:NULL)
     ROW(bak_new,nbak,"JSONL backup",bpath,gdu[0]?gdu:NULL)
     #undef ROW
     #undef DCOUNT
