@@ -3,6 +3,9 @@
 #define IP_CMD "(hostname -I 2>/dev/null||python3 -c 'import socket;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.connect((\"8.8.8.8\",80));print(s.getsockname()[0])' 2>/dev/null)|awk '{print $1;exit}'"
 static void ssh_parse(const char*h,char*hp,char*port){
     snprintf(hp,256,"%s",h);char*c=strrchr(hp,':');if(c){snprintf(port,8,"%s",c+1);*c=0;}else snprintf(port,8,"22");}
+static const char*ssh_scope(const char*ip){/* lan if RFC1918, else wan */
+    int a,b;if(sscanf(ip,"%d.%d",&a,&b)!=2)return"wan";
+    return(a==10||(a==172&&b>=16&&b<=31)||(a==192&&b==168))?"lan":"wan";}
 static int ssh_pre(char*c,int sz,const char*pw,const char*opts,const char*port,const char*hp){
     int n=0;if(pw&&pw[0])n=snprintf(c,(size_t)sz,"sshpass -p '%s' ",pw);
     return n+snprintf(c+n,(size_t)(sz-n),"ssh" SMUX " %s -p %s '%s'",opts,port,hp);}
@@ -19,15 +22,15 @@ static int ssh_idx(const char*a,const void*H_,int nh){
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);sync_bg();
-    typedef struct{char name[128],host[256],host2[256],pw[256],path[P];}host_t;
+    typedef struct{char name[128],host[256],pw[256],path[P];}host_t;
     host_t H[32];int nh=0,arc=0;
     char paths[32][P];int np=listdir(dir,paths,32);
     for(int i=np-1;i>=0&&nh<32;i--){
         kvs_t kv=kvfile(paths[i]);const char*n=kvget(&kv,"Name");if(!n)continue;
         int dup=0;for(int j=0;j<nh;j++)if(!strcmp(H[j].name,n)){dup=1;break;}
         if(dup){do_archive(paths[i]);arc++;continue;}
-        snprintf(H[nh].name,128,"%s",n);const char*h=kvget(&kv,"Host"),*p=kvget(&kv,"Password"),*h2=kvget(&kv,"Host2");
-        snprintf(H[nh].host,256,"%s",h?h:"");snprintf(H[nh].host2,256,"%s",h2?h2:"");
+        snprintf(H[nh].name,128,"%s",n);const char*h=kvget(&kv,"Host"),*p=kvget(&kv,"Password");
+        snprintf(H[nh].host,256,"%s",h?h:"");
         snprintf(H[nh].pw,256,"%s",p?p:"");snprintf(H[nh].path,P,"%s",paths[i]);nh++;}
     if(arc)sync_bg();
     const char*sub=argc>2?argv[2]:NULL;
@@ -39,13 +42,15 @@ static int cmd_ssh(int argc,char**argv){
         else{pcmd(IP_CMD,ip,128);ip[strcspn(ip,"\n")]=0;
             if(!access("/data/data/com.termux",F_OK))snprintf(port,8,"8022");}
         if(ip[0]){snprintf(h,256,!strcmp(port,"22")?"%s@%s":"%s@%s:%s",u?u:"",ip,port);
-            int f=-1;for(int i=0;i<nh;i++)if(!strcmp(H[i].name,DEV)){f=i;break;}
-            if(f<0||strcmp(H[f].host,h)){ssh_savex(dir,DEV,h,f>=0?H[f].pw:NULL,0,0);
-                if(f<0&&nh<32){snprintf(H[nh].name,128,"%s",DEV);snprintf(H[nh].host,256,"%s",h);H[nh].pw[0]=0;nh++;}
+            char sn[160];snprintf(sn,160,"%s-%s",DEV,ssh_scope(ip));
+            int f=-1;for(int i=0;i<nh;i++)if(!strcmp(H[i].name,sn)){f=i;break;}
+            if(f<0||strcmp(H[f].host,h)){ssh_savex(dir,sn,h,f>=0?H[f].pw:NULL,0,0);
+                if(f<0&&nh<32){snprintf(H[nh].name,128,"%s",sn);snprintf(H[nh].host,256,"%s",h);H[nh].pw[0]=0;nh++;}
                 else if(f>=0)snprintf(H[f].host,256,"%s",h);}}
         int on=!system("pgrep -x sshd >/dev/null 2>&1");
         printf("SSH sshd:%s\n\n",on?" \033[32mon\033[0m":" \033[31moff\033[0m");
-        for(int i=0;i<nh;i++){int s=!strcmp(H[i].name,DEV);
+        size_t dl=strlen(DEV);
+        for(int i=0;i<nh;i++){int s=!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-';
             printf("  %d. %s%s%s: %s%s\n",i,s?"\033[32m":"",H[i].name,s?" (self)\033[0m":"",H[i].host,H[i].pw[0]?" [pw]":"");}
         if(!nh)puts("  (none)");
         puts("\n  a=add  l=all  f=self  b=start  x=stop  c=status  u=setup\n  k=key  h=auth  r=rm  w=pw  m=mv  i=info  o=os  p=ping");
@@ -111,8 +116,8 @@ static int cmd_ssh(int argc,char**argv){
         char o[64];if(pcmd(tc,o,64)||!strstr(o,"ok")){printf("x auth failed: %s",o);return 1;}}
         ssh_savex(dir,n,h,pw,0,0);printf("✓ %s\n",n);return 0;}
     /* self — register this device */
-    if(!strcmp(sub,"self")){char ip[128]="",port[8]="22",h[256];
-        const char*u=getenv("USER");const char*nm=argc>3?argv[3]:DEV;
+    if(!strcmp(sub,"self")){char ip[128]="",port[8]="22",h[256],dnm[160];
+        const char*u=getenv("USER");const char*nm=argc>3?argv[3]:dnm;
         /* WSL detection */
         int wsl=0;{char pv[64];pcmd("grep -ci microsoft /proc/version 2>/dev/null",pv,64);wsl=atoi(pv)>0;}
         if(wsl){
@@ -141,6 +146,7 @@ static int cmd_ssh(int argc,char**argv){
             if(!access("/data/data/com.termux",F_OK))snprintf(port,8,"8022");
             else{char pp[8];pcmd("awk '/^Port /{printf $2}' /etc/ssh/sshd_config 2>/dev/null",pp,8);if(pp[0])snprintf(port,8,"%s",pp);}}
         snprintf(h,256,!strcmp(port,"22")?"%s@%s":"%s@%s:%s",u?u:"",ip,port);
+        snprintf(dnm,160,"%s-%s",DEV,ssh_scope(ip));
         char os[128];pcmd("uname -sr 2>/dev/null",os,128);os[strcspn(os,"\n")]=0;
         /* preserve existing password */
         const char*epw=NULL;for(int i=0;i<nh;i++)if(!strcmp(H[i].name,nm)){epw=H[i].pw;break;}
@@ -196,18 +202,16 @@ static int cmd_ssh(int argc,char**argv){
     if(isdigit((unsigned char)*sub))idx=atoi(sub);
     else{for(int i=0;i<nh;i++)if(!strcmp(H[i].name,sub)){idx=i;break;}}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
-    char hp[2][256]={{0}},port[2][8]={{0}};int nH=1;
-    ssh_parse(H[idx].host,hp[0],port[0]);
-    if(H[idx].host2[0]){ssh_parse(H[idx].host2,hp[1],port[1]);nH=2;}
+    char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
     /* heal stale multiplex: boot orphan ssh (ppid=1, no +) on prompt */
     {char ps[B*2],pids[B]="";
-     snprintf(ps,B*2,"ps -axwwo pid=,ppid=,stat=,args= 2>/dev/null|awk -v h='%s' 'index($0,\"-oControlMaster\")&&index($0,h)&&$2==1&&$3!~/\\+/{print $1}'",hp[0]);
+     snprintf(ps,B*2,"ps -axwwo pid=,ppid=,stat=,args= 2>/dev/null|awk -v h='%s' 'index($0,\"-oControlMaster\")&&index($0,h)&&$2==1&&$3!~/\\+/{print $1}'",hp);
      pcmd(ps,pids,B);int n=0;for(char*p=pids;*p;p++)if(*p=='\n')n++;
      if(n&&isatty(0)){fprintf(stderr,"! %s: %d orphan ssh (not master). boot? [Y/n] ",H[idx].name,n);
       char a[8];if(!fgets(a,8,stdin)||(a[0]!='n'&&a[0]!='N')){
        for(char*p=pids,*s=pids;;p++)if(*p=='\n'||!*p){int e=!*p;*p=0;if(*s)kill(atoi(s),SIGTERM);if(e)break;s=p+1;}
        fprintf(stderr,"+ cleaned %d\n",n);}}}
-    if(!H[idx].pw[0]&&nH==1){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port[0],hp[0]);
+    if(!H[idx].pw[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");
         if(system(tc)){char pw[256];printf("Password for %s: ",H[idx].name);
             if(fgets(pw,256,stdin)){pw[strcspn(pw,"\n")]=0;if(pw[0]){snprintf(H[idx].pw,256,"%s",pw);ssh_savex(dir,H[idx].name,H[idx].host,pw,0,0);}}}}
@@ -215,14 +219,9 @@ static int cmd_ssh(int argc,char**argv){
         {char cwd[P];size_t hl=strlen(HOME);if(getcwd(cwd,P)&&!strncmp(cwd,HOME,hl)&&cwd[hl]=='/'){char*p=cwd+hl+1;char*s=strchr(p,'/');if(s)*s=0;if(*p&&*p!='.')snprintf(cd,64,"cd ~/%s 2>/dev/null;",p);}}
         for(int i=3;i<argc;i++){int l=(int)strlen(cmd);snprintf(cmd+l,(size_t)(B-l),"%s%s",l?" ":"",argv[i]);}
         if(cmd[0]||cd[0])snprintf(cs,B," 'bash -c '\"'\"'%sexport PATH=$HOME/.local/bin:$PATH; %s'\"'\"''",cd,cmd[0]?cmd:"exec bash -l");
-        int n=0;char o[96];
-        for(int i=0;i<nH;i++){
-            if(i)n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),";r=$?;[ $r -eq 255 ]&&exec ");
-            snprintf(o,96,"-tt -oConnectTimeout=%d -oStrictHostKeyChecking=accept-new",i?3:2);
-            n+=ssh_pre(c+n,(int)(sizeof(c)-(size_t)n),H[idx].pw,o,port[i],hp[i]);
-            n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),"%s",cs);}
-        if(nH>1)n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),";exit $r");
-        else if(!cs[0])printf("Connecting to %s...\n",H[idx].name);
+        int n=ssh_pre(c,(int)sizeof(c),H[idx].pw,"-tt -oConnectTimeout=2 -oStrictHostKeyChecking=accept-new",port,hp);
+        n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),"%s",cs);
+        if(!cs[0])printf("Connecting to %s...\n",H[idx].name);
         if(cmd[0])alarm(30);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 }
