@@ -519,7 +519,7 @@ static int cmd_adb(int c,char**v){
     if(c>3&&!strcmp(v[2],"cmd")){perf_disarm();
         char cmd[B]="";ajoin(cmd,B,c,v,3);
         execl("/bin/sh","sh","-c",
-          "u=$(adb shell cmd package list packages -U com.termux 2>/dev/null|grep -oE 'uid:[0-9]+'|cut -d: -f2);"
+          "u=$(adb shell cmd package list packages -U|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');"
           "adb forward tcp:18022 tcp:8022 >/dev/null 2>&1;"
           "ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p 18022 u0_a$((u-10000))@localhost \"$1\";r=$?;"
           "adb forward --remove tcp:18022 >/dev/null 2>&1;"
