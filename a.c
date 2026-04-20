@@ -405,7 +405,8 @@ static int cmd_cat(int c,char**v){perf_disarm();
         printf("> ");fflush(stdout);char ch[4];if(!fgets(ch,4,stdin))return 0;m=ch[0];}}
     const char*ex=m!='1'?" -- ':!my/'":"";
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
-    {char cm[B];snprintf(cm,B,"git grep -lI ''%s",ex);
+    {char cm[B];CWD(wc);size_t sl=strlen(SDIR);
+    snprintf(cm,B,strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/')?"{ git -C '%1$s' grep -lI ''%2$s|sed 's|^|%1$s/|';git grep -lI ''%2$s 2>/dev/null; }":"git grep -lI ''%2$s",SDIR,ex);
     size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,skf=0;
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
     if(fl){while((n=fread(b,1,8192,fl))>0){if(fl2+n<65536){memcpy(fb+fl2,b,n);fl2+=n;}}pclose(fl);}
@@ -442,7 +443,7 @@ static int cmd_cat(int c,char**v){perf_disarm();
             char hdr[256];size_t hl=(size_t)snprintf(hdr,256,"\n==> context: %s <==\n",de->d_name);
             GA(hdr,hl);char ln2[512];while(fgets(ln2,512,cf)){size_t sl=strlen(ln2);GA(ln2,sl);}fclose(cf);nf++;}}closedir(dd);}}
     {char p[P];snprintf(p,P,"%s/common/prompts/default.txt",SROOT);FILE*f=fopen(p,"r");
-     if(f){GA("\n==> default prompt <==\n",24);char b[512];size_t r;while((r=fread(b,1,512,f))>0)GA(b,r);fclose(f);nf++;}}
+     if(f){GA("\n==> default prompt <==\n",24);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
     if(!d)return 1;d[l]=0;
     char tf[P];snprintf(tf,P,"%s/local/a_cat.txt",AROOT);writef(tf,d);
     {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full\n\n",tf,lc);}
