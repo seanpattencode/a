@@ -52,9 +52,11 @@ w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(thi
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
-val nv=object:View(this){private lateinit var bm:Bitmap;private var px:IntArray?=null
-override fun onSizeChanged(w:Int,h:Int,ow:Int,oh:Int){if(::bm.isInitialized)bm.recycle();bm=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);px=IntArray(w*h);nResize(w,h);nFont(atlas(48f))}
-override fun onDraw(c:Canvas){val a=px?:return;nRender(a);bm.setPixels(a,0,width,0,0,width,height);c.drawBitmap(bm,0f,0f,null)}}
+val clog=TextView(this).apply{setBackgroundColor(-0x1000000);setTextColor(-1);typeface=Typeface.MONOSPACE;setPadding(16,16,16,16);textSize=11f;text="# native sh - type command, Enter. uses app env\n"}
+val sv=ScrollView(this).apply{addView(clog);setBackgroundColor(-0x1000000)}
+val cin=EditText(this).apply{hint="sh \$ ";setBackgroundColor(-0xeeeeef);setTextColor(-1);setSingleLine(true);typeface=Typeface.MONOSPACE;setPadding(16,16,16,16);imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND;inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS}
+cin.setOnEditorActionListener{_,_,_->val cmd=cin.text.toString();if(cmd.isNotEmpty()){clog.append("\n$ $cmd\n");cin.setText("");Thread{try{val pb=ProcessBuilder("sh","-c",cmd).redirectErrorStream(true).directory(filesDir);pb.environment().apply{put("PATH","$nl:/system/bin");put("HOME",filesDir.absolutePath);put("TMUX_BIN","$nl/libtmux.so");put("TERMINFO","${filesDir}/terminfo");put("TMUX_TMPDIR",filesDir.absolutePath);put("A_SDIR",filesDir.absolutePath)};val p=pb.start();val out=p.inputStream.bufferedReader().readText();p.waitFor();runOnUiThread{clog.append(out);sv.post{sv.fullScroll(View.FOCUS_DOWN)}}}catch(e:Exception){runOnUiThread{clog.append("ERR: ${e.message}\n")}}}.start()};true}
+val nv=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;addView(sv,LinearLayout.LayoutParams(-1,0,1f));addView(cin,LinearLayout.LayoutParams(-1,-2))}
 nv.visibility=View.GONE
 val fr=FrameLayout(this);fr.addView(w);fr.addView(nv)
 fun tab(s:String)=TextView(this).apply{text=s;gravity=Gravity.CENTER;setTextColor(-1);setPadding(0,32,0,32);layoutParams=LinearLayout.LayoutParams(0,-2,1f)}
