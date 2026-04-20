@@ -582,7 +582,7 @@ static int run_lab(const char*pf,int argc,char**argv){
     if(x){argv[1]=(char*)pf;argv[0]=x;execvp(x,argv);}
     if(!strcmp(dx,".c")){char ob[P],cm[B];const char*bn=bname(pf);
      snprintf(ob,P,"%s/lab_%.*s",TMP,(int)(dx-bn),bn);
-     snprintf(cm,B,"cc -w -o '%s' '%s'&&'%s'",ob,pf,ob);return system(cm);}
+     snprintf(cm,B,"cc -w -o '%s' '%s'",ob,pf);return system(cm)||(argv[1]=(char*)ob,execv(ob,argv+1));}
     if(!strcmp(dx,".html"))execlp("xdg-open","xdg-open",pf,(char*)0);
     return -1;}
 typedef struct { const char *n; int (*fn)(int, char**); } cmd_t;
