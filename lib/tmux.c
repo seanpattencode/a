@@ -59,6 +59,9 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     char af[P];snprintf(af,P,"%s/AGENTS.md",wd);
     char *amd=readf(af,NULL);if(amd){fprintf(f,"%s\n",amd);free(amd);}
     if(extra&&extra[0])fprintf(f,"\nTask: %s\n",extra);
+    fprintf(f,"\nInstalled tools on this device:\n");
+    FILE*tp=popen("ls $(echo \"$PATH\"|tr : ' ') 2>/dev/null|sort -u","r");
+    if(tp){char b[8192];size_t n;while((n=fread(b,1,8192,tp))>0)fwrite(b,1,n,f);pclose(tp);}
     fclose(f);return 1;
 }
 /* job cmd */
