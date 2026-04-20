@@ -5,7 +5,7 @@ KT=r'''@file:Suppress("DEPRECATION","OVERRIDE_DEPRECATION")
 package com.aios.a
 import android.app.Activity;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*
 import java.io.File;import java.io.OutputStream;import java.net.Socket
-private const val U="http://127.0.0.1:1111/term"
+private const val U="http://127.0.0.1:1112/term"
 class M:Activity(){
 companion object{init{System.loadLibrary("anative")}}
 private external fun nResize(w:Int,h:Int)
@@ -17,9 +17,9 @@ private val wsExec=java.util.concurrent.Executors.newSingleThreadExecutor()
 private fun pg(s:String)=w.loadDataWithBaseURL(null,"<body style='font:18px monospace;padding:20px;background:#000;color:#0f0'>$s","text/html","utf-8",null)
 private fun jsEval(s:String)=h.post{w.evaluateJavascript(s,null)}
 @JavascriptInterface fun retry(){h.post{boot()}}
-@JavascriptInterface fun wsOpen(url:String){wsExec.submit{try{val s=Socket("127.0.0.1",1111);wsOut=s.getOutputStream()
+@JavascriptInterface fun wsOpen(url:String){wsExec.submit{try{val s=Socket("127.0.0.1",1112);wsOut=s.getOutputStream()
 val k=android.util.Base64.encodeToString(ByteArray(16).also{java.security.SecureRandom().nextBytes(it)},android.util.Base64.NO_WRAP)
-wsOut!!.write("GET /ws HTTP/1.1\r\nHost: 127.0.0.1:1111\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $k\r\nSec-WebSocket-Version: 13\r\n\r\n".toByteArray())
+wsOut!!.write("GET /ws HTTP/1.1\r\nHost: 127.0.0.1:1112\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $k\r\nSec-WebSocket-Version: 13\r\n\r\n".toByteArray())
 val ins=s.getInputStream();val hd=StringBuilder();while(!hd.endsWith("\r\n\r\n")){val b=ins.read();if(b<0)return@submit;hd.append(b.toChar())}
 jsEval("window._wsOpen&&window._wsOpen()")
 val buf=ByteArray(65536);while(true){val op=ins.read();if(op<0)break;val lb=ins.read();if(lb<0)break;var len=lb and 0x7f
@@ -42,7 +42,7 @@ private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib/ui");ui.mkdirs();val up=File(ui,"ui_full.py");if(!up.exists())assets.open("ui_full.py").use{i->up.outputStream().use{o->i.copyTo(o)}}
 val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.deleteRecursively();ti.mkdirs();val src=File(filesDir,"terminfo.src");if(!src.exists())assets.open("terminfo.src").use{i->src.outputStream().use{o->i.copyTo(o)}}
 ProcessBuilder("$nl/libtic.so","-o",ti.absolutePath,src.absolutePath).redirectErrorStream(true).redirectOutput(File(filesDir,"tic.log")).start().waitFor()}}
-private fun spawn(){val pb=ProcessBuilder("$nl/liba.so","serve","1111");pb.environment().apply{put("PATH","$nl:/system/bin");put("TMUX_BIN","$nl/libtmux.so");put("TIC_BIN","$nl/libtic.so");put("TMUX_TMPDIR",filesDir.absolutePath);put("TERMINFO","${filesDir}/terminfo");put("HOME",filesDir.absolutePath);put("A_SDIR",filesDir.absolutePath)};pb.redirectErrorStream(true);pb.redirectOutput(File(filesDir,"serve.log"));try{pb.start()}catch(x:Exception){pg("spawn failed: $x")}}
+private fun spawn(){val pb=ProcessBuilder("$nl/liba.so","serve","1112");pb.environment().apply{put("PATH","$nl:/system/bin");put("TMUX_BIN","$nl/libtmux.so");put("TIC_BIN","$nl/libtic.so");put("TMUX_TMPDIR",filesDir.absolutePath);put("TERMINFO","${filesDir}/terminfo");put("HOME",filesDir.absolutePath);put("A_SDIR",filesDir.absolutePath)};pb.redirectErrorStream(true);pb.redirectOutput(File(filesDir,"serve.log"));try{pb.start()}catch(x:Exception){pg("spawn failed: $x")}}
 private fun boot(){setup();spawn();n=0;h.postDelayed({w.loadUrl(U)},1800)}
 private fun atlas(sz:Float):IntArray{val p=Paint().apply{textSize=sz;color=-1;isAntiAlias=true;typeface=Typeface.MONOSPACE};val cw=p.measureText("M").toInt()+1;val ch=(-p.ascent()+p.descent()).toInt()+1;val b=Bitmap.createBitmap(cw*95,ch,Bitmap.Config.ARGB_8888);Canvas(b).let{c->for(i in 0 until 95)c.drawText(((32+i).toChar()).toString(),(i*cw).toFloat(),-p.ascent(),p)};val r=IntArray(2+cw*95*ch);r[0]=cw;r[1]=ch;b.getPixels(r,2,cw*95,0,0,cw*95,ch);b.recycle();return r}
 @android.annotation.SuppressLint("ClickableViewAccessibility")
@@ -81,7 +81,7 @@ for(int j=0;j<F.ch;j++)for(int i=0;i<F.cw;i++){int px_=x+i,py=y+j;
 if(px_>=0&&px_<W&&py>=0&&py<H){uint32_t s=F.px[j*F.aw+ox+i];if(s&0xFF000000)p[py*W+px_]=s;}}}
 static void dt(uint32_t*p,int x,int y,const char*t){for(;*t;t++,x+=F.cw)dch(p,x,y,*t);}
 JNIEXPORT void JNICALL Java_com_aios_a_M_nRender(JNIEnv*e,jobject o,jintArray px){(void)o;
-jint*p=(*e)->GetIntArrayElements(e,px,0);for(int i=0;i<W*H;i++)p[i]=0xFF111111;
+jint*p=(*e)->GetIntArrayElements(e,px,0);for(int i=0;i<W*H;i++)p[i]=0xFF111211;
 if(F.px){int tw=(int)strlen("a")*F.cw;dt(p,(W-tw)/2,H/3,"a");
 tw=(int)strlen("agent manager")*F.cw;dt(p,(W-tw)/2,H/3+F.ch+20,"agent manager");}
 (*e)->ReleaseIntArrayElements(e,px,p,0);}
