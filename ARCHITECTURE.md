@@ -35,3 +35,4 @@
 26. For a distributed system, killing jobs and repurposing should be doable in milliseconds. Killing all ptys and launching new ones does this natively. Traditional systems built to manage this are overhead for no reason and only harm latency.
 27. In the real world, latency to change beats throughput, because it minimizes time to iterate. Improving the process matters more than doing the wrong or worse thing more times.
 28. Worst case, drop everything and pivot — this is necessary to minimize time to correct when a direction turns out wrong.
+29. The system must be structured so that a llm with limited context window and human can easily understand the system and full codebase in context still works for llms. a.c is the single file that if nothing else viewed should explain the project. This might make some info redundant to a whole repo reader but its worth it. 
