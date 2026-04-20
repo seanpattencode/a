@@ -145,6 +145,7 @@ if __name__ == "__main__":
 
     cmd = args[1]
     if cmd == "list": cmd_list(show_all=True)
+    elif cmd == "install": subprocess.run(["brew","install","--cask","calibre"] if sys.platform=="darwin" else ["sudo","apt-get","install","-y","calibre"])
     elif cmd == "sync": cmd_sync()
     elif cmd == "add":
         if len(args) < 3: print("Usage: a book add <file>"); sys.exit(1)
