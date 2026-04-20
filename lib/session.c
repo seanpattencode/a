@@ -20,7 +20,10 @@ static void fallback_py(const char *mod, int argc, char **argv) {
 /* session create — returns 1 if window already existed (restored), 0 if created */
 static int create_sess(const char *sn, const char *wd, const char *cmd, const char *extra) {
     int ai = cmd && (strstr(cmd,"claude") || strstr(cmd,"codex") || strstr(cmd,"gemini") || strstr(cmd,"aider"));
-    char acmd[B];snprintf(acmd,B,"%s%s",cmd?cmd:"",cmd&&strstr(cmd,"claude ")&&!strstr(cmd,"--effort")?" --effort max":"");
+    char sid[64]="",acmd[B];
+    if(cmd&&strstr(cmd,"claude ")&&!strstr(cmd,"--resume")&&!strstr(cmd,"--continue"))
+        pcmd("cat /proc/sys/kernel/random/uuid 2>/dev/null||uuidgen|tr A-Z a-z",sid,64),sid[strcspn(sid,"\n")]=0;
+    snprintf(acmd,B,"%s%s%s",cmd?cmd:"",sid[0]?" --session-id ":"",sid);
     char wcmd[B*2],ctxf[P]="",csuf[512]="";
     int is_claude=ai&&strstr(acmd,"claude"),is_gemini=ai&&strstr(acmd,"gemini"),is_codex=ai&&strstr(acmd,"codex");
     if(ai){snprintf(ctxf,P,"%s/a_ctx_%d.txt",TMP,(int)getpid());
@@ -52,26 +55,21 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
         char al[B]; snprintf(al, B, "session:%s log:%s", sn, lf);
         alog(al, wd);
     }
-    tm_save_win(sn, wd, cmd);
+    tm_save_win(sn, wd, cmd, sid);
     return r;
 }
 
 static void tm_restore(void) {
     char sf[P];snprintf(sf,P,"%s/tmux_wins.txt",DDIR);
     char*d=readf(sf,NULL);if(!d)return;
-    if(!NSE){init_db();load_cfg();load_sess();}
     for(char*l=d,*nl;*l;l=nl?nl+1:l+strlen(l)){
         nl=strchr(l,'\n');if(nl)*nl=0;
         char*s=strchr(l,'|');if(!s)continue;*s++=0;
-        char*bc=strchr(s,'|');if(bc)*bc++=0;
-        if(!dexists(s))continue;
-        const char*base=bc&&*bc?bc:NULL;
-        if(!base){char key[16]="",*dash=strchr(l,'-');
-            if(dash)snprintf(key,16,"%.*s",(int)(dash-l),l);
-            sess_t*se=find_sess(key);if(!se)continue;base=se->cmd;}
+        char*bc=strchr(s,'|');if(!bc)continue;*bc++=0;
+        char*sd=strchr(bc,'|');if(sd)*sd++=0;
+        if(!dexists(s)||!*bc)continue;
         char cmd[1024];
-        int resume=strstr(base,"claude")&&!strstr(base,"--continue");
-        snprintf(cmd,1024,resume?"%s --continue":"%s",base);
+        snprintf(cmd,1024,sd&&*sd?"claude --dangerously-skip-permissions --effort max --resume %s":"%s",sd&&*sd?sd:bc);
         create_sess(l,s,cmd,NULL);}
     free(d);}
 

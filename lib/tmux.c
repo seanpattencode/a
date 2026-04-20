@@ -2,14 +2,14 @@
 #define TMS "a"
 #define ACAT "a cat"
 static void tm_restore(void);
-static void tm_save_win(const char *sn, const char *wd, const char *cmd) {
+static void tm_save_win(const char *sn, const char *wd, const char *cmd, const char *sid) {
     char sf[P];snprintf(sf,P,"%s/tmux_wins.txt",DDIR);
     char*d=readf(sf,NULL);FILE*f=fopen(sf,"w");if(!f){free(d);return;}
     if(d){int sl=(int)strlen(sn);for(char*l=d,*nl;*l;l=nl?nl+1:l+strlen(l)){
         nl=strchr(l,'\n');int ll=nl?(int)(nl-l):(int)strlen(l);
         if(ll>0&&!(ll>=sl&&l[sl]=='|'&&!memcmp(l,sn,(size_t)sl)))fprintf(f,"%.*s\n",ll,l);}free(d);}
-    if(wd)fprintf(f,"%s|%s%s%s\n",sn,wd,cmd?"|":"",cmd?cmd:"");fclose(f);}
-static void tm_unsave_win(const char*sn){tm_save_win(sn,NULL,NULL);}
+    if(wd)fprintf(f,"%s|%s|%s|%s\n",sn,wd,cmd?cmd:"",sid?sid:"");fclose(f);}
+static void tm_unsave_win(const char*sn){tm_save_win(sn,NULL,NULL,NULL);}
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
