@@ -30,22 +30,22 @@ HTML = '''<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-webgl@0.16.0/lib/xterm-addon-webgl.min.js"></script>
-<style>*{font-family:system-ui}[data-go]{touch-action:manipulation}.b{padding:16px 24px;font-size:24px;background:#000;color:#4af;border:2px solid #4af;border-radius:8px;cursor:pointer}.n{font-size:28px;color:#4af;cursor:pointer;padding:20px 40px;border:2px solid #4af;border-radius:12px}.f{background:#000;color:#fff;border:1px solid #333;border-radius:8px}.ni{padding:6px 0;color:#aaa;border-bottom:1px solid #222;display:flex;align-items:center}.nx{background:none;border:1px solid #555;color:#888;padding:12px 20px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px}#w,#wm{position:fixed;right:10px;z-index:9}#w{top:10px;width:24px;height:24px;cursor:pointer;background:radial-gradient(#aaa 28%,transparent 32%) 0 0/8px 8px}#wm{top:44px;background:#111;border:1px solid #333;border-radius:8px;padding:8px;display:none;grid-template-columns:repeat(3,64px);gap:6px}#wm.x{display:grid}#wm a{color:#4af;border:1px solid #333;border-radius:6px;text-decoration:none;font-size:13px;aspect-ratio:1;display:grid;place-items:center}</style>
+<style>*{font-family:system-ui}[data-go]{touch-action:manipulation}.b{padding:16px 24px;font-size:24px;background:#000;color:#4af;border:2px solid #4af;border-radius:8px;cursor:pointer}.n{font-size:28px;color:#4af;cursor:pointer;padding:20px 40px;border:2px solid #4af;border-radius:12px}.f{background:#000;color:#fff;border:1px solid #333;border-radius:8px}.ni{padding:6px 0;color:#aaa;border-bottom:1px solid #222;display:flex;align-items:center}.nx{background:none;border:1px solid #555;color:#888;padding:12px 20px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px}#w,#wm{position:fixed;right:10px;z-index:9}#w{top:10px;width:24px;height:24px;cursor:pointer;background:radial-gradient(#aaa 28%,transparent 32%) 0 0/8px 8px}#wm{top:44px;background:#111;border:1px solid #333;border-radius:8px;padding:8px;display:none;grid-template-columns:repeat(3,64px);gap:6px}#wm.x{display:grid}#wm a{color:#4af;border:1px solid #333;border-radius:6px;text-decoration:none;font-size:13px;aspect-ratio:1;display:grid;place-items:center}.v{position:absolute;inset:0;height:100vh;display:flex;flex-direction:column;visibility:hidden}.v.on{visibility:visible}</style>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
 <div id=w onclick="wm.classList.toggle('x')"></div>
 <div id=wm><a href="/">home</a><a href="/op">op</a><a href="/jobs">job</a><a href="/note">note</a><a href="/tasks">task</a><a href="/term">term</a></div>
-<div id=v_index style="display:none;height:100vh;flex-direction:column;align-items:center">
+<div id=v_index class=v style="align-items:center">
   <form id=omni style="margin-top:45vh"><input id=qi autofocus placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:transparent"></form>
   <div id=qo style="width:90vw;max-width:800px;margin-top:20px;max-height:45vh;overflow-y:auto"></div>
 </div>
 __MY__
-<div id=v_tasks style="display:none;height:100vh;flex-direction:column;padding:20px;align-items:center;overflow-y:auto">
+<div id=v_tasks class=v style="padding:20px;align-items:center;overflow-y:auto">
   <div id=tl style="width:95vw;max-width:900px;color:#fff;font-family:monospace;font-size:14px">__TO__</div>
 </div>
-<div id=v_term style="display:none;height:100vh">
+<div id=v_term class=v style="display:block">
   <div id=t style="height:100vh"></div>
 </div>
-<div id=v_jobs style="display:none;height:100vh;flex-direction:column;align-items:center;justify-content:center;gap:20px;color:#fff">
+<div id=v_jobs class=v style="align-items:center;justify-content:center;gap:20px;color:#fff">
   <select id=jp class=f style="width:95vw;font-size:20px;padding:12px">__PO__</select>
   <select id=jd class=f style="width:95vw;font-size:20px;padding:12px">__DO__</select>
   <div style="display:flex;gap:10px;width:95vw;align-items:center">
@@ -56,7 +56,7 @@ __MY__
   </div>
   <div id=jl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px;font-family:monospace;font-size:14px;white-space:pre;color:#aaa">__JO__</div>
 </div>
-<div id=v_note style="display:none;height:100vh;flex-direction:column;padding-top:20px;align-items:center">
+<div id=v_note class=v style="padding-top:20px;align-items:center">
   <form id=nf style="display:flex;gap:10px;width:95vw;align-items:center">
     <input id=nc autofocus placeholder="note" class=f style="flex:1;font-size:24px;padding:16px">
     <button class=b type=submit>save</button>
@@ -70,7 +70,7 @@ __MY__
 var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks'__MV__}, T, F, W;
 // perf: go() must stay <1ms. show() is DOM toggle only, no network. keep this instrumentation.
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);console.log('go('+p+') '+(performance.now()-t).toFixed(2)+'ms');}
-function show(p){wm.classList.remove('x');for(var k in views)document.getElementById(views[k]).style.display=k===p?(k==='/term'?'block':'flex'):'none';if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}}
+function show(p){wm.classList.remove('x');for(var k in views)document.getElementById(views[k]).classList.toggle('on',k===p);if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 function arct(d,el){fetch('/api/task/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:d})});el.parentElement.remove();}
 function loadjobs(){Promise.all([fetch('/api/jobs').then(function(r){return r.text()}),fetch('/api/job-status').then(function(r){return r.json()})]).then(function(d){
@@ -112,7 +112,7 @@ async def spa(r):
     if os.path.isdir(md):
         for f in sorted(os.listdir(md)):
             if f.endswith('.html'):
-                n=f[:-5];my_divs+=f'\n<div id=v_{n} style="display:none;height:100vh">{open(f"{md}/{f}").read()}</div>'
+                n=f[:-5];my_divs+=f'\n<div id=v_{n} class=v>{open(f"{md}/{f}").read()}</div>'
                 my_views+=f',\'/{n}\':\'v_{n}\''
     po='<option value="">~ (home)</option>';pd=f'{_G}/workspace/projects'
     if os.path.isdir(pd):
