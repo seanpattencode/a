@@ -234,6 +234,7 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");free(_shtml);return 1;}
     listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
     for(;;){int c=accept(fd,0,0);if(c<0)continue;
+        struct timeval tv={2,0};setsockopt(c,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
         char peek[8];ssize_t pn=recv(c,peek,7,MSG_PEEK);
         if(pn>0&&!strncmp(peek,"GET /ws",7)){if(!fork()){close(fd);_handle(c);close(c);_exit(0);}close(c);}
         else{_handle(c);close(c);}}
