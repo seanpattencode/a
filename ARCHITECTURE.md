@@ -8,7 +8,7 @@
 
 ## Organization
 7. All persistent data goes in adata, period. adata/git will hold user personal git-synced data.
-8. All logic goes to /lib. /lib files should be as independent as can be from one another, but some shared logic is inevitable.
+8. All logic goes to /lib. /lib files should be as independent as can be from one another, but some shared logic is inevitable. Folders only when external tooling forces it (Chrome extension, Python package) AND files are useless apart; categorical grouping is not sufficient — flat names with prefixes replace category folders.
 9. a.c handles build, dep install, and dispatch to /lib.
 
 ## Rules
