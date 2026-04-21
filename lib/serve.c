@@ -183,7 +183,7 @@ static void _handle(int c){
             else msg[mi]=q[mi];}msg[mi]=0;
         /* sends to live `a o` tmux window (op-a) — same session user attaches with `a o` */
         if(system("tmux has-session -t a:op-a 2>/dev/null")){
-            char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH setsid a o </dev/null >/dev/null 2>&1 &",SDIR);(void)!system(tc);
+            char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 &",SDIR);(void)!system(tc);
             for(int i=0;i<15&&system("tmux has-session -t a:op-a 2>/dev/null");i++)sleep(1);
             sleep(4);}
         #define CAP 65536
@@ -223,6 +223,7 @@ static void _handle(int c){
     _sresp(c,404,"text/plain","not found",9);
 }
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
+    {const char*op=getenv("PATH")?:"";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
     (void)!system("pkill -f 'ui.ui_full\\|ui_full.py' 2>/dev/null");usleep(200000);
     printf("> generating HTML...\n");_html_gen();
