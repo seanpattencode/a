@@ -22,7 +22,7 @@ static int cmd_op(int c,char**v){(void)c;(void)v;perf_disarm();
         snprintf(pp,P,"%s/operator_prompt.txt",TMP);
         FILE*f=fopen(pp,"w");if(f){fputs(OPERATOR_PROMPT,f);fclose(f);}
     }
-    char cmd[B];snprintf(cmd,B,"claude --dangerously-skip-permissions --effort max --append-system-prompt-file %s",pp);
+    char cmd[B];snprintf(cmd,B,"claude --model opus --dangerously-skip-permissions --effort max --append-system-prompt-file %s",pp);
     char sn[64];snprintf(sn,64,"op-%s",bname(wd));
     if(!tm_has(sn))create_sess(sn,wd,cmd,NULL);
     tm_go(sn);return 0;}
