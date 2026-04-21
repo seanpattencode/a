@@ -222,8 +222,17 @@ static void _handle(int c){
         snprintf(dst,P,"%s/%s",ad,name);rename(src,dst);
         _sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
-        static const char H[]="<!doctype html><style>body,#m{display:flex;flex-direction:column;margin:0}body{background:#000;color:#fff;font:16px system-ui;height:100vh}#m{flex:1;overflow:auto;padding:16px}#m>div{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:75%;white-space:pre-wrap;background:#1f2937}.u{background:#1e3a8a!important;align-self:flex-end}#i{margin:8px;padding:14px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;width:calc(100% - 16px);box-sizing:border-box;outline:none}</style><div id=m></div><form id=f><input id=i autofocus placeholder=\"talk to a\"></form><script>S=v=>{let a=document.createElement('div');if(v){let u=document.createElement('div');u.className='u';u.textContent=v;m.appendChild(u)}m.appendChild(a);m.scrollTop=1e9;fetch('/op/msg',{method:'POST',body:'q='+encodeURIComponent(v||'')}).then(async r=>{const rd=r.body.getReader(),dc=new TextDecoder();let b='';for(;;){const{done,value}=await rd.read();if(done)break;b+=dc.decode(value,{stream:true});const k=b.lastIndexOf('\f');if(k>=0){a.textContent=b.slice(k+1);m.scrollTop=1e9}}})};f.onsubmit=e=>{e.preventDefault();S(i.value.trim());i.value=''};S('')</script>";
+        static const char H[]="<!doctype html><style>body,#m{display:flex;flex-direction:column;margin:0}body{background:#000;color:#fff;font:16px system-ui;height:100vh}#m{flex:1;overflow:auto;padding:16px}#m>div{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:75%;white-space:pre-wrap;background:#1f2937}.u{background:#1e3a8a!important;align-self:flex-end}</style><div id=m></div><form id=f style=display:flex;gap:4px;margin:8px><button type=button id=n style=padding:14px;background:#1f2937;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;cursor:pointer title=\"new operator\">+op</button><input id=i autofocus placeholder=\"talk to a\" style=flex:1;padding:14px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;outline:none></form><script>W=new URLSearchParams(location.search).get('w')||'';S=v=>{let a=document.createElement('div');if(v){let u=document.createElement('div');u.className='u';u.textContent=v;m.appendChild(u)}m.appendChild(a);m.scrollTop=1e9;fetch('/op/msg',{method:'POST',body:'w='+W+'&q='+encodeURIComponent(v||'')}).then(async r=>{const rd=r.body.getReader(),dc=new TextDecoder();let b='';for(;;){const{done,value}=await rd.read();if(done)break;b+=dc.decode(value,{stream:true});const k=b.lastIndexOf('\f');if(k>=0){a.textContent=b.slice(k+1);m.scrollTop=1e9}}if(!v&&!a.textContent){a.remove();setTimeout(()=>S(''),400)}})};n.onclick=()=>{let d=document.createElement('div');d.textContent='+ spawning...';m.appendChild(d);m.scrollTop=1e9;fetch('/op/new',{method:'POST'}).then(r=>r.text()).then(t=>{d.textContent='+ '+t;if(t)window.open('/op?w='+t,'_blank')})};f.onsubmit=e=>{e.preventDefault();S(i.value.trim());i.value=''};S('')</script>";
         _sresp(c,200,"text/html",H,sizeof H-1);return;}
+    if(!strncmp(req,"POST /op/new",12)){
+        char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 & echo $!",SDIR);
+        FILE*p=popen(tc,"r");char pid[32]={0};
+        if(p){(void)!fgets(pid,32,p);pclose(p);pid[strcspn(pid,"\n")]=0;}
+        char nm[64]={0};
+        for(int i=0;i<15&&!nm[0];i++){sleep(1);
+            char chk[128];snprintf(chk,128,"tmux list-windows -t a -F '#W' 2>/dev/null|grep -- '-%s$'",pid);
+            FILE*q=popen(chk,"r");if(q){(void)!fgets(nm,64,q);pclose(q);nm[strcspn(nm,"\n")]=0;}}
+        _sresp(c,200,"text/plain",nm,strlen(nm));return;}
     if(!strncmp(req,"POST /op/msg",12)){
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
         body+=4;char*q=strstr(body,"q=");if(!q){_sresp(c,400,"text/plain","no q",4);return;}
@@ -232,22 +241,28 @@ static void _handle(int c){
             if(q[mi]=='+')msg[mi]=' ';
             else if(q[mi]=='%'&&q[mi+1]&&q[mi+2]){char h[3]={q[mi+1],q[mi+2],0};msg[mi]=(char)strtol(h,NULL,16);q+=2;}
             else msg[mi]=q[mi];}msg[mi]=0;
-        /* sends to live `a o` tmux window (op-a) — same session user attaches with `a o` */
-        if(system("tmux has-session -t a:op-a 2>/dev/null")){
+        /* w=<window> pins to specific op; else newest op-* (tail -1). spawn if none. */
+        char opn[64]={0};char*wp=strstr(body,"w=");
+        if(wp){wp+=2;int wi=0;while(wp[wi]&&wp[wi]!='&'&&wi<63)opn[wi]=wp[wi],wi++;opn[wi]=0;}
+        #define OPN_LS do{FILE*_l=popen("tmux list-windows -t a -F '#W' 2>/dev/null|grep '^op-'|tail -1","r");\
+            if(_l){(void)!fgets(opn,64,_l);pclose(_l);opn[strcspn(opn,"\n")]=0;}}while(0)
+        if(!opn[0])OPN_LS;
+        if(!opn[0]){
             char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 &",SDIR);(void)!system(tc);
-            for(int i=0;i<15&&system("tmux has-session -t a:op-a 2>/dev/null");i++)sleep(1);
+            for(int i=0;i<15&&!opn[0];i++){sleep(1);OPN_LS;}
             sleep(4);}
         #define CAP 65536
         static char cur[CAP],cln[CAP],last[CAP];last[0]=0;
-        #define DRAIN(buf) do{FILE*pf=popen("tmux capture-pane -t a:op-a.0 -p -S -200","r");size_t cl=0;\
+        #define DRAIN(buf) do{char _c[256];snprintf(_c,256,"tmux capture-pane -t a:%s.0 -p -S -200",opn);\
+            FILE*pf=popen(_c,"r");size_t cl=0;\
             if(pf){size_t r;while(cl<CAP-1&&(r=fread(buf+cl,1,CAP-1-cl,pf)))cl+=r;pclose(pf);}buf[cl]=0;}while(0)
         /* FIFO + poll: native event-driven, no inotify watch limit */
         mkfifo("/tmp/op_a.fifo",0644);
-        (void)!system("tmux pipe-pane -t a:op-a.0;tmux pipe-pane -t a:op-a.0 'cat >/tmp/op_a.fifo'");
+        {char pc[256];snprintf(pc,256,"tmux pipe-pane -t a:%s.0;tmux pipe-pane -t a:%s.0 'cat >/tmp/op_a.fifo'",opn,opn);(void)!system(pc);}
         int ifd=open("/tmp/op_a.fifo",O_RDWR|O_NONBLOCK);
         if(mi){int bf=open("/tmp/op_a.buf",O_WRONLY|O_CREAT|O_TRUNC,0644);
             if(bf>=0){(void)!write(bf,msg,(size_t)mi);close(bf);
-                (void)!system("tmux load-buffer /tmp/op_a.buf&&tmux paste-buffer -t a:op-a.0&&tmux send-keys -t a:op-a.0 Enter");}}
+                char sc[256];snprintf(sc,256,"tmux load-buffer /tmp/op_a.buf&&tmux paste-buffer -t a:%s.0&&tmux send-keys -t a:%s.0 Enter",opn,opn);(void)!system(sc);}}
         /* stream chunked: each inotify event → capture → emit delta. ms-level UX. */
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-store\r\n\r\n";
         (void)!write(c,SH,sizeof SH-1);

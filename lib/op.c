@@ -1,4 +1,4 @@
-/* op — claude operator in tmux. plain english → a cmds. reattach per dir. */
+/* op — claude operator in tmux. plain english → a cmds. always spawns new; old ones persist. */
 static const char *OPERATOR_PROMPT =
 "You are an operator agent for the `a` agent manager. You can use any of the `a` tools or regular command-line tools to accomplish the tasks the user specifies.\n\n"
 "If a command fails to work as expected, consider fixing the code and propose pushing the fix as a pull request to the main repo — after verifying the fix works and is shorter in tokens than before (check with `a diff`).\n\n"
@@ -10,12 +10,11 @@ static const char *OPERATOR_PROMPT =
 
 static int cmd_op(int c,char**v){(void)c;(void)v;perf_disarm();
     init_db();load_cfg();CWD(wd);
-    char pp[P];snprintf(pp,P,"%s/common/prompts/operator.txt",SROOT);
-    if(access(pp,R_OK)!=0){
-        snprintf(pp,P,"%s/operator_prompt.txt",TMP);
-        FILE*f=fopen(pp,"w");if(f){fputs(OPERATOR_PROMPT,f);fclose(f);}
-    }
-    char cmd[B];snprintf(cmd,B,"claude --model opus --dangerously-skip-permissions --effort max --append-system-prompt-file %s",pp);
-    char sn[64];snprintf(sn,64,"op-%s",bname(wd));
-    if(!tm_has(sn))create_sess(sn,wd,cmd,NULL);
+    char ov[P],ctx[P];snprintf(ov,P,"%s/common/prompts/operator.txt",SROOT);
+    snprintf(ctx,P,"%s/operator_ctx_%d.txt",TMP,(int)getpid());
+    FILE*f=fopen(ctx,"w");if(f){char*s=access(ov,R_OK)==0?readf(ov,NULL):NULL;
+        fputs(s?s:OPERATOR_PROMPT,f);free(s);fclose(f);}
+    char cmd[B];snprintf(cmd,B,ACAT " >>%s 2>/dev/null;claude --model opus --dangerously-skip-permissions --effort max --append-system-prompt-file %s",ctx,ctx);
+    char sn[64];snprintf(sn,64,"op-%s-%ld",bname(wd),(long)getpid());
+    create_sess(sn,wd,cmd,NULL);
     tm_go(sn);return 0;}
