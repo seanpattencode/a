@@ -201,7 +201,7 @@ static void _handle(int c){
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-cache\r\n\r\n";
         (void)!write(c,SH,sizeof SH-1);
         struct pollfd pf={.fd=ifd,.events=POLLIN};int got=0,last_len=0;
-        for(;;){int to=got?300:(mi?30000:50);int n=poll(&pf,1,to);
+        for(;;){int to=got?1500:(mi?30000:50);int n=poll(&pf,1,to);
             if(n>0){char b[4096];while(read(ifd,b,4096)>0)got=1;}
             DRAIN(cur);
             char*r=cur,*p=NULL,*s=cur;while(*msg&&(s=strstr(s,msg)))p=s,s+=strlen(msg);
@@ -217,8 +217,7 @@ static void _handle(int c){
                 char hh[16];int hl=snprintf(hh,16,"%x\r\n",ci+1);
                 (void)!write(c,hh,(size_t)hl);(void)!write(c,"\f",1);(void)!write(c,cln,(size_t)ci);(void)!write(c,"\r\n",2);
                 memcpy(last,cln,(size_t)ci);last_len=ci;}
-            int spin=strstr(cur,"\xe2\x80\xa6 (")!=NULL;
-            if(n==0&&(!got||!spin))break;}
+            if(n==0)break;}
         close(ifd);(void)!write(c,"0\r\n\r\n",5);return;}
     _sresp(c,404,"text/plain","not found",9);
 }
