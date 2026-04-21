@@ -25,6 +25,46 @@ static void _sha1(const unsigned char*d,size_t n,unsigned char out[20]){
     for(int i=0;i<5;i++)for(int j=0;j<4;j++)out[i*4+j]=(unsigned char)(hh[i]>>(24-j*8));
 }
 static char*_shtml;static int _shlen;
+static int _notes_build(char*h,int cap){
+    char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
+    int hl=0;DIR*d=opendir(nd);if(!d)return 0;struct dirent*e;
+    while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt")||hl>cap-2048)continue;
+        char fp[P];snprintf(fp,P,"%s/%s",nd,e->d_name);
+        FILE*f=fopen(fp,"r");if(!f)continue;char ln[512];
+        while(fgets(ln,512,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
+            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span>%s</span></div>",e->d_name,ln+6);break;}}
+        fclose(f);}closedir(d);return hl;
+}
+static int _tasks_build(char*h,int cap){
+    char td[P];snprintf(td,P,"%s/git/tasks",AROOT);
+    DIR*d=opendir(td);if(!d)return snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
+    struct dirent*e;struct{char pri[8];char txt[256];char name[256];}rows[512];int nr=0;
+    while((e=readdir(d))&&nr<512){if(e->d_name[0]=='.')continue;
+        int hp=strlen(e->d_name)>5&&e->d_name[5]=='-';
+        for(int i=0;hp&&i<5;i++)if(!isdigit((unsigned char)e->d_name[i]))hp=0;
+        snprintf(rows[nr].pri,8,"%s",hp?(char[6]){e->d_name[0],e->d_name[1],e->d_name[2],e->d_name[3],e->d_name[4],0}:"50000");
+        snprintf(rows[nr].name,256,"%s",e->d_name);
+        char slug[256];snprintf(slug,256,"%s",hp?e->d_name+6:e->d_name);
+        for(char*u=strchr(slug,'_');u;u=strchr(u,'_'))*u=0;
+        for(char*u=slug;*u;u++)if(*u=='-')*u=' ';
+        rows[nr].txt[0]=0;
+        char fp[P];snprintf(fp,P,"%s/%s",td,e->d_name);struct stat st;
+        const char*probes[]={fp,NULL};char sp[P];if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){snprintf(sp,P,"%s/task",fp);probes[0]=dexists(sp)?sp:fp;}
+        DIR*sd=opendir(probes[0]);
+        if(sd){struct dirent*se;while((se=readdir(sd))){if(!strstr(se->d_name,".txt"))continue;
+            char sfp[P];snprintf(sfp,P,"%s/%s",probes[0],se->d_name);FILE*sf=fopen(sfp,"r");if(!sf)continue;
+            char ln[512];while(fgets(ln,512,sf))if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;snprintf(rows[nr].txt,256,"%s",ln+6);break;}
+            fclose(sf);if(rows[nr].txt[0])break;}closedir(sd);}
+        if(!rows[nr].txt[0])snprintf(rows[nr].txt,256,"%s",slug);
+        nr++;}
+    closedir(d);
+    for(int i=1;i<nr;i++){typeof(rows[0]) k=rows[i];int j=i-1;while(j>=0&&strcmp(rows[j].pri,k.pri)>0){rows[j+1]=rows[j];j--;}rows[j+1]=k;}
+    int hl=0;for(int i=0;i<nr&&hl<cap-512;i++){
+        const char*c=strcmp(rows[i].pri,"01000")<=0?"#f44":strcmp(rows[i].pri,"10000")<=0?"#fa0":"#aaa";
+        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:%s\">P%s</span> %.120s</div>",rows[i].name,c,rows[i].pri,rows[i].txt);}
+    if(!hl)hl=snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
+    return hl;
+}
 static void _html_gen(void){
     /* read HTML template from ui_full.py */
     char tf[P];snprintf(tf,P,"%s/lib/ui/ui_full.py",SDIR);
@@ -61,7 +101,9 @@ static void _html_gen(void){
                 if(!strcmp(tag,"CMDS")){EMIT(cmds,(int)strlen(cmds));}
                 else if(!strcmp(tag,"PO")){EMIT("<option value=\"\">~ (home)</option>",(int)strlen("<option value=\"\">~ (home)</option>"));}
                 else if(!strcmp(tag,"DO")){EMIT("<option value=\"\">local</option>",(int)strlen("<option value=\"\">local</option>"));}
-                else if(!strcmp(tag,"JO")||!strcmp(tag,"NO")||!strcmp(tag,"MY")||!strcmp(tag,"MV")){/* empty */}
+                else if(!strcmp(tag,"NO")){char*nb=malloc(131072);int nl2=_notes_build(nb,131072);EMIT(nb,nl2);free(nb);}
+                else if(!strcmp(tag,"TO")){char*tb=malloc(131072);int tl2=_tasks_build(tb,131072);EMIT(tb,tl2);free(tb);}
+                else if(!strcmp(tag,"JO")||!strcmp(tag,"MY")||!strcmp(tag,"MV")){/* empty */}
                 else{EMIT(p,(int)(end+2-p));p=end+2;continue;}
                 p=end+2;continue;}}
         EMIT(p,1);p++;
@@ -160,16 +202,21 @@ static void _handle(int c){
             _sresp(c,200,"text/html",resp,rl);}
         return;}
     if(!strncmp(req,"GET /note-list",14)){
-        char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
-        int cap=524288;char*html=malloc((size_t)cap);if(!html)return;int hl=0;
-        DIR*d=opendir(nd);struct dirent*e;
-        if(d){while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt")||hl>cap-2048)continue;
-            char fp[P];snprintf(fp,P,"%s/%s",nd,e->d_name);
-            FILE*f=fopen(fp,"r");if(!f)continue;char ln[512];
-            while(fgets(ln,512,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
-                hl+=snprintf(html+hl,(size_t)(cap-1-hl),"<div class=ni><span>%s</span></div>",ln+6);break;}}
-            fclose(f);}closedir(d);}
-        _sresp(c,200,"text/html",html,hl);free(html);return;}
+        int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
+        int hl=_notes_build(html,cap);_sresp(c,200,"text/html",html,hl);free(html);return;}
+    if(!strncmp(req,"GET /api/tasks",14)){
+        int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
+        int hl=_tasks_build(html,cap);_sresp(c,200,"text/html",html,hl);free(html);return;}
+    if(!strncmp(req,"POST /api/note/archive",22)||!strncmp(req,"POST /api/task/archive",22)){
+        int isn=req[18]=='n';char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
+        char*k=strstr(body+4,isn?"\"f\":\"":"\"d\":\"");if(!k){_sresp(c,400,"text/plain","no name",7);return;}
+        k+=5;char name[256];int ni=0;while(k[ni]&&k[ni]!='"'&&ni<255){name[ni]=k[ni];ni++;}name[ni]=0;
+        for(char*p=name;*p;p++)if(*p=='/'){_sresp(c,400,"text/plain","bad name",8);return;}
+        char src[P],dst[P],ad[P];
+        snprintf(ad,P,"%s/git/%s/.archive",AROOT,isn?"notes":"tasks");mkdir(ad,0755);
+        snprintf(src,P,"%s/git/%s/%s",AROOT,isn?"notes":"tasks",name);
+        snprintf(dst,P,"%s/%s",ad,name);rename(src,dst);
+        _sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
         static const char H[]="<!doctype html><style>body,#m{display:flex;flex-direction:column;margin:0}body{background:#000;color:#fff;font:16px system-ui;height:100vh}#m{flex:1;overflow:auto;padding:16px}#m>div{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:75%;white-space:pre-wrap;background:#1f2937}.u{background:#1e3a8a!important;align-self:flex-end}#i{margin:8px;padding:14px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;width:calc(100% - 16px);box-sizing:border-box;outline:none}</style><div id=m></div><form id=f><input id=i autofocus placeholder=\"talk to a\"></form><script>S=v=>{let a=document.createElement('div');if(v){let u=document.createElement('div');u.className='u';u.textContent=v;m.appendChild(u)}m.appendChild(a);m.scrollTop=1e9;fetch('/op/msg',{method:'POST',body:'q='+encodeURIComponent(v||'')}).then(async r=>{const rd=r.body.getReader(),dc=new TextDecoder();let b='';for(;;){const{done,value}=await rd.read();if(done)break;b+=dc.decode(value,{stream:true});const k=b.lastIndexOf('\f');if(k>=0){a.textContent=b.slice(k+1);m.scrollTop=1e9}}})};f.onsubmit=e=>{e.preventDefault();S(i.value.trim());i.value=''};S('')</script>";
         _sresp(c,200,"text/html",H,sizeof H-1);return;}

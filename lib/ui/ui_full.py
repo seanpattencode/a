@@ -40,7 +40,7 @@ HTML = '''<!doctype html>
 </div>
 __MY__
 <div id=v_tasks style="display:none;height:100vh;flex-direction:column;padding:20px;align-items:center;overflow-y:auto">
-  <div id=tl style="width:95vw;max-width:900px;color:#fff;font-family:monospace;font-size:14px"></div>
+  <div id=tl style="width:95vw;max-width:900px;color:#fff;font-family:monospace;font-size:14px">__TO__</div>
 </div>
 <div id=v_term style="display:none;height:100vh">
   <div id=t style="height:100vh"></div>
@@ -70,7 +70,7 @@ __MY__
 var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks'__MV__}, T, F, W;
 // perf: go() must stay <1ms. show() is DOM toggle only, no network. keep this instrumentation.
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);console.log('go('+p+') '+(performance.now()-t).toFixed(2)+'ms');}
-function show(p){wm.classList.remove('x');for(var k in views)document.getElementById(views[k]).style.display=k===p?(k==='/term'?'block':'flex'):'none';if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}if(p==='/note'&&!nl.children.length)fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h});if(p==='/tasks')fetch('/api/tasks').then(function(r){return r.text()}).then(function(h){tl.innerHTML=h});}
+function show(p){wm.classList.remove('x');for(var k in views)document.getElementById(views[k]).style.display=k===p?(k==='/term'?'block':'flex'):'none';if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 function arct(d,el){fetch('/api/task/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:d})});el.parentElement.remove();}
 function loadjobs(){Promise.all([fetch('/api/jobs').then(function(r){return r.text()}),fetch('/api/job-status').then(function(r){return r.json()})]).then(function(d){
@@ -125,7 +125,7 @@ async def spa(r):
         for f in sorted(os.listdir(dd)):
             n=f.endswith('.txt') and _kv(f'{dd}/{f}').get('Name')
             if n: do+=f'<option value="{n}">{n}</option>'
-    no = ''
+    no = _notes_html(); to = _tasks_html()
     try:
         jo = S.run([_A,'jobs'],capture_output=True,text=True,timeout=10).stdout or 'No jobs'
         dp = f'{_D}/adata/local/aio.db'
@@ -138,7 +138,7 @@ async def spa(r):
     except: jo = 'No jobs'
     try:cmds=[[(p:=l.partition('\t'))[0].strip(),p[2].strip()]for l in S.run([_A,'i'],capture_output=True,text=True,timeout=5).stdout.split('\n')if l.strip()]
     except:cmds=[]
-    h = HTML.replace('__PO__',po).replace('__DO__',do).replace('__NO__',no).replace('__JO__',E(jo)).replace('__MY__',my_divs).replace('__MV__',my_views).replace('__CMDS__',json.dumps(cmds))
+    h = HTML.replace('__PO__',po).replace('__DO__',do).replace('__NO__',no).replace('__TO__',to).replace('__JO__',E(jo)).replace('__MY__',my_divs).replace('__MV__',my_views).replace('__CMDS__',json.dumps(cmds))
     return web.Response(text=h, content_type='text/html', headers={'Cache-Control':'no-store'})
 
 async def restart(r): os.execv(sys.executable, [sys.executable] + sys.argv)
@@ -201,8 +201,7 @@ async def term_capture(r):
     p = S.run(['tmux', 'capture-pane', '-t', s, '-p', '-S', str(-n)], capture_output=True, text=True)
     return web.Response(text=p.stdout if p.returncode == 0 else f'no session: {s}')
 
-async def note_api(r):
-    if r.method == 'POST': d = await r.post(); c = d.get('c', '').strip(); ok = c and not S.run([_A, 'note', c], capture_output=True, timeout=5).returncode; return web.Response(text=f'{_G}/notes' if ok else '', status=200 if ok else 500)
+def _notes_html():
     nd=f'{_G}/notes';no=''
     if os.path.isdir(nd):
         for f in sorted(os.listdir(nd), key=lambda x: x.rsplit('_',1)[-1] if '_' in x else '0', reverse=True):
@@ -211,7 +210,10 @@ async def note_api(r):
                 for l in open(f'{nd}/{f}'):
                     if l.startswith('Text: '): no += f'<div class=ni><button onclick="arcn(\'{f}\',this)" class=nx>x</button><span>{E(l[6:].strip())}</span></div>'; break
             except: pass
-    return web.Response(text=no, content_type='text/html')
+    return no
+async def note_api(r):
+    if r.method == 'POST': d = await r.post(); c = d.get('c', '').strip(); ok = c and not S.run([_A, 'note', c], capture_output=True, timeout=5).returncode; return web.Response(text=f'{_G}/notes' if ok else '', status=200 if ok else 500)
+    return web.Response(text=_notes_html(), content_type='text/html')
 async def note_archive(r): d=await r.json();f=os.path.basename(d.get('f',''));nd=f'{_G}/notes';ad=f'{nd}/.archive';os.makedirs(ad,exist_ok=True);p=f'{nd}/{f}';os.path.isfile(p) and os.rename(p,f'{ad}/{f}');return web.Response(text='ok')
 async def sync_api(r): S.run(f'cd {_G}&&git pull -q --rebase&&git add -A&&git commit -qm sync;git push -q',shell=True,timeout=15,capture_output=True);return web.Response(text='ok')
 async def omni_api(r):
@@ -219,9 +221,9 @@ async def omni_api(r):
     if not cmd: return web.Response(text='')
     try: p = S.run([_A]+cmd.split(),capture_output=True,text=True,timeout=10); return web.Response(text=f'<pre style="color:#fff">{E(p.stdout or p.stderr or "ok")}</pre>',content_type='text/html')
     except: return web.Response(text='<pre style="color:red">timeout</pre>',content_type='text/html')
-async def tasks_api(r):
+def _tasks_html():
     td=f'{_G}/tasks';h=''
-    if not os.path.isdir(td): return web.Response(text='<div style="color:#888">No tasks</div>',content_type='text/html')
+    if not os.path.isdir(td): return '<div style="color:#888">No tasks</div>'
     tasks=[]
     for d in os.listdir(td):
         if d.startswith('.'): continue
@@ -250,7 +252,8 @@ async def tasks_api(r):
     for pri,txt,d in tasks:
         c='#f44' if pri<='01000' else '#fa0' if pri<='10000' else '#aaa'
         h+=f'<div class=ni><button onclick="arct(\'{E(d)}\',this)" class=nx>x</button><span style="color:{c}">P{E(pri)}</span> {E(txt[:120])}</div>'
-    return web.Response(text=h or '<div style="color:#888">No tasks</div>',content_type='text/html')
+    return h or '<div style="color:#888">No tasks</div>'
+async def tasks_api(r): return web.Response(text=_tasks_html(),content_type='text/html')
 async def task_archive(r):
     d=await r.json();n=os.path.basename(d.get('d',''));td=f'{_G}/tasks';ad=f'{td}/.archive';os.makedirs(ad,exist_ok=True);p=f'{td}/{n}'
     if os.path.exists(p):
