@@ -70,7 +70,7 @@ static void _html_gen(void){
     _shtml[_shlen]=0;free(src);
 }
 static void _sresp(int c,int code,const char*ct,const char*body,int bl){
-    char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-cache\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl);
+    char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-store\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl);
     (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
 }
 static int _ws_upgrade(int c,const char*req){
@@ -198,7 +198,7 @@ static void _handle(int c){
             if(!pid){execlp("tmux","tmux","send-keys","-l","-t","a:op-a.0","--",msg,(char*)0);_exit(1);}
             waitpid(pid,NULL,0);(void)!system("tmux send-keys -t a:op-a.0 Enter");}
         /* stream chunked: each inotify event → capture → emit delta. ms-level UX. */
-        static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-cache\r\n\r\n";
+        static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-store\r\n\r\n";
         (void)!write(c,SH,sizeof SH-1);
         struct pollfd pf={.fd=ifd,.events=POLLIN};int got=0,last_len=0;
         for(;;){int to=got?1500:(mi?30000:50);int n=poll(&pf,1,to);
