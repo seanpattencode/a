@@ -228,11 +228,9 @@ static void _handle(int c){
         char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 & echo $!",SDIR);
         FILE*p=popen(tc,"r");char pid[32]={0};
         if(p){(void)!fgets(pid,32,p);pclose(p);pid[strcspn(pid,"\n")]=0;}
-        char nm[64]={0};
-        for(int i=0;i<15&&!nm[0];i++){sleep(1);
-            char chk[128];snprintf(chk,128,"tmux list-windows -t a -F '#W' 2>/dev/null|grep -- '-%s$'",pid);
-            FILE*q=popen(chk,"r");if(q){(void)!fgets(nm,64,q);pclose(q);nm[strcspn(nm,"\n")]=0;}}
-        _sresp(c,200,"text/plain",nm,strlen(nm));return;}
+        const char*bn=strrchr(SDIR,'/');bn=bn?bn+1:SDIR;
+        char nm[64];int nl=snprintf(nm,64,"op-%s-%s",bn,pid);
+        _sresp(c,200,"text/plain",nm,(size_t)nl);return;}
     if(!strncmp(req,"POST /op/msg",12)){
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
         body+=4;char*q=strstr(body,"q=");if(!q){_sresp(c,400,"text/plain","no q",4);return;}
@@ -246,6 +244,7 @@ static void _handle(int c){
         if(wp){wp+=2;int wi=0;while(wp[wi]&&wp[wi]!='&'&&wi<63)opn[wi]=wp[wi],wi++;opn[wi]=0;}
         #define OPN_LS do{FILE*_l=popen("tmux list-windows -t a -F '#W' 2>/dev/null|grep '^op-'|tail -1","r");\
             if(_l){(void)!fgets(opn,64,_l);pclose(_l);opn[strcspn(opn,"\n")]=0;}}while(0)
+        if(opn[0]){char hk[128];snprintf(hk,128,"tmux has-session -t a:%s 2>/dev/null",opn);for(int i=0;i<15&&system(hk);i++)sleep(1);}
         if(!opn[0])OPN_LS;
         if(!opn[0]){
             char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 &",SDIR);(void)!system(tc);
@@ -263,27 +262,29 @@ static void _handle(int c){
         if(mi){int bf=open("/tmp/op_a.buf",O_WRONLY|O_CREAT|O_TRUNC,0644);
             if(bf>=0){(void)!write(bf,msg,(size_t)mi);close(bf);
                 char sc[256];snprintf(sc,256,"tmux load-buffer /tmp/op_a.buf&&tmux paste-buffer -t a:%s.0&&tmux send-keys -t a:%s.0 Enter",opn,opn);(void)!system(sc);}}
-        /* stream chunked: each inotify event → capture → emit delta. ms-level UX. */
+        /* event-driven: pipe-pane fires fifo → capture → emit delta. no polling. */
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-store\r\n\r\n";
         (void)!write(c,SH,sizeof SH-1);
-        struct pollfd pf={.fd=ifd,.events=POLLIN};int got=0,last_len=0;
-        for(;;){int to=got?1500:(mi?30000:50);int n=poll(&pf,1,to);
-            if(n>0){char b[4096];while(read(ifd,b,4096)>0)got=1;}
-            DRAIN(cur);
-            char*r=cur,*p=NULL,*s=cur;while(*msg&&(s=strstr(s,msg)))p=s,s+=strlen(msg);
-            if(p)r=p+strlen(msg);int ci=0;
-            for(int i=0;r[i]&&ci<CAP-1;i++){
-                if(r[i]==0x1b&&r[i+1]=='['){i+=2;while(r[i]&&!isalpha((unsigned char)r[i]))i++;}
-                else if(r[i]=='\n'&&(unsigned char)r[i+1]==0xE2&&(unsigned char)r[i+2]==0x94)break;
-                else if((unsigned char)r[i]==0xE2&&(unsigned char)r[i+1]==0x97&&(unsigned char)r[i+2]==0x8F&&r[i+3]==' ')i+=3;
-                else cln[ci++]=r[i];}
-            cln[ci]=0;
-            int diff=ci!=last_len||memcmp(cln,last,(size_t)ci);
-            if(diff){
-                char hh[16];int hl=snprintf(hh,16,"%x\r\n",ci+1);
-                (void)!write(c,hh,(size_t)hl);(void)!write(c,"\f",1);(void)!write(c,cln,(size_t)ci);(void)!write(c,"\r\n",2);
-                memcpy(last,cln,(size_t)ci);last_len=ci;}
-            if(n==0)break;}
+        int last_len=0;
+        #define EMIT do{DRAIN(cur);\
+            char*r=cur,*p=NULL,*s=cur;while(*msg&&(s=strstr(s,msg)))p=s,s+=strlen(msg);\
+            if(p)r=p+strlen(msg);int ci=0;\
+            for(int i=0;r[i]&&ci<CAP-1;i++){\
+                if(r[i]==0x1b&&r[i+1]=='['){i+=2;while(r[i]&&!isalpha((unsigned char)r[i]))i++;}\
+                else if(r[i]=='\n'&&(unsigned char)r[i+1]==0xE2&&(unsigned char)r[i+2]==0x94)break;\
+                else if((unsigned char)r[i]==0xE2&&(unsigned char)r[i+1]==0x97&&(unsigned char)r[i+2]==0x8F&&r[i+3]==' ')i+=3;\
+                else cln[ci++]=r[i];}\
+            cln[ci]=0;\
+            if(ci!=last_len||memcmp(cln,last,(size_t)ci)){\
+                char hh[16];int hl=snprintf(hh,16,"%x\r\n",ci+1);\
+                (void)!write(c,hh,(size_t)hl);(void)!write(c,"\f",1);(void)!write(c,cln,(size_t)ci);(void)!write(c,"\r\n",2);\
+                memcpy(last,cln,(size_t)ci);last_len=ci;}}while(0)
+        EMIT;
+        struct pollfd pf={.fd=ifd,.events=POLLIN};
+        for(;;){int n=poll(&pf,1,mi?30000:3000);
+            if(n<=0)break;
+            char b[4096];while(read(ifd,b,4096)>0);
+            EMIT;}
         close(ifd);(void)!write(c,"0\r\n\r\n",5);return;}
     _sresp(c,404,"text/plain","not found",9);
 }
