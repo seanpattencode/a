@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "a NTP",
+  "version": "1.0",
+  "description": "localhost:1111 as new tab, with customizable instant-switch tiles at bottom.",
+  "permissions": ["tabs", "storage"],
+  "host_permissions": ["http://localhost:1111/*"],
+  "background": { "service_worker": "bg.js" },
+  "chrome_url_overrides": { "newtab": "newtab.html" }
+}
