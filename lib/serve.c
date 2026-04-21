@@ -128,7 +128,7 @@ static void _ws_term(int c){
 static void _handle(int c){
     char req[8192];int n=(int)read(c,req,8191);if(n<=0)return;req[n]=0;
     int one=1;setsockopt(c,IPPROTO_TCP,TCP_NODELAY,&one,4);
-    if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note",9)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
+    if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
     if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){if(_ws_upgrade(c,req))_ws_term(c);return;}
     if(!strncmp(req,"GET /api/u-status",17)){_sresp(c,200,"application/json","{\"ok\":true}",11);return;}
@@ -161,15 +161,15 @@ static void _handle(int c){
         return;}
     if(!strncmp(req,"GET /note-list",14)){
         char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
-        char html[16384]="";int hl=0;
+        int cap=524288;char*html=malloc((size_t)cap);if(!html)return;int hl=0;
         DIR*d=opendir(nd);struct dirent*e;
-        if(d){while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt"))continue;
+        if(d){while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt")||hl>cap-2048)continue;
             char fp[P];snprintf(fp,P,"%s/%s",nd,e->d_name);
             FILE*f=fopen(fp,"r");if(!f)continue;char ln[512];
             while(fgets(ln,512,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
-                hl+=snprintf(html+hl,(size_t)(16383-hl),"<div class=ni><span>%s</span></div>",ln+6);break;}}
+                hl+=snprintf(html+hl,(size_t)(cap-1-hl),"<div class=ni><span>%s</span></div>",ln+6);break;}}
             fclose(f);}closedir(d);}
-        _sresp(c,200,"text/html",html,hl);return;}
+        _sresp(c,200,"text/html",html,hl);free(html);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
         static const char H[]="<!doctype html><style>body,#m{display:flex;flex-direction:column;margin:0}body{background:#000;color:#fff;font:16px system-ui;height:100vh}#m{flex:1;overflow:auto;padding:16px}#m>div{margin:6px 0;padding:10px 14px;border-radius:14px;max-width:75%;white-space:pre-wrap;background:#1f2937}.u{background:#1e3a8a!important;align-self:flex-end}#i{margin:8px;padding:14px;background:#000;color:#fff;border:1px solid #333;border-radius:10px;font:inherit;width:calc(100% - 16px);box-sizing:border-box;outline:none}</style><div id=m></div><form id=f><input id=i autofocus placeholder=\"talk to a\"></form><script>S=v=>{let a=document.createElement('div');if(v){let u=document.createElement('div');u.className='u';u.textContent=v;m.appendChild(u)}m.appendChild(a);m.scrollTop=1e9;fetch('/op/msg',{method:'POST',body:'q='+encodeURIComponent(v||'')}).then(async r=>{const rd=r.body.getReader(),dc=new TextDecoder();let b='';for(;;){const{done,value}=await rd.read();if(done)break;b+=dc.decode(value,{stream:true});const k=b.lastIndexOf('\f');if(k>=0){a.textContent=b.slice(k+1);m.scrollTop=1e9}}})};f.onsubmit=e=>{e.preventDefault();S(i.value.trim());i.value=''};S('')</script>";
         _sresp(c,200,"text/html",H,sizeof H-1);return;}
