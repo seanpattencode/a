@@ -168,7 +168,11 @@ static void _ws_term(int c){
     kill(p,SIGHUP);close(m);waitpid(p,NULL,0);
 }
 static void _handle(int c){
-    char req[8192];int n=(int)read(c,req,8191);if(n<=0)return;req[n]=0;
+    static char req[262144];int n=(int)read(c,req,262143);if(n<=0)return;
+    char*cl=strstr(req,"Content-Length:"),*bb=strstr(req,"\r\n\r\n");
+    if(cl&&bb){int want=(int)(bb-req+4)+atoi(cl+15);
+        while(n<want&&n<262143){int r=(int)read(c,req+n,want-n);if(r<=0)break;n+=r;}}
+    req[n]=0;
     int one=1;setsockopt(c,IPPROTO_TCP,TCP_NODELAY,&one,4);
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
@@ -223,8 +227,8 @@ static void _handle(int c){
     if(!strncmp(req,"POST /op/msg",12)){
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
         body+=4;char*q=strstr(body,"q=");if(!q){_sresp(c,400,"text/plain","no q",4);return;}
-        q+=2;char msg[2048];int mi=0;
-        for(;q[mi]&&q[mi]!='&'&&mi<2046;mi++){
+        q+=2;static char msg[131072];int mi=0;
+        for(;q[mi]&&q[mi]!='&'&&mi<131070;mi++){
             if(q[mi]=='+')msg[mi]=' ';
             else if(q[mi]=='%'&&q[mi+1]&&q[mi+2]){char h[3]={q[mi+1],q[mi+2],0};msg[mi]=(char)strtol(h,NULL,16);q+=2;}
             else msg[mi]=q[mi];}msg[mi]=0;
@@ -241,9 +245,9 @@ static void _handle(int c){
         mkfifo("/tmp/op_a.fifo",0644);
         (void)!system("tmux pipe-pane -t a:op-a.0;tmux pipe-pane -t a:op-a.0 'cat >/tmp/op_a.fifo'");
         int ifd=open("/tmp/op_a.fifo",O_RDWR|O_NONBLOCK);
-        if(mi){pid_t pid=fork();
-            if(!pid){execlp("tmux","tmux","send-keys","-l","-t","a:op-a.0","--",msg,(char*)0);_exit(1);}
-            waitpid(pid,NULL,0);(void)!system("tmux send-keys -t a:op-a.0 Enter");}
+        if(mi){int bf=open("/tmp/op_a.buf",O_WRONLY|O_CREAT|O_TRUNC,0644);
+            if(bf>=0){(void)!write(bf,msg,(size_t)mi);close(bf);
+                (void)!system("tmux load-buffer /tmp/op_a.buf&&tmux paste-buffer -t a:op-a.0&&tmux send-keys -t a:op-a.0 Enter");}}
         /* stream chunked: each inotify event → capture → emit delta. ms-level UX. */
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain\r\nTransfer-Encoding:chunked\r\nCache-Control:no-store\r\n\r\n";
         (void)!write(c,SH,sizeof SH-1);
