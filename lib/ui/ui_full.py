@@ -30,8 +30,10 @@ HTML = '''<!doctype html>
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-webgl@0.16.0/lib/xterm-addon-webgl.min.js"></script>
-<style>*{font-family:system-ui}[data-go]{touch-action:manipulation}.b{padding:16px 24px;font-size:24px;background:#000;color:#4af;border:2px solid #4af;border-radius:8px;cursor:pointer}.n{font-size:28px;color:#4af;cursor:pointer;padding:20px 40px;border:2px solid #4af;border-radius:12px}.f{background:#000;color:#fff;border:1px solid #333;border-radius:8px}.ni{padding:6px 0;color:#aaa;border-bottom:1px solid #222;display:flex;align-items:center}.nx{background:none;border:1px solid #555;color:#888;padding:12px 20px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px}</style>
+<style>*{font-family:system-ui}[data-go]{touch-action:manipulation}.b{padding:16px 24px;font-size:24px;background:#000;color:#4af;border:2px solid #4af;border-radius:8px;cursor:pointer}.n{font-size:28px;color:#4af;cursor:pointer;padding:20px 40px;border:2px solid #4af;border-radius:12px}.f{background:#000;color:#fff;border:1px solid #333;border-radius:8px}.ni{padding:6px 0;color:#aaa;border-bottom:1px solid #222;display:flex;align-items:center}.nx{background:none;border:1px solid #555;color:#888;padding:12px 20px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px}#w,#wm{position:fixed;right:10px;z-index:9}#w{top:4px;color:#aaa;font-size:26px;cursor:pointer;user-select:none}#wm{top:44px;background:#111;border:1px solid #333;border-radius:8px;padding:8px;display:none;grid-template-columns:repeat(3,64px);gap:6px}#wm.x{display:grid}#wm a{padding:16px 0;color:#4af;text-align:center;border:1px solid #333;border-radius:6px;text-decoration:none;font-size:13px}</style>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
+<div id=w onclick="wm.classList.toggle('x')">⋮⋮⋮</div>
+<div id=wm><a href="/">home</a><a href="/op">op</a><a href="/jobs">job</a><a href="/note">note</a><a href="/tasks">task</a><a href="/term">term</a></div>
 <div id=v_index style="display:none;height:100vh;flex-direction:column;align-items:center">
   <form id=omni style="margin-top:45vh"><input id=qi autofocus placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:transparent"></form>
   <div id=qo style="width:90vw;max-width:800px;margin-top:20px;max-height:45vh;overflow-y:auto"></div>
@@ -68,7 +70,7 @@ __MY__
 var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks'__MV__}, T, F, W;
 // perf: go() must stay <1ms. show() is DOM toggle only, no network. keep this instrumentation.
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);console.log('go('+p+') '+(performance.now()-t).toFixed(2)+'ms');}
-function show(p){for(var k in views)document.getElementById(views[k]).style.display=k===p?(k==='/term'?'block':'flex'):'none';if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}if(p==='/note'&&!nl.children.length)fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h});if(p==='/tasks')fetch('/api/tasks').then(function(r){return r.text()}).then(function(h){tl.innerHTML=h});}
+function show(p){w.style.display=p==='/'?'none':'';wm.classList.remove('x');for(var k in views)document.getElementById(views[k]).style.display=k===p?(k==='/term'?'block':'flex'):'none';if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}if(p==='/note'&&!nl.children.length)fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h});if(p==='/tasks')fetch('/api/tasks').then(function(r){return r.text()}).then(function(h){tl.innerHTML=h});}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 function arct(d,el){fetch('/api/task/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:d})});el.parentElement.remove();}
 function loadjobs(){Promise.all([fetch('/api/jobs').then(function(r){return r.text()}),fetch('/api/job-status').then(function(r){return r.json()})]).then(function(d){
@@ -93,7 +95,7 @@ try{
 }catch(e){document.body.innerHTML='<pre style="color:red;padding:20px">'+e+'</pre>';}
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(c){nc.value='';fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(p){nl.insertAdjacentHTML('afterbegin','<div class=ni>'+c+'</div>');nc.placeholder=p;}).catch(function(){nc.placeholder='FAIL';nc.style.borderColor='red';setTimeout(function(){nc.style.borderColor='#333'},2000);});}};
 var _tg=0;document.addEventListener('touchstart',function(e){var g=e.target.closest('[data-go]');if(g){e.preventDefault();_tg=1;go(g.dataset.go);}},{passive:false});
-document.addEventListener('click',function(e){if(_tg){_tg=0;return;}var g=e.target.closest('[data-go]');if(g)go(g.dataset.go);});
+document.addEventListener('click',function(e){if(_tg){_tg=0;return;}if(!e.target.closest('#w,#wm'))wm.classList.remove('x');var g=e.target.closest('[data-go]');if(g)go(g.dataset.go);});
 show(views[location.pathname]?location.pathname:'/');
 qi.onblur=function(){setTimeout(function(){qi.focus()},0)};
 window.onfocus=function(){qi.style.borderColor='#555'};window.onblur=function(){qi.style.borderColor='#333'};
