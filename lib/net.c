@@ -118,7 +118,11 @@ static int cmd_login(int argc, char **argv) {
             (void)!system("gh auth setup-git 2>/dev/null");puts("+ gh");}
         if(fexists(cc)){char cmd[B];snprintf(cmd,B,"mkdir -p '%s/.claude'&&cp '%s' '%s'&&chmod 600 '%s'",HOME,cc,hf,hf);(void)!system(cmd);puts("+ claude");}
         return 0;}
-    puts("a login save   save gh+claude creds\na login apply  apply from sync");return 0;}
+    if(sub&&!strcmp(sub,"show")){char ak[P],c[B];snprintf(ak,P,"%s/api_keys.env",ld);
+        if(fexists(ak)){printf("\n\033[1;36m━━━ %s ━━━\033[0m\n",ak);snprintf(c,B,"cat '%s'",ak);(void)!system(c);}
+        if(fexists(cc)){printf("\n\033[1;36m━━━ %s ━━━\033[0m\n",cc);snprintf(c,B,"jq . '%s' 2>/dev/null||cat '%s';echo",cc,cc);(void)!system(c);}
+        return 0;}
+    puts("a login save   save gh+claude creds\na login apply  apply from sync\na login show   show api keys");return 0;}
 
 static int cmd_sync(int argc, char **argv) { AB;
     printf("%s\n", SROOT);
