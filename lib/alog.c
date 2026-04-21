@@ -7,8 +7,9 @@ static void alog(const char *cmd, const char *cwd) {
         tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
         ts.tv_nsec / 1000000, DEV);
     FILE *f = fopen(lf, "w"); if (!f) return;
-    fprintf(f, "%02d/%02d %02d:%02d %s %s %s\n",
+    const char *sid = getenv("ASID");
+    fprintf(f, "%02d/%02d %02d:%02d %s %s %s%s%s\n",
         tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min,
-        DEV, cmd, cwd);
+        DEV, cmd, cwd, sid?" sid:":"", sid?sid:"");
     fclose(f);
 }
