@@ -259,7 +259,7 @@ async def task_archive(r):
 async def u_status(r):return web.json_response({'ok':True},headers={'Access-Control-Allow-Origin':'*'})
 
 async def my_page(r): return web.FileResponse(f'{_G}/my/{r.match_info["f"]}.html')
-app = web.Application(); app.add_routes([web.get('/', spa), web.get('/jobs', spa), web.get('/term', spa), web.get('/note', spa), web.get('/tasks', spa), web.get('/ws', term), web.get('/restart', restart), web.get('/api/jobs', jobs_api), web.post('/api/jobs', jobs_api), web.get('/api/job-status', job_status_api), web.get('/api/term', term_capture), web.get('/note-list', note_api), web.post('/note', note_api), web.post('/api/note/archive', note_archive), web.get('/api/sync', sync_api), web.post('/api/omni', omni_api), web.get('/api/tasks', tasks_api), web.post('/api/task/archive', task_archive), web.get('/api/u-status', u_status), web.get('/{f}', my_page), web.static('/my', f'{_G}/my')])
+app = web.Application(); app.add_routes([web.get('/', spa), web.get('/jobs', spa), web.get('/term', spa), web.get('/note', spa), web.get('/tasks', spa), web.get('/ws', term), web.get('/restart', restart), web.get('/api/jobs', jobs_api), web.post('/api/jobs', jobs_api), web.get('/api/job-status', job_status_api), web.get('/api/term', term_capture), web.get('/note-list', note_api), web.post('/note', note_api), web.post('/api/note/archive', note_archive), web.get('/api/sync', sync_api), web.post('/api/omni', omni_api), web.get('/api/tasks', tasks_api), web.post('/api/task/archive', task_archive), web.get('/api/u-status', u_status), web.get('/{f}', my_page)])
 
 def run(port=1111): web.run_app(app, port=port, print=None)
 if __name__ == '__main__': run(int(sys.argv[1]) if len(sys.argv) > 1 else 1111)
