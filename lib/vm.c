@@ -111,7 +111,7 @@ static int cmd_vm(int argc, char **argv) {
     if(p==0){setsid();close(0);int fd=open(log,O_WRONLY|O_CREAT|O_TRUNC,0644);dup2(fd,1);dup2(fd,2);
         char di[P],mon[P];snprintf(di,P,"file=%s,format=qcow2",img);snprintf(mon,P,"unix:%s/mon.sock,server,nowait",d);
         char*av[32];int n=0;
-        av[n++]="qemu-system-x86_64";av[n++]="-m";av[n++]="4G";av[n++]="-smp";av[n++]="2";
+        av[n++]="qemu-system-x86_64";av[n++]="-cpu";av[n++]="host";av[n++]="-m";av[n++]="4G";av[n++]="-smp";av[n++]="2";
         av[n++]="-drive";av[n++]=di;av[n++]="-cdrom";av[n++]=seed;
         av[n++]="-device";av[n++]="virtio-net-pci,netdev=n0";av[n++]="-netdev";av[n++]="user,id=n0,hostfwd=tcp::2222-:22";
         av[n++]="-nographic";av[n++]="-enable-kvm";av[n++]="-monitor";av[n++]=mon;
