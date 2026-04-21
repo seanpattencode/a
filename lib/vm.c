@@ -38,6 +38,31 @@ static int cmd_vm(int argc, char **argv) {
     char usr[128];snprintf(usr,128,"%s@localhost",os->user);
     perf_disarm();
     if(!strcmp(sub,"kill")){char c[B];snprintf(c,B,"pkill -f hostfwd=tcp::%s",port);return system(c);}
+    if(!strcmp(sub,"snap")){
+        char c[B],sb[P];snprintf(sb,P,"sshpass -p %s ssh -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oConnectTimeout=5 -p %s %s",pw,port,usr);
+        snprintf(c,B,"%s 'sudo cp /boot/vmlinuz-* /tmp/k&&sudo cp /boot/initrd.img-* /tmp/i&&sudo chmod a+r /tmp/k /tmp/i' 2>/dev/null",sb);
+        if(!system(c)){
+            snprintf(c,B,"sshpass -p %s scp -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -P %s %s:/tmp/k %s/vmlinuz&&sshpass -p %s scp -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -P %s %s:/tmp/i %s/initrd",pw,port,usr,d,pw,port,usr,d);system(c);}
+        snprintf(c,B,"echo savevm ready|socat -t2 - unix:%s/mon.sock 2>&1|tee /tmp/avmsn|grep -q Error",d);
+        if(!system(c)){puts("x savevm failed:");(void)!system("tail -3 /tmp/avmsn");return 1;}
+        puts("+ snapshot saved");return 0;
+    }
+    if(!strcmp(sub,"fast")){
+        char vk[P],vi[P];snprintf(vk,P,"%s/vmlinuz",d);snprintf(vi,P,"%s/initrd",d);
+        if(!fexists(vk)||!fexists(vi)){puts("x run 'a vm' then 'a vm snap' first (extracts kernel)");return 1;}
+        pid_t p=fork();
+        if(p==0){setsid();close(0);int fd=open(log,O_WRONLY|O_CREAT|O_TRUNC,0644);dup2(fd,1);dup2(fd,2);
+            char di[P];snprintf(di,P,"file=%s,id=hd0,format=qcow2,if=none",img);
+            execlp("qemu-system-x86_64","qemu-system-x86_64","-machine","microvm,rtc=on,pit=on","-enable-kvm","-cpu","host","-m","1G","-smp","2","-kernel",vk,"-initrd",vi,"-append","root=/dev/vda1 rw console=ttyS0 reboot=t panic=-1 quiet","-serial","file:/tmp/avm.log","-display","none","-device","virtio-blk-device,drive=hd0","-drive",di,"-device","virtio-net-device,netdev=n0","-netdev","user,id=n0,hostfwd=tcp::2222-:22",(char*)0);_exit(1);}
+        struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
+        printf("microvm booting (pid %d)...\n",(int)p);
+        for(int i=0;i<10;i++){sleep(1);
+            char c[B];snprintf(c,B,"sshpass -p %s ssh -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oConnectTimeout=2 -p %s %s 'echo ready' 2>/dev/null",pw,port,usr);
+            if(!system(c)){clock_gettime(CLOCK_MONOTONIC,&t1);
+                double s=(double)(t1.tv_sec-t0.tv_sec)+(double)(t1.tv_nsec-t0.tv_nsec)/1e9;
+                printf("+ %.1fs\n",s);char*sv[]={argv[0],"vm","ssh",(char*)osn,NULL};return cmd_vm(4,sv);}}
+        puts("x microvm timeout — check /tmp/avm.log");return 1;
+    }
     if(!strcmp(sub,"test")){
         char cmd[B];
         snprintf(cmd,B,"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p %s %s 'echo ok' 2>/dev/null",pw,port,usr);
@@ -81,14 +106,25 @@ static int cmd_vm(int argc, char **argv) {
     snprintf(md,P,"%s/meta-data",sd);writef(md,"{\"instance-id\":\"vm0\"}");
     snprintf(c,B,"xorriso -as mkisofs -o '%s' -V cidata -J -r '%s/' 2>&1",seed,sd);
     if(system(c)){puts("x xorriso failed");return 1;}
+    int hassnap=0;{char cc[B];snprintf(cc,B,"qemu-img snapshot -l '%s' 2>/dev/null|grep -qw ready",img);hassnap=!system(cc);}
     pid_t p=fork();
-    if(p==0){int fd=open(log,O_WRONLY|O_CREAT|O_TRUNC,0644);if(fd>=0){dup2(fd,1);dup2(fd,2);close(fd);}
-        char di[P],ds[P];snprintf(di,P,"file=%s,format=qcow2",img);snprintf(ds,P,"file=%s,format=raw",seed);
-        execlp("qemu-system-x86_64","qemu-system-x86_64","-m","4G","-smp","2","-drive",di,"-drive",ds,"-device","virtio-net-pci,netdev=n0","-netdev","user,id=n0,hostfwd=tcp::2222-:22","-nographic","-enable-kvm",(char*)0);_exit(1);}
-    printf("booting %s (pid %d)...\n",os->name,(int)p);
-    for(int i=0;i<12;i++){sleep(10);
+    if(p==0){setsid();close(0);int fd=open(log,O_WRONLY|O_CREAT|O_TRUNC,0644);dup2(fd,1);dup2(fd,2);
+        char di[P],mon[P];snprintf(di,P,"file=%s,format=qcow2",img);snprintf(mon,P,"unix:%s/mon.sock,server,nowait",d);
+        char*av[32];int n=0;
+        av[n++]="qemu-system-x86_64";av[n++]="-m";av[n++]="4G";av[n++]="-smp";av[n++]="2";
+        av[n++]="-drive";av[n++]=di;av[n++]="-cdrom";av[n++]=seed;
+        av[n++]="-device";av[n++]="virtio-net-pci,netdev=n0";av[n++]="-netdev";av[n++]="user,id=n0,hostfwd=tcp::2222-:22";
+        av[n++]="-nographic";av[n++]="-enable-kvm";av[n++]="-monitor";av[n++]=mon;
+        if(hassnap){av[n++]="-loadvm";av[n++]="ready";}
+        av[n]=NULL;execvp(av[0],av);_exit(1);}
+    struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
+    printf("booting %s%s (pid %d)...\n",os->name,hassnap?" [snap]":"",(int)p);
+    int tries=hassnap?10:12,wait=hassnap?1:10;
+    for(int i=0;i<tries;i++){sleep((unsigned)wait);
         char c[B];snprintf(c,B,"sshpass -p %s ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p %s %s 'echo ready' 2>/dev/null",pw,port,usr);
-        if(!system(c))return 0;
-        printf("  waiting (%ds)...\n",(i+1)*10);}
+        if(!system(c)){clock_gettime(CLOCK_MONOTONIC,&t1);
+            double s=(double)(t1.tv_sec-t0.tv_sec)+(double)(t1.tv_nsec-t0.tv_nsec)/1e9;
+            printf("+ %.1fs\n",s);char*sv[]={argv[0],"vm","ssh",(char*)osn,NULL};return cmd_vm(4,sv);}
+        printf("  waiting (%ds)...\n",(i+1)*wait);}
     printf("x timeout — check %s\n",log);return 1;
 }
