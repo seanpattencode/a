@@ -18,11 +18,8 @@ def _cmd(m, p):
     return [sys.executable, '-c', f"from ui.{m} import run;run({p})"]
 
 def _bg(m, p):
-    S.Popen(_cmd(m, p), start_new_session=True, stdout=S.DEVNULL, env=os.environ|{'PYTHONPATH':_LIB})
-    time.sleep(0.3); u = _url(p)
-    if exists('/proc/sys/fs/binfmt_misc/WSLInterop'):
-        S.Popen(['cmd.exe', '/c', 'start', u], stdout=S.DEVNULL, stderr=S.DEVNULL)
-    else: import webbrowser; webbrowser.open(u)
+    S.Popen(_cmd(m, p), start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL, env=os.environ|{'PYTHONPATH':_LIB})
+    time.sleep(0.3); import webbrowser; webbrowser.open(_url(p))
 
 def _plist(): return expanduser('~/Library/LaunchAgents/com.a.ui.plist')
 def _unit(): return expanduser('~/.config/systemd/user/a-ui.service')
