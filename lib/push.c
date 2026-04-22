@@ -132,7 +132,7 @@ static int cmd_diff(int argc, char **argv) { AB;
     }
     /* Full diff — colored + stats */
     char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
-    struct{char name[256];int al,dl,ab,db;}fs[256]; int nf=0,cf=-1;
+    struct{char name[256];int al,dl,ab,db,sb;}fs[256]; int nf=0,cf=-1; long ws=0;
     #define FS(fn) do{cf=-1;for(int _i=0;_i<nf;_i++)if(!strcmp(fs[_i].name,fn)){cf=_i;break;} \
         if(cf<0&&nf<256){cf=nf;memset(&fs[nf],0,sizeof(fs[0]));snprintf(fs[nf].name,256,"%s",fn);nf++;}}while(0)
     #define DS(cmd) do{FILE*_f=popen(cmd,"r");if(_f){char _l[4096];while(fgets(_l,4096,_f)){_l[strcspn(_l,"\n")]=0; \
@@ -149,6 +149,7 @@ static int cmd_diff(int argc, char **argv) { AB;
     if(fk){
         printf("%s\nfork → %s\n",cwd,SDIR);
         {char c[B];snprintf(c,B,"for f in *;do [ \"$f\" = adata ]&&continue;diff -ru '%s/'\"$f\" \"$f\" 2>/dev/null;done|grep -v '^Only in'",SDIR);DS(c);}
+        {char o[32];pcmd("du -sk .|awk '{print $1*1024}'",o,32);ws=atol(o);}
     } else {
         char br[128]; pcmd("git rev-parse --abbrev-ref HEAD 2>/dev/null",br,128); br[strcspn(br,"\n")]=0;
         int wt=!sel&&(!strncmp(br,"wt-",3)||!strncmp(br,"j-",2)||!strncmp(br,"job-",4));
@@ -164,12 +165,17 @@ static int cmd_diff(int argc, char **argv) { AB;
             if(d){int nl=1;for(size_t j=0;j<sz;j++)if(d[j]=='\n')nl++;FS(p);if(cf>=0){fs[cf].al=nl;fs[cf].ab=(int)sz;}free(d);}
         }if(e)p=e+1;else break;}}
         if(wt&&!nf){puts("No changes");return 0;}
+        {char c[B],o[32];snprintf(c,B,"git ls-tree -r -l '%s'|awk '{s+=$4}END{print s}'",tgt);pcmd(c,o,32);ws=atol(o);}
     }
+    for(int j=0;j<nf;j++){struct stat st;if(!stat(fs[j].name,&st))fs[j].sb=(int)st.st_size-fs[j].ab+fs[j].db;}
     if(!nf){puts("No changes");return 0;}
     int ti=0,td=0,ta=0,tb=0; printf("\n"); HR;
-    for(int j=0;j<nf;j++){printf("%s: +%d/-%d lines, %+d tok\n",bname(fs[j].name),fs[j].al,fs[j].dl,(fs[j].ab-fs[j].db)/4);
+    for(int j=0;j<nf;j++){int tk=(fs[j].ab-fs[j].db)/4,st=fs[j].sb/4;
+        if(st)printf("%s: +%d/-%d lines, %+d tok (%+.3f%% of file)\n",bname(fs[j].name),fs[j].al,fs[j].dl,tk,tk*100.0/st);
+        else printf("%s: +%d/-%d lines, %+d tok (new)\n",bname(fs[j].name),fs[j].al,fs[j].dl,tk);
         ti+=fs[j].al;td+=fs[j].dl;ta+=fs[j].ab;tb+=fs[j].db;}
-    HR; printf("%s: %d file%s, %+d lines, %+d tok\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4);
+    HR; if(ws)printf("%s: %d file%s, %+d lines, %+d tok (%+.3f%% of repo)\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4,(ta-tb)*100.0/ws);
+    else printf("%s: %d file%s, %+d lines, %+d tok\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4);
     if(!fk&&!sel) puts("\ndiff # = last #");
     return 0;
     #undef FS
