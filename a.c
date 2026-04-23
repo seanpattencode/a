@@ -371,6 +371,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/bench.c"
 #include "lib/serve.c"
 #include "lib/tok.c"
+#include "lib/debloat.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
@@ -603,7 +604,7 @@ static const cmd_t CMDS[] = {
     {"all",cmd_all},
     {"bench",cmd_bench},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
-    {"d",cmd_diff},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
+    {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},
     {"help",cmd_help_full},{"hi",cmd_hi},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},{"job",cmd_job},{"jobs",cmd_job},
