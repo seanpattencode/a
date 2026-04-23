@@ -1560,11 +1560,19 @@ async def multi_ai_async(query=None, _tabs=1, only=None, files=None):
         try: await context.grant_permissions(['clipboard-read', 'clipboard-write'], origin=url.rstrip('/'))
         except: pass
 
-    print(f"\nOpening {len(platforms)} platforms sequentially (parallel goto overwhelms Chrome)...\n")
+    print(f"\nOpening {len(platforms)} platforms in parallel...\n")
 
-    async def open_platform(name, url, page=None):
+    # Create tabs sequentially (Chrome CDP new_page contention-safe), fire navigations in parallel
+    prepared = []
+    for j, (n, u) in enumerate(platforms):
         try:
-            page = page or await context.new_page()
+            page = first_page if j == 0 else await context.new_page()
+            prepared.append((n, u, page))
+        except Exception as e:
+            print(f"  ✗ [{n}] new_page: {str(e)[:40]}")
+
+    async def _nav(name, url, page):
+        try:
             await page.goto(url, wait_until='domcontentloaded', timeout=30000)
             print(f"  ✓ [{name}] Loaded")
             return (name, page, True)
@@ -1572,7 +1580,7 @@ async def multi_ai_async(query=None, _tabs=1, only=None, files=None):
             print(f"  ✗ [{name}] {str(e)[:40]}")
             return (name, page, False)
 
-    results = [await open_platform(n, u, first_page if j == 0 else None) for j, (n, u) in enumerate(platforms)]
+    results = await asyncio.gather(*[_nav(n, u, p) for n, u, p in prepared])
     pages = [(n, p) for n, p, ok in results if p is not None]
     failed = [n for n, p, ok in results if p is None]
     print(f"\n✓ {len(pages)}/{len(platforms)} tabs loaded")
