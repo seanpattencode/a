@@ -488,7 +488,7 @@ static int cmd_j(int c,char**v){
         if(!dexists(wd)){printf("x %s not found\n",wd);return 1;}
         printf("+ resume: %s\n",wd);
         tm_ensure_conf();char jcmd[B];jcmd_fill(jcmd,1,wd,NULL);
-        {char sn[64];snprintf(sn,64,"j-%s",bname(wd));tm_new(sn,wd,jcmd);tm_go(sn);}
+        {char sn[64];snprintf(sn,64,"j-%s",bname(wd));if(!tm_new(sn,wd,jcmd))sess_log(sn,wd);tm_go(sn);}
         return 0;}
     int si=2,wt=0;if(c>3&&isdigit(*v[2])){int idx=atoi(v[2]);if(idx<NPJ)snprintf(wd,P,"%s",PJ[idx].path);si++;}
     /* jobs run on main by default. --wt opts into fork isolation. agents work in parallel, push only their files. */
@@ -507,7 +507,7 @@ static int cmd_j(int c,char**v){
     tm_ensure_conf();
     char jcmd[B];jcmd_fill(jcmd,0,wd,pr[0]?pr:NULL);
     char sn[64];snprintf(sn,64,"j-%s-%ld",bname(wd),(long)getpid());
-    tm_new(sn,wd,jcmd);
+    if(!tm_new(sn,wd,jcmd))sess_log(sn,wd);
     tm_go(sn);
     return 0;}
 static int cmd_job(int c,char**v){return(c>2&&isdigit(*v[2]))?cmd_jobs(c,v):cmd_j(c,v);}

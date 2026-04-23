@@ -17,6 +17,13 @@ static void fallback_py(const char *mod, int argc, char **argv) {
     perror("a: python3");_exit(127);
 }
 
+static void sess_log(const char *sn, const char *wd) {
+    mkdirp(LOGDIR);char lf[P],c[B];
+    snprintf(lf,P,"%s/%s__%s.log",LOGDIR,DEV,sn);
+    snprintf(c,B,"tmux pipe-pane -t '%s:%s' 'cat >> %s'",TMS,sn,lf);(void)!system(c);
+    snprintf(c,B,"session:%s log:%s",sn,lf);alog(c,wd);
+}
+
 /* session create — returns 1 if window already existed (restored), 0 if created */
 static int create_sess(const char *sn, const char *wd, const char *cmd, const char *extra) {
     int ai = cmd && (strstr(cmd,"claude") || strstr(cmd,"codex") || strstr(cmd,"gemini") || strstr(cmd,"aider"));
@@ -48,12 +55,7 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
             (void)!system(c);
             snprintf(c, B, "tmux select-pane -t '%s:%s' -U", TMS, sn); (void)!system(c);
         }
-        /* logging */
-        mkdirp(LOGDIR); char c[B];
-        char lf[P]; snprintf(lf, P, "%s/%s__%s.log", LOGDIR, DEV, sn);
-        snprintf(c, B, "tmux pipe-pane -t '%s:%s' 'cat >> %s'", TMS, sn, lf); (void)!system(c);
-        char al[B]; snprintf(al, B, "session:%s log:%s", sn, lf);
-        alog(al, wd);
+        sess_log(sn, wd);
     }
     tm_save_win(sn, wd, cmd, sid);
     return r;
