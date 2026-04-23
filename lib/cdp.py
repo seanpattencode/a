@@ -16,10 +16,12 @@ def _cdp_up():
     try: _http('/json'); return True
     except: return False
 
-def _launch(variant='beta', me=False, url=None):
-    """Launch Chrome with CDP. Returns when CDP is ready."""
-    bins = {'canary': 'google-chrome-canary', 'dev': 'google-chrome-unstable',
-            'beta': 'google-chrome-beta', 'stable': 'google-chrome'}
+def _launch(variant='stable', me=False, url=None):
+    """Launch Chrome with CDP against a non-default profile path (Chrome 136+ disables
+    --remote-debugging-port on default profile dirs). With me=True, copy cookies and
+    Login Data from real profile so sessions persist across scraper restarts."""
+    bins = {'stable': 'google-chrome', 'beta': 'google-chrome-beta',
+            'canary': 'google-chrome-canary', 'dev': 'google-chrome-unstable'}
     binary = None
     for v in [variant] + [k for k in bins if k != variant]:
         if shutil.which(bins[v]): binary = bins[v]; break
@@ -27,21 +29,18 @@ def _launch(variant='beta', me=False, url=None):
 
     profile = os.path.expanduser(f'~/.cache/cdp-{variant}')
     if me:
-        # Copy only cookies from real profile
-        src_map = {'canary': '~/.config/google-chrome-canary', 'dev': '~/.config/google-chrome-unstable',
-                   'beta': '~/.config/google-chrome-beta', 'stable': '~/.config/google-chrome'}
-        src = None
-        for v in [variant] + list(src_map):
-            p = os.path.expanduser(src_map.get(v, ''))
-            if os.path.isdir(p): src = p; break
+        src_map = {'stable':'~/.config/google-chrome','beta':'~/.config/google-chrome-beta',
+                   'canary':'~/.config/google-chrome-canary','dev':'~/.config/google-chrome-unstable'}
+        src = next((os.path.expanduser(src_map[v]) for v in [variant]+list(src_map)
+                    if os.path.isdir(os.path.expanduser(src_map[v]))), None)
         if src:
             os.makedirs(f'{profile}/Default', exist_ok=True)
-            for f in ['Cookies', 'Login Data', 'Preferences']:
-                s = f'{src}/Default/{f}'
+            for f in ['Cookies','Cookies-journal','Login Data','Preferences']:
+                s=f'{src}/Default/{f}'
                 if os.path.exists(s):
                     try: shutil.copy2(s, f'{profile}/Default/{f}')
                     except: pass
-            sl = f'{src}/Local State'
+            sl=f'{src}/Local State'
             if os.path.exists(sl):
                 try: shutil.copy2(sl, f'{profile}/Local State')
                 except: pass
@@ -49,26 +48,23 @@ def _launch(variant='beta', me=False, url=None):
     args = [binary, f'--user-data-dir={profile}', f'--remote-debugging-port={PORT}',
             '--remote-allow-origins=*', '--no-first-run', '--disable-gpu-sandbox',
             '--disable-session-crashed-bubble', '--disable-features=SessionRestore',
-            '--password-store=basic']  # avoids 25s D-Bus timeout on Secret Service (gnome-keyring) cookie-jar key
+            '--password-store=basic',  # avoids 25s D-Bus timeout on Secret Service cookie-jar key
+            '--disable-background-networking']
 
-    # Detect sway
     import glob
     socks = [s for s in glob.glob(f'/run/user/{os.getuid()}/sway-ipc.*.sock')
-             if subprocess.run(['swaymsg', '-s', s, '-t', 'get_version'],
-                               capture_output=True, timeout=1).returncode == 0]
+             if subprocess.run(['swaymsg','-s',s,'-t','get_version'],capture_output=True,timeout=1).returncode==0]
     if socks:
-        args += ['--ozone-platform=wayland', '--enable-features=UseOzonePlatform']
-        subprocess.run(['swaymsg', '-s', socks[0], 'exec', ' '.join(
-            f"'{a}'" if ' ' in a or '=' in a else a for a in args)],
-            capture_output=True)
+        args += ['--ozone-platform=wayland','--enable-features=UseOzonePlatform']
+        subprocess.run(['swaymsg','-s',socks[0],'exec',
+                        ' '.join(f"'{a}'" if ' ' in a or '=' in a else a for a in args)],
+                       capture_output=True)
     else:
-        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
 
-    # Tight poll — 50ms intervals
-    for _ in range(40):  # 2s max
-        if _cdp_up(): return
-        time.sleep(0.05)
-    _die(f'CDP not ready in 2s')
+    # Fire and forget. Chrome cold-start is ~5s on its own; don't block the
+    # caller here. Caller polls _cdp_up() or returns with a "retry" message.
 
 def connect(url=None):
     """Create fresh tab, navigate if url given. Returns (ws, target_id)."""
@@ -89,18 +85,17 @@ def connect(url=None):
     return ws, target['id']
 
 def wait_loaded(ws, timeout=10):
-    """Wait for page — returns on first frameNavigated (page rendering), not full DOM load."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    """Event-driven: block inside Chrome until document.readyState==='complete'.
+    Runtime.evaluate with awaitPromise waits in-browser; no polling."""
+    expr = 'new Promise(r=>{if(document.readyState==="complete")r();else addEventListener("load",r,{once:true})})'
+    ws.settimeout(timeout)
+    ws.send(json.dumps({'id': 90, 'method': 'Runtime.evaluate',
+                        'params': {'expression': expr, 'awaitPromise': True, 'returnByValue': True}}))
+    while True:
         try:
-            ws.settimeout(0.5)
             r = json.loads(ws.recv())
-            m = r.get('method', '')
-            # frameNavigated = renderer has the page, good enough to interact
-            if m in ('Page.frameNavigated', 'Page.domContentEventFired', 'Page.loadEventFired'):
-                return True
-        except: pass
-    return False
+            if r.get('id') == 90: return True
+        except: return False
 
 def js(ws, expr):
     """Evaluate JS, return value."""
