@@ -9,7 +9,7 @@ case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
     set -e; A="$HOME/a"
     [[ ! -t 0 ]] && { T="/tmp/_ainst$$.c"; curl -fsSL https://raw.githubusercontent.com/seanpattencode/a/main/a.c -o "$T"; exec sh "$T"; }
     command -v git >/dev/null || { [[ "$OSTYPE" == darwin* ]] && { command -v brew &>/dev/null || { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; }; brew install git &>/dev/null; }; command -v git >/dev/null || { echo "Install git first"; exit 1; }; }
-    [ -d "$A/.git" ] && { echo "a already installed at $A"; exec sh "$A/a.c" install; }
+    [ -d "$A/.git" ] && { echo "a already installed at $A"; git -C "$A" pull --ff-only --quiet 2>/dev/null || :; exec sh "$A/a.c" install; }
     git clone https://github.com/seanpattencode/a.git "$A" && exec sh "$A/a.c" install
     exit 1;; esac
 set -e
@@ -73,6 +73,11 @@ AFUNC
     ok "shell funcs"
 }
 _install_node() {
+    if [[ -d /data/data/com.termux ]]; then
+        rm -f "$HOME/.local/bin/node" "$HOME/.local/bin/npm" "$HOME/.local/bin/npx"
+        pkg install -y nodejs-lts 2>/dev/null||pkg install -y nodejs
+        command -v node &>/dev/null&&ok "node $(node -v)"||warn "node failed"; return
+    fi
     mkdir -p "$HOME/.local/bin"; export PATH="$HOME/.local/bin:$PATH"
     ARCH=$(uname -m); [[ "$ARCH" == "x86_64" ]] && ARCH="x64"; [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]] && ARCH="arm64"
     if [[ "$OSTYPE" == darwin* ]]; then URL="https://nodejs.org/dist/v22.12.0/node-v22.12.0-darwin-$ARCH.tar.gz"
@@ -225,13 +230,17 @@ install)
     _shell_funcs
     install_cli() {
         local pkg="$1" cmd="$2" p=$(command -v "$cmd" 2>/dev/null)
-        [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && { ok "$cmd"; return; }
-        [[ -n "$p" ]] && warn "$cmd ($p) is Windows"; info "Installing $cmd..."
-        local ns=""; [[ "$OS" == termux && -z "$3" ]] && ns="--ignore-scripts"
+        [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && "$cmd" --version &>/dev/null && { ok "$cmd"; return; }
+        [[ -n "$p" ]] && warn "$cmd broken ($p), reinstalling"; info "Installing $cmd..."
         if ! command -v npm &>/dev/null; then warn "$cmd skipped (no npm)"
-        else [[ -z "$SUDO" && $EUID -ne 0 ]] && { mkdir -p "$HOME/.local/lib";ns="$ns --prefix=$HOME/.local";}; $SUDO npm install -g $ns "$pkg"&&ok "$cmd"||warn "$cmd failed"; fi
+        else local ns=""; [[ -z "$SUDO" && $EUID -ne 0 ]] && { mkdir -p "$HOME/.local/lib";ns="--prefix=$HOME/.local";}; $SUDO npm install -g $ns "$pkg"&&ok "$cmd"||warn "$cmd failed"; fi
     }
-    command -v claude &>/dev/null&&ok "claude"||{ info "Installing claude...";curl -fsSL https://claude.ai/install.sh|bash&&ok "claude"||warn "claude failed";}
+    _cok(){ command -v claude &>/dev/null && claude --version 2>&1|grep -q 'Claude Code'; }
+    _cok&&ok "claude"||{ info "Installing claude...";curl -fsSL https://claude.ai/install.sh|bash||:
+        [[ "$OS" == termux ]] && { pkg install -y glibc-repo glibc-runner 2>&1|tail -1||:
+            nb=$(ls -t $HOME/.claude/downloads/claude-*-linux-*|head -1)
+            [[ -n "$nb" ]] && mkdir -p $HOME/.local/bin && printf '#!/data/data/com.termux/files/usr/bin/sh\nexec grun %q "$@"\n' "$nb" > $HOME/.local/bin/claude && chmod +x $HOME/.local/bin/claude && info "wrapped: grun $nb"; }
+        _cok&&ok "claude"||warn "claude failed";}
     install_cli "@openai/codex" "codex"
     install_cli "@google/gemini-cli" "gemini" scripts
     [[ "$OS" == termux ]] && info "Gemini auth: NO_BROWSER=true gemini"
@@ -257,7 +266,7 @@ install)
     if [[ ! -d "$SROOT/.git" ]]; then mkdir -p "$AROOT"
         { command -v gh &>/dev/null&&gh auth status &>/dev/null 2>&1&&gh repo clone seanpattencode/a-git "$SROOT" 2>/dev/null&&ok "adata/git cloned";}||{ git init -q "$SROOT" 2>/dev/null;ok "adata/git init";}
     elif command -v gh &>/dev/null&&gh auth status &>/dev/null 2>&1; then
-        local ur;ur=$(git -C "$SROOT" remote get-url origin 2>/dev/null)
+        ur=$(git -C "$SROOT" remote get-url origin 2>/dev/null)
         if [[ "$ur" != *a-git* ]]; then rm -rf "$SROOT"; gh repo clone seanpattencode/a-git "$SROOT" 2>/dev/null&&ok "adata/git re-cloned"
         else git -C "$SROOT" pull --ff-only -q 2>/dev/null&&ok "adata/git synced"||ok "adata/git"; fi
     fi
