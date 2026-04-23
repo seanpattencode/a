@@ -123,9 +123,12 @@ static int cmd_login(int argc, char **argv) {
         if(fexists(cc)){printf("\n\033[1;36m━━━ %s ━━━\033[0m\n",cc);snprintf(c,B,"jq . '%s' 2>/dev/null||cat '%s';echo",cc,cc);(void)!system(c);}
         return 0;}
     if(sub&&!strcmp(sub,"slot")){char c[B*2];snprintf(c,B*2,
-        "H='%s';cd %s;A=$(cat active 2>/dev/null);N='%s';[ \"$N\" ]||{ ls claude_*.json 2>/dev/null|sed \"s/claude_//;s/.json//;/^$A$/s/^/* /\";exit;};"
+        "H='%s';cd %s;A=$(cat active 2>/dev/null);N='%s';"
+        "[ \"$N\" ]||{ for f in claude_*.json;do [ -e \"$f\" ]||continue;n=${f#claude_};n=${n%%.json};[ \"$n\" = \"$A\" ]&&p='*'||p=' ';printf '%%s %%-10s %%s\\n' \"$p\" \"$n\" \"$(cat claude_$n.email 2>/dev/null)\";done;exit;};"
         "F=claude_$N.json;[ \"$A\" != \"$N\" ]&&[ \"$A\" ]&&cp \"$H\" claude_$A.json 2>/dev/null;"
-        "cp \"$F\" \"$H\" 2>/dev/null||cp \"$H\" \"$F\";chmod 600 \"$H\";echo $N>active",hf,ld,argc<4?"":argv[3]);
+        "cp \"$F\" \"$H\" 2>/dev/null||cp \"$H\" \"$F\";chmod 600 \"$H\";echo $N>active;"
+        "E=$(curl -sSm 5 -H \"Authorization: Bearer $(jq -r .claudeAiOauth.accessToken \"$H\")\" https://api.anthropic.com/api/oauth/profile 2>/dev/null|sed -n 's/.*\"email\":\"\\([^\"]*\\)\".*/\\1/p');"
+        "[ \"$E\" ]&&echo $E>claude_$N.email;echo + $N ${E:+($E)}",hf,ld,argc<4?"":argv[3]);
         int r=system(c);if(!r)sync_bg();return r?1:0;}
     puts("a login save|apply|show|slot [name]");return 0;}
 
