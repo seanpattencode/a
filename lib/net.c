@@ -122,7 +122,12 @@ static int cmd_login(int argc, char **argv) {
         if(fexists(ak)){printf("\n\033[1;36m━━━ %s ━━━\033[0m\n",ak);snprintf(c,B,"cat '%s'",ak);(void)!system(c);}
         if(fexists(cc)){printf("\n\033[1;36m━━━ %s ━━━\033[0m\n",cc);snprintf(c,B,"jq . '%s' 2>/dev/null||cat '%s';echo",cc,cc);(void)!system(c);}
         return 0;}
-    puts("a login save   save gh+claude creds\na login apply  apply from sync\na login show   show api keys");return 0;}
+    if(sub&&!strcmp(sub,"slot")){char c[B*2];snprintf(c,B*2,
+        "H='%s';cd %s;A=$(cat active 2>/dev/null);N='%s';[ \"$N\" ]||{ ls claude_*.json 2>/dev/null|sed \"s/claude_//;s/.json//;/^$A$/s/^/* /\";exit;};"
+        "F=claude_$N.json;[ \"$A\" != \"$N\" ]&&[ \"$A\" ]&&cp \"$H\" claude_$A.json 2>/dev/null;"
+        "cp \"$F\" \"$H\" 2>/dev/null||cp \"$H\" \"$F\";chmod 600 \"$H\";echo $N>active",hf,ld,argc<4?"":argv[3]);
+        int r=system(c);if(!r)sync_bg();return r?1:0;}
+    puts("a login save|apply|show|slot [name]");return 0;}
 
 static int cmd_sync(int argc, char **argv) { AB;
     printf("%s\n", SROOT);
