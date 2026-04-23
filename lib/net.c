@@ -127,7 +127,7 @@ static int cmd_login(int argc, char **argv) {
         "[ \"$N\" ]||{ for f in claude_*.json;do [ -e \"$f\" ]||continue;n=${f#claude_};n=${n%%.json};[ \"$n\" = \"$A\" ]&&p='*'||p=' ';printf '%%s %%-10s %%s\\n' \"$p\" \"$n\" \"$(cat claude_$n.email 2>/dev/null)\";done;exit;};"
         "F=claude_$N.json;[ \"$A\" != \"$N\" ]&&[ \"$A\" ]&&cp \"$H\" claude_$A.json 2>/dev/null;"
         "cp \"$F\" \"$H\" 2>/dev/null||cp \"$H\" \"$F\";chmod 600 \"$H\";echo $N>active;"
-        "E=$(curl -sSm 5 -H \"Authorization: Bearer $(jq -r .claudeAiOauth.accessToken \"$H\")\" https://api.anthropic.com/api/oauth/profile 2>/dev/null|sed -n 's/.*\"email\":\"\\([^\"]*\\)\".*/\\1/p');"
+        "T=$(sed -n 's/.*\"accessToken\":\"\\([^\"]*\\)\".*/\\1/p' \"$H\");E=$(curl -sSm 5 -H \"Authorization: Bearer $T\" https://api.anthropic.com/api/oauth/profile 2>/dev/null|sed -n 's/.*\"email\":\"\\([^\"]*\\)\".*/\\1/p');"
         "[ \"$E\" ]&&echo $E>claude_$N.email;echo + $N ${E:+($E)}",hf,ld,argc<4?"":argv[3]);
         int r=system(c);if(!r)sync_bg();return r?1:0;}
     puts("a login save|apply|show|slot [name]");return 0;}
