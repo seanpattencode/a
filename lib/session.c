@@ -38,7 +38,7 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     /* claude reads ctxf via file flag; codex/gemini inline $(cat) — ARG_MAX caps ~128KB, can't fit codebase */
     char src_pfx[P+32]="";if(is_claude&&SRC_ON)snprintf(src_pfx,sizeof(src_pfx),"%s >>%s 2>/dev/null;",ACAT,ctxf);
     if (ai) snprintf(wcmd, sizeof(wcmd),
-        "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%stmux wait-for -S rdy-%s;while :;do %s%s;e=$?;[ $e -eq 0 ]&&break;echo \"$(date) $e $(pwd)\">>%s/crashes.log;echo -e \"\\n! crash $e [R]estart/[Q]uit:\";read -n1 k;[[ $k =~ [Rr] ]]||break;done", src_pfx,sn,acmd,csuf,LOGDIR);
+        "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%stmux wait-for -S rdy-%s;for _ in 1 2 3;do %s%s&&exit;echo \"$(date) $? $(pwd)\">>%s/crashes.log;sleep 1;done;exec bash", src_pfx,sn,acmd,csuf,LOGDIR);
     else snprintf(wcmd, sizeof(wcmd), "%s", cmd ? cmd : "");
     tm_ensure_conf();
     int r = tm_new(sn, wd, wcmd);
@@ -67,7 +67,7 @@ static void tm_restore(void) {
         char*s=strchr(l,'|');if(!s)continue;*s++=0;
         char*bc=strchr(s,'|');if(!bc)continue;*bc++=0;
         char*sd=strchr(bc,'|');if(sd)*sd++=0;
-        if(!dexists(s)||!*bc)continue;
+        if(!dexists(s)||!*bc||tm_has(l))continue;
         char cmd[1024];
         snprintf(cmd,1024,sd&&*sd?"claude --dangerously-skip-permissions --effort max --resume %s":"%s",sd&&*sd?sd:bc);
         create_sess(l,s,cmd,NULL);}

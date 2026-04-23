@@ -70,7 +70,8 @@ static void jcmd_fill(char*b,int cont,const char*wd,const char*extra){
     write_prompt_file(ctxf,wd,NULL);
     if(extra&&extra[0]){char ef[P];snprintf(ef,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(ef,extra);
         snprintf(xsuf,512," \"$(cat '%s')\"",ef);}
-    snprintf(b,B,"tmux splitw -vd -p50 -t $TMUX_PANE;" ACAT " >>%s 2>/dev/null;while :;do claude --dangerously-skip-permissions --effort max --append-system-prompt-file %s%s%s;e=$?;[ $e -eq 0 ]&&break;echo \"$(date) $e $(pwd)\">>%s/crashes.log;echo \"! crash $e, restarting..\";sleep 2;done",ctxf,ctxf,cont?" --continue":"",xsuf,LOGDIR);}
+    const char*sid=getenv("SID");char sp[96]="";if(sid&&*sid)snprintf(sp,96,"--session-id %s ",sid);
+    snprintf(b,B,"tmux splitw -vd -p50 -t $TMUX_PANE;" ACAT " >>%s 2>/dev/null;claude %s--dangerously-skip-permissions --effort max --append-system-prompt-file %s%s%s;e=$?;[ $e -ne 0 ]&&echo \"$(date) $e $(pwd)\">>%s/crashes.log;exec bash",ctxf,sp,ctxf,cont?" --continue":"",xsuf,LOGDIR);}
 
 static void tm_ensure_conf(void) {
     if (strcmp(cfget("tmux_conf"), "y") != 0) return;
@@ -116,7 +117,8 @@ static void tm_ensure_conf(void) {
         "bind-key -n C-n new-window\n"
         "bind-key -n C-t new-window\n"
         "bind-key -n C-y split-window -fh\n"
-        "bind -n C-w if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-w' 'run-shell \"w=#{window_id};a tm-unsave \\\"#{window_name}\\\";tmux next-window 2>/dev/null;tmux kill-window -t $w\"'\n"
+        "bind -n C-w if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-w' 'kill-window'\n"
+        "set-hook -g window-unlinked 'run-shell -b \"a tm-unsave \\\"#{hook_window_name}\\\"\"'\n"
         "bind-key -n C-q detach\n"
         "bind-key -n C-x kill-session\n"
         "bind-key -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
@@ -125,7 +127,7 @@ static void tm_ensure_conf(void) {
         "aa) tmux new-window \"a\";; "
         "agent) tmux new-window \"a a\";; "
         "win) tmux new-window;; new) if [ #{window_panes} -gt 1 ];then tmux kill-pane -t {bottom};else tmux split-window;fi;; "
-        "close) w=#{window_id};a tm-unsave \"#{window_name}\";tmux next-window 2>/dev/null;tmux kill-window -t $w;; "
+        "close) tmux kill-window;; "
         "menu) tmux display-menu Pane 1 \"split-window -fh\" Zoom 2 \"resize-pane -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"rename-window %%\\\"\" Quit 5 detach Kill 6 kill-session;; "
         "kbd) tmux set -g mouse off; tmux display-message \"Mouse off 3s\"; "
         "(sleep 3; tmux set -g mouse on) &;; esac' }\n", f);
