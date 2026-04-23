@@ -169,18 +169,20 @@ static int cmd_ssh(int argc,char**argv){
             printf("%s: ssh %s%s%s%s\n",H[i].name,strcmp(port,"22")?"-p ":"",strcmp(port,"22")?port:"",strcmp(port,"22")?" ":"",hp);}return 0;}
     /* os — detect remote OS on all hosts */
     if(!strcmp(sub,"os")||!strcmp(sub,"ping")){
-        struct{int fd;pid_t pid;char nm[128],host[256],pw[256];}S[32];int ns=0;
-        for(int i=0;i<nh&&ns<32;i++){int pfd[2];if(pipe(pfd))continue;
+        struct{int fd;pid_t pid;int hi;}S[32];int ns=0;size_t dl=strlen(DEV);
+        for(int i=0;i<nh&&ns<32;i++){
+            if(!strncmp(H[i].name,DEV,dl))continue;
+            int pfd[2];if(pipe(pfd))continue;
             pid_t p=fork();if(p==0){close(pfd[0]);char hp[256],port[8];ssh_parse(H[i].host,hp,port);
                 char c[B*2];int l=ssh_pre(c,(int)sizeof c,H[i].pw,"-oConnectTimeout=5 -oStrictHostKeyChecking=no",port,hp);
                 snprintf(c+l,(size_t)(sizeof(c)-(size_t)l)," 'uname -sr' 2>&1");
                 char o[128];int r=pcmd(c,o,128);o[strcspn(o,"\n")]=0;
                 if(!r&&o[0])(void)!write(pfd[1],o,strlen(o));close(pfd[1]);_exit(0);}
-            close(pfd[1]);snprintf(S[ns].nm,128,"%s",H[i].name);snprintf(S[ns].host,256,"%s",H[i].host);
-            snprintf(S[ns].pw,256,"%s",H[i].pw);S[ns].fd=pfd[0];S[ns].pid=p;ns++;}
+            close(pfd[1]);S[ns].fd=pfd[0];S[ns].pid=p;S[ns].hi=i;ns++;}
         for(int i=0;i<ns;i++){char o[128];int l=(int)read(S[i].fd,o,127);o[l>0?l:0]=0;close(S[i].fd);waitpid(S[i].pid,NULL,0);
-            if(o[0]){ssh_savex(dir,S[i].nm,S[i].host,S[i].pw,"OS",o);printf("✓ %s\n",S[i].nm);}
-            else printf("x %s\n",S[i].nm);}
+            host_t*h=&H[S[i].hi];
+            if(o[0]){ssh_savex(dir,h->name,h->host,h->pw,"OS",o);printf("✓ %s\n",h->name);}
+            else printf("x %s\n",h->name);}
         return 0;}
 
     /* all/broadcast — parallel */
