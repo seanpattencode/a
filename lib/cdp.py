@@ -48,7 +48,8 @@ def _launch(variant='beta', me=False, url=None):
 
     args = [binary, f'--user-data-dir={profile}', f'--remote-debugging-port={PORT}',
             '--remote-allow-origins=*', '--no-first-run', '--disable-gpu-sandbox',
-            '--disable-session-crashed-bubble', '--disable-features=SessionRestore']
+            '--disable-session-crashed-bubble', '--disable-features=SessionRestore',
+            '--password-store=basic']  # avoids 25s D-Bus timeout on Secret Service (gnome-keyring) cookie-jar key
 
     # Detect sway
     import glob

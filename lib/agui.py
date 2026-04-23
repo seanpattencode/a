@@ -481,6 +481,7 @@ def _prepare_chrome_launch(user_data_dir):
         '--no-default-browser-check',
         '--disable-blink-features=AutomationControlled',
         '--disable-session-crashed-bubble',
+        '--password-store=basic',  # avoids 25s D-Bus timeout on Secret Service cookie-jar key
         '--start-maximized',
         'about:blank'
     ]
