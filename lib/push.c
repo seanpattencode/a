@@ -157,10 +157,9 @@ static int cmd_diff(int argc, char **argv) { AB;
     } else {
         char br[128]; pcmd("git rev-parse --abbrev-ref HEAD 2>/dev/null",br,128); br[strcspn(br,"\n")]=0;
         int wt=!sel&&(!strncmp(br,"wt-",3)||!strncmp(br,"j-",2)||!strncmp(br,"job-",4));
-        char tgt[256]; if(wt){pcmd("git merge-base origin/main HEAD 2>/dev/null",tgt,256);tgt[strcspn(tgt,"\n")]=0;}
-        if(!wt||!tgt[0])snprintf(tgt,256,"origin/%s",sel?sel:wt?"main":br);
+        char tgt[256]; snprintf(tgt,256,"origin/%s",sel?sel:wt?"main":br);
         char ts[64]; pcmd("git log -1 --format=%cd --date=format:'%Y-%m-%d %I:%M:%S %p' 2>/dev/null",ts,64); ts[strcspn(ts,"\n")]=0;
-        if(sel)printf("%s -> origin/%s\n",br,sel);else{printf("%s\n%s -> ",cwd,br);if(wt&&tgt[0]!='o')printf("fork %.7s",tgt);else printf("%s",tgt);printf("\n%s\n",ts);}
+        if(sel)printf("%s -> origin/%s\n",br,sel);else printf("%s\n%s -> %s\n%s\n",cwd,br,tgt,ts);
         {char c[B];snprintf(c,B,"git diff '%s..HEAD' -- ':!.a_done' 2>/dev/null",tgt);DS(c);}
         {char c[B];snprintf(c,B,"git diff HEAD -- ':!.a_done' 2>/dev/null");DS(c);}
         char ut[B]; pcmd("git ls-files --others --exclude-standard -- ':!.a_done' 2>/dev/null",ut,B);
