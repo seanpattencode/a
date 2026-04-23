@@ -135,9 +135,13 @@ static int cmd_diff(int argc, char **argv) { AB;
     struct{char name[256];int al,dl,ab,db,sb;}fs[256]; int nf=0,cf=-1; long ws=0;
     #define FS(fn) do{cf=-1;for(int _i=0;_i<nf;_i++)if(!strcmp(fs[_i].name,fn)){cf=_i;break;} \
         if(cf<0&&nf<256){cf=nf;memset(&fs[nf],0,sizeof(fs[0]));snprintf(fs[nf].name,256,"%s",fn);nf++;}}while(0)
-    #define DS(cmd) do{FILE*_f=popen(cmd,"r");if(_f){char _l[4096];while(fgets(_l,4096,_f)){_l[strcspn(_l,"\n")]=0; \
-        if(!strncmp(_l,"diff --git",10)){char*_b=strstr(_l," b/");if(_b)FS(_b+3);} \
+    #define DS(cmd) do{FILE*_f=popen(cmd,"r");if(_f){char _l[4096],_oh[16]={0};while(fgets(_l,4096,_f)){_l[strcspn(_l,"\n")]=0; \
+        if(!strncmp(_l,"diff --git",10)){char*_b=strstr(_l," b/");if(_b)FS(_b+3);_oh[0]=0;} \
         else if(!strncmp(_l,"diff -r",7)){char*_b=strrchr(_l,' ');if(_b&&_b[1])FS(_b+1);} \
+        else if(!strncmp(_l,"index ",6)){snprintf(_oh,16,"%.*s",(int)strcspn(_l+6,"."),_l+6);} \
+        else if(!strncmp(_l,"Binary files ",13)&&cf>=0&&_oh[0]){char _c[64],_o[32];snprintf(_c,64,"git cat-file -s %s 2>/dev/null",_oh);pcmd(_c,_o,32); \
+            int _os=atoi(_o);struct stat _st;int _ns=!stat(fs[cf].name,&_st)?(int)_st.st_size:0;int _d=_ns-_os; \
+            if(_d>0)fs[cf].ab+=_d;else fs[cf].db+=-_d;printf("  %s: binary %+d bytes\n",fs[cf].name,_d);} \
         else if(!strncmp(_l,"+++ ",4)&&cf<0){char*_b=_l+4;while(*_b=='.'||*_b=='/')_b++;char*_t=_b;while(*_t&&*_t!='\t')_t++;*_t=0;if(*_b)FS(_b);} \
         else if(_l[0]=='@'&&_l[1]=='@'){char*_p=strchr(_l,'+');int _n=_p?(int)strtol(_p+1,NULL,10):0; \
             if(cf>=0&&_n)printf("\n%s line %d:\n",fs[cf].name,_n);} \
