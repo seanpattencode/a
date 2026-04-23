@@ -20,15 +20,15 @@ static void cfset(const char *key, const char *val) {
     int found = 0;
     for (int i = 0; i < NCF; i++) if (!strcmp(CF[i].k, key)) { snprintf(CF[i].v, 1024, "%s", val); found = 1; break; }
     if (!found && NCF < 64) { snprintf(CF[NCF].k, 64, "%s", key); snprintf(CF[NCF].v, 1024, "%s", val); NCF++; }
-    char p[P]; snprintf(p, P, "%s/config.txt", DDIR);
+    char p[P]; snprintf(p, P, "%s/workspace/config.txt", SROOT);
     FILE *f = fopen(p, "w"); if (!f) return;
     for (int i = 0; i < NCF; i++) { char ev[2048]; esc_nl(CF[i].v, ev, 2048); fprintf(f, "%s: %s\n", CF[i].k, ev); }
     fclose(f);
 }
 
 static void init_db(void) {
-    mkdirp(DDIR);
-    char p[P]; snprintf(p, P, "%s/config.txt", DDIR);
+    char d[P]; snprintf(d,P,"%s/workspace",SROOT); mkdirp(d);
+    char p[P]; snprintf(p, P, "%s/workspace/config.txt", SROOT);
     if (!fexists(p)) {
         char pp[P],dp[B]="";snprintf(pp,P,"%s/common/prompts/default.txt",SROOT);
         char*pd=readf(pp,NULL);if(pd){snprintf(dp,B,"%s",pd);free(pd);}
@@ -38,10 +38,10 @@ static void init_db(void) {
         l+=snprintf(buf+l,(size_t)(B*2-l),"default_agent: c\nworktrees_dir: %s/worktrees\nmulti_default: l:3\nclaude_prefix: Ultrathink. \ntmux_conf: y\n",AROOT);
         writef(p,buf);
     }
-    snprintf(p, P, "%s/sessions.txt", DDIR);
+    snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
     if (!fexists(p)) {
         const char *C = "claude --dangerously-skip-permissions --effort max";
-        const char *X = "codex -c model_reasoning_effort=\"high\" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox";
+        const char *X = "codex -c model_reasoning_effort=\"xhigh\" --model gpt-5.5 --dangerously-bypass-approvals-and-sandbox";
         char buf[B*4]; snprintf(buf, sizeof(buf),
             "g|gemini|gemini --yolo\ngemini|gemini|gemini --yolo\n"
             "c|claude|%s\nclaude|claude|%s\nl|claude|%s\no|claude|%s\n"
@@ -56,7 +56,7 @@ static void init_db(void) {
 
 /* loaders */
 static void load_cfg(void) {
-    NCF = 0; char p[P]; snprintf(p, P, "%s/config.txt", DDIR);
+    NCF = 0; char p[P]; snprintf(p, P, "%s/workspace/config.txt", SROOT);
     kvs_t kv = kvfile(p);
     for (int i = 0; i < kv.n; i++) { snprintf(CF[NCF].k, 64, "%s", kv.i[i].k); snprintf(CF[NCF].v, 1024, "%s", kv.i[i].v); unesc_nl(CF[NCF].v); NCF++; }
 }
@@ -111,7 +111,7 @@ static void load_apps(void) {
 }
 
 static void load_sess(void) {
-    NSE = 0; char p[P]; snprintf(p, P, "%s/sessions.txt", DDIR);
+    NSE = 0; char p[P]; snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
     char *data = readf(p, NULL); if (!data) return;
     char *line = data;
     while (*line && NSE < MS) {

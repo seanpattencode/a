@@ -7,12 +7,12 @@ Logs: two types — tmux visual capture (small, git-synced in adata/git/jobs/*.l
 import sys, os, subprocess as S, time
 sys.stdout.reconfigure(line_buffering=True)
 from datetime import datetime
-from _common import init_db, load_cfg, load_sess, load_proj, db, DEVICE_ID, SCRIPT_DIR, ADATA_ROOT, DATA_DIR, RCLONE_BACKUP_PATH, _configured_remotes
+from _common import init_db, load_cfg, load_sess, load_proj, jl_append, jl_read, DEVICE_ID, SCRIPT_DIR, ADATA_ROOT, DATA_DIR, RCLONE_BACKUP_PATH, _configured_remotes
 
 _A = os.path.join(SCRIPT_DIR, 'a')
 
 def _db_job(name, step, status, path='', session=''):
-    with db() as c: c.execute("INSERT OR REPLACE INTO jobs VALUES(?,?,?,?,?,?)", (name, step, status, path, session, int(time.time())))
+    jl_append('jobs', {'ts': int(time.time()), 'name': name, 'step': step, 'status': status, 'path': path, 'session': session})
 
 def _ssh(dev, cmd, timeout=300):
     r = S.run([_A, 'ssh', dev, cmd], capture_output=True, text=True, timeout=timeout)
@@ -98,7 +98,8 @@ def run():
     args = sys.argv[2:]
     qdir=os.path.join(str(ADATA_ROOT/'git'/'jobs'),'queue');os.makedirs(qdir,exist_ok=True)
     if not args or args[0]=='status':
-        for n,step,st,p,sn,ts in db().execute("SELECT name,step,status,path,session,updated_at FROM jobs ORDER BY updated_at DESC LIMIT 10"):
+        for r in list({j['name']:j for j in jl_read('jobs')}.values())[-10:][::-1]:
+            n,step,st,p,sn,ts = r['name'],r['step'],r['status'],r['path'],r['session'],r['ts']
             live=''
             if st=='running' and p and '/' not in p:
                 try: live=' LIVE' if not _ssh(p,f"tmux has-session -t '{sn}'",5)[0] else ' DONE'

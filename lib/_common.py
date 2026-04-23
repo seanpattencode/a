@@ -1,12 +1,12 @@
 """Shared utilities for aio commands"""
-import sys, os, subprocess as sp, sqlite3, json, shutil, time
+import sys, os, subprocess as sp, json, shutil, time
 from datetime import datetime
 from pathlib import Path
 
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 ADATA_ROOT = next((p for p in [Path(SCRIPT_DIR)/'adata', Path.home()/'a'/'adata', Path.home()/'adata'] if (p/'git').exists()), Path(SCRIPT_DIR)/'adata')
 DATA_DIR, SYNC_ROOT = str(ADATA_ROOT/'local'), ADATA_ROOT/'git'
-DB_PATH, PROMPTS_DIR = os.path.join(DATA_DIR,"aio.db"), ADATA_ROOT/'git'/'common'/'prompts'
+PROMPTS_DIR = ADATA_ROOT/'git'/'common'/'prompts'
 RCLONE_REMOTE_PREFIX, RCLONE_BACKUP_PATH = 'a-gdrive', 'adata'
 ACTIVITY_DIR = ADATA_ROOT/'git'/'activity'
 def _get_dev():
@@ -40,40 +40,29 @@ class TM:
     def ls(s): return _tx('list-sessions','-F','#{session_name}')
 tm = TM()
 
-def db(): c = sqlite3.connect(DB_PATH); c.execute("PRAGMA journal_mode=WAL;"); return c
 def get_prompt(name):
     pf = PROMPTS_DIR / f'{name}.txt'
     return pf.read_text(errors='replace').strip() if pf.exists() else None
 
-def init_db():
+def jl_append(name, rec):
     os.makedirs(DATA_DIR, exist_ok=True)
-    with db() as c:
-        for s in ["CREATE TABLE IF NOT EXISTS config(key TEXT PRIMARY KEY,value TEXT NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS projects(id INTEGER PRIMARY KEY AUTOINCREMENT,path TEXT NOT NULL,display_order INTEGER NOT NULL,device TEXT DEFAULT '*')",
-            "CREATE TABLE IF NOT EXISTS apps(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,command TEXT NOT NULL,display_order INTEGER NOT NULL,device TEXT DEFAULT '*')",
-            "CREATE TABLE IF NOT EXISTS sessions(key TEXT PRIMARY KEY,name TEXT NOT NULL,command_template TEXT NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS multi_runs(id TEXT PRIMARY KEY,repo TEXT NOT NULL,prompt TEXT NOT NULL,agents TEXT NOT NULL,status TEXT DEFAULT 'running',created_at TEXT DEFAULT CURRENT_TIMESTAMP,review_rank TEXT)",
-            "CREATE TABLE IF NOT EXISTS jobs(name TEXT PRIMARY KEY,step TEXT NOT NULL,status TEXT NOT NULL,path TEXT,session TEXT,updated_at INTEGER NOT NULL)",
-            "CREATE TABLE IF NOT EXISTS hub_jobs(id INTEGER PRIMARY KEY,name TEXT,schedule TEXT,prompt TEXT,agent TEXT DEFAULT 'l',project TEXT,device TEXT,enabled INTEGER DEFAULT 1,last_run TEXT,parallel INTEGER DEFAULT 1)",
-            "CREATE TABLE IF NOT EXISTS agent_logs(session TEXT PRIMARY KEY,parent TEXT,started REAL,device TEXT)"]: c.execute(s)
-        for t in ['projects','apps','agent_logs']:
-            if 'device' not in [r[1] for r in c.execute(f"PRAGMA table_info({t})")]: c.execute(f"ALTER TABLE {t} ADD COLUMN device TEXT DEFAULT '*'")
-        if not c.execute("SELECT 1 FROM config LIMIT 1").fetchone():
-            dp = get_prompt('default') or ''
-            for k,v in [('claude_prompt',dp),('codex_prompt',dp),('gemini_prompt',dp),('worktrees_dir',os.path.expanduser("~/a/adata/worktrees")),('multi_default','l:3')]: c.execute("INSERT INTO config VALUES(?,?)",(k,v))
-        c.execute("INSERT OR IGNORE INTO config VALUES('multi_default','l:3')")
-        c.execute("INSERT OR IGNORE INTO config VALUES('claude_prefix','Ultrathink. ')")
-        if not c.execute("SELECT 1 FROM sessions LIMIT 1").fetchone():
-            cdx,cld='codex -c model_reasoning_effort="high" --model gpt-5-codex --dangerously-bypass-approvals-and-sandbox','claude --dangerously-skip-permissions --effort max'
-            for k,n,t in[('h','htop','htop'),('t','top','top'),('g','gemini','gemini --yolo'),('gemini','gemini','gemini --yolo'),('gp','gemini-p','gemini --yolo "{GEMINI_PROMPT}"'),('c','claude',cld),('claude','claude',cld),('cp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('l','claude',cld),('lp','claude-p',f'{cld} "{{CLAUDE_PROMPT}}"'),('o','claude',cld),('co','codex',cdx),('codex','codex',cdx),('cop','codex-p',f'{cdx} "{{CODEX_PROMPT}}"'),('a','aider','OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral')]:
-                c.execute("INSERT INTO sessions VALUES(?,?,?)",(k,n,t))
-        c.commit()
+    with open(os.path.join(DATA_DIR, f'{name}.jsonl'), 'a') as f: f.write(json.dumps(rec)+'\n')
+def jl_read(name):
+    p = os.path.join(DATA_DIR, f'{name}.jsonl')
+    return [json.loads(l) for l in open(p)] if os.path.exists(p) else []
+def jl_clear(name):
+    p = os.path.join(DATA_DIR, f'{name}.jsonl')
+    os.path.exists(p) and os.remove(p)
+def init_db(): os.makedirs(DATA_DIR, exist_ok=True)
+def cfset(k, v):
+    cfg = load_cfg(); cfg[k] = v
+    p = SYNC_ROOT/'workspace'/'config.txt'; p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(''.join(f'{kk}: {vv.replace(chr(10), chr(92)+"n") if isinstance(vv,str) else vv}\n' for kk,vv in cfg.items()))
 
 def load_cfg():
-    p = os.path.join(DATA_DIR, "config.txt")
-    if os.path.exists(p):
-        return {k.strip(): v.strip().replace('\\n', '\n') for line in open(p).read().splitlines() if ':' in line for k, v in [line.split(':', 1)]}
-    with db() as c: return dict(c.execute("SELECT key, value FROM config").fetchall())
+    p = SYNC_ROOT/'workspace'/'config.txt'
+    if not p.exists(): return {}
+    return {k.strip(): v.strip().replace('\\n', '\n') for line in p.read_text().splitlines() if ':' in line for k, v in [line.split(':', 1)]}
 
 def _kvdir(sub):
     d = SYNC_ROOT/'workspace'/sub; d.mkdir(parents=True, exist_ok=True)
@@ -84,12 +73,8 @@ def load_apps():
     return sorted([(d['Name'],d['Command']) for d in _kvdir('cmds') if 'Name' in d and 'Command' in d])
 
 def load_sess(cfg):
-    p = os.path.join(DATA_DIR, "sessions.txt")
-    if os.path.exists(p):
-        data = [line.split('|', 2) for line in open(p).read().splitlines() if '|' in line]
-        data = [(r[0], r[1], r[2]) for r in data if len(r) == 3]
-    else:
-        with db() as c: data = c.execute("SELECT key, name, command_template FROM sessions").fetchall()
+    p = SYNC_ROOT/'workspace'/'sessions.txt'
+    data = [r for line in (p.read_text().splitlines() if p.exists() else []) if '|' in line for r in [line.split('|', 2)] if len(r) == 3]
     dp, s = get_prompt('default'), {}
     esc = lambda p: cfg.get(p, dp or '').replace('\n', '\\n').replace('"', '\\"')
     for k, n, t in data:
@@ -155,7 +140,7 @@ def create_sess(sn, wd, cmd, cfg, env=None, skip_prefix=False):
     r = tm.new(sn, wd, cmd or '', env); ensure_tmux(cfg)
     if ai: sp.run(['tmux','split-window','-v']+(['-p','40']if os.environ.get('TERMUX_VERSION')else[])+['-t',sn,'-c',wd,'sh -c "ls;exec $SHELL"'],capture_output=True); sp.run(['tmux','select-pane','-t',sn,'-U'],capture_output=True)
     os.makedirs(LOG_DIR, exist_ok=True); sp.run(['tmux','pipe-pane','-t',sn,f'cat >> {LOG_DIR}/{DEVICE_ID}__{sn}.log'],capture_output=True)
-    with db() as c: c.execute("INSERT OR REPLACE INTO agent_logs VALUES(?,?,?,?)",(sn,None,time.time(),DEVICE_ID))
+    jl_append('agent_logs', {'session': sn, 'started': time.time(), 'device': DEVICE_ID})
     return r
 
 def get_prefix(agent, cfg, wd=None):

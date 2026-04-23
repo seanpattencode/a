@@ -1,7 +1,7 @@
 """aio all - Multi-agent runs"""
 import sys, os, json, subprocess as sp
 from datetime import datetime
-from _common import init_db, load_cfg, load_proj, load_sess, db, _env, parse_specs, ensure_tmux, send_prefix
+from _common import init_db, load_cfg, load_proj, load_sess, cfset, jl_append, _env, parse_specs, ensure_tmux, send_prefix
 
 def run():
     init_db()
@@ -15,7 +15,7 @@ def run():
         ns = ' '.join(sys.argv[3:]) if len(sys.argv) > 3 else ''
         if not ns: print(f"Current: {cfg.get('multi_default', 'c:3')}"); sys.exit(0)
         if not parse_specs([''] + ns.split(), 1, cfg)[0]: print(f"Invalid: {ns}"); sys.exit(1)
-        with db() as c: c.execute("INSERT OR REPLACE INTO config VALUES ('multi_default', ?)", (ns,)); c.commit(); print(f"✓ Default: {ns}"); sys.exit(0)
+        cfset('multi_default', ns); print(f"✓ Default: {ns}"); sys.exit(0)
 
     pp, si = (PROJ[int(wda)][0], 3) if wda and wda.isdigit() and int(wda) < len(PROJ) else (os.getcwd(), 2)
     if sp.run(['git','-C',pp,'rev-parse'],capture_output=True).returncode: print(f"x Not a git repo: {pp}"); sys.exit(1)
@@ -28,7 +28,7 @@ def run():
     sn, rd = f"{rn}-{rid}", os.path.join(wt, rn, rid); os.makedirs(rd, exist_ok=True)
     cd = os.path.join(rd, "candidates"); os.makedirs(cd, exist_ok=True)
     with open(os.path.join(rd, "run.json"), "w") as f: json.dump({"agents": [f"{k}:{c}" for k, c in specs], "created": rid, "repo": pp}, f)
-    with db() as c: c.execute("INSERT OR REPLACE INTO multi_runs VALUES (?, ?, '', ?, 'running', CURRENT_TIMESTAMP, NULL)", (rid, pp, json.dumps([f"{k}:{c}" for k, c in specs]))); c.commit()
+    jl_append('multi_runs', {'ts': int(now.timestamp()), 'id': rid, 'repo': pp, 'agents': [f"{k}:{c}" for k, c in specs], 'status': 'running'})
     print(f"{total} agents in {rn}/{rid}..."); env, launched, an = _env(), [], {}
     for ak, cnt in specs:
         bn, bc = sess.get(ak, (None, None))
