@@ -204,7 +204,8 @@ install)
     case $OS in
         mac)
             _brew_ensure
-            brew tap hudochenkov/sshpass 2>/dev/null; brew install git llvm tmux node gh sshpass rclone cppcheck gcc &>/dev/null||brew upgrade git llvm tmux node gh sshpass rclone cppcheck gcc &>/dev/null
+            brew tap hudochenkov/sshpass 2>/dev/null; brew install git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null||brew upgrade git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null
+            /opt/homebrew/bin/python3 -m pip install -q --break-system-packages pyobjc-framework-Quartz 2>/dev/null
             command -v clang &>/dev/null || { xcode-select --install 2>/dev/null; warn "Run 'xcode-select --install' then retry"; }
             ok "tmux + node + gh + rclone" ;;
         debian)
