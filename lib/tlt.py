@@ -45,7 +45,7 @@ private external fun nDirty():Boolean
 private fun setup(){
  val ld=applicationInfo.nativeLibraryDir
  val bin=File(filesDir,"bin");bin.mkdirs()
- for((n,so) in listOf("tmux" to "libtmux.so","tic" to "libtic.so","dbclient" to "libssh.so","a" to "libaa.so","ssh" to "libsshwrap.so","sshpass" to "libsshwrap.so")){
+ for((n,so) in listOf("tmux" to "libtmux.so","tic" to "libtic.so","dbclient" to "libssh.so","a" to "libaa.so","ssh" to "libsshwrap.so","sshpass" to "libsshwrap.so","rclone" to "librclone.so")){
   val l=File(bin,n);try{Os.remove(l.absolutePath)}catch(e:Exception){}
   try{Os.symlink("$ld/$so",l.absolutePath)}catch(e:Exception){}}
  val ti=File(filesDir,"terminfo");ti.mkdirs()
@@ -335,6 +335,7 @@ JF(void,nStart)(JNIEnv*e,jclass c,jstring libDir,jstring filesDir){(void)c;
   setenv("TMPDIR",home,1);
   setenv("TMUX_TMPDIR",home,1);
   setenv("A_SDIR",home,1);
+  {char rc[600];snprintf(rc,600,"%s/rclone.conf",home);setenv("RCLONE_CONFIG",rc,1);}
   chdir(home);
   setenv("PS1","$ ",1);
   execl("/system/bin/sh","sh",(char*)NULL);_exit(127);}
@@ -400,7 +401,8 @@ def main():
  SRC=H+"/a";a_out="/tmp/a_aarch64"
  S.check_call([ACC,"-w","-O2","-DSRC=\""+SRC+"\"","-o",a_out,SRC+"/a.c"])
  S.check_call([AST,a_out])
- for src,dst in [(tmux_src,jl+"/libtmux.so"),(tic_src,jl+"/libtic.so"),(ssh_src,jl+"/libssh.so"),(a_out,jl+"/libaa.so")]:
+ rc_src="/tmp/rc/rclone"
+ for src,dst in [(tmux_src,jl+"/libtmux.so"),(tic_src,jl+"/libtic.so"),(ssh_src,jl+"/libssh.so"),(a_out,jl+"/libaa.so"),(rc_src,jl+"/librclone.so")]:
   if os.path.exists(src):shutil.copy(src,dst)
   else:print(f"! missing {src}")
  for n in ["xterm-256color","screen","screen-256color"]:
