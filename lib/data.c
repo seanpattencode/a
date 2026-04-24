@@ -139,6 +139,8 @@ static void load_sess(void) {
                 if (dq) *dq = 0;
             }
             snprintf(SE[NSE].cmd, 1024, "%s", expanded);
+            if(strstr(SE[NSE].cmd,"claude ")&&!strstr(SE[NSE].cmd,"--effort")){char t[1024],*p=strstr(SE[NSE].cmd,"claude ");
+                snprintf(t,1024,"%.*sclaude --effort max %s",(int)(p-SE[NSE].cmd),SE[NSE].cmd,p+7);snprintf(SE[NSE].cmd,1024,"%s",t);}
             NSE++;
         }
         if (!nl) break; line = nl + 1;

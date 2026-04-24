@@ -242,6 +242,7 @@ install)
             nb=$(ls -t $HOME/.claude/downloads/claude-*-linux-*|head -1)
             [[ -n "$nb" ]] && mkdir -p $HOME/.local/bin && printf '#!/data/data/com.termux/files/usr/bin/sh\nexec grun %q "$@"\n' "$nb" > $HOME/.local/bin/claude && chmod +x $HOME/.local/bin/claude && info "wrapped: grun $nb"; }
         _cok&&ok "claude"||warn "claude failed";}
+    python3 -c 'import json,os;p=os.path.expanduser("~/.claude/settings.json");os.makedirs(os.path.dirname(p),exist_ok=True);d=json.load(open(p)) if os.path.exists(p) else {};d["effortLevel"]="xhigh";json.dump(d,open(p,"w"),indent=2)' 2>/dev/null && ok "effort=xhigh"
     install_cli "@openai/codex" "codex"
     install_cli "@google/gemini-cli" "gemini" scripts
     [[ "$OS" == termux ]] && info "Gemini auth: NO_BROWSER=true gemini"
