@@ -247,7 +247,7 @@ static const char*lbl(char c){
  switch((uint8_t)c){
  case 1:return "ESC";case 2:return "TAB";case 3:return "CTL";
  case 4:return "<";case 5:return "v";case 6:return "^";case 7:return ">";
- case 8:return "BS";case 9:return "EN";default:{static char b[2];b[0]=c;b[1]=0;return b;}}}
+ case 8:return "<-";case 9:return "->";default:{static char b[2];b[0]=c;b[1]=0;return b;}}}
 
 #define JF(ret,name) JNIEXPORT ret JNICALL Java_com_tlt_M_##name
 JF(void,nResize)(JNIEnv*e,jclass c,jint w,jint hh){(void)e;(void)c;W=w;H=hh;compute_kb();compute_grid();dirty=1;}
