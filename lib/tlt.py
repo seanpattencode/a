@@ -112,8 +112,8 @@ static const char*KR[NROWS]={
  "1234567890",
  "qwertyuiop",
  "asdfghjkl",
- "zxcvbnm,./",
- "\x08-= \x09"};
+ "zxcvbnm,.\x08",
+ "-= \x09"};
 static float KB[60][4];
 static int nkeys,pressed=-1;
 static uint32_t PAL[16]={
@@ -213,11 +213,12 @@ static char kch(int idx){int c=0;for(int r=0;r<NROWS;r++){int n=(int)strlen(KR[r
 static void compute_kb(void){
  float kh=H*0.40f,ky=H-kh,rh=kh/NROWS;nkeys=0;
  for(int r=0;r<NROWS;r++){
-  int n=(int)strlen(KR[r]);float y=ky+r*rh,kw=W/(float)(n==9?10:n);
+  int n=(int)strlen(KR[r]);float y=ky+r*rh,kw=W/10.0f;
   for(int i=0;i<n;i++){
    float x,w;
-   if(r==3&&n==9){x=kw*0.5f+i*kw;w=kw;}
-   else if(r==5&&n==5){float ks=W/8.0f;float pos[]={0,ks,2*ks,3*ks,7*ks},wd[]={ks,ks,ks,4*ks,ks};x=pos[i];w=wd[i];}
+   if(r==0){kw=W/(float)n;x=i*kw;w=kw;}
+   else if(r==3){x=kw*0.5f+i*kw;w=kw;}
+   else if(r==5){float pos[]={0,kw,2*kw,9*kw},wd[]={kw,kw,7*kw,W-9*kw};x=pos[i];w=wd[i];}
    else{x=i*kw;w=kw;}
    KB[nkeys][0]=x;KB[nkeys][1]=y;KB[nkeys][2]=x+w;KB[nkeys][3]=y+rh;nkeys++;}}}
 static void compute_grid(void){
@@ -272,13 +273,10 @@ JF(void,nRender)(JNIEnv*e,jclass c,jintArray arr){(void)c;
   }
   for(int i=0;i<nkeys;i++){
    int ix=(int)KB[i][0],iy=(int)KB[i][1],iw=(int)(KB[i][2]-KB[i][0]),ih=(int)(KB[i][3]-KB[i][1]);
-   uint32_t bg=(i==pressed)?0xFF3366AA:(ctrl_stk&&lbl(kch(i))[0]=='C'&&lbl(kch(i))[1]=='T')?0xFF884400:0xFF222233;
-   for(int yy=iy;yy<iy+ih&&yy<H;yy++)for(int xx=ix;xx<ix+iw&&xx<W;xx++){
-    int edge=(yy==iy||yy==iy+ih-1||xx==ix||xx==ix+iw-1);
-    ((uint32_t*)p)[yy*stride+xx]=edge?0xFF000000:bg;}
    const char*lb=lbl(kch(i));int lw=(int)strlen(lb)*FN.cw;
+   uint32_t col=(i==pressed)?0xFFFF3333:(ctrl_stk&&lb[0]=='C'&&lb[1]=='T')?0xFFFF8844:0xFFFFFFFF;
    int tx=ix+(iw-lw)/2,ty=iy+(ih-FN.ch)/2;
-   drawstr((uint32_t*)p,stride,&FN,lb,tx,ty,0xFFFFFFFF);
+   drawstr((uint32_t*)p,stride,&FN,lb,tx,ty,col);
   }
   if(gridh<H-(int)(H*0.40f)){/*ok*/}
  }
