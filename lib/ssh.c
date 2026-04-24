@@ -205,14 +205,6 @@ static int cmd_ssh(int argc,char**argv){
     else{for(int i=0;i<nh;i++)if(!strcmp(H[i].name,sub)){idx=i;break;}}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
-    /* heal stale multiplex: boot orphan ssh (ppid=1, no +) on prompt */
-    {char ps[B*2],pids[B]="";
-     snprintf(ps,B*2,"ps -axwwo pid=,ppid=,stat=,args= 2>/dev/null|awk -v h='%s' 'index($0,\"-oControlMaster\")&&index($0,h)&&$2==1&&$3!~/\\+/{print $1}'",hp);
-     pcmd(ps,pids,B);int n=0;for(char*p=pids;*p;p++)if(*p=='\n')n++;
-     if(n&&isatty(0)){fprintf(stderr,"! %s: %d orphan ssh (not master). boot? [Y/n] ",H[idx].name,n);
-      char a[8];if(!fgets(a,8,stdin)||(a[0]!='n'&&a[0]!='N')){
-       for(char*p=pids,*s=pids;;p++)if(*p=='\n'||!*p){int e=!*p;*p=0;if(*s)kill(atoi(s),SIGTERM);if(e)break;s=p+1;}
-       fprintf(stderr,"+ cleaned %d\n",n);}}}
     if(!H[idx].pw[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");
         if(system(tc)){char pw[256];printf("Password for %s: ",H[idx].name);

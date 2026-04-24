@@ -92,7 +92,7 @@ _perf_lim() { local f="$D/adata/git/perf/$(cat "$D/adata/local/device.txt" 2>/de
 _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
     [[ $l -gt 0 && $e -gt $l ]] && { echo -e "\033[31m✗ PERF KILL\033[0m: sh a.c $1 ${e}us > ${l}us" >&2; exit 1; }
     echo -e "${e}us" >&2;}
-_Q=-DSRC="\"$D\""
+_Q=-DSRC="\"$D\"";[[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
 _abin() { [[ "$D" == *"/adata/worktrees/"*||"$D" == *"/adata/forks/"* ]]&&ABIN="$D"||ABIN="$D/adata/local"
     BIN="$HOME/.local/bin";mkdir -p "$ABIN" "$BIN";}
 _checkers() {
@@ -117,15 +117,15 @@ build) _PT=${EPOCHREALTIME/./}
         command -v a &>/dev/null && { a j --no-wt "a.c compile error: $1. Fix and run 'sh a.c'."; return; }
         echo "Couldn't auto-fix. github:seanpattencode"
     }
-    if command -v tcc &>/dev/null; then
+    if command -v tcc &>/dev/null && [[ ! -d /data/data/com.termux ]]; then
         TCT=${EPOCHREALTIME/./};tcc $_Q -w -o "$ABIN/a" "$D/a.c" -lutil 2>/dev/null||{ _build_fix "$(tcc $_Q -w -o /dev/null "$D/a.c" -lutil 2>&1)"; exit 1; };TCT=$(( ${EPOCHREALTIME/./} - TCT ))000
     else
-        _ensure_cc; E=$($CC $_Q -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
+        _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
     [[ "$ABIN" == */adata/local ]] && ln -sf "$ABIN/a" "$BIN/a"; _perf_chk build
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
-        T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q"
+        T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q $_QT"
         if [[ -n "$TCT" ]]; then
             PYT=$(date +%s%N);python3 -c 'import subprocess;subprocess.run(["echo","hello world"],capture_output=True)';PYT=$(( $(date +%s%N)-PYT ))
             [[ $TCT -gt $PYT ]] && { echo "PERF KILL: tcc ${TCT}ns > python ${PYT}ns" >"$ABIN/.chk"; touch "$T/0.f"; }
@@ -139,7 +139,7 @@ build) _PT=${EPOCHREALTIME/./}
     ) >&- 2>&- &
     ;;
 check) _PT=${EPOCHREALTIME/./}
-    _abin; _ensure_cc; E=$($CC $_Q -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
+    _abin; _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
     [[ "$ABIN" == */adata/local ]] && ln -sf "$ABIN/a" "$BIN/a"
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
     _checkers
@@ -516,29 +516,32 @@ static int cmd_job(int c,char**v){return(c>2&&isdigit(*v[2]))?cmd_jobs(c,v):cmd_
 static int cmd_tmux(int c,char**v){(void)c;(void)v;tm_go(NULL);return 0;}
 static int cmd_tm_unsave(int c,char**v){
     if(c<3)return 1;tm_unsave_win(v[2]);return 0;}
+#define ADBSEL "S=${ANDROID_SERIAL:-};[ -z \"$S\" ]&&{ N=$(adb devices|awk '/\\tdevice$/{print $1}');n=$(printf %s \"$N\"|grep -c .);" \
+    "case $n in 0)echo no device;exit 1;;1)S=$N;;*)printf %s \"$N\"|nl>&2;read -rp '# [1]: ' i </dev/tty||exit 130;S=$(printf %s \"$N\"|sed -n ${i:-1}p);[ -z \"$S\" ]&&{ echo invalid;exit 1;};;esac;};A=\"adb -s $S\";"
 static int cmd_adb(int c,char**v){
-    if(c>2&&!strcmp(v[2],"setup"))return system(
+    if(c>2&&!strcmp(v[2],"setup"))return system(ADBSEL
       "p=$(cat ~/.ssh/id_*.pub 2>/dev/null|head -1);[ -z \"$p\" ]&&{ echo no pubkey;exit 1;};"
-      "echo \"$p\">/tmp/_pk;adb push /tmp/_pk /sdcard/pk.txt >/dev/null||exit 1;rm /tmp/_pk;"
+      "echo \"$p\">/tmp/_pk;$A push /tmp/_pk /sdcard/pk.txt >/dev/null||exit 1;rm /tmp/_pk;"
       "printf 'mkdir -p ~/.ssh\\ncat /sdcard/pk.txt>~/.ssh/authorized_keys\\nchmod 600 ~/.ssh/authorized_keys\\nsshd\\necho A_OK\\n'>/tmp/_s.sh;"
-      "adb push /tmp/_s.sh /sdcard/_a.sh >/dev/null;rm /tmp/_s.sh;"
-      "adb shell '/system/bin/device_config put activity_manager max_phantom_processes 2147483647' 2>/dev/null;"
-      "adb shell 'settings put global settings_enable_monitor_phantom_procs false' 2>/dev/null;"
-      "adb shell am start -n com.termux/.app.TermuxActivity >/dev/null;sleep 2;"
-      "adb shell input text 'sh%s/sdcard/_a.sh';adb shell input keyevent 66;sleep 3;echo '✓ phantom-killer off, sshd up, key installed'");
+      "$A push /tmp/_s.sh /sdcard/_a.sh >/dev/null;rm /tmp/_s.sh;"
+      "$A shell '/system/bin/device_config put activity_manager max_phantom_processes 2147483647' 2>/dev/null;"
+      "$A shell 'settings put global settings_enable_monitor_phantom_procs false' 2>/dev/null;"
+      "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null;sleep 2;"
+      "$A shell input text 'sh /sdcard/_a.sh';$A shell input keyevent 66;sleep 3;echo '✓ phantom-killer off, sshd up, key installed'");
     if(c>2&&!strcmp(v[2],"ssh"))return system("for s in $(adb devices|awk '/\\tdevice$/{print$1}');do printf '\\033[36m→ %s\\033[0m ' \"$s\";adb -s \"$s\" shell 'am broadcast -n com.termux/.app.TermuxOpenReceiver -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH /data/data/com.termux/files/usr/bin/sshd --ez com.termux.RUN_COMMAND_BACKGROUND true' 2>&1|tail -1;done");
     if(c>3&&!strcmp(v[2],"cmd")){perf_disarm();
         char cmd[B]="";ajoin(cmd,B,c,v,3);
-        execl("/bin/sh","sh","-c",
-          "u=$(adb shell cmd package list packages -U|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');"
-          "adb forward tcp:18022 tcp:8022 >/dev/null 2>&1;"
+        execl("/bin/sh","sh","-c",ADBSEL
+          "ssh-keygen -R '[localhost]:18022' -f ~/.ssh/known_hosts >/dev/null 2>&1;"
+          "u=$($A shell cmd package list packages -U|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');"
+          "$A forward tcp:18022 tcp:8022 >/dev/null 2>&1;"
           "ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p 18022 u0_a$((u-10000))@localhost \"$1\";r=$?;"
-          "adb forward --remove tcp:18022 >/dev/null 2>&1;"
+          "$A forward --remove tcp:18022 >/dev/null 2>&1;"
           "[ $r -ne 255 ]&&exit $r;"
           "echo '! ssh failed, input+screenshot' >&2;"
-          "adb shell am start -n com.termux/.HomeActivity >/dev/null 2>&1;sleep 2;"
-          "adb shell input text \"$(printf %s \"$1\"|sed 's/ /%s/g')\";adb shell input keyevent 66;sleep 3;"
-          "f=/tmp/a_adb.png;adb exec-out screencap -p >$f;echo $f","a",cmd,(char*)0);_exit(127);}
+          "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null 2>&1;sleep 2;"
+          "$A shell \"input text \\\"$1\\\"\";$A shell input keyevent 66;sleep 3;"
+          "f=/tmp/a_adb_$S.png;$A exec-out screencap -p >$f;echo $f","a",cmd,(char*)0);_exit(127);}
     execlp("adb","adb","devices","-l",(char*)0);return 1;
 }
 static int cmd_run_once(int c,char**v){
@@ -677,6 +680,7 @@ int main(int argc, char **argv) {
      snprintf(pf,P,"%s/lib/%s/__init__.py",SDIR,arg);
      if(fexists(pf)){char m[P];snprintf(m,P,"%s/__init__",arg);fallback_py(m,argc,argv);}
      #define RL {int r=run_lab(pf,argc,argv);if(r>=0)return r;}
+     for(int i=2;EXT[i];i++){snprintf(pf,P,"%s/lib/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
      snprintf(pf,P,"%s/my/%s",SDIR,arg);
      if(strrchr(arg,'.')&&fexists(pf))RL
      for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
