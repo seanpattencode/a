@@ -440,21 +440,17 @@ static int cmd_cat(int c,char**v){perf_disarm();
         fclose(f);p=e+1;}
     CWD(cd);const char*actx=getenv("A_CTX");char ctd[P];
     if(actx&&actx[0]=='/')snprintf(ctd,P,"%s",actx);else snprintf(ctd,P,"%s/context/%s",AROOT,actx&&actx[0]?actx:bname(cd));
+    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){char s[512];size_t sr=fread(s,1,512,cf);int bin=0;\
+        for(size_t i=0;i<sr;i++)if(!s[i]||(s[i]>0&&s[i]<9)||s[i]==11||s[i]==12||(s[i]>13&&s[i]<32)){bin=1;break;}\
+        if(bin){fclose(cf);char ref[P];size_t rl=(size_t)snprintf(ref,P,"\n==> context doc: %s <==\n",FP);GA(ref,rl);}\
+        else{rewind(cf);char hdr[300];size_t hl=(size_t)snprintf(hdr,300,"\n==> context: %s <==\n",HDR);\
+             GA(hdr,hl);char ln2[512];while(fgets(ln2,512,cf)){size_t sl=strlen(ln2);GA(ln2,sl);}fclose(cf);}nf++;}}
     {DIR*dd=opendir(ctd);if(dd){struct dirent*de;while((de=readdir(dd))){if(de->d_name[0]=='.')continue;
         char fp2[P];snprintf(fp2,P,"%s/%s",ctd,de->d_name);
-        const char*ext=strrchr(de->d_name,'.');int pdf=ext&&(!strcmp(ext,".pdf")||!strcmp(ext,".djvu"));
-        if(pdf){char ref[P];size_t rl=(size_t)snprintf(ref,P,"\n==> context: %s (PDF — read with Read tool: %s) <==\n",de->d_name,fp2);GA(ref,rl);nf++;}
-        else{struct stat st2;if(!stat(fp2,&st2)&&S_ISDIR(st2.st_mode)){DIR*sd=opendir(fp2);if(sd){struct dirent*se;while((se=readdir(sd))){if(se->d_name[0]=='.')continue;
-                char sp[P];snprintf(sp,P,"%s/%s",fp2,se->d_name);
-                const char*sx=strrchr(se->d_name,'.');int spdf=sx&&(!strcmp(sx,".pdf")||!strcmp(sx,".djvu"));
-                if(spdf){char ref[P];size_t rl=(size_t)snprintf(ref,P,"\n==> context: %s/%s (PDF — read with Read tool: %s) <==\n",de->d_name,se->d_name,sp);GA(ref,rl);}
-                else{FILE*sf=fopen(sp,"r");if(!sf)continue;
-                    char hdr[256];size_t hl=(size_t)snprintf(hdr,256,"\n==> context: %s/%s <==\n",de->d_name,se->d_name);
-                    GA(hdr,hl);char ln2[512];while(fgets(ln2,512,sf)){size_t sl=strlen(ln2);GA(ln2,sl);}fclose(sf);}
-                nf++;}closedir(sd);}continue;}
-            FILE*cf=fopen(fp2,"r");if(!cf)continue;
-            char hdr[256];size_t hl=(size_t)snprintf(hdr,256,"\n==> context: %s <==\n",de->d_name);
-            GA(hdr,hl);char ln2[512];while(fgets(ln2,512,cf)){size_t sl=strlen(ln2);GA(ln2,sl);}fclose(cf);nf++;}}closedir(dd);}}
+        struct stat st2;if(!stat(fp2,&st2)&&S_ISDIR(st2.st_mode)){DIR*sd=opendir(fp2);if(sd){struct dirent*se;while((se=readdir(sd))){if(se->d_name[0]=='.')continue;
+            char sp[P],sh[260];snprintf(sp,P,"%s/%s",fp2,se->d_name);snprintf(sh,260,"%s/%s",de->d_name,se->d_name);CTX_EMIT(sp,sh);}closedir(sd);}continue;}
+        CTX_EMIT(fp2,de->d_name);}closedir(dd);}}
+    #undef CTX_EMIT
     {char p[P];snprintf(p,P,"%s/common/prompts/default.txt",SROOT);FILE*f=fopen(p,"r");
      if(f){GA("\n==> default prompt <==\n",24);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
     if(!d)return 1;d[l]=0;
@@ -581,7 +577,10 @@ static int cmd_ref(int c,char**v){
     if(c<3){for(int i=0;i<n;i++)printf("  %d. %s%s\n",i,nm[i],strstr(pa[i],"/books/")?" (book)":"");
         if(nb)printf("  %d need: a book transcribe <name>\n",nb);
         printf("\na ref <#|name>  add: mkdir %s/<name>/\n",d);return 0;}
-    const char*sel=v[2];int si=-1;
+    const char*sel=v[2];int si=-1;char rp[P];
+    if(strchr(sel,'/')&&realpath(sel,rp)){struct stat st;if(!stat(rp,&st)&&!S_ISDIR(st.st_mode)){char*s=strrchr(rp,'/');if(s)*s=0;}
+        setenv("A_CTX",rp,1);printf("+ %s\n",rp);
+        char*nv[]={v[0],(char*)"c",NULL};return cmd_sess(2,nv);}
     if(isdigit(*sel)){si=atoi(sel);if(si>=n){puts("x");return 1;}}
     else{for(int i=0;i<n;i++)if(!strcmp(nm[i],sel)){si=i;break;}}
     if(si<0){printf("x %s\n",sel);return 1;}
