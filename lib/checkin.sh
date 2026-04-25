@@ -17,4 +17,6 @@
 sn="$1"; [ -n "$sn" ] && shift || sn="$(tmux display-message -p -t "${TMUX_PANE:-}" '#{window_name}' 2>/dev/null)"
 [ -n "$sn" ] || { echo "usage: a checkin [session] [prompt] (no tmux window detected)"; exit 1; }
 p="${*:-send a email on status}"
-exec a send "$sn" "$p"
+dev="$(grep -lF "OS: Linux $(uname -r)" /home/sean/a/adata/git/ssh/*.txt 2>/dev/null | head -1 | xargs -r awk -F': ' '/^Name:/{print $2;exit}')"
+[ -n "$dev" ] || dev="$(hostname -s 2>/dev/null || hostname)"
+exec a send "$sn" "$p (append [dev=$dev win=$sn] to email subject)"
