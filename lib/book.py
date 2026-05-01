@@ -48,8 +48,9 @@ def translate_page(source_path, output_dir, target_lang="English", nocache=False
 def latex_page(source_path, output_dir, nocache=False):
     return process_page(source_path, output_dir, "Transcribe to LaTeX body (no preamble/documentclass/begin{document}). $..$ inline, \\[..\\] display, \\section*{}, \\footnote{}, \\textit{}. Blank→empty tags. Wrap in <transcription></transcription>", nocache)
 
-def explain_page(source_path, output_dir, nocache=False):
-    return process_page(source_path, output_dir, "Reproduce this text verbatim, inserting [bracketed explanations] immediately after obscure terms that require context. Example: 'the Semyonovsky Regiment [elite Russian guard unit] was known for...' Rules: 1) Never rewrite - only insert [brackets] after words needing explanation 2) Skip well-known figures and common terms 3) Only explain what a reader cannot infer from context 4) Keep explanations to a few words 5) Less is more - when in doubt, skip it. Return annotated text only", nocache)
+def explain_page(source_path, output_dir, technical=False, nocache=False):
+    p = "Reproduce verbatim. Audience: college student with high-school math/physics only, no specialist background. Length is not a constraint — be thorough; assume nothing beyond high-school algebra and intro physics. Insert [explanations] after EVERY term, symbol, equation, or phrase a non-specialist might not fully grasp (e.g. 'wavefunction', 'vector space', 'inner product', 'singular', 'eigenvalue', 'polynomial growth', 'observable' all need inline explanation). After each equation: [spoken aloud — math operations in plain terms — plain meaning — WHY it appears, what it accomplishes, what its value tells us conceptually]. After each technical term: [plain explanation + why it matters here]. Example: 'AB - BA = 0 [A times B minus B times A equals zero — this difference is the commutator, measuring whether order of multiplication matters — zero means A and B give the same answer either way, they commute — significant because commuting operators correspond to measurements that can be made simultaneously without disturbing each other]'. Within one page, don't re-explain the exact same term twice. Never rewrite. Return only annotated text" if technical else "Reproduce this text verbatim, inserting [bracketed explanations] immediately after obscure terms that require context. Example: 'the Semyonovsky Regiment [elite Russian guard unit] was known for...' Rules: 1) Never rewrite - only insert [brackets] after words needing explanation 2) Skip well-known figures and common terms 3) Only explain what a reader cannot infer from context 4) Keep explanations to a few words 5) Less is more - when in doubt, skip it. Return annotated text only"
+    return process_page(source_path, output_dir, p, nocache)
 
 def process_range(book_dir, start, end, page_func, source_subdir, cache_subdir, suffix, workers=1, total_pages=None, **kwargs):
     book_dir = Path(book_dir)
@@ -176,7 +177,7 @@ if __name__ == "__main__":
         start, end = (int(args[3]), int(args[4])) if len(args) >= 5 else (1, total)
         workers = int(args[5]) if len(args) >= 6 else 1
         source = "translations" if from_translation else ("transcriptions" if from_transcription else "pages")
-        process_range(book, start, end, explain_page, source, "explanations", "explained", workers, total, nocache=nocache)
+        process_range(book, start, end, explain_page, source, "explanations", "explained", workers, total, nocache=nocache, technical="--technical" in sys.argv)
     elif cmd == "chat":
         book = resolve_book(args[2] if len(args) > 2 else None)
         out = book / "output"
