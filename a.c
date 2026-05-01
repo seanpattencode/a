@@ -663,7 +663,7 @@ int main(int argc, char **argv) {
     if (argc < 2) { perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
-    alog(acmd, wd);
+    alog(acmd, wd);sync_bg();
 
     const char *arg = argv[1];
 

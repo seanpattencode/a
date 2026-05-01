@@ -17,4 +17,4 @@ static int cmd_w(int c,char**v){AB;init_paths();
         puts(" a w <#|name>");}
     else{int i=atoi(v[2]);char*s=i>0&&i<=n?hl[i-1]:v[2];
         {FILE*o=fopen(f,"a");if(o){fputs(s,o);fputc('\n',o);fclose(o);}}
-        sync_bg();printf("✓ %s\n",s);}free(h);free(dn);return 0;}
+        printf("✓ %s\n",s);}free(h);free(dn);return 0;}

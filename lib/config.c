@@ -113,7 +113,7 @@ static int cmd_add(int argc, char **argv) {
         char d[P]; snprintf(d,P,"%s/workspace/cmds",SROOT); mkdirp(d);
         char f[P]; snprintf(f,P,"%s/%s.txt",d,name);
         char data[B]; snprintf(data,B,"Name: %s\nCommand: %s\n",name,cmd);
-        writef(f,data); sync_bg();
+        writef(f,data);
         printf("✓ Added: %s\n",name); list_all(1,0); return 0;
     }
     /* Project add */
@@ -128,7 +128,7 @@ static int cmd_add(int argc, char **argv) {
     char repo[512] = ""; char c[B]; snprintf(c, B, "git -C '%s' remote get-url origin 2>/dev/null", path);
     pcmd(c, repo, 512); repo[strcspn(repo,"\n")] = 0;
     char data[B]; snprintf(data, B, "Name: %s\nPath: %s\n%s%s%s", name, path, repo[0]?"Repo: ":"", repo, repo[0]?"\n":"");
-    writef(f, data); sync_bg();
+    writef(f, data);
     printf("✓ Added: %s\n", name); list_all(1, 0); return 0;
 }
 
@@ -150,13 +150,13 @@ static int cmd_remove(int argc, char **argv) {
         int idx = atoi(sel);
         if (idx < NPJ) {
             char f[P]; snprintf(f, P, "%s/workspace/projects/%s.txt", SROOT, PJ[idx].name);
-            unlink(f); sync_bg();
+            unlink(f);
             printf("✓ Removed: %s\n", PJ[idx].name); list_all(1, 0); return 0;
         }
         int ai = idx - NPJ;
         if (ai >= 0 && ai < NAP) {
             char f[P]; snprintf(f, P, "%s/workspace/cmds/%s.txt", SROOT, AP[ai].name);
-            unlink(f); sync_bg();
+            unlink(f);
             printf("✓ Removed: %s\n", AP[ai].name); list_all(1, 0); return 0;
         }
     }
@@ -177,6 +177,6 @@ static int cmd_move(int argc, char **argv) {
             if(!nl){if(strncmp(p,"Order:",6))ol+=snprintf(out+ol,(size_t)(B-ol),"%s\n",p);break;}
             if(strncmp(p,"Order:",6))ol+=snprintf(out+ol,(size_t)(B-ol),"%.*s\n",(int)(nl-p),p);p=nl+1;}
         free(d);(void)snprintf(out+ol,(size_t)(B-ol),"Order: %d\n",i);writef(PJ[i].file,out);}
-    sync_bg(); printf("✓ %d -> %d\n",fr,to); return 0;
+    printf("✓ %d -> %d\n",fr,to); return 0;
 }
 

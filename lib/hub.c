@@ -119,7 +119,7 @@ static int cmd_hub(int argc, char **argv) {
         snprintf(j.p,512,"%s",cmd); snprintf(j.d,64,"%s",DEV);
         for(int i=0;i<NJ;i++)if(strcmp(HJ[i].n,j.n)&&!strcmp(HJ[i].s,j.s)&&HJ[i].en)
             fprintf(stderr,"! %s also at %s\n",HJ[i].n,j.s);
-        hub_save(&j); sync_repo(); hub_timer(&j,1);
+        hub_save(&j); hub_timer(&j,1);
         printf("✓ %s @ %s\n",j.n,j.s); return 0;
     }
 
@@ -141,7 +141,7 @@ static int cmd_hub(int argc, char **argv) {
                 fail=pclose(fp)!=0;}
             time_t now=time(NULL); struct tm *t=localtime(&now); char ts[32];
             strftime(ts,32,"%Y-%m-%d %I:%M:%S%p",t); strftime(j->lr,24,"%Y-%m-%d %H:%M",t);
-            hub_save(j); sync_bg();
+            hub_save(j);
             FILE *lp=fopen(lf,"a"); if(lp) { fprintf(lp,"\n[%s] %s%s\n%s",ts,j->n,fail?" FAILED":"",out); fclose(lp); }
             char sn[128]; snprintf(sn,128,"hub:%s",j->n); alog(sn,"");
             if(fail&&j->s[0]) { char ec[B];snprintf(ec,B,"%s email 'hub: %s failed' '%s failed on %s — see hub.log'",G_argv[0],j->n,j->n,DEV);(void)!system(ec); }
@@ -149,12 +149,12 @@ static int cmd_hub(int argc, char **argv) {
             printf("✓\n"); return 0;
         }
         if(!strcmp(sub,"on")||!strcmp(sub,"off")) {
-            j->en=sub[1]=='n'; hub_save(j); sync_repo(); hub_timer(j,j->en);
+            j->en=sub[1]=='n'; hub_save(j); hub_timer(j,j->en);
             printf("✓ %s %s\n",j->n,sub); return 0;
         }
         hub_timer(j,0);
         {char c[B];snprintf(c,B,"git -C '%s' rm -qf %s*.txt %s_*.txt 2>/dev/null",HD,j->n,j->n);(void)!system(c);}
-        sync_repo(); printf("✓ rm %s\n",j->n); return 0;
+        printf("✓ rm %s\n",j->n); return 0;
     }
 
     if(!strcmp(sub,"sync")) {

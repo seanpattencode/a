@@ -109,7 +109,7 @@ static int cmd_login(int argc, char **argv) {
         if(*tk){char fp[P],buf[B];snprintf(fp,P,"%s/gh_%s.txt",ld,DEV);
             snprintf(buf,B,"Token: %s\nDevice: %s\n",tk,DEV);writef(fp,buf);puts("+ gh");}
         if(fexists(hf)){char cp[B];snprintf(cp,B,"cp '%s' '%s'",hf,cc);(void)!system(cp);puts("+ claude");}
-        sync_bg();return 0;}
+        return 0;}
     if(sub&&!strcmp(sub,"apply")){char fp[P*2],tk[256]="";
         DIR*d=opendir(ld);struct dirent*e;if(d){while((e=readdir(d))){if(!strncmp(e->d_name,"gh_",3)){
             snprintf(fp,P,"%s/%s",ld,e->d_name);kvs_t kv=kvfile(fp);const char*t=kvget(&kv,"Token");
@@ -129,7 +129,7 @@ static int cmd_login(int argc, char **argv) {
         "[ -f \"$H\" ]||{ echo x no creds;exit 1;};cp \"$H\" \"$F\";echo $N>active;"
         "T=$(sed -n 's/.*\"accessToken\":\"\\([^\"]*\\)\".*/\\1/p' \"$H\");E=$(curl -sSm 5 -H \"Authorization: Bearer $T\" https://api.anthropic.com/api/oauth/profile 2>/dev/null|sed -n 's/.*\"email\":\"\\([^\"]*\\)\".*/\\1/p');"
         "[ \"$E\" ]&&echo $E>claude_$N.email;echo saved: $N \"${E:+($E)}\"",hf,ld,argc<4?"":argv[3]);
-        int r=system(c);if(!r)sync_bg();return r?1:0;}
+        return system(c)?1:0;}
     puts("a login save|apply|show|slot [name]");return 0;}
 
 static int cmd_sync(int argc, char **argv) { AB;

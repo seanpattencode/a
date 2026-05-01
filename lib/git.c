@@ -47,4 +47,3 @@ static void sync_bg(void) {
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }
-static void pull_bg(void){char c[P];snprintf(c,P,"git -C '%s' pull -q origin main >/dev/null 2>&1 &",SROOT);(void)!system(c);}

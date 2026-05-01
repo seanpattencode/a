@@ -14,14 +14,14 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
     int l=snprintf(d,B,"Name: %s\nHost: %s\n",n,h);
     if(pw&&pw[0])l+=snprintf(d+l,(size_t)(B-l),"Password: %s\n",pw);
     if(k&&v&&v[0])snprintf(d+l,(size_t)(B-l),"%s: %s\n",k,v);
-    writef(f,d);sync_repo();snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);}
+    writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);}
 static int ssh_idx(const char*a,const void*H_,int nh){
     typedef struct{char name[128],host[256],pw[256],path[P];}ht;const ht*H=(const ht*)H_;
     if(isdigit((unsigned char)*a))return atoi(a);
     for(int i=0;i<nh;i++)if(!strcmp(H[i].name,a))return i;return -1;}
 static int cmd_ssh(int argc,char**argv){
     AB;
-    char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);sync_bg();
+    char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
     typedef struct{char name[128],host[256],pw[256],path[P];}host_t;
     host_t H[32];int nh=0,arc=0;
     char paths[32][P];int np=listdir(dir,paths,32);
@@ -32,7 +32,6 @@ static int cmd_ssh(int argc,char**argv){
         snprintf(H[nh].name,128,"%s",n);const char*h=kvget(&kv,"Host"),*p=kvget(&kv,"Password");
         snprintf(H[nh].host,256,"%s",h?h:"");
         snprintf(H[nh].pw,256,"%s",p?p:"");snprintf(H[nh].path,P,"%s",paths[i]);nh++;}
-    if(arc)sync_bg();
     const char*sub=argc>2?argv[2]:NULL;
     /* list */
     if(!sub){/* auto-refresh self */
@@ -153,7 +152,7 @@ static int cmd_ssh(int argc,char**argv){
         ssh_savex(dir,nm,h,epw,"OS",os);printf("✓ %s %s [%s]\n",nm,h,os);return 0;}
     /* rm */
     if(!strcmp(sub,"rm")&&argc>3){int x=ssh_idx(argv[3],H,nh);
-        if(x>=0&&x<nh){unlink(H[x].path);sync_repo();printf("✓ rm %s\n",H[x].name);}return 0;}
+        if(x>=0&&x<nh){unlink(H[x].path);printf("✓ rm %s\n",H[x].name);}return 0;}
     /* pw — change password */
     if(!strcmp(sub,"pw")&&argc>3){int x=ssh_idx(argv[3],H,nh);
         if(x>=0&&x<nh){char pw[256];printf("Password for %s: ",H[x].name);
