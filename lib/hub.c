@@ -134,8 +134,7 @@ static int cmd_hub(int argc, char **argv) {
             printf("Running %s...\n",j->n);fflush(stdout);
             char lf[P];snprintf(lf,P,"%s/hub.log",DDIR);
             char out[B*4]="";int ol=0,fail=1,sch=j->s[0]!=0;int bk[]={0,10,100,1000,10000};
-            for(int try=0;try<(sch?5:2)&&fail;try++){if(try){sleep(sch?(unsigned)bk[try]:2);
-                if(sch){char ec[B];snprintf(ec,B,"%s email 'hub:%s retry %d' ''",G_argv[0],j->n,try);(void)!system(ec);}}
+            for(int try=0;try<(sch?5:2)&&fail;try++){if(try)sleep(sch?(unsigned)bk[try]:2);
                 FILE*fp=popen(cmd,"r");ol=0;if(!fp)continue;char b[B];
                 while(fgets(b,B,fp)&&ol<(int)sizeof(out)-B){fputs(b,stdout);ol+=sprintf(out+ol,"%s",b);}
                 fail=pclose(fp)!=0;}
