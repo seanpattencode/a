@@ -11,9 +11,8 @@ MODEL, BACKEND = 'small', 'faster-whisper int8 cpu_threads=20 vad_filter=True'
 RECENT_DIR = 'a-gdrive2:Archive/Files/Easy Voice Recorder'
 
 def ensure_deps():
-    try: from faster_whisper import WhisperModel; return
-    except ImportError: pass
-    sp.run(['pip', 'install', '--user', 'faster-whisper'], check=True)
+    try: import faster_whisper, httpx, fsspec
+    except: os.system('pip install --user --break-system-packages faster-whisper httpx fsspec')
 
 _M = None
 def transcribe_stream(path, model='small'):

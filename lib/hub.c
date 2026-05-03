@@ -128,9 +128,9 @@ static int cmd_hub(int argc, char **argv) {
         hub_t *j=argc>3?hub_find(argv[3]):NULL;
         if(!j) { fprintf(stderr,"x %s?\n",argc>3?argv[3]:"(missing)"); return 1; }
         if(!strcmp(sub,"run")) {
-            char cmd[B]; const char*jp=j->p; if(!strncmp(jp,"aio ",4))jp+=2;
-            if(!strncmp(jp,"a ",2)) snprintf(cmd,B,"%s %s",G_argv[0],jp+2);
-            else snprintf(cmd,B,"%s",jp);
+            char cmd[B]; const char*jp=j->p;
+            if(!strncmp(jp,"a ",2)) snprintf(cmd,B,"%s %s 2>&1",G_argv[0],jp+2);
+            else snprintf(cmd,B,"%s 2>&1",jp);
             printf("Running %s...\n",j->n);fflush(stdout);
             char lf[P];snprintf(lf,P,"%s/hub.log",DDIR);
             char out[B*4]="";int ol=0,fail=1,sch=j->s[0]!=0;int bk[]={0,10,100,1000,10000};
