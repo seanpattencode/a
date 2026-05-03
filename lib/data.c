@@ -30,13 +30,8 @@ static void init_db(void) {
     char d[P]; snprintf(d,P,"%s/workspace",SROOT); mkdirp(d);
     char p[P]; snprintf(p, P, "%s/workspace/config.txt", SROOT);
     if (!fexists(p)) {
-        char pp[P],dp[B]="";snprintf(pp,P,"%s/common/prompts/default.txt",SROOT);
-        char*pd=readf(pp,NULL);if(pd){snprintf(dp,B,"%s",pd);free(pd);}
-        char edp[B];esc_nl(dp,edp,B);
-        char buf[B*2];int l=0;const char*pk[]={"claude_prompt","codex_prompt","gemini_prompt",NULL};
-        for(const char**k=pk;*k;k++)l+=snprintf(buf+l,(size_t)(B*2-l),"%s: %s\n",*k,edp);
-        l+=snprintf(buf+l,(size_t)(B*2-l),"default_agent: c\nworktrees_dir: %s/worktrees\nmulti_default: l:3\nclaude_prefix: Ultrathink. \ntmux_conf: y\n",AROOT);
-        writef(p,buf);
+        char edp[B*4];esc_nl(dprompt(),edp,B*4);FILE*wf=fopen(p,"w");
+        if(wf){fprintf(wf,"claude_prompt: %1$s\ncodex_prompt: %1$s\ngemini_prompt: %1$s\ndefault_agent: c\nworktrees_dir: %2$s/worktrees\nmulti_default: l:3\nclaude_prefix: Ultrathink. \ntmux_conf: y\n",edp,AROOT);fclose(wf);}
     }
     snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
     if (!fexists(p)) {
