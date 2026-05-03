@@ -47,3 +47,7 @@ static void sync_bg(void) {
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }
+static const char*sync_age(void){static char b[16];char p[P];
+    snprintf(p,P,"%s/.git/FETCH_HEAD",SROOT);struct stat st;
+    if(stat(p,&st))return"never";
+    strftime(b,16,"%H:%M:%S",localtime(&st.st_mtime));return b;}

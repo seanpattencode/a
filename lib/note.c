@@ -32,7 +32,7 @@ static int cmd_note(int argc, char **argv) {
         qsort(gn,(size_t)n,sizeof(GN),gncmp);
         for(int i=0;i<n;i++)printf("%3d. %s\n",i+1,gn[i].t);return 0;}
     if(argc<=2){int n=0;DIR*d=opendir(dir);if(d){struct dirent*e;while((e=readdir(d)))if(e->d_name[0]!='.'&&strstr(e->d_name,".txt"))n++;closedir(d);}
-        printf("%d notes\n  a n <text>  add\n  a n l       list\n  a n r       review\n  a n ?<q>    search\n  a n m       AI manage\n",n);return 0;}
+        printf("%d notes  last synced %s\n  a n <text>  add\n  a n l       list\n  a n r       review\n  a n ?<q>    search\n  a n m       AI manage\n",n,sync_age());return 0;}
     if(argc>2&&(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review"))){perf_disarm();
         const char *f=argv[2][0]=='?'?argv[2]+1:NULL;int n=load_notes(dir,f);
         if(!n){puts("(none)");return 0;} if(!isatty(STDIN_FILENO)){for(int i=0;i<n&&i<10;i++)puts(gn[i].t);return 0;}
@@ -222,7 +222,7 @@ static int cmd_task(int argc,char**argv){
     if(!sub||!strcmp(sub,"top")){int n=load_tasks(dir),k=sub&&argc>3?atoi(argv[3]):10;if(k>n)k=n;
         printf("%d tasks\n",n);
         for(int i=0;i<k;i++)printf("  %2d P%s %.60s\n",i+1,T[i].p,T[i].t);
-        puts("\n  l=list  r=review  v=vision  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task  add <text>");
+        printf("\n  l=list  r=review  v=vision  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task  add <text>\n  last synced %s\n",sync_age());
         if(!isatty(0))return 0;
         printf("\n> ");fflush(stdout);
         struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);

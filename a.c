@@ -664,7 +664,6 @@ int main(int argc, char **argv) {
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
     alog(acmd, wd);sync_bg();
-
     const char *arg = argv[1];
 
     if (*arg && !arg[strspn(arg,"0123456789")]) { init_db(); return cmd_project_num(argc, argv, atoi(arg)); }

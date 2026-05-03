@@ -25,9 +25,11 @@ static void _sha1(const unsigned char*d,size_t n,unsigned char out[20]){
     for(int i=0;i<5;i++)for(int j=0;j<4;j++)out[i*4+j]=(unsigned char)(hh[i]>>(24-j*8));
 }
 static char*_shtml;static int _shlen;
+#define SYNC_HTML "<span style=color:#888>sync <span class=sa>%s</span></span> <button style=\"background:#000;color:#888;border:1px solid #333;padding:0 6px;font:inherit;cursor:pointer\" onclick=\"fetch('/api/sync',{method:'POST'});let p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{document.querySelectorAll('.sa').forEach(s=>s.textContent=t);if(t!='syncing')clearInterval(p)}),1000)\">sync</button>"
 static int _notes_build(char*h,int cap){
     char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
-    int hl=0;DIR*d=opendir(nd);if(!d)return 0;struct dirent*e;
+    int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
+    DIR*d=opendir(nd);if(!d)return hl;struct dirent*e;
     while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt")||hl>cap-2048)continue;
         char fp[P];snprintf(fp,P,"%s/%s",nd,e->d_name);
         FILE*f=fopen(fp,"r");if(!f)continue;char ln[512];
@@ -59,7 +61,8 @@ static int _tasks_build(char*h,int cap){
         nr++;}
     closedir(d);
     for(int i=1;i<nr;i++){typeof(rows[0]) k=rows[i];int j=i-1;while(j>=0&&strcmp(rows[j].pri,k.pri)>0){rows[j+1]=rows[j];j--;}rows[j+1]=k;}
-    int hl=0;for(int i=0;i<nr&&hl<cap-512;i++){
+    int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
+    for(int i=0;i<nr&&hl<cap-512;i++){
         const char*c=strcmp(rows[i].pri,"01000")<=0?"#f44":strcmp(rows[i].pri,"10000")<=0?"#fa0":"#aaa";
         hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:%s\">P%s</span> %.120s</div>",rows[i].name,c,rows[i].pri,rows[i].txt);}
     if(!hl)hl=snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
@@ -211,6 +214,10 @@ static void _handle(int c){
         else{char resp[16384];int rl=snprintf(resp,16384,"<pre style=\"color:#fff\">%.*s</pre>",ol,out);
             _sresp(c,200,"text/html",resp,rl);}
         return;}
+    if(!strncmp(req,"POST /api/sync",14)){sync_bg();_sresp(c,200,"text/plain","ok",2);return;}
+    if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
+        int busy=fd>=0&&flock(fd,LOCK_EX|LOCK_NB)<0;if(fd>=0){if(!busy)flock(fd,LOCK_UN);close(fd);}
+        const char*r=busy?"syncing":sync_age();_sresp(c,200,"text/plain",r,(int)strlen(r));return;}
     if(!strncmp(req,"GET /note-list",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
         int hl=_notes_build(html,cap);_sresp(c,200,"text/html",html,hl);free(html);return;}
