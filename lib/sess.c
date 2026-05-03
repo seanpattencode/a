@@ -82,7 +82,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     perf_disarm(); init_db();
     char cache[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);
     size_t len;char*raw=readf(cache,&len);
-    if(!raw){gen_icache();raw=readf(cache,&len);if(!raw)return 1;}else if(!fork()){gen_icache();_exit(0);}
+    if(!raw){gen_icache();raw=readf(cache,&len);if(!raw)return 1;}
     {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);FILE*ff=fopen(fp,"r");if(ff){char ln[128];nfq=0;
         while(nfq<1024&&fgets(ln,128,ff)){char*c=strchr(ln,':');if(!c)continue;*c=0;
             snprintf(fq[nfq].n,64,"%s",ln);fq[nfq].c=atoi(c+1);nfq++;}fclose(ff);}}
