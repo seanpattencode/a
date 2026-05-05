@@ -160,9 +160,9 @@ static int cmd_diff(int argc, char **argv) { AB;
         char tgt[256]; snprintf(tgt,256,"origin/%s",sel?sel:wt?"main":br);
         char ts[64]; pcmd("git log -1 --format=%cd --date=format:'%Y-%m-%d %I:%M:%S %p' 2>/dev/null",ts,64); ts[strcspn(ts,"\n")]=0;
         if(sel)printf("%s -> origin/%s\n",br,sel);else printf("%s\n%s -> %s\n%s\n",cwd,br,tgt,ts);
-        {char c[B];snprintf(c,B,"git diff '%s..HEAD' -- ':!.a_done' 2>/dev/null",tgt);DS(c);}
-        {char c[B];snprintf(c,B,"git diff HEAD -- ':!.a_done' 2>/dev/null");DS(c);}
-        char ut[B]; pcmd("git ls-files --others --exclude-standard -- ':!.a_done' 2>/dev/null",ut,B);
+        {char c[B];snprintf(c,B,"git diff '%s..HEAD' 2>/dev/null",tgt);DS(c);}
+        {char c[B];snprintf(c,B,"git diff HEAD 2>/dev/null");DS(c);}
+        char ut[B]; pcmd("git ls-files --others --exclude-standard 2>/dev/null",ut,B);
         if(ut[0]){printf("\nUntracked:\n");char*p=ut;while(*p){char*e=strchr(p,'\n');if(e)*e=0;if(*p){
             printf("  \033[48;2;26;84;42m+ %s\033[0m\n",p);size_t sz;char*d=readf(p,&sz);
             if(d){int nl=1;for(size_t j=0;j<sz;j++)if(d[j]=='\n')nl++;FS(p);if(cf>=0){fs[cf].al=nl;fs[cf].ab=(int)sz;}free(d);}

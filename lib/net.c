@@ -187,7 +187,7 @@ static int cmd_update(int argc, char **argv) { AB;
     snprintf(c,B,"git -C '%s' status -uno 2>/dev/null",SDIR);char out[B];pcmd(c,out,B);
     int ch=0;
     if(strstr(out,"diverged")){puts("Diverged — rebasing...");snprintf(c,B,"git -C '%s' pull --rebase 2>/dev/null",SDIR);(void)!system(c);ch=1;}
-    else if(strstr(out,"behind")){puts("Downloading...");snprintf(c,B,"git -C '%s' pull --ff-only 2>/dev/null",SDIR);(void)!system(c);ch=1;}
+    else if(strstr(out,"behind")){snprintf(c,B,"git -C '%s' pull --ff-only 2>/dev/null",SDIR);(void)!system(c);ch=1;}
     /* no-op: up to date + binary exists */
     {char b[P];snprintf(b,P,"%s/a",DDIR);if(!ch&&!access(b,X_OK)){puts("✓ Up to date");return 0;}}
     /* detect dep change: a.c modified → pip/shell/node */

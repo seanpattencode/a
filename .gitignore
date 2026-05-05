@@ -21,6 +21,7 @@ __pycache__/
 .aider*
 .a_done
 .a_job
+.claude/
 /my
 /lab
 
