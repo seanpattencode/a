@@ -524,21 +524,17 @@ static int cmd_adb(int c,char**v){
       "$A shell '/system/bin/device_config put activity_manager max_phantom_processes 2147483647' 2>/dev/null;"
       "$A shell 'settings put global settings_enable_monitor_phantom_procs false' 2>/dev/null;"
       "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null;sleep 2;"
-      "$A shell input text 'sh /sdcard/_a.sh';$A shell input keyevent 66;sleep 3;echo '✓ phantom-killer off, sshd up, key installed'");
+      "$A shell input keyevent 66;sleep 1;"  /* Enter to ensure fresh prompt */
+      "$A shell input text 'sh%s/sdcard/_a.sh';$A shell input keyevent 66;sleep 3;echo '✓ sshd up, key installed'");
     if(c>2&&!strcmp(v[2],"ssh"))return system("for s in $(adb devices|awk '/\\tdevice$/{print$1}');do printf '\\033[36m→ %s\\033[0m ' \"$s\";adb -s \"$s\" shell 'am broadcast -n com.termux/.app.TermuxOpenReceiver -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH /data/data/com.termux/files/usr/bin/sshd --ez com.termux.RUN_COMMAND_BACKGROUND true' 2>&1|tail -1;done");
     if(c>3&&!strcmp(v[2],"cmd")){perf_disarm();
         char cmd[B]="";ajoin(cmd,B,c,v,3);
         execl("/bin/sh","sh","-c",ADBSEL
           "ssh-keygen -R '[localhost]:18022' -f ~/.ssh/known_hosts >/dev/null 2>&1;"
-          "u=$($A shell cmd package list packages -U|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');"
-          "$A forward tcp:18022 tcp:8022 >/dev/null 2>&1;"
-          "ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p 18022 u0_a$((u-10000))@localhost \"$1\";r=$?;"
-          "$A forward --remove tcp:18022 >/dev/null 2>&1;"
-          "[ $r -ne 255 ]&&exit $r;"
-          "echo '! ssh failed, input+screenshot' >&2;"
-          "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null 2>&1;sleep 2;"
-          "$A shell \"input text \\\"$1\\\"\";$A shell input keyevent 66;sleep 3;"
-          "f=/tmp/a_adb_$S.png;$A exec-out screencap -p >$f;echo $f","a",cmd,(char*)0);_exit(127);}
+          "u=$($A shell cmd package list packages -U|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');U=u0_a$((u-10000));"
+          "T(){ $A forward tcp:18022 tcp:8022 >/dev/null 2>&1;ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p 18022 $U@localhost \"$1\"; }\n"
+          "T \"$1\";r=$?;[ $r -eq 255 ]&&{ echo '! ssh failed, retrying via a adb setup' >&2;ANDROID_SERIAL=$S a adb setup >&2;T \"$1\";r=$?; }\n"
+          "$A forward --remove tcp:18022 >/dev/null 2>&1;exit $r","a",cmd,(char*)0);_exit(127);}
     execlp("adb","adb","devices","-l",(char*)0);return 1;
 }
 static int cmd_run_once(int c,char**v){
