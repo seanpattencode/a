@@ -117,7 +117,7 @@ static void tm_ensure_conf(void) {
         "bind-key -n C-n new-window\n"
         "bind-key -n C-t new-window\n"
         "bind-key -n C-y split-window -fh\n"
-        "bind -n C-w if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-w' 'kill-window'\n"
+        "bind -n C-w if -F '#{==:#{pane_current_command},ssh}' 'send C-w' 'selectw -n;killw -t:!'\n"
         "set-hook -g window-unlinked 'run-shell -b \"a tm-unsave \\\"#{hook_window_name}\\\"\"'\n"
         "bind-key -n C-q detach\n"
         "bind-key -n C-x kill-session\n"
