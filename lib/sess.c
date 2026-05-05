@@ -74,8 +74,8 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
 
 typedef struct{char*p;int sc;}fqm_t;
 static FC fq[1024];int nfq;
-static int fq_get(const char*s){int sl=(int)strlen(s),b=0,bl=0;
-    for(int i=0;i<nfq;i++){int l=(int)strlen(fq[i].n);if(l<=sl&&l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)){b=fq[i].c;bl=l;}}return b;}
+static int fq_get(const char*s){int b=0,bl=0;
+    for(int i=0;i<nfq;i++){int l=(int)strlen(fq[i].n);if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return b;}
 static int fqm_cmp(const void*a,const void*b){return((const fqm_t*)b)->sc-((const fqm_t*)a)->sc;}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
@@ -107,9 +107,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(!blen&&(strstr(lines[i],"\tdir")||!strncmp(lines[i],"web ",4)))continue;
             if(blen){char*s=lines[i]+plen,b2[256],*w;snprintf(b2,256,"%s",buf);int ok=1;
                 for(w=strtok(b2," ");w&&ok;w=strtok(0," "))if(!strcasestr(s,w))ok=0;if(!ok)continue;}
-            fm[nm].p=lines[i];fm[nm].sc=blen?fq_get(lines[i]):0;nm++;
+            fm[nm].p=lines[i];fm[nm].sc=fq_get(lines[i]);nm++;
         }
-        if(blen&&nfq)qsort(fm,(size_t)nm,sizeof(fqm_t),fqm_cmp);
+        if(nfq)qsort(fm,(size_t)nm,sizeof(fqm_t),fqm_cmp);
         {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
         int top=sel>=maxshow?sel-maxshow+1:0, show=nm-top<maxshow?nm-top:maxshow;
         {char fb[B*4];int fl=0;
