@@ -128,6 +128,7 @@ static int cmd_hub(int argc, char **argv) {
         hub_t *j=argc>3?hub_find(argv[3]):NULL;
         if(!j) { fprintf(stderr,"x %s?\n",argc>3?argv[3]:"(missing)"); return 1; }
         if(!strcmp(sub,"run")) {
+            if(!j->en)return 0;
             char cmd[B]; const char*jp=j->p;
             if(!strncmp(jp,"a ",2)) snprintf(cmd,B,"%s %s 2>&1",G_argv[0],jp+2);
             else snprintf(cmd,B,"%s 2>&1",jp);
