@@ -136,7 +136,7 @@ static int cmd_hub(int argc, char **argv) {
             char out[B*4]="";int ol=0,fail=1,sch=j->s[0]!=0;int bk[]={0,10,100,1000,10000};
             for(int try=0;try<(sch?5:2)&&fail;try++){if(try)sleep(sch?(unsigned)bk[try]:2);
                 FILE*fp=popen(cmd,"r");ol=0;if(!fp)continue;char b[B];
-                while(fgets(b,B,fp)&&ol<(int)sizeof(out)-B){fputs(b,stdout);ol+=sprintf(out+ol,"%s",b);}
+                while(fgets(b,B,fp)){fputs(b,stdout);if(ol<(int)sizeof(out)-B)ol+=sprintf(out+ol,"%s",b);}
                 fail=pclose(fp)!=0;}
             time_t now=time(NULL); struct tm *t=localtime(&now); char ts[32];
             strftime(ts,32,"%Y-%m-%d %I:%M:%S%p",t); strftime(j->lr,24,"%Y-%m-%d %H:%M",t);
