@@ -87,7 +87,7 @@ _install_node() {
     else curl -fsSL "$URL" | tar -xJf - -C "$HOME/.local" --strip-components=1; fi
     [[ -x "$HOME/.local/bin/node" ]] && ok "node $($HOME/.local/bin/node -v)" || warn "node install failed"
 }
-_perf_lim() { local f="$D/adata/git/perf/$(cat "$D/adata/local/device.txt" 2>/dev/null||hostname).txt"
+_perf_lim() { local f="$D/adata/git/perf/$(cat "$D/adata/local/.device" 2>/dev/null||cat "$D/adata/local/device.txt" 2>/dev/null||hostname 2>/dev/null||echo unknown).txt"
     local v;v=$(grep "^$1:" "$f" 2>/dev/null)&&echo "${v#*:}"||echo 0;}
 _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
     [[ $l -gt 0 && $e -gt $l ]] && { echo -e "\033[31m✗ PERF KILL\033[0m: sh a.c $1 ${e}us > ${l}us" >&2; exit 1; }
