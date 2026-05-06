@@ -72,7 +72,8 @@ static void gen_icache(void) {
                 char nm[64];snprintf(nm,64,"%s",se->d_name);*strrchr(nm,'.')=0;
                 fprintf(f,"%s\t%s · repo\n",nm,re->d_name);}}closedir(sd);}}closedir(d);}}}
     /* subcommands not discoverable from filenames */
-    fputs("diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\n"
+    fputs("scp\tsend file (tui pick file/host/dir)\n"
+    "diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\n"
     "jobs\tlist jobs\ndash\tdashboard\nperf\tperformance\n"
     "ui\tweb dashboard\nterm\tterminal (a ui /term)\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"

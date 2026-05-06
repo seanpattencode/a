@@ -356,6 +356,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/ls.c"
 #include "lib/note.c"
 #include "lib/ssh.c"
+#include "lib/scp.c"
 #include "lib/net.c"
 #include "lib/cal.c"
 #include "lib/agent.c"
@@ -614,7 +615,7 @@ static const cmd_t CMDS[] = {
     {"p",cmd_push},{"perf",cmd_perf},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},
     {"ref",cmd_ref},{"remove",cmd_remove},{"repo",cmd_create},{"restore",cmd_restore},{"revert",cmd_revert},{"review",cmd_review},
-    {"rm",cmd_remove},{"scan",cmd_scan},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
+    {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
     {"set",cmd_set},{"settings",cmd_settings},{"setup",cmd_setup},
     {"ssh",cmd_ssh},
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
