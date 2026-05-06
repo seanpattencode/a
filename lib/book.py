@@ -23,21 +23,43 @@ def resolve_book(name=None):
     if (DATA_DIR / name).is_dir(): return DATA_DIR / name
     print(f"Book not found: {name}"); sys.exit(1)
 
+def _codex(pdf, prompt, txt_path):
+    import glob
+    tmp = f"/tmp/_ocr_{os.getpid()}_{Path(pdf).stem}"
+    subprocess.run(["pdftoppm","-png","-r","100",str(pdf),tmp],capture_output=True)
+    pngs = sorted(glob.glob(f"{tmp}*.png"))
+    if not pngs: return ""
+    of = f"{tmp}.out"
+    args = ["codex","exec",prompt,"--skip-git-repo-check","-o",of]
+    for p in pngs: args += ["--image",p]
+    subprocess.run(args,capture_output=True,timeout=300)
+    t = Path(of).read_text().strip() if Path(of).exists() else ""
+    for p in pngs+[of]:
+        try: os.unlink(p)
+        except: pass
+    if not t: return ""
+    out = t if "<transcription>" in t else f"<transcription>\n{t}\n</transcription>"
+    txt_path.write_text(out); return out
+
 def process_page(source_path, output_dir, prompt, nocache=False):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     txt_path = output_dir / f"{Path(source_path).stem}.txt"
-    if not nocache and txt_path.exists(): return txt_path.read_text()
+    if not nocache and txt_path.exists() and txt_path.stat().st_size > 0: return txt_path.read_text()
     for attempt in range(3):
         try:
             r = subprocess.run(["claude", "--dangerously-skip-permissions", "--print"], input=f"{prompt}: {source_path}", text=True, capture_output=True, timeout=120)
-            if r.returncode == 0:
-                txt_path.write_text(r.stdout)
-                return r.stdout
-            raise Exception(r.stderr or f"Exit code {r.returncode}")
+            if r.returncode == 0 and r.stdout.strip() and "API Error" not in r.stdout:
+                txt_path.write_text(r.stdout); return r.stdout
+            if "content filtering" in r.stdout: print(f"  filter→codex: {Path(source_path).name}"); break
+            raise Exception(r.stderr or r.stdout[:200] or f"Exit {r.returncode}")
         except Exception as e:
             if attempt < 2: time.sleep(2 ** attempt)
-            else: print(f"Error processing {source_path} after 3 attempts: {e}"); return ""
+            else: print(f"  claude failed {Path(source_path).name}: {e}")
+    if str(source_path).endswith(".pdf"):
+        out = _codex(source_path, prompt, txt_path)
+        if out: print(f"  ✓ codex: {Path(source_path).name}"); return out
+    return ""
 
 def transcribe_page(source_path, output_dir, nocache=False):
     return process_page(source_path, output_dir, "Read this file and transcribe it. Remove headers, footers, page numbers, and section labels like 'INTRODUCTION xix'. For any graphs/charts/images, include a description in the format 'Graph: [description]'. If the page is blank or has no meaningful content, return empty <transcription></transcription> tags. Return ONLY the main body text wrapped in <transcription></transcription> tags", nocache)
