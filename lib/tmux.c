@@ -121,6 +121,8 @@ static void tm_ensure_conf(void) {
         "set-hook -g window-unlinked 'run-shell -b \"a tm-unsave \\\"#{hook_window_name}\\\"\"'\n"
         "bind-key -n C-q detach\n"
         "bind-key -n C-x kill-session\n"
+        "bind -n WheelUpStatus selectw -p\n"
+        "bind -n WheelDownStatus selectw -n\n"
         "bind-key -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
         "{ select-window } { run-shell 'r=\"#{mouse_status_range}\"; case \"$r\" in "
         "prev) tmux previous-window;; next) tmux next-window;; "
