@@ -5,22 +5,14 @@ static int git_in_repo(const char *p) {
 
 /* adata setup */
 static void ensure_adata(void) {
-    char c[B],out[256];
+    char c[B];
     if(!git_in_repo(SROOT)){
         snprintf(c,B,"gh repo clone seanpattencode/a-git '%s' 2>/dev/null",SROOT);
-        if(!system(c)){puts("✓ Cloned adata/git");goto link;}
-        mkdirp(SROOT);
-        snprintf(c,B,"git -C '%s' init -q&&git -C '%s' checkout -b main 2>/dev/null",SROOT,SROOT);
-        (void)!system(c);puts("✓ Init adata/git (gh auth login for sync)");goto link;
+        if(!system(c))puts("✓ Cloned adata/git");
+        else{mkdirp(SROOT);snprintf(c,B,"git -C '%s' init -q&&git -C '%s' checkout -b main 2>/dev/null",SROOT,SROOT);
+            (void)!system(c);puts("✓ Init adata/git (gh auth login for sync)");}
     }
-    snprintf(c,B,"git -C '%s' remote get-url origin 2>/dev/null",SROOT);
-    pcmd(c,out,256);out[strcspn(out,"\n")]=0;
-    if(!out[0]){char ghuser[64]="";
-        pcmd("gh api user --jq .login 2>/dev/null",ghuser,sizeof(ghuser));ghuser[strcspn(ghuser,"\n")]=0;
-        if(ghuser[0]){snprintf(c,B,"git -C '%s' remote add origin https://github.com/%s/a-git.git 2>/dev/null",SROOT,ghuser);
-            (void)!system(c);printf("✓ Added remote adata/git → %s/a-git\n",ghuser);}
-    }
-link:{char d[P];snprintf(d,P,"%s/my",SROOT);mkdir(d,0755);snprintf(d,P,"%s/my",SDIR);unlink(d);symlink("adata/git/my",d);}
+    char d[P];snprintf(d,P,"%s/my",SROOT);mkdir(d,0755);snprintf(d,P,"%s/my",SDIR);unlink(d);symlink("adata/git/my",d);
 }
 
 static void ensure_git_id(void) {
@@ -40,7 +32,14 @@ static void sync_repo(void) {
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);
     if(fd>=0&&flock(fd,LOCK_EX|LOCK_NB)){close(fd);return;}
     char c[B];
-    snprintf(c,B,"{ D='%s';[ -s \"$D/.git/index\" ]||git -C \"$D\" read-tree HEAD;git -C \"$D\" add -A;git -C \"$D\" commit -qm sync;git -C \"$D\" pull --no-rebase --no-edit -q origin main;git -C \"$D\" push -q origin main;} >/dev/null 2>&1",SROOT);
+    snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};"
+        "case \"$(g rev-parse --abbrev-ref HEAD 2>/dev/null)::$(g remote get-url origin 2>/dev/null)\" in main::https://github.com/[a-zA-Z0-9]*/a-git.git);;"
+        "*)U=$(gh api user -q .login 2>/dev/null);[ -z \"$U\" ]&&exit;"
+        "mv \"$D\" \"$D.bk-$(date +%%s)\" 2>/dev/null;"
+        "gh repo clone \"$U/a-git\" \"$D\" 2>/dev/null||gh repo clone seanpattencode/a-git \"$D\" 2>/dev/null;"
+        "exit;;esac;"
+        "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add -A;g commit -qm sync;"
+        "g pull --no-rebase --no-edit -q origin main;g push -q origin main;} >/dev/null 2>&1",SROOT);
     (void)!system(c);if(fd>=0)close(fd);
 }
 static void sync_bg(void) {
