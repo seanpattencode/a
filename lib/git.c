@@ -32,12 +32,7 @@ static void sync_repo(void) {
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);
     if(fd>=0&&flock(fd,LOCK_EX|LOCK_NB)){close(fd);return;}
     char c[B];
-    snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};"
-        "case \"$(g rev-parse --abbrev-ref HEAD 2>/dev/null)::$(g remote get-url origin 2>/dev/null)\" in main::https://github.com/[a-zA-Z0-9]*/a-git.git);;"
-        "*)U=$(gh api user -q .login 2>/dev/null);[ -z \"$U\" ]&&exit;"
-        "mv \"$D\" \"$D.bk-$(date +%%s)\" 2>/dev/null;"
-        "gh repo clone \"$U/a-git\" \"$D\" 2>/dev/null||gh repo clone seanpattencode/a-git \"$D\" 2>/dev/null;"
-        "exit;;esac;"
+    snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
         "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add -A;g commit -qm sync;"
         "g pull --no-rebase --no-edit -q origin main;g push -q origin main;} >/dev/null 2>&1",SROOT);
     (void)!system(c);if(fd>=0)close(fd);
