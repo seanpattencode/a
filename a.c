@@ -374,6 +374,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/serve.c"
 #include "lib/tok.c"
 #include "lib/debloat.c"
+#include "lib/m.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
@@ -609,7 +610,7 @@ static const cmd_t CMDS[] = {
     {"help",cmd_help_full},{"hi",cmd_hi},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},{"job",cmd_job},{"jobs",cmd_job},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
-    {"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
+    {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
     {"o",cmd_op},{"once",cmd_run_once},{"op",cmd_op},{"operator",cmd_op},
     {"p",cmd_push},{"perf",cmd_perf},{"pr",cmd_pr},{"prompt",cmd_prompt},
@@ -632,7 +633,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|restore|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|restore|m|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);
