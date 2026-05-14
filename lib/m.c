@@ -57,8 +57,10 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     while (fgets(l, sizeof l, fp)) {
         int stop = mm_delta(l, a, &al, sz);
         if (al > pl) { fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
-        if (mm_extract(a, bash, bsz, &eo) > 0) {
-            if (eo < al) { a[eo] = 0; al = eo; ftruncate(fileno(of), start + (off_t)eo); }
+        char *uh = strstr(a, "\n## "); size_t cut = uh ? (size_t)(uh - a) : 0;
+        if (!cut && mm_extract(a, bash, bsz, &eo) > 0) cut = eo;
+        if (cut) {
+            if (cut < al) { a[cut] = 0; al = cut; ftruncate(fileno(of), start + (off_t)cut); }
             kill(cp, SIGTERM); break;
         }
         if (stop) break;
