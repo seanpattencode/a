@@ -51,17 +51,19 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         _exit(127);
     }
     close(pp[1]);
-    FILE *fp = fdopen(pp[0], "r");
-    char l[32768]; size_t al = 0, eo;
+    FILE *fp = fdopen(pp[0], "r"), *of = fopen(sf, "a");
+    off_t start = ftello(of);
+    char l[32768]; size_t al = 0, pl = 0, eo;
     while (fgets(l, sizeof l, fp)) {
         int stop = mm_delta(l, a, &al, sz);
+        if (al > pl) { fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
         if (mm_extract(a, bash, bsz, &eo) > 0) {
-            if (eo < al) { a[eo] = 0; al = eo; }
+            if (eo < al) { a[eo] = 0; al = eo; ftruncate(fileno(of), start + (off_t)eo); }
             kill(cp, SIGTERM); break;
         }
         if (stop) break;
     }
-    fclose(fp); waitpid(cp, NULL, 0);
+    fclose(fp); fclose(of); waitpid(cp, NULL, 0);
     if (!bash[0]) mm_extract(a, bash, bsz, NULL);
     return 0;
 }
@@ -106,7 +108,6 @@ static int cmd_m(int c, char **v) {
             mm_w(sf, "\n## assistant\n", "a");
             static char a[64*1024], bash[8*1024], ob[16*1024];
             if (mm_stream(sf, spf, a, sizeof a, bash, sizeof bash) < 0) break;
-            mm_w(sf, a, "a");
             if (!bash[0]) break;
             mm_bash(pty, bash, ob, sizeof ob);
             char tb[20000]; time_t t = time(NULL);
