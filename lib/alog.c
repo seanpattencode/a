@@ -12,4 +12,14 @@ static void alog(const char *cmd, const char *cwd) {
         tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min,
         DEV, cmd, cwd, sid?" sid:":"", sid?sid:"");
     fclose(f);
+    /* throttled bg prune: skip-worktree+rm activity older than 30d (filename ts). keeps git history. */
+    char mk[P]; snprintf(mk,P,"%s/.last_prune",dir);
+    struct stat st; if(stat(mk,&st)==0 && t-st.st_mtime<86400) return;
+    fclose(fopen(mk,"w"));
+    if(fork()==0){ setsid(); time_t co=t-30*86400; struct tm *ctm=localtime(&co);
+        char c[P*2]; snprintf(c,sizeof(c),
+          "cd '%s'&&ls|awk -vc=%04d%02d%02d 'match($0,/2[0-9]{7}T/){if(substr($0,RSTART,8)<c)print}'"
+          "|xargs -n500 sh -c 'git update-index --skip-worktree \"$@\" 2>/dev/null;rm -f \"$@\"' _ 2>/dev/null",
+          dir,ctm->tm_year+1900,ctm->tm_mon+1,ctm->tm_mday);
+        system(c); _exit(0);}
 }
