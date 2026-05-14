@@ -1,239 +1,167 @@
-/* m — chat clone with streaming cutoff + agentic loop, all in C. */
+/* m — chat with streaming cutoff + agentic loop, pure C. */
 
-static int mm_spawn_claude(const char *sf, const char *sysp, pid_t *out_pid) {
-    int pipefd[2]; if (pipe(pipefd) < 0) return -1;
-    pid_t pid = fork();
-    if (pid < 0) { close(pipefd[0]); close(pipefd[1]); return -1; }
-    if (pid == 0) {
-        int sfd = open(sf, O_RDONLY); if (sfd < 0) _exit(127);
-        dup2(sfd, 0); close(sfd);
-        dup2(pipefd[1], 1); close(pipefd[1]); close(pipefd[0]);
-        int dn = open("/dev/null", O_WRONLY); if (dn >= 0) { dup2(dn, 2); close(dn); }
-        execlp("claude","claude","-p","--output-format","stream-json",
-               "--include-partial-messages","--verbose",
-               "--append-system-prompt-file", sysp, (char*)NULL);
-        _exit(127);
-    }
-    close(pipefd[1]); *out_pid = pid; return pipefd[0];
-}
-
-/* Find an opening ```bash / ```sh / ```shell / ``` fence at start of line.
-   Returns byte offset of fence start, or -1. Sets *body_off to offset after the trailing \n. */
-static long mm_find_open(const char *acc, size_t *body_off) {
-    const char *p = acc; const char *o;
+static long mm_open(const char *a, size_t *bo) {
+    const char *p = a, *o;
     while ((o = strstr(p, "```"))) {
-        if (o == acc || *(o-1) == '\n') {
-            const char *a = o + 3;
-            if (!strncmp(a,"bash\n",5)) { *body_off = (size_t)(a+5 - acc); return o - acc; }
-            if (!strncmp(a,"sh\n",3))   { *body_off = (size_t)(a+3 - acc); return o - acc; }
-            if (!strncmp(a,"shell\n",6)){ *body_off = (size_t)(a+6 - acc); return o - acc; }
-            if (*a == '\n')             { *body_off = (size_t)(a+1 - acc); return o - acc; }
+        if (o == a || o[-1] == '\n') {
+            const char *x = o + 3;
+            if (!strncmp(x,"bash\n",5))  { *bo = (size_t)(x + 5 - a); return o - a; }
+            if (!strncmp(x,"sh\n",3))    { *bo = (size_t)(x + 3 - a); return o - a; }
+            if (!strncmp(x,"shell\n",6)) { *bo = (size_t)(x + 6 - a); return o - a; }
+            if (*x == '\n')              { *bo = (size_t)(x + 1 - a); return o - a; }
         }
         p = o + 3;
     }
     return -1;
 }
 
-/* Find a closing \n```\n or \n``` at end. Returns byte offset of \n in fence, or -1.
-   Sets *end_off to offset just past the fence (where to truncate acc to). */
-static long mm_find_close(const char *acc, size_t from, size_t *end_off) {
-    const char *p = acc + from;
-    const char *c = strstr(p, "\n```\n");
-    if (c) { *end_off = (size_t)(c - acc) + 5; return c - acc; }
-    c = strstr(p, "\n```");
-    if (c && c[4] == 0) { *end_off = (size_t)(c - acc) + 4; return c - acc; }
+static long mm_close(const char *a, size_t f, size_t *eo) {
+    const char *c = strstr(a + f, "\n```\n");
+    if (c) { *eo = (size_t)(c - a) + 5; return c - a; }
+    c = strstr(a + f, "\n```");
+    if (c && !c[4]) { *eo = (size_t)(c - a) + 4; return c - a; }
     return -1;
 }
 
-/* Parse one stream-json delta line, extract text into acc. Returns 1 if message_stop seen. */
-static int mm_extract_delta(const char *line, char *acc, size_t *acc_len, size_t acc_sz) {
-    if (strstr(line, "\"type\":\"message_stop\"")) return 1;
-    const char *t = strstr(line, "\"text_delta\",\"text\":\"");
+static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
+    if (strstr(l, "\"message_stop\"")) return 1;
+    const char *t = strstr(l, "\"text_delta\",\"text\":\"");
     if (!t) return 0;
     t += 21;
-    while (*t && *acc_len + 8 < acc_sz) {
+    while (*t && *al + 1 < sz) {
         if (*t == '\\') {
             t++;
-            switch (*t) {
-                case 'n': acc[(*acc_len)++] = '\n'; break;
-                case 't': acc[(*acc_len)++] = '\t'; break;
-                case 'r': acc[(*acc_len)++] = '\r'; break;
-                case '"': acc[(*acc_len)++] = '"'; break;
-                case '\\': acc[(*acc_len)++] = '\\'; break;
-                case '/': acc[(*acc_len)++] = '/'; break;
-                case 'b': acc[(*acc_len)++] = '\b'; break;
-                case 'f': acc[(*acc_len)++] = '\f'; break;
-                case 'u': {
-                    if (t[1] && t[2] && t[3] && t[4]) {
-                        char hex[5] = {t[1],t[2],t[3],t[4],0};
-                        unsigned cp = (unsigned)strtoul(hex, NULL, 16);
-                        if (cp < 0x80) acc[(*acc_len)++] = (char)cp;
-                        else if (cp < 0x800) {
-                            acc[(*acc_len)++] = (char)(0xC0 | (cp>>6));
-                            acc[(*acc_len)++] = (char)(0x80 | (cp&0x3F));
-                        } else {
-                            acc[(*acc_len)++] = (char)(0xE0 | (cp>>12));
-                            acc[(*acc_len)++] = (char)(0x80 | ((cp>>6)&0x3F));
-                            acc[(*acc_len)++] = (char)(0x80 | (cp&0x3F));
-                        }
-                        t += 4;
-                    }
-                    break;
-                }
-                default: acc[(*acc_len)++] = *t; break;
-            }
+            a[(*al)++] = *t == 'n' ? '\n' : *t == '"' ? '"' : *t == '\\' ? '\\' :
+                         *t == 't' ? '\t' : *t == 'r' ? '\r' : *t;
             if (*t) t++;
         } else if (*t == '"') break;
-        else acc[(*acc_len)++] = *t++;
+        else a[(*al)++] = *t++;
     }
-    acc[*acc_len] = 0;
+    a[*al] = 0;
     return 0;
 }
 
-/* Run one claude invocation with streaming cutoff. Fills acc (response up to+including
-   closing fence if found) and bash (extracted block content, "" if none). */
-static int mm_stream_one(const char *sf, const char *sysp, char *acc, size_t acc_sz,
-                         char *bash, size_t bash_sz) {
-    acc[0] = 0; bash[0] = 0;
-    pid_t cpid;
-    int fd = mm_spawn_claude(sf, sysp, &cpid);
-    if (fd < 0) return -1;
-    FILE *fp = fdopen(fd, "r");
-    if (!fp) { close(fd); return -1; }
-    char line[32768];
-    size_t acc_len = 0;
-    int in_block = 0;
-    size_t body_off = 0;
-    while (fgets(line, sizeof(line), fp)) {
-        int stop = mm_extract_delta(line, acc, &acc_len, acc_sz);
-        if (!in_block) {
-            long o = mm_find_open(acc, &body_off);
-            if (o >= 0) in_block = 1;
-        }
-        if (in_block) {
-            size_t end_off;
-            long c = mm_find_close(acc, body_off, &end_off);
-            if (c >= 0) {
-                if (end_off < acc_len) acc[end_off] = 0;
-                kill(cpid, SIGTERM);
-                break;
+static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
+    a[0] = bash[0] = 0;
+    int pp[2]; if (pipe(pp) < 0) return -1;
+    pid_t cp = fork();
+    if (!cp) {
+        int s = open(sf, O_RDONLY); if (s < 0) _exit(127);
+        dup2(s, 0); close(s); dup2(pp[1], 1); close(pp[0]); close(pp[1]);
+        int d = open("/dev/null", O_WRONLY); if (d >= 0) { dup2(d, 2); close(d); }
+        execlp("claude","claude","-p","--output-format","stream-json",
+               "--include-partial-messages","--verbose",
+               "--append-system-prompt-file", sp, (char*)0);
+        _exit(127);
+    }
+    close(pp[1]);
+    FILE *fp = fdopen(pp[0], "r");
+    char l[32768]; size_t al = 0; int ib = 0; size_t bo = 0;
+    while (fgets(l, sizeof l, fp)) {
+        int stop = mm_delta(l, a, &al, sz);
+        if (!ib && mm_open(a, &bo) >= 0) ib = 1;
+        if (ib) {
+            size_t eo;
+            if (mm_close(a, bo, &eo) >= 0) {
+                if (eo < al) { a[eo] = 0; al = eo; }
+                kill(cp, SIGTERM); break;
             }
         }
         if (stop) break;
     }
-    fclose(fp);
-    int wstat; waitpid(cpid, &wstat, 0);
-    /* extract bash body */
-    size_t body;
-    long o = mm_find_open(acc, &body);
-    if (o >= 0) {
-        size_t end;
-        long c = mm_find_close(acc, body, &end);
+    fclose(fp); waitpid(cp, NULL, 0);
+    size_t b2;
+    if (mm_open(a, &b2) >= 0) {
+        size_t eo;
+        long c = mm_close(a, b2, &eo);
         if (c >= 0) {
-            size_t blen = (size_t)(c - (long)body);
-            if (blen >= bash_sz) blen = bash_sz - 1;
-            memcpy(bash, acc + body, blen);
-            bash[blen] = 0;
+            size_t bl = (size_t)c - b2;
+            if (bl >= bsz) bl = bsz - 1;
+            memcpy(bash, a + b2, bl); bash[bl] = 0;
         }
     }
     return 0;
 }
 
-/* Strip lines starting with ## user / ## assistant / ## tool output (LLM-emitted fakes). */
-static void mm_filter(const char *in, char *out, size_t out_sz) {
+static void mm_filter(const char *in, char *o, size_t sz) {
     const char *p = in; size_t oi = 0;
-    while (*p && oi < out_sz - 1) {
-        const char *eol = strchr(p, '\n');
-        size_t llen = eol ? (size_t)(eol - p) : strlen(p);
-        int skip = (llen >= 7  && !strncmp(p,"## user",7)) ||
-                   (llen >= 12 && !strncmp(p,"## assistant",12)) ||
-                   (llen >= 14 && !strncmp(p,"## tool output",14));
-        if (!skip) {
-            size_t copy = llen; if (oi + copy >= out_sz - 1) copy = out_sz - 1 - oi;
-            memcpy(out + oi, p, copy); oi += copy;
-            if (eol && oi < out_sz - 1) out[oi++] = '\n';
+    while (*p && oi + 1 < sz) {
+        const char *e = strchr(p, '\n');
+        size_t ll = e ? (size_t)(e - p) : strlen(p);
+        if (strncmp(p,"## user",7) && strncmp(p,"## assistant",12) && strncmp(p,"## tool output",14)) {
+            size_t c = ll < sz - 1 - oi ? ll : sz - 1 - oi;
+            memcpy(o + oi, p, c); oi += c;
+            if (e && oi + 1 < sz) o[oi++] = '\n';
         }
-        if (!eol) break;
-        p = eol + 1;
+        if (!e) break;
+        p = e + 1;
     }
-    out[oi] = 0;
+    o[oi] = 0;
 }
 
-/* Send a bash block to the persistent pty, sleep, capture pane, return indented output. */
-static void mm_run_bash(const char *pty, const char *cmd, char *out, size_t out_sz) {
+static void mm_bash(const char *pty, const char *cmd, char *out, size_t sz) {
     pid_t p = fork();
-    if (p == 0) { execlp("tmux","tmux","send-keys","-t",pty,"-l",cmd,(char*)NULL); _exit(127); }
+    if (!p) { execlp("tmux","tmux","send-keys","-t",pty,"-l",cmd,(char*)0); _exit(127); }
     waitpid(p, NULL, 0);
     p = fork();
-    if (p == 0) { execlp("tmux","tmux","send-keys","-t",pty,"Enter",(char*)NULL); _exit(127); }
+    if (!p) { execlp("tmux","tmux","send-keys","-t",pty,"Enter",(char*)0); _exit(127); }
     waitpid(p, NULL, 0);
     sleep(3);
-    char shellcmd[B];
-    snprintf(shellcmd, B, "tmux capture-pane -t '%s' -p -S -50|tail -30|sed 's/^/    /'", pty);
-    pcmd(shellcmd, out, out_sz);
+    char sc[B];
+    snprintf(sc, B, "tmux capture-pane -t '%s' -p -S -50|tail -30|sed 's/^/    /'", pty);
+    pcmd(sc, out, sz);
+}
+
+static void mm_w(const char *p, const char *t, const char *m) {
+    FILE *f = fopen(p, m); if (f) { fputs(t, f); fclose(f); }
 }
 
 static int cmd_m(int c, char **v) {
-    char b[B], sf[P], ss[P], pid_f[P], syspf[P], pty_id[64] = "";
+    char b[B], sf[P], ss[P], pf[P], spf[P], pty[64] = "";
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone)", AROOT);
     system(b);
-    const char *fn = (c > 2) ? v[2] : "m.txt";
+    const char *fn = c > 2 ? v[2] : "m.txt";
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
     snprintf(ss, P, "%s/m_status", TMP);
-    snprintf(pid_f, P, "%s/m_pty_id", TMP);
-    snprintf(syspf, P, "%s/m/sysprompt.txt", AROOT);
-    if (!fexists(syspf)) {
-        FILE *f = fopen(syspf, "w");
-        if (f) {
-            fputs("You are in `a m` chat. To run shell commands, emit a fenced bash block (```bash ... ```). The block runs in a persistent pty (cwd=m repo); its captured output is appended as '## tool output <timestamp>' with each line indented 4 spaces. After emitting a bash block, STOP your response immediately — you will be re-invoked with the real tool output. NEVER emit `## user`, `## assistant`, or `## tool output` headers yourself; those are conversation structure added by the system. NEVER simulate or imagine tool output; wait for the real captured output.\n", f);
-            fclose(f);
-        }
-    }
-    if (!fexists(sf)) {
-        FILE *f = fopen(sf, "w"); FILE *sp = fopen(syspf, "r");
-        if (f) {
-            if (sp) { fputs("## system\n", f); char tb[4096]; size_t n;
-                while ((n = fread(tb, 1, 4096, sp)) > 0) fwrite(tb, 1, n, f);
-                fclose(sp); fputs("\n## user\n", f);
-            } else fputs("## user\n", f);
-            fclose(f);
-        }
-    }
-    { FILE *f = fopen(ss, "w"); if (f) { fputs("ready", f); fclose(f); } }
+    snprintf(pf, P, "%s/m_pty_id", TMP);
+    snprintf(spf, P, "%s/m/sysprompt.txt", AROOT);
+    if (!fexists(spf)) mm_w(spf, "You are in `a m` chat. ```bash blocks run in a persistent pty (cwd=m); output appended as '## tool output <ts>' indented. After a bash block STOP. Don't emit ## headers (system adds them). Don't simulate output.\n", "w");
+    if (!fexists(sf)) { snprintf(b, B, "{ echo '## system';cat '%s';echo '## user';} >'%s'", spf, sf); system(b); }
+    mm_w(ss, "ready", "w");
     if (!getenv("TMUX")) { puts("x needs tmux"); return 1; }
     snprintf(b, B, "tmux split-window -dvb 'e %s'", sf); system(b);
     snprintf(b, B, "tmux split-window -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
-    pcmd(b, pty_id, 64); pty_id[strcspn(pty_id, "\n")] = 0;
-    { FILE *f = fopen(pid_f, "w"); if (f) { fputs(pty_id, f); fclose(f); } }
+    pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
+    mm_w(pf, pty, "w");
     snprintf(b, B, "tmux split-window -dv -l 1 'P(){ printf \"\\r\\033[K%%s\" \"$(cat %1$s)\";};P;while inotifywait -qe modify %1$s 2>/dev/null;do P;done'", ss);
     system(b);
-    /* box loop in C */
     for (;;) {
         char tf[] = "/tmp/m_inXXXXXX";
-        int tfd = mkstemp(tf); if (tfd < 0) continue; close(tfd);
-        pid_t bp = fork();
-        if (bp == 0) { execlp("e","e","--box","message:",tf,(char*)NULL); _exit(127); }
-        waitpid(bp, NULL, 0);
-        size_t mlen; char *msg = readf(tf, &mlen); unlink(tf);
-        if (!msg || mlen == 0) { free(msg); continue; }
-        { FILE *f = fopen(sf, "a"); if (f) { fwrite(msg,1,mlen,f); if (msg[mlen-1]!='\n') fputc('\n',f); fclose(f); } }
-        free(msg);
-        for (int iter = 0; iter < 10; iter++) {
-            { FILE *f = fopen(ss, "w"); if (f) { fputs("sending", f); fclose(f); } }
-            { FILE *f = fopen(sf, "a"); if (f) { fputs("\n## assistant\n", f); fclose(f); } }
-            static char acc[64*1024], filt[64*1024], bash[8*1024], outb[16*1024];
-            if (mm_stream_one(sf, syspf, acc, sizeof(acc), bash, sizeof(bash)) < 0) break;
-            mm_filter(acc, filt, sizeof(filt));
-            { FILE *f = fopen(sf, "a"); if (f) { fputs(filt, f); fclose(f); } }
+        int fd = mkstemp(tf); if (fd < 0) continue; close(fd);
+        pid_t pp = fork();
+        if (!pp) { execlp("e","e","--box","message:",tf,(char*)0); _exit(127); }
+        waitpid(pp, NULL, 0);
+        size_t ml; char *m = readf(tf, &ml); unlink(tf);
+        if (!m || !ml) { free(m); continue; }
+        FILE *f = fopen(sf, "a");
+        if (f) { fwrite(m, 1, ml, f); if (m[ml-1] != '\n') fputc('\n', f); fclose(f); }
+        free(m);
+        for (int i = 0; i < 10; i++) {
+            mm_w(ss, "sending", "w");
+            mm_w(sf, "\n## assistant\n", "a");
+            static char a[64*1024], fl[64*1024], bash[8*1024], ob[16*1024];
+            if (mm_stream(sf, spf, a, sizeof a, bash, sizeof bash) < 0) break;
+            mm_filter(a, fl, sizeof fl);
+            mm_w(sf, fl, "a");
             if (!bash[0]) break;
-            { FILE *f = fopen(ss, "w"); if (f) { fputs("running", f); fclose(f); } }
-            mm_run_bash(pty_id, bash, outb, sizeof(outb));
-            time_t now = time(NULL); struct tm *tm = localtime(&now);
-            char ts[32]; strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", tm);
-            { FILE *f = fopen(sf, "a"); if (f) { fprintf(f, "\n## tool output %s\n%s\n", ts, outb); fclose(f); } }
+            mm_w(ss, "running", "w");
+            mm_bash(pty, bash, ob, sizeof ob);
+            time_t t = time(NULL);
+            char ts[32]; strftime(ts, 32, "%Y-%m-%dT%H:%M:%S", localtime(&t));
+            f = fopen(sf, "a"); if (f) { fprintf(f, "\n## tool output %s\n%s\n", ts, ob); fclose(f); }
         }
-        { FILE *f = fopen(sf, "a"); if (f) { fputs("\n## user\n", f); fclose(f); } }
-        { FILE *f = fopen(ss, "w"); if (f) { fputs("done", f); fclose(f); } }
+        mm_w(sf, "\n## user\n", "a");
+        mm_w(ss, "done", "w");
     }
     return 0;
 }
