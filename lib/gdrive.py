@@ -80,12 +80,40 @@ def cmd_link(a):
     if not rp:return
     r=_rc(['link',rp],capture_output=True,text=True)
     print(r.stdout.strip()if r and r.returncode==0 and r.stdout.strip()else"x No link")
+def cmd_backup(a):
+    import re
+    rcf=os.path.expanduser('~/.config/rclone/rclone.conf')
+    if not os.path.exists(rcf):print("x no rclone.conf");return
+    rem=_configured_remotes();cur=rem[0] if rem else None
+    if not a:
+        print(f"backup target → {cur or '(none)'}\n")
+        for x in rem:
+            r=_rc(['about',f'{x}:','--json'],capture_output=True,text=True,timeout=10)
+            tag=' ←' if x==cur else ''
+            if r and r.returncode==0:
+                d=json.loads(r.stdout);u,t=d.get('used',0)/2**30,d.get('total',0)/2**30
+                print(f"  {x:15s} {u:6.1f}G /{t:5.0f}G{tag}")
+            else:print(f"  {x:15s} (no quota){tag}")
+        return
+    new=_res(a[0])
+    if not new:print(f"x unknown: {a[0]}");return
+    txt=open(rcf).read();secs=re.findall(r'(\[[^\]]+\][^\[]*)',txt,re.S)
+    pre=f'[{new}]';open(rcf,'w').write(''.join([s for s in secs if s.startswith(pre)]+[s for s in secs if not s.startswith(pre)]))
+    print(f"✓ backup → {new}")
+def cmd_migrate(a):
+    if len(a)<2:print("a gdrive migrate <src> <dst> [path] [+rclone flags]  (read-only src)");return
+    s,d=_res(a[0]),_res(a[1])
+    if not(s and d):print("x unknown acct");return
+    p,fl='adata/backup',[]
+    for x in a[2:]:fl.append(x) if x.startswith('-') else (p:=x)
+    print(f"→ {s}:{p} → {d}:{p}")
+    print(_ok(_rc(['copy',f'{s}:{p}',f'{d}:{p}','-P','--transfers=64','--checkers=128','--fast-list','--drive-pacer-min-sleep=10ms']+fl)))
 def _pull_auth():
     rem=_configured_remotes();rem or(print("Login first"),exit(1))
     for f,d in[('hosts.yml','~/.config/gh'),('rclone.conf','~/.config/rclone')]:
         os.makedirs(os.path.expanduser(d),exist_ok=True);sp.run(['rclone','copy',f'{rem[0]}:{RCLONE_BACKUP_PATH}/backup/auth/{f}',os.path.expanduser(d),'-q'])
     open(f"{DATA_DIR}/.auth_shared","w").close();os.path.exists(f"{DATA_DIR}/.auth_local")and os.remove(f"{DATA_DIR}/.auth_local");print("✓ Auth synced")
-_C={'cp':cmd_cp,'mv':cmd_mv,'get':cmd_get,'ls':cmd_ls,'tree':cmd_tree,'find':cmd_find,'size':cmd_size,'rm':cmd_rm,'link':cmd_link}
+_C={'cp':cmd_cp,'mv':cmd_mv,'get':cmd_get,'ls':cmd_ls,'tree':cmd_tree,'find':cmd_find,'size':cmd_size,'rm':cmd_rm,'link':cmd_link,'migrate':cmd_migrate,'backup':cmd_backup}
 def run():
     a=sys.argv[1:]
     if a and a[0]in('gdrive','dummy'):a=a[1:]
@@ -101,5 +129,5 @@ def run():
             r=_rc(['about',f'{x["r"]}:','--json'],capture_output=True,text=True)
             if r and r.returncode==0:d=json.loads(r.stdout);print(f"  {x['n']:20s} {d.get('used',0)/2**30:.1f}G / {d.get('total',0)/2**30:.0f}G  {x['d']}")
             else:print(f"  {x['n']:20s} (error)")
-        print("  cp <local> <acct:dest>    Copy to gdrive\n  mv <local> <acct:dest>    Move to gdrive\n  get <acct:path> <local>   Download\n  ls <acct:path>            List\n  tree <acct:path>          Recursive list\n  find <acct:path> <glob>   Search\n  size <acct:path>          Size\n  rm <acct:path>            Delete\n  link <acct:path>          Share link\n  sync                      Backup all\n  login|logout|init         Account mgmt\n  Paths: acct:path  Fuzzy: 'jared' → 'jaredtwo2two'")
+        print("  cp <local> <acct:dest>    Copy to gdrive\n  mv <local> <acct:dest>    Move to gdrive\n  get <acct:path> <local>   Download\n  ls <acct:path>            List\n  tree <acct:path>          Recursive list\n  find <acct:path> <glob>   Search\n  size <acct:path>          Size\n  rm <acct:path>            Delete\n  link <acct:path>          Share link\n  migrate <src> <dst> [p]   Copy across accts (read-only src)\n  backup [acct]             Show/flip primary backup target\n  sync                      Backup all\n  login|logout|init         Account mgmt\n  Paths: acct:path  Fuzzy: 'jared' → 'jaredtwo2two'")
 run()
