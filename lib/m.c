@@ -122,6 +122,7 @@ static int cmd_m_panel(int c, char **v) {
         {"archive", "a m archive", 0},
         {"view", "a m archive view", 1},
         {"unarchive", "a m archive unarchive", 1},
+        {"reset", "a m reset", 0},
         {NULL, NULL, 0}};
     int np = 0; while (PC[np].l) np++;
     struct termios old, raw; tcgetattr(0, &old); raw = old;
@@ -183,8 +184,19 @@ static int cmd_m_panel(int c, char **v) {
 static int m_archive(int c, char **v) {
     char mp[P], adir[P], ap[P];
     snprintf(adir, P, "%s/m/archive", AROOT);
-    /* rotate: a m archive [file]  (no range = archive whole conversation, leave clean ## user) */
-    if (c == 3 || (c == 4 && !isdigit((unsigned char)v[3][0]) && strcmp(v[3], "view") && strcmp(v[3], "unarchive"))) {
+    static const char *USAGE =
+        "usage:\n"
+        "  a m archive                       rotate m.txt (archive whole conversation)\n"
+        "  a m archive <file.txt>            rotate <file.txt>\n"
+        "  a m archive N-M [file.txt]        archive lines N..M\n"
+        "  a m archive view <ts> [file.txt]  print archived content\n"
+        "  a m archive unarchive <ts> [file] restore archived content at marker (alias: restore)\n";
+    if (c > 3 && (!strcmp(v[3], "--help") || !strcmp(v[3], "-h") || !strcmp(v[3], "help"))) {
+        fputs(USAGE, stdout); return 0;
+    }
+    if (c > 3 && !strcmp(v[3], "restore")) v[3] = (char*)"unarchive";
+    /* rotate: a m archive [file.txt]  (no args, or .txt filename) */
+    if (c == 3 || (c == 4 && strstr(v[3], ".txt"))) {
         const char *fn = (c == 4) ? v[3] : "m.txt";
         snprintf(mp, P, "%s/m/%s", AROOT, fn);
         size_t tl; char *txt = readf(mp, &tl);
@@ -208,8 +220,10 @@ static int m_archive(int c, char **v) {
         printf("rotated → archive/%s.txt\n", ts);
         return 0;
     }
-    if (c < 4) { puts("usage: a m archive | N-M [file] | view <ts> [file] | unarchive <ts> [file]"); return 1; }
+    if (c < 4) { fputs(USAGE, stderr); return 1; }
     int has_ts = !strcmp(v[3], "view") || !strcmp(v[3], "unarchive");
+    int is_range = isdigit((unsigned char)v[3][0]);
+    if (!has_ts && !is_range) { fprintf(stderr, "unknown subcommand: %s\n", v[3]); fputs(USAGE, stderr); return 1; }
     int fn_idx = has_ts ? 5 : 4;
     const char *fn = c > fn_idx ? v[fn_idx] : "m.txt";
     snprintf(mp, P, "%s/m/%s", AROOT, fn);
@@ -233,7 +247,7 @@ static int m_archive(int c, char **v) {
     }
     int N = atoi(v[3]); const char *dash = strchr(v[3], '-');
     int M = dash ? atoi(dash + 1) : N;
-    if (N < 1 || M < N) { puts("invalid range"); return 1; }
+    if (N < 1 || M < N) { fprintf(stderr, "invalid range '%s': want N-M with N>=1 and M>=N\n", v[3]); return 1; }
     mkdirp(adir);
     size_t tl; char *txt = readf(mp, &tl);
     if (!txt) { printf("file not found: %s\n", mp); return 1; }
@@ -256,9 +270,21 @@ static int m_archive(int c, char **v) {
     return 0;
 }
 
+static int m_reset(void) {
+    char ptyf[P]; snprintf(ptyf, P, "%s/m_pty", TMP);
+    char *p = readf(ptyf, NULL);
+    if (!p || !*p) { puts("no pty registered (a m not running here)"); free(p); return 1; }
+    p[strcspn(p, "\n")] = 0;
+    char cmd[B];
+    snprintf(cmd, B, "tmux send-keys -t '%s' C-c; tmux send-keys -t '%s' 'clear' Enter", p, p);
+    int r = system(cmd); free(p); return r;
+}
+
 static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
+    if (c > 2 && !strcmp(v[2], "reset")) return m_reset();
+    if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     char b[B], sf[P], ss[P], spf[P], pty[64] = "";
     if (!getenv("TMUX")) { CWD(w); ajoin(b,B,c,v,0);
         struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
@@ -287,14 +313,16 @@ static int cmd_m(int c, char **v) {
       }
       free(cur); }
     mm_w(ss, "", "w"); m_status("ready ^C=interrupt");
+    setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
-                   "tmux split-window -t $TMUX_PANE -e M_PID=%4$d -dvb 'e %2$s';"
-                   "tmux split-window -t $TMUX_PANE -dvb -l 3 'tail -Fn 50 %3$s';"
-                   "tmux split-window -t $TMUX_PANE -dvb -l 5 'a m panel'",
+                   "tmux split-window -t $TMUX_PANE -e M_PID=%4$d -e M_IN=1 -dvb 'e %2$s';"
+                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -l 3 'tail -Fn 50 %3$s';"
+                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -l 5 'a m panel'",
              AROOT, sf, ss, (int)getpid());
     system(b);
-    snprintf(b, B, "tmux split-window -t $TMUX_PANE -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
+    snprintf(b, B, "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
+    { char pf[P]; snprintf(pf, P, "%s/m_pty", TMP); mm_w(pf, pty, "w"); }
     for (;;) {
         g_halt = 0;
         char tf[] = "/tmp/m_inXXXXXX";
