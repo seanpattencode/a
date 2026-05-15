@@ -1,27 +1,20 @@
 /* m — chat with streaming cutoff + agentic loop, pure C. */
 
 static volatile pid_t g_cp = 0;
+static char g_set[P] = "";
 static void m_sint(int s){(void)s;if(g_cp>0)kill(g_cp,SIGTERM);}
 static void mm_w(const char *p, const char *t, const char *m);
 
 static int mm_extract(const char *a, char *bash, size_t bsz, size_t *eo) {
-    const char *p = a, *o;
-    while ((o = strstr(p, "```"))) {
-        if (o == a || o[-1] == '\n') {
-            const char *nl = strchr(o + 3, '\n');
-            if (nl) {
-                const char *bs = nl + 1, *cl = strstr(bs, "\n```");
-                if (!cl) return -1;
-                size_t bl = (size_t)(cl - bs);
-                if (bl >= bsz) bl = bsz - 1;
-                memcpy(bash, bs, bl); bash[bl] = 0;
-                if (eo) *eo = (size_t)(cl - a) + 4 + (cl[4] == '\n');
-                return 1;
-            }
-        }
-        p = o + 3;
-    }
-    return 0;
+    const char *o = strstr(a, "<cmd>");
+    if (!o) return 0;
+    const char *bs = o + 5, *cl = strstr(bs, "</cmd>");
+    if (!cl) return -1;
+    size_t bl = (size_t)(cl - bs);
+    if (bl >= bsz) bl = bsz - 1;
+    memcpy(bash, bs, bl); bash[bl] = 0;
+    if (eo) *eo = (size_t)(cl - a) + 6;
+    return 1;
 }
 
 static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
@@ -51,7 +44,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         close(s); close(d); close(pp[0]); close(pp[1]);
         execlp("claude","claude","-p","--output-format","stream-json",
                "--include-partial-messages","--verbose","--tools","","--effort","low",
-               "--system-prompt", sp, (char*)0);
+               "--system-prompt", sp, "--settings", g_set, (char*)0);
         _exit(127);
     }
     close(pp[1]); g_cp = cp;
@@ -97,7 +90,16 @@ static int cmd_m(int c, char **v) {
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
     snprintf(ss, P, "%s/m_status", TMP);
     snprintf(spf, P, "%s/m/sysprompt.txt", AROOT);
-    if (!fexists(spf)) mm_w(spf, "`a m` chat: ```bash runs in pty cwd=m. Use no tools (no LSP, no Bash tool, etc), only emit text and ```bash text blocks. STOP after bash. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
+    snprintf(g_set, P, "%s/m_settings.json", TMP);
+    { char hp[P]; snprintf(hp, P, "%s/.claude/settings.json", HOME);
+      char *s = readf(hp, NULL); FILE *f = fopen(g_set, "w");
+      if (f) { fputs("{\"enabledPlugins\":{", f);
+        if (s) { char *ep = strstr(s, "\"enabledPlugins\""), *br = ep?strchr(ep,'{'):0, *en = br?strchr(br,'}'):0, *p = br?br+1:0; int fst = 1;
+          while (p && p < en) { char *q1 = memchr(p,'"',(size_t)(en-p)); if (!q1) break;
+            char *q2 = memchr(q1+1,'"',(size_t)(en-q1-1)); if (!q2) break;
+            fprintf(f, "%s\"%.*s\":false", fst?"":",", (int)(q2-q1-1), q1+1); fst = 0; p = q2+1; } }
+        fputs("}}\n", f); fclose(f); } free(s); }
+    if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
     { char *cur = fexists(sf) ? readf(sf, NULL) : NULL;
       if (!cur || strncmp(cur, "## system\n", 10)) {
           size_t spl; char *sp = readf(spf, &spl); FILE *f = fopen(sf, "w");
