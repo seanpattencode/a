@@ -116,7 +116,149 @@ static void mm_w(const char *p, const char *t, const char *m) {
     FILE *f = fopen(p, m); if (f) { fputs(t, f); fclose(f); }
 }
 
+static int cmd_m_panel(int c, char **v) {
+    (void)c; (void)v;
+    static const struct { const char *l, *cm; int a; } PC[] = {
+        {"archive", "a m archive", 0},
+        {"view", "a m archive view", 1},
+        {"unarchive", "a m archive unarchive", 1},
+        {NULL, NULL, 0}};
+    int np = 0; while (PC[np].l) np++;
+    struct termios old, raw; tcgetattr(0, &old); raw = old;
+    raw.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG);
+    raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0;
+    tcsetattr(0, TCSANOW, &raw);
+    write(1, "\033[?1000h\033[?1006h", 16);
+    int sel = 0; char f[64] = "", last[80] = ""; int fl = 0;
+    for (;;) {
+        int vis[16], nv = 0;
+        for (int i = 0; i < np; i++) if (!fl || strstr(PC[i].l, f)) vis[nv++] = i;
+        if (sel >= nv) sel = nv ? nv - 1 : 0;
+        write(1, "\033[2J\033[H", 7);
+        printf("/ %s_  \033[90m%s\033[0m\033[K\n", f, last);
+        for (int j = 0; j < nv; j++) { int i = vis[j];
+            printf("%s [%s]%s\033[K\n", j == sel ? "\033[7m>" : " ", PC[i].l, PC[i].a ? " <arg>" : "");
+            if (j == sel) printf("\033[0m");
+        }
+        fflush(stdout);
+        char ch; if (read(0, &ch, 1) != 1) break;
+        int pick = 0;
+        if (ch == '\x1b') { int av; usleep(50000); ioctl(0, FIONREAD, &av);
+            if (!av) break;
+            char s[2]; if (read(0, s, 1) != 1) break;
+            if (s[0] == '[') { if (read(0, s+1, 1) != 1) break;
+                if (s[1] == 'A') { if (sel > 0) sel--; }
+                else if (s[1] == 'B') { if (sel < nv - 1) sel++; }
+                else if (s[1] == '<') { int b=0,x=0,y=0; char mc;
+                    while (read(0,&mc,1)==1&&mc!=';') b=b*10+(mc-'0');
+                    while (read(0,&mc,1)==1&&mc!=';') x=x*10+(mc-'0');
+                    while (read(0,&mc,1)==1&&mc!='M'&&mc!='m') y=y*10+(mc-'0');
+                    (void)x; if (mc=='M'&&b==0&&y>=2&&y<2+nv) { sel = y-2; pick = 1; }
+                }}}
+        else if (ch == '\r' || ch == '\n') pick = 1;
+        else if (ch == 0x7f || ch == 8) { if (fl) f[--fl] = 0; sel = 0; }
+        else if (ch == 3 || ch == 4) break;
+        else if (isprint((unsigned char)ch)) { if (fl < 60) { f[fl++] = ch; f[fl] = 0; sel = 0; } }
+        if (pick && nv) { int i = vis[sel];
+            write(1, "\033[?1000l\033[?1006l\033[2J\033[H", 23);
+            tcsetattr(0, TCSANOW, &old);
+            char cmd[B], arg[128] = "";
+            if (PC[i].a) { printf("%s <arg>: ", PC[i].l); fflush(stdout);
+                if (!fgets(arg, 128, stdin)) break;
+                arg[strcspn(arg, "\n")] = 0;
+            }
+            snprintf(cmd, B, "%s%s%s >/dev/null 2>&1", PC[i].cm, arg[0] ? " " : "", arg);
+            int r = system(cmd);
+            snprintf(last, sizeof last, "%s%s%s [%d]", PC[i].l, arg[0] ? " " : "", arg, WIFEXITED(r)?WEXITSTATUS(r):-1);
+            tcsetattr(0, TCSANOW, &raw);
+            write(1, "\033[?1000h\033[?1006h", 16);
+            f[0]=0; fl=0; sel=0;
+        }
+    }
+    write(1, "\033[?1000l\033[?1006l", 16);
+    tcsetattr(0, TCSANOW, &old);
+    return 0;
+}
+
+static int m_archive(int c, char **v) {
+    char mp[P], adir[P], ap[P];
+    snprintf(adir, P, "%s/m/archive", AROOT);
+    /* rotate: a m archive [file]  (no range = archive whole conversation, leave clean ## user) */
+    if (c == 3 || (c == 4 && !isdigit((unsigned char)v[3][0]) && strcmp(v[3], "view") && strcmp(v[3], "unarchive"))) {
+        const char *fn = (c == 4) ? v[3] : "m.txt";
+        snprintf(mp, P, "%s/m/%s", AROOT, fn);
+        size_t tl; char *txt = readf(mp, &tl);
+        if (!txt) { printf("file not found: %s\n", mp); return 1; }
+        char *first = strstr(txt, "\n## user\n");
+        if (!first) { puts("no conversation"); free(txt); return 0; }
+        first++;
+        char *last = first, *p = first;
+        while ((p = strstr(p + 1, "\n## user\n")) != NULL) last = p + 1;
+        if (last == first) { puts("nothing to rotate"); free(txt); return 0; }
+        mkdirp(adir);
+        char ts[32]; time_t t = time(NULL); strftime(ts, sizeof ts, "%Y%m%dT%H%M%S", localtime(&t));
+        snprintf(ap, P, "%s/%s.txt", adir, ts);
+        FILE *af = fopen(ap, "w"); if (!af) { free(txt); return 1; }
+        fwrite(first, 1, (size_t)(last - first), af); fclose(af);
+        char mk[256];
+        snprintf(mk, 256, "[archived %s · rotate · view: a m archive view %s]\n", ts, ts);
+        FILE *f = fopen(mp, "w"); if (!f) { free(txt); return 1; }
+        fwrite(txt, 1, (size_t)(first - txt), f); fputs(mk, f);
+        fwrite(last, 1, (size_t)((txt + tl) - last), f); fclose(f); free(txt);
+        printf("rotated → archive/%s.txt\n", ts);
+        return 0;
+    }
+    if (c < 4) { puts("usage: a m archive | N-M [file] | view <ts> [file] | unarchive <ts> [file]"); return 1; }
+    int has_ts = !strcmp(v[3], "view") || !strcmp(v[3], "unarchive");
+    int fn_idx = has_ts ? 5 : 4;
+    const char *fn = c > fn_idx ? v[fn_idx] : "m.txt";
+    snprintf(mp, P, "%s/m/%s", AROOT, fn);
+    if (has_ts) {
+        if (c < 5) { puts("need <ts>"); return 1; }
+        snprintf(ap, P, "%s/%s.txt", adir, v[4]);
+        if (!strcmp(v[3], "view")) {
+            char *d = readf(ap, NULL); if (!d) { printf("not found: %s\n", ap); return 1; }
+            fputs(d, stdout); free(d); return 0;
+        }
+        char mh[64]; snprintf(mh, 64, "[archived %s ·", v[4]);
+        char *cnt = readf(ap, NULL); if (!cnt) { puts("archive missing"); return 1; }
+        size_t tl; char *txt = readf(mp, &tl); if (!txt) { free(cnt); return 1; }
+        char *pos = strstr(txt, mh);
+        if (!pos) { puts("marker not found"); free(cnt); free(txt); return 1; }
+        char *eol = strchr(pos, '\n'); eol = eol ? eol + 1 : txt + tl;
+        FILE *f = fopen(mp, "w"); if (!f) { free(cnt); free(txt); return 1; }
+        fwrite(txt, 1, (size_t)(pos - txt), f); fputs(cnt, f);
+        fwrite(eol, 1, (size_t)((txt + tl) - eol), f); fclose(f); unlink(ap);
+        free(cnt); free(txt); printf("unarchived %s\n", v[4]); return 0;
+    }
+    int N = atoi(v[3]); const char *dash = strchr(v[3], '-');
+    int M = dash ? atoi(dash + 1) : N;
+    if (N < 1 || M < N) { puts("invalid range"); return 1; }
+    mkdirp(adir);
+    size_t tl; char *txt = readf(mp, &tl);
+    if (!txt) { printf("file not found: %s\n", mp); return 1; }
+    char *s = txt; int ln = 1;
+    while (ln < N && s < txt + tl) { if (*s++ == '\n') ln++; }
+    if (ln < N) { printf("past EOF (%d lines)\n", ln); free(txt); return 1; }
+    char *e = s; int cnt = 0;
+    while (e < txt + tl && cnt < M - N + 1) { if (*e++ == '\n') cnt++; }
+    char ts[32]; time_t t = time(NULL);
+    strftime(ts, sizeof ts, "%Y%m%dT%H%M%S", localtime(&t));
+    snprintf(ap, P, "%s/%s.txt", adir, ts);
+    FILE *af = fopen(ap, "w"); if (!af) { free(txt); return 1; }
+    fwrite(s, 1, (size_t)(e - s), af); fclose(af);
+    char mk[256];
+    snprintf(mk, 256, "[archived %s · L%d-%d · view: a m archive view %s]\n", ts, N, M, ts);
+    FILE *f = fopen(mp, "w"); if (!f) { free(txt); return 1; }
+    fwrite(txt, 1, (size_t)(s - txt), f); fputs(mk, f);
+    fwrite(e, 1, (size_t)((txt + tl) - e), f); fclose(f); free(txt);
+    printf("archived L%d-%d → archive/%s.txt (%ld bytes)\n", N, M, ts, (long)(e - s));
+    return 0;
+}
+
 static int cmd_m(int c, char **v) {
+    if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
+    if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     char b[B], sf[P], ss[P], spf[P], pty[64] = "";
     if (!getenv("TMUX")) { CWD(w); ajoin(b,B,c,v,0);
         struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
@@ -147,7 +289,8 @@ static int cmd_m(int c, char **v) {
     mm_w(ss, "", "w"); m_status("ready ^C=interrupt");
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "tmux split-window -t $TMUX_PANE -e M_PID=%4$d -dvb 'e %2$s';"
-                   "tmux split-window -t $TMUX_PANE -dvb -l 3 'tail -Fn 50 %3$s'",
+                   "tmux split-window -t $TMUX_PANE -dvb -l 3 'tail -Fn 50 %3$s';"
+                   "tmux split-window -t $TMUX_PANE -dvb -l 5 'a m panel'",
              AROOT, sf, ss, (int)getpid());
     system(b);
     snprintf(b, B, "tmux split-window -t $TMUX_PANE -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
