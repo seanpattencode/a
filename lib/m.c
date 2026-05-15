@@ -120,6 +120,7 @@ static int cmd_m_panel(int c, char **v) {
     (void)c; (void)v;
     static const struct { const char *l, *cm; int a; } PC[] = {
         {"archive", "a m archive", 0},
+        {"undo", "a m archive undo", 0},
         {"view", "a m archive view", 1},
         {"unarchive", "a m archive unarchive", 1},
         {"reset", "a m reset", 0},
@@ -195,6 +196,24 @@ static int m_archive(int c, char **v) {
         fputs(USAGE, stdout); return 0;
     }
     if (c > 3 && !strcmp(v[3], "restore")) v[3] = (char*)"unarchive";
+    if (c > 3 && !strcmp(v[3], "undo")) {
+        mkdirp(adir);
+        DIR *d = opendir(adir); if (!d) { puts("no archive dir"); return 1; }
+        struct dirent *e; static char latest[64] = ""; time_t lt = 0;
+        while ((e = readdir(d))) {
+            if (e->d_name[0] == '.' || !strstr(e->d_name, ".txt")) continue;
+            char fp[P]; snprintf(fp, P, "%s/%s", adir, e->d_name);
+            struct stat st;
+            if (stat(fp, &st) == 0 && st.st_mtime > lt) {
+                lt = st.st_mtime; snprintf(latest, 64, "%s", e->d_name);
+                char *dot = strrchr(latest, '.'); if (dot) *dot = 0;
+            }
+        }
+        closedir(d);
+        if (!latest[0]) { puts("no archive to undo"); return 1; }
+        char *nv[6] = {v[0], v[1], v[2], (char*)"unarchive", latest, NULL};
+        return m_archive(5, nv);
+    }
     /* rotate: a m archive [file.txt]  (no args, or .txt filename) */
     if (c == 3 || (c == 4 && strstr(v[3], ".txt"))) {
         const char *fn = (c == 4) ? v[3] : "m.txt";
