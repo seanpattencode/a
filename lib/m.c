@@ -1,9 +1,43 @@
 /* m — chat with streaming cutoff + agentic loop, pure C. */
 
 static volatile pid_t g_cp = 0;
+static pid_t g_cmt = 0;
+static int g_halt = 0;
 static char g_set[P] = "";
 static void m_sint(int s){(void)s;if(g_cp>0)kill(g_cp,SIGTERM);}
 static void mm_w(const char *p, const char *t, const char *m);
+
+static void m_status(const char *msg) {
+    char p[P], l[256];
+    time_t t = time(NULL); struct tm *tm = localtime(&t);
+    snprintf(p, P, "%s/m_status", TMP);
+    snprintf(l, 256, "[%02d:%02d:%02d] %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, msg);
+    mm_w(p, l, "a");
+}
+
+static void m_commit(const char *tag) {
+    if (g_halt) return;
+    if (g_cmt > 0) {
+        int st; pid_t r;
+        while ((r = waitpid(g_cmt, &st, 0)) < 0 && errno == EINTR) {}
+        g_cmt = 0;
+        if (r < 0 || !WIFEXITED(st) || WEXITSTATUS(st)) {
+            char mp[P], m[512];
+            snprintf(m, 512, "\n## error\nauto-commit failed (exit %d). working tree dirty. fix: `git -C adata/m status` then `git -C adata/m commit -m fix`. type to retry.\n", WIFEXITED(st)?WEXITSTATUS(st):-1);
+            snprintf(mp, P, "%s/m/m.txt", AROOT); mm_w(mp, m, "a");
+            m_status("✗ commit failed — see ## error in m.txt");
+            if (g_cp > 0) kill(g_cp, SIGTERM);
+            g_halt = 1; return;
+        }
+    }
+    pid_t p = fork();
+    if (!p) {
+        char c[B];
+        snprintf(c, B, "git -C '%s/m' add -A && (git -C '%s/m' diff --cached --quiet || git -C '%s/m' commit -q -m '%s')", AROOT, AROOT, AROOT, tag);
+        execlp("sh", "sh", "-c", c, NULL); _exit(127);
+    }
+    if (p > 0) { g_cmt = p; char sm[32]; snprintf(sm, 32, "git saving %s", tag); m_status(sm); }
+}
 
 static int mm_extract(const char *a, char *bash, size_t bsz, size_t *eo) {
     const char *o = strstr(a, "<cmd>");
@@ -33,7 +67,7 @@ static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
     return 0;
 }
 
-static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz, const char *ss) {
+static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
     a[0] = bash[0] = 0;
     int pp[2]; if (pipe(pp) < 0) return -1;
     pid_t cp = fork();
@@ -53,7 +87,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     char l[32768]; size_t al = 0, pl = 0, eo;
     while (fgets(l, sizeof l, fp)) {
         int stop = mm_delta(l, a, &al, sz);
-        if (al > pl) { if (!pl) mm_w(ss, "streaming", "w"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
+        if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
         char *uh = strstr(a, "\n## user\n"); size_t cut = uh ? (size_t)(uh - a) : 0;
         if (!cut && mm_extract(a, bash, bsz, &eo) > 0) cut = eo;
         if (cut) {
@@ -110,15 +144,16 @@ static int cmd_m(int c, char **v) {
           free(sp);
       }
       free(cur); }
-    mm_w(ss, "ready ^C=interrupt", "w");
+    mm_w(ss, "", "w"); m_status("ready ^C=interrupt");
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
-                   "tmux split-window -e M_PID=%4$d -dvb 'e %2$s';"
-                   "tmux split-window -dvb -l 1 'while :;do printf \"\\r\\033[K%%s\" \"$(cat %3$s)\";inotifywait -qe modify %3$s 2>/dev/null||exit;done'",
+                   "tmux split-window -t $TMUX_PANE -e M_PID=%4$d -dvb 'e %2$s';"
+                   "tmux split-window -t $TMUX_PANE -dvb -l 3 'tail -Fn 50 %3$s'",
              AROOT, sf, ss, (int)getpid());
     system(b);
-    snprintf(b, B, "tmux split-window -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
+    snprintf(b, B, "tmux split-window -t $TMUX_PANE -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     for (;;) {
+        g_halt = 0;
         char tf[] = "/tmp/m_inXXXXXX";
         int fd = mkstemp(tf); if (fd < 0) continue; close(fd);
         pid_t pp = fork();
@@ -127,24 +162,27 @@ static int cmd_m(int c, char **v) {
         size_t ml; char *m = readf(tf, &ml); unlink(tf);
         if (!m || !ml) { free(m); continue; }
         mm_w(sf, m, "a"); mm_w(sf, "\n", "a"); free(m);
+        m_commit("u");
         for (int i = 0; i < 10; i++) {
-            mm_w(ss, "thinking", "w");
+            m_status("thinking");
             mm_w(sf, "\n## assistant\n", "a");
             static char a[64*1024], bash[8*1024], ob[16*1024], syc[B];
             { char *all = readf(sf, NULL); char *spc = all?strstr(all,"## system\n"):0; char *us = spc?strstr(spc,"\n## user\n"):0;
               if (spc && us) { size_t l = (size_t)(us - (spc + 10)); if (l >= B) l = B-1; memcpy(syc, spc+10, l); syc[l] = 0; }
               else { char *sp = readf(spf, NULL); snprintf(syc, B, "%s", sp?sp:""); free(sp); } free(all); }
-            if (mm_stream(sf, syc, a, sizeof a, bash, sizeof bash, ss) < 0) break;
+            if (mm_stream(sf, syc, a, sizeof a, bash, sizeof bash) < 0) break;
+            m_commit("a"); if (g_halt) break;
             if (!bash[0]) break;
-            mm_w(ss, "running", "w");
+            m_status("running");
             mm_bash(pty, bash, ob, sizeof ob);
             char tb[20000]; time_t t = time(NULL);
             size_t n = strftime(tb, 64, "\n## tool output %FT%T\n", localtime(&t));
             snprintf(tb + n, sizeof tb - n, "%s\n", ob);
             mm_w(sf, tb, "a");
+            m_commit("t"); if (g_halt) break;
         }
         mm_w(sf, "\n## user\n", "a");
-        mm_w(ss, "ready ^C=interrupt", "w");
+        m_status("ready ^C=interrupt");
     }
     return 0;
 }
