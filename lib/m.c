@@ -84,7 +84,10 @@ static void mm_w(const char *p, const char *t, const char *m) {
 
 static int cmd_m(int c, char **v) {
     char b[B], sf[P], ss[P], spf[P], pty[64] = "";
-    if (!getenv("TMUX")) { puts("x needs tmux"); return 1; }
+    if (!getenv("TMUX")) { CWD(w); ajoin(b,B,c,v,0);
+        struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
+        snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
+        tm_new(sn,w,b); tm_go(sn); return 0; }
     signal(SIGINT, m_sint);
     const char *fn = c > 2 ? v[2] : "m.txt";
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
