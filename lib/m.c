@@ -112,9 +112,9 @@ static int cmd_m(int c, char **v) {
       free(cur); }
     mm_w(ss, "ready ^C=interrupt", "w");
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
-                   "tmux split-window -dvb 'e %2$s';"
+                   "tmux split-window -e M_PID=%4$d -dvb 'e %2$s';"
                    "tmux split-window -dvb -l 1 'while :;do printf \"\\r\\033[K%%s\" \"$(cat %3$s)\";inotifywait -qe modify %3$s 2>/dev/null||exit;done'",
-             AROOT, sf, ss);
+             AROOT, sf, ss, (int)getpid());
     system(b);
     snprintf(b, B, "tmux split-window -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
