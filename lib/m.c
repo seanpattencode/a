@@ -70,15 +70,23 @@ static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
 static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
     a[0] = bash[0] = 0;
     int pp[2]; if (pipe(pp) < 0) return -1;
+    char acat[P]; snprintf(acat, P, "%s/local/a_cat.txt", AROOT);
+    int has_acat = fexists(acat);
     pid_t cp = fork();
     if (!cp) {
         int s = open(sf, O_RDONLY); if (s < 0) _exit(127);
         int d = open("/dev/null", O_WRONLY);
         dup2(s, 0); dup2(pp[1], 1); dup2(d, 2);
         close(s); close(d); close(pp[0]); close(pp[1]);
-        execlp("claude","claude","-p","--output-format","stream-json",
-               "--include-partial-messages","--verbose","--tools","","--effort","low",
-               "--system-prompt", sp, "--settings", g_set, (char*)0);
+        if (has_acat)
+            execlp("claude","claude","-p","--output-format","stream-json",
+                   "--include-partial-messages","--verbose","--tools","","--effort","low",
+                   "--system-prompt", sp, "--append-system-prompt-file", acat,
+                   "--settings", g_set, (char*)0);
+        else
+            execlp("claude","claude","-p","--output-format","stream-json",
+                   "--include-partial-messages","--verbose","--tools","","--effort","low",
+                   "--system-prompt", sp, "--settings", g_set, (char*)0);
         _exit(127);
     }
     close(pp[1]); g_cp = cp;
@@ -121,9 +129,7 @@ static int cmd_m_panel(int c, char **v) {
     static const struct { const char *l, *cm; int a; } PC[] = {
         {"archive", "a m archive", 0},
         {"undo", "a m archive undo", 0},
-        {"view", "a m archive view", 1},
-        {"unarchive", "a m archive unarchive", 1},
-        {"reset", "a m reset", 0},
+        {"restart", "a m restart", 0},
         {NULL, NULL, 0}};
     int np = 0; while (PC[np].l) np++;
     struct termios old, raw; tcgetattr(0, &old); raw = old;
@@ -289,6 +295,13 @@ static int m_archive(int c, char **v) {
     return 0;
 }
 
+static int m_restart(void) {
+    char c[B];
+    snprintf(c, B, "(w=$(tmux display-message -p -t \"$TMUX_PANE\" '#W');f=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux new-window -d -t a: -n m-%ld \"env -u M_IN a m $f\";sleep 1;tmux kill-window -t \"$w\")&",
+             TMP, (long)time(NULL));
+    return system(c);
+}
+
 static int m_reset(void) {
     char ptyf[P]; snprintf(ptyf, P, "%s/m_pty", TMP);
     char *p = readf(ptyf, NULL);
@@ -303,6 +316,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "reset")) return m_reset();
+    if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     char b[B], sf[P], ss[P], spf[P], pty[64] = "";
     if (!getenv("TMUX")) { CWD(w); ajoin(b,B,c,v,0);
@@ -341,7 +355,8 @@ static int cmd_m(int c, char **v) {
     system(b);
     snprintf(b, B, "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
-    { char pf[P]; snprintf(pf, P, "%s/m_pty", TMP); mm_w(pf, pty, "w"); }
+    { char pf[P]; snprintf(pf, P, "%s/m_pty", TMP); mm_w(pf, pty, "w");
+      snprintf(pf, P, "%s/m_file", TMP); mm_w(pf, fn, "w"); }
     for (;;) {
         g_halt = 0;
         char tf[] = "/tmp/m_inXXXXXX";
