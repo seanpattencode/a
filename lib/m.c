@@ -170,7 +170,8 @@ static int cmd_m_panel(int c, char **v) {
     static const char *EFFS_X[] = {"low","medium","high","xhigh",NULL};
     static const char *TIERS[] = {"default","fast","flex",NULL};
     static const struct { const char *l, *cm; } OPS[] = {
-        {"main","a m main"},{"archive turn","a m archive turn"},{"archive","a m archive"},
+        {"main agent","a m main"},{"new agent","a m new"},
+        {"archive turn","a m archive turn"},{"archive","a m archive"},
         {"undo","a m archive undo"},{"restart","a m restart"},{NULL,NULL}};
     struct termios old, raw; tcgetattr(0, &old); raw = old;
     raw.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG);
@@ -237,7 +238,7 @@ static int cmd_m_panel(int c, char **v) {
                 char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn99999 %s/m/$F\";tmux clear-history -t :.0",TMP,AROOT);
+                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn99999 %s/m/$F\";tmux clear-history -t :.0",TMP,AROOT);
                     (void)!system(rc);} }
             break;
         }
@@ -392,8 +393,9 @@ static int m_archive(int c, char **v) {
 }
 
 static int m_restart(void) {
+    if (!getenv("M_IN")) { puts("a m restart: not in an a m session"); return 1; }
     char c[B];
-    snprintf(c, B, "(w=$(tmux display-message -p -t \"$TMUX_PANE\" '#W');f=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux new-window -d -t a: -n m-%ld \"env -u M_IN a m $f\";sleep 1;tmux kill-window -t \"$w\")&",
+    snprintf(c, B, "(w=$(tmux display-message -p -t \"$TMUX_PANE\" '#W');f=$(cat %s/m_file 2>/dev/null||echo m.txt);n=m-%ld;tmux new-window -d -t a: -n \"$n\" \"env -u M_IN a m $f\";sleep 1;tmux select-window -t \"a:$n\";tmux kill-window -t \"$w\")&",
              TMP, (long)time(NULL));
     return system(c);
 }
@@ -405,6 +407,13 @@ static int m_main(void) {
     free(fp);
     if (already) { puts("already in main"); return 0; }
     mm_w(ff,"m.txt","w");
+    return m_restart();
+}
+
+static int m_new(void) {
+    time_t t=time(NULL); struct tm *tm=localtime(&t);
+    char fn[64]; strftime(fn,64,"agent-%Y%m%dT%H%M%S.txt",tm);
+    char ff[P]; snprintf(ff,P,"%s/m_file",TMP); mm_w(ff,fn,"w");
     return m_restart();
 }
 
@@ -460,6 +469,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "reset")) return m_reset();
     if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
     if (c > 2 && !strcmp(v[2], "main")) return m_main();
+    if (c > 2 && !strcmp(v[2], "new")) return m_new();
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     char b[B], sf[P], ss[P], spf[P], pty[64] = "";
     if (!getenv("TMUX")) { CWD(w); ajoin(b,B,c,v,0);
