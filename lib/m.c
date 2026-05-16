@@ -247,6 +247,11 @@ static int cmd_m_panel(int c, char **v) {
     return 0;
 }
 
+static void m_arch_commit(const char *kind, const char *ts) {
+    char c[B]; snprintf(c,B,"git -C '%s/m' add -A 2>/dev/null && (git -C '%s/m' diff --cached --quiet 2>/dev/null || git -C '%s/m' commit -q -m 'archive %s %s' 2>/dev/null)",AROOT,AROOT,AROOT,kind,ts);
+    (void)!system(c);
+}
+
 static int m_archive(int c, char **v) {
     char mp[P], adir[P], ap[P];
     snprintf(adir, P, "%s/m/archive", AROOT);
@@ -285,6 +290,7 @@ static int m_archive(int c, char **v) {
         fwrite(txt, 1, (size_t)(prev_um - txt), f); fputs(mk, f);
         fwrite(last_um, 1, (size_t)((txt + tl) - last_um), f); fclose(f); free(txt);
         printf("archived 1 turn → archive/%s.txt\n", ts);
+        m_arch_commit("turn", ts);
         return 0;
     }
     if (c > 3 && !strcmp(v[3], "undo")) {
@@ -331,6 +337,7 @@ static int m_archive(int c, char **v) {
         fwrite(txt, 1, (size_t)(first - txt), f); fputs(mk, f);
         fwrite(last, 1, (size_t)((txt + tl) - last), f); fclose(f); free(txt);
         printf("rotated → archive/%s.txt\n", ts);
+        m_arch_commit("rotate", ts);
         return 0;
     }
     if (c < 4) { fputs(USAGE, stderr); return 1; }
@@ -356,7 +363,7 @@ static int m_archive(int c, char **v) {
         FILE *f = fopen(mp, "w"); if (!f) { free(cnt); free(txt); return 1; }
         fwrite(txt, 1, (size_t)(pos - txt), f); fputs(cnt, f);
         fwrite(eol, 1, (size_t)((txt + tl) - eol), f); fclose(f); unlink(ap);
-        free(cnt); free(txt); printf("unarchived %s\n", v[4]); return 0;
+        free(cnt); free(txt); printf("unarchived %s\n", v[4]); m_arch_commit("unarchive", v[4]); return 0;
     }
     int N = atoi(v[3]); const char *dash = strchr(v[3], '-');
     int M = dash ? atoi(dash + 1) : N;
@@ -380,6 +387,7 @@ static int m_archive(int c, char **v) {
     fwrite(txt, 1, (size_t)(s - txt), f); fputs(mk, f);
     fwrite(e, 1, (size_t)((txt + tl) - e), f); fclose(f); free(txt);
     printf("archived L%d-%d → archive/%s.txt (%ld bytes)\n", N, M, ts, (long)(e - s));
+    m_arch_commit("range", ts);
     return 0;
 }
 
