@@ -94,14 +94,16 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     const char *ef = cfget("m_effort"); if (!*ef) ef = is_codex ? "xhigh" : "low";
     const char *tier = cfget("m_tier");
     int has_tier = is_codex && *tier && strcmp(tier,"default");
+    char errp[P]; snprintf(errp,P,"%s/m_err.log",TMP);
     pid_t cp = fork();
     if (!cp) {
         int s = open(sf, O_RDONLY); if (s < 0) _exit(127);
-        int d = open("/dev/null", O_WRONLY);
+        int d = open(errp, O_WRONLY|O_CREAT|O_TRUNC, 0644);
         dup2(s, 0); dup2(pp[1], 1); dup2(d, 2);
         close(s); close(d); close(pp[0]); close(pp[1]);
-        if (is_gemini)
-            execlp("gemini","gemini","--yolo","--output-format","stream-json","-m",md,(char*)0);
+        if (is_gemini) { char g[B];
+            snprintf(g,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|gemini -p '' --skip-trust --approval-mode plan -o stream-json -m '%s'",md);
+            execlp("sh","sh","-c",g,(char*)0); }
         else if (is_codex) {
             char ecfg[64],tcfg[64]; snprintf(ecfg,64,"model_reasoning_effort=\"%s\"",ef);
             if (has_tier) {snprintf(tcfg,64,"service_tier=\"%s\"",tier);
@@ -138,6 +140,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         if (stop) break;
     }
     fclose(fp); fclose(of); waitpid(cp, NULL, 0); g_cp = 0;
+    if (!pl) { char *e=readf(errp,NULL); if(e&&*e){char m[2048]; snprintf(m,2048,"\n## error (%s)\n%s\n",ag,e); mm_w(sf,m,"a");} free(e); }
     if (!bash[0]) mm_extract(a, bash, bsz, NULL);
     return 0;
 }
