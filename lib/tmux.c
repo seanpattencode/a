@@ -83,6 +83,7 @@ static void tm_ensure_conf(void) {
     if (!f) return;
     const char *cc = clip_cmd();
     fputs("# aio-managed-config\n"
+        "set -g history-limit 1000000\n"
         "set -ga update-environment \"WAYLAND_DISPLAY\"\n"
         "set -ga update-environment \"SWAYSOCK\"\n"
         "set -g mouse on\n"
