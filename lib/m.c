@@ -368,6 +368,42 @@ static int m_reset(void) {
     int r = system(cmd); free(p); return r;
 }
 
+static void m_render(const char *sf, const char *spf) {
+    /* materialized view: rebuild combo from latest a_cat + i.txt, append a-loaded block if hash changed */
+    char combo[P]; snprintf(combo,P,"%s/m_combo.txt",TMP);
+    { char acat[P]; snprintf(acat,P,"%s/local/a_cat.txt",AROOT);
+      char ipath[P]; snprintf(ipath,P,"%s/m/i.txt",AROOT);
+      FILE *co=fopen(combo,"w");
+      if(co){char b2[8192];size_t n;FILE*in;
+        if((in=fopen(acat,"r"))){while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
+        if((in=fopen(ipath,"r"))){fputs("\n==> i.txt (meta-agent identity) <==\n",co);
+          while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
+        fclose(co);} }
+    load_cfg();
+    size_t sl=0,al=0,gl=0; char *sc=readf(spf,&sl);
+    char *ac=fexists(combo)?readf(combo,&al):NULL;
+    char *gc=readf(g_set,&gl);
+    const char *md=cfget("m_model"); if(!*md)md="opus";
+    const char *ef=cfget("m_effort"); if(!*ef)ef="low";
+    unsigned long h=5381;
+    #define H(s,n) if(s) for(size_t i=0;i<(n);i++) h=((h<<5)+h)+(unsigned char)(s)[i]
+    H(sc,sl); H(ac,al); H(gc,gl); H(md,strlen(md)); H(ef,strlen(ef));
+    #undef H
+    char mk[48]; snprintf(mk,48,"## a-loaded sha=%08lx",h);
+    char *cur=readf(sf,NULL);
+    if (!cur || !strstr(cur,mk)) {
+        FILE *f=fopen(sf,"a");
+        if (f) { time_t t=time(NULL); char ts[32];
+            strftime(ts,32,"%FT%T",localtime(&t));
+            fprintf(f,"\n%s %s\nflags: --model %s --effort %s --tools \"\"\n",mk,ts,md,ef);
+            fprintf(f,"--system-prompt:\n%s\n",sc?sc:"");
+            if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",combo,al,ac);
+            fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:"");
+            fclose(f); }
+    }
+    free(cur); free(sc); free(ac); free(gc);
+}
+
 static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
@@ -401,42 +437,7 @@ static int cmd_m(int c, char **v) {
           free(sp);
       }
       free(cur); }
-    { /* build combo: a_cat.txt + i.txt — always-loaded meta-agent identity for the session */
-      char combo[P]; snprintf(combo,P,"%s/m_combo.txt",TMP);
-      char acat[P]; snprintf(acat,P,"%s/local/a_cat.txt",AROOT);
-      char ipath[P]; snprintf(ipath,P,"%s/m/i.txt",AROOT);
-      FILE *co=fopen(combo,"w");
-      if(co){char b2[8192];size_t n;FILE*in;
-        if((in=fopen(acat,"r"))){while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
-        if((in=fopen(ipath,"r"))){fputs("\n==> i.txt (meta-agent identity) <==\n",co);
-          while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
-        fclose(co);}
-    }
-    { /* a-loaded: write the full claude payload into m.txt so it's visible (hash-gated to avoid duplicates) */
-      load_cfg();
-      size_t sl=0,al=0,gl=0; char *sc=readf(spf,&sl);
-      char combo[P]; snprintf(combo,P,"%s/m_combo.txt",TMP);
-      char *ac=fexists(combo)?readf(combo,&al):NULL;
-      char *gc=readf(g_set,&gl);
-      const char *md=cfget("m_model"); if(!*md)md="opus";
-      const char *ef=cfget("m_effort"); if(!*ef)ef="low";
-      unsigned long h=5381;
-      #define H(s,n) if(s) for(size_t i=0;i<(n);i++) h=((h<<5)+h)+(unsigned char)(s)[i]
-      H(sc,sl); H(ac,al); H(gc,gl); H(md,strlen(md)); H(ef,strlen(ef));
-      #undef H
-      char mk[48]; snprintf(mk,48,"## a-loaded sha=%08lx",h);
-      char *cur=readf(sf,NULL);
-      if (!cur || !strstr(cur,mk)) {
-          FILE *f=fopen(sf,"a");
-          if (f) { time_t t=time(NULL); char ts[32];
-              strftime(ts,32,"%FT%T",localtime(&t));
-              fprintf(f,"\n%s %s\nflags: --model %s --effort %s --tools \"\"\n",mk,ts,md,ef);
-              fprintf(f,"--system-prompt:\n%s\n",sc?sc:"");
-              if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",combo,al,ac);
-              fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:"");
-              fclose(f); }
-      }
-      free(cur); free(sc); free(ac); free(gc); }
+    m_render(sf, spf);
     mm_w(ss, "", "w"); m_status("ready ^C=interrupt");
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
@@ -451,6 +452,7 @@ static int cmd_m(int c, char **v) {
       snprintf(pf, P, "%s/m_file", TMP); mm_w(pf, fn, "w"); }
     for (;;) {
         g_halt = 0;
+        m_render(sf, spf);  /* re-render context if source files changed since last turn */
         char tf[] = "/tmp/m_inXXXXXX";
         int fd = mkstemp(tf); if (fd < 0) continue; close(fd);
         pid_t pp = fork();
