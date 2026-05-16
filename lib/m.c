@@ -350,7 +350,8 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "tmux split-window -t $TMUX_PANE -e M_PID=%4$d -e M_IN=1 -dvb 'e %2$s';"
                    "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -l 3 'tail -Fn 50 %3$s';"
-                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -l 5 'a m panel'",
+                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -l 5 'a m panel';"
+                   "(sleep .5;:>>%2$s)&",
              AROOT, sf, ss, (int)getpid());
     system(b);
     snprintf(b, B, "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
