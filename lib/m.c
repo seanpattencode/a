@@ -191,9 +191,9 @@ static int cmd_m_panel(int c, char **v) {
         tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
         write(1, "\033[2J\033[H", 7); nb = 0;
         printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
-        if (gg) printf("gemini --yolo --output-format stream-json -m %s\033[K\n",cm);
-        else if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
-        else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n",cm,cf);
+        if (gg) printf("gemini -m %s\033[K\n",cm);
+        else if (xx) printf("codex -m %s effort=%s%s%s\033[K\n",cm,cf,strcmp(ct,"default")?" tier=":"",strcmp(ct,"default")?ct:"");
+        else printf("claude --model %s --effort %s\033[K\n",cm,cf);
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
             for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
                 bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
