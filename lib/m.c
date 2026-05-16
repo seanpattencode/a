@@ -51,11 +51,7 @@ static int mm_extract(const char *a, char *bash, size_t bsz, size_t *eo) {
     return 1;
 }
 
-static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
-    if (strstr(l, "\"message_stop\"")) return 1;
-    const char *t = strstr(l, "\"text_delta\",\"text\":\"");
-    if (!t) return 0;
-    t += 21;
+static int mm_delta_raw(const char *t, char *a, size_t *al, size_t sz) {
     while (*t && *t != '"' && *al + 1 < sz) {
         if (*t == '\\' && t[1]) {
             char c = t[1];
@@ -63,8 +59,20 @@ static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
             t += 2;
         } else a[(*al)++] = *t++;
     }
-    a[*al] = 0;
-    return 0;
+    a[*al] = 0; return 0;
+}
+static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
+    if (strstr(l, "\"message_stop\"")) return 1;
+    const char *t = strstr(l, "\"text_delta\",\"text\":\"");
+    if (!t) return 0;
+    return mm_delta_raw(t+21, a, al, sz);
+}
+static int mm_delta_codex(const char *l, char *a, size_t *al, size_t sz) {
+    if (strstr(l, "\"turn.completed\"")) return 1;
+    const char *t = strstr(l, "\"agent_message\"");
+    if (!t) return 0;
+    t = strstr(t, "\"text\":\""); if (!t) return 0;
+    return mm_delta_raw(t+8, a, al, sz);
 }
 
 static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
@@ -73,15 +81,26 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     char acat[P]; snprintf(acat, P, "%s/m_combo.txt", TMP);
     int has_acat = fexists(acat);
     load_cfg();
-    const char *md = cfget("m_model"); if (!*md) md = "opus";
-    const char *ef = cfget("m_effort"); if (!*ef) ef = "low";
+    const char *ag = cfget("m_agent"); if (!*ag) ag = "claude";
+    int is_codex = !strcmp(ag, "codex");
+    const char *md = cfget("m_model"); if (!*md) md = is_codex ? "gpt-5.5" : "opus";
+    const char *ef = cfget("m_effort"); if (!*ef) ef = is_codex ? "xhigh" : "low";
+    const char *tier = cfget("m_tier");
+    int has_tier = is_codex && *tier && strcmp(tier,"default");
     pid_t cp = fork();
     if (!cp) {
         int s = open(sf, O_RDONLY); if (s < 0) _exit(127);
         int d = open("/dev/null", O_WRONLY);
         dup2(s, 0); dup2(pp[1], 1); dup2(d, 2);
         close(s); close(d); close(pp[0]); close(pp[1]);
-        if (has_acat)
+        if (is_codex) {
+            char ecfg[64],tcfg[64]; snprintf(ecfg,64,"model_reasoning_effort=\"%s\"",ef);
+            if (has_tier) {snprintf(tcfg,64,"service_tier=\"%s\"",tier);
+                execlp("codex","codex","exec","--json","--skip-git-repo-check",
+                       "--dangerously-bypass-approvals-and-sandbox","-m",md,"-c",ecfg,"-c",tcfg,(char*)0);}
+            else execlp("codex","codex","exec","--json","--skip-git-repo-check",
+                        "--dangerously-bypass-approvals-and-sandbox","-m",md,"-c",ecfg,(char*)0);
+        } else if (has_acat)
             execlp("claude","claude","-p","--output-format","stream-json",
                    "--include-partial-messages","--verbose","--tools","",
                    "--model",md,"--effort",ef,
@@ -99,7 +118,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     off_t start = ftello(of);
     char l[32768]; size_t al = 0, pl = 0, eo;
     while (fgets(l, sizeof l, fp)) {
-        int stop = mm_delta(l, a, &al, sz);
+        int stop = is_codex ? mm_delta_codex(l, a, &al, sz) : mm_delta(l, a, &al, sz);
         if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
         char *uh = strstr(a, "\n## user\n"); size_t cut = uh ? (size_t)(uh - a) : 0;
         if (!cut && mm_extract(a, bash, bsz, &eo) > 0) cut = eo;
@@ -131,8 +150,12 @@ static void mm_w(const char *p, const char *t, const char *m) {
 
 static int cmd_m_panel(int c, char **v) {
     (void)c; (void)v;
-    static const char *MODS[] = {"opus","sonnet","haiku",NULL};
-    static const char *EFFS[] = {"low","medium","high","max",NULL};
+    static const char *AGTS[] = {"claude","codex",NULL};
+    static const char *MODS_C[] = {"opus","sonnet","haiku",NULL};
+    static const char *MODS_X[] = {"gpt-5","gpt-5.5",NULL};
+    static const char *EFFS_C[] = {"low","medium","high","max",NULL};
+    static const char *EFFS_X[] = {"low","medium","high","xhigh",NULL};
+    static const char *TIERS[] = {"default","fast","flex",NULL};
     static const struct { const char *l, *cm; } OPS[] = {
         {"archive","a m archive"},{"undo","a m archive undo"},{"restart","a m restart"},{NULL,NULL}};
     struct termios old, raw; tcgetattr(0, &old); raw = old;
@@ -141,21 +164,29 @@ static int cmd_m_panel(int c, char **v) {
     tcsetattr(0, TCSANOW, &raw);
     write(1, "\033[?1000h\033[?1006h", 16);
     char last[80] = "";
-    int bx[32],bw[32],br[32],bi[32]; char bk[32]; int nb;
+    int bx[64],bw[64],br[64],bi[64]; char bk[64]; int nb;
     for (;;) {
         load_cfg();
-        const char *cm = cfget("m_model"); if (!*cm) cm = "opus";
-        const char *cf = cfget("m_effort"); if (!*cf) cf = "low";
+        const char *cg = cfget("m_agent"); if (!*cg) cg = "claude";
+        int xx = !strcmp(cg, "codex");
+        const char **MODS = xx ? MODS_X : MODS_C;
+        const char **EFFS = xx ? EFFS_X : EFFS_C;
+        const char *cm = cfget("m_model"); if (!*cm) cm = xx ? "gpt-5.5" : "opus";
+        const char *cf = cfget("m_effort"); if (!*cf) cf = xx ? "xhigh" : "low";
+        const char *ct = cfget("m_tier"); if (!*ct) ct = "default";
+        int opsr = xx ? 5 : 4;
         write(1, "\033[2J\033[H", 7); nb = 0;
-        printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n", cm, cf);
+        if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
+        else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n",cm,cf);
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
             for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
                 bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
                 printf("%s[%s]%s ",s?"\033[7m":"",arr[i],s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
-        VROW("model",MODS,1,'m',cm); VROW("effort",EFFS,2,'e',cf);
+        VROW("agent",AGTS,1,'a',cg); VROW("model",MODS,2,'m',cm); VROW("effort",EFFS,3,'e',cf);
+        if (xx) VROW("tier",TIERS,4,'t',ct);
         #undef VROW
         {int cx=0;for(int i=0;OPS[i].l;i++){int w=(int)strlen(OPS[i].l)+2;
-            bx[nb]=cx;bw[nb]=w;br[nb]=3;bk[nb]='o';bi[nb]=i;nb++;
+            bx[nb]=cx;bw[nb]=w;br[nb]=opsr;bk[nb]='o';bi[nb]=i;nb++;
             printf("[%s] ",OPS[i].l);cx+=w+1;}printf("\033[K\n");}
         printf("\033[90m%s\033[0m\033[K",last); fflush(stdout);
         char ch; if (read(0, &ch, 1) != 1) break;
@@ -170,8 +201,13 @@ static int cmd_m_panel(int c, char **v) {
         if (mc!='M' || btn!=0) continue;
         int gx = mx-1, gy = my-1;
         for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) {
-            if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,80,"model=%s",MODS[bi[i]]); }
+            if (bk[i]=='a') { cfset("m_agent",AGTS[bi[i]]);
+                int cx2=!strcmp(AGTS[bi[i]],"codex");
+                cfset("m_model",cx2?"gpt-5.5":"opus"); cfset("m_effort",cx2?"xhigh":"low");
+                snprintf(last,80,"agent=%s",AGTS[bi[i]]); }
+            else if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,80,"model=%s",MODS[bi[i]]); }
             else if (bk[i]=='e') { cfset("m_effort",EFFS[bi[i]]); snprintf(last,80,"effort=%s",EFFS[bi[i]]); }
+            else if (bk[i]=='t') { cfset("m_tier",TIERS[bi[i]]); snprintf(last,80,"tier=%s",TIERS[bi[i]]); }
             else { char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
@@ -386,7 +422,7 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
                    "$S 'tail -Fn99999 %2$s';$S -l 3 'tail -Fn 50 %3$s';"
-                   "$S -l 5 'a m panel'",
+                   "$S -l 7 'a m panel'",
              AROOT, sf, ss);
     system(b);
     snprintf(b, B, "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
