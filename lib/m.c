@@ -170,7 +170,8 @@ static int cmd_m_panel(int c, char **v) {
     static const char *EFFS_X[] = {"low","medium","high","xhigh",NULL};
     static const char *TIERS[] = {"default","fast","flex",NULL};
     static const struct { const char *l, *cm; } OPS[] = {
-        {"archive","a m archive"},{"undo","a m archive undo"},{"restart","a m restart"},{NULL,NULL}};
+        {"main","a m main"},{"archive turn","a m archive turn"},{"archive","a m archive"},
+        {"undo","a m archive undo"},{"restart","a m restart"},{NULL,NULL}};
     struct termios old, raw; tcgetattr(0, &old); raw = old;
     raw.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG);
     raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0;
@@ -228,7 +229,12 @@ static int cmd_m_panel(int c, char **v) {
             else if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,80,"model=%s",MODS[bi[i]]); }
             else if (bk[i]=='e') { cfset("m_effort",EFFS[bi[i]]); snprintf(last,80,"effort=%s",EFFS[bi[i]]); }
             else if (bk[i]=='t') { cfset("m_tier",TIERS[bi[i]]); snprintf(last,80,"tier=%s",TIERS[bi[i]]); }
-            else { char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
+            else { static time_t aw=0; time_t now=time(NULL);
+                if (!strcmp(OPS[bi[i]].l,"archive") && now-aw>=10) {
+                    snprintf(last,80,"\033[33m⚠ main is for curation, not bulk-archive — click again within 10s, or use [archive turn]\033[0m");
+                    aw=now; break; }
+                aw=0;
+                char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
                 if(!WEXITSTATUS(r)){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn99999 %s/m/$F\";tmux clear-history -t :.0",TMP,AROOT);
@@ -255,6 +261,32 @@ static int m_archive(int c, char **v) {
         fputs(USAGE, stdout); return 0;
     }
     if (c > 3 && !strcmp(v[3], "restore")) v[3] = (char*)"unarchive";
+    if (c > 3 && !strcmp(v[3], "turn")) {
+        const char *fn = c > 4 ? v[4] : "m.txt";
+        snprintf(mp, P, "%s/m/%s", AROOT, fn);
+        size_t tl; char *txt = readf(mp, &tl);
+        if (!txt) { printf("not found: %s\n", mp); return 1; }
+        char *last_um = NULL, *prev_um = NULL, *p = txt;
+        char *aend = strstr(txt, "## a-loaded-end\n");
+        const char *start = aend ? aend : txt;
+        while ((p = strstr(p+1, "\n## user\n")) && p < txt + tl) {
+            if (p+1 < start) continue;
+            prev_um = last_um; last_um = p + 1;
+        }
+        if (!prev_um || !last_um || prev_um == last_um) { puts("no completed turn to archive"); free(txt); return 0; }
+        mkdirp(adir);
+        char ts[32]; time_t t = time(NULL); strftime(ts, sizeof ts, "%Y%m%dT%H%M%S", localtime(&t));
+        snprintf(ap, P, "%s/%s.txt", adir, ts);
+        FILE *af = fopen(ap, "w"); if (!af) { free(txt); return 1; }
+        fwrite(prev_um, 1, (size_t)(last_um - prev_um), af); fclose(af);
+        char mk[256];
+        snprintf(mk, 256, "[archived %s · turn · view: a m archive view %s]\n", ts, ts);
+        FILE *f = fopen(mp, "w"); if (!f) { free(txt); return 1; }
+        fwrite(txt, 1, (size_t)(prev_um - txt), f); fputs(mk, f);
+        fwrite(last_um, 1, (size_t)((txt + tl) - last_um), f); fclose(f); free(txt);
+        printf("archived 1 turn → archive/%s.txt\n", ts);
+        return 0;
+    }
     if (c > 3 && !strcmp(v[3], "undo")) {
         mkdirp(adir);
         DIR *d = opendir(adir); if (!d) { puts("no archive dir"); return 1; }
@@ -358,6 +390,16 @@ static int m_restart(void) {
     return system(c);
 }
 
+static int m_main(void) {
+    char ff[P]; snprintf(ff,P,"%s/m_file",TMP);
+    char *fp=readf(ff,NULL);
+    int already=!fp||!*fp||!strncmp(fp,"m.txt",5);
+    free(fp);
+    if (already) { puts("already in main"); return 0; }
+    mm_w(ff,"m.txt","w");
+    return m_restart();
+}
+
 static int m_reset(void) {
     char ptyf[P]; snprintf(ptyf, P, "%s/m_pty", TMP);
     char *p = readf(ptyf, NULL);
@@ -409,6 +451,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "reset")) return m_reset();
     if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
+    if (c > 2 && !strcmp(v[2], "main")) return m_main();
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     char b[B], sf[P], ss[P], spf[P], pty[64] = "";
     if (!getenv("TMUX")) { CWD(w); ajoin(b,B,c,v,0);
