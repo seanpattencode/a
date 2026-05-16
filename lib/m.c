@@ -70,7 +70,7 @@ static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
 static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
     a[0] = bash[0] = 0;
     int pp[2]; if (pipe(pp) < 0) return -1;
-    char acat[P]; snprintf(acat, P, "%s/local/a_cat.txt", AROOT);
+    char acat[P]; snprintf(acat, P, "%s/m_combo.txt", TMP);
     int has_acat = fexists(acat);
     load_cfg();
     const char *md = cfget("m_model"); if (!*md) md = "opus";
@@ -172,8 +172,11 @@ static int cmd_m_panel(int c, char **v) {
         for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) {
             if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,80,"model=%s",MODS[bi[i]]); }
             else if (bk[i]=='e') { cfset("m_effort",EFFS[bi[i]]); snprintf(last,80,"effort=%s",EFFS[bi[i]]); }
-            else { char cmd[B]; snprintf(cmd,B,"%s >/dev/null 2>&1",OPS[bi[i]].cm); int r=system(cmd);
-                snprintf(last,80,"%s [%d]",OPS[bi[i]].l,WIFEXITED(r)?WEXITSTATUS(r):-1); }
+            else { char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
+                o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
+                snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
+                if(!WEXITSTATUS(r)){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn99999 %s/m/$F\";tmux clear-history -t :.0",TMP,AROOT);
+                    (void)!system(rc);} }
             break;
         }
     }
@@ -220,7 +223,10 @@ static int m_archive(int c, char **v) {
         snprintf(mp, P, "%s/m/%s", AROOT, fn);
         size_t tl; char *txt = readf(mp, &tl);
         if (!txt) { printf("file not found: %s\n", mp); return 1; }
-        char *first = strstr(txt, "\n## user\n");
+        /* preserve ## a-loaded block: start archive AFTER ## a-loaded-end if present */
+        char *first = NULL, *aend = strstr(txt, "## a-loaded-end\n");
+        if (aend) first = strstr(aend, "\n## user\n");
+        if (!first) first = strstr(txt, "\n## user\n");
         if (!first) { puts("no conversation"); free(txt); return 0; }
         first++;
         char *last = first, *p = first;
@@ -339,11 +345,22 @@ static int cmd_m(int c, char **v) {
           free(sp);
       }
       free(cur); }
+    { /* build combo: a_cat.txt + i.txt — always-loaded meta-agent identity for the session */
+      char combo[P]; snprintf(combo,P,"%s/m_combo.txt",TMP);
+      char acat[P]; snprintf(acat,P,"%s/local/a_cat.txt",AROOT);
+      char ipath[P]; snprintf(ipath,P,"%s/m/i.txt",AROOT);
+      FILE *co=fopen(combo,"w");
+      if(co){char b2[8192];size_t n;FILE*in;
+        if((in=fopen(acat,"r"))){while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
+        if((in=fopen(ipath,"r"))){fputs("\n==> i.txt (meta-agent identity) <==\n",co);
+          while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
+        fclose(co);}
+    }
     { /* a-loaded: write the full claude payload into m.txt so it's visible (hash-gated to avoid duplicates) */
       load_cfg();
       size_t sl=0,al=0,gl=0; char *sc=readf(spf,&sl);
-      char acat[P]; snprintf(acat,P,"%s/local/a_cat.txt",AROOT);
-      char *ac=fexists(acat)?readf(acat,&al):NULL;
+      char combo[P]; snprintf(combo,P,"%s/m_combo.txt",TMP);
+      char *ac=fexists(combo)?readf(combo,&al):NULL;
       char *gc=readf(g_set,&gl);
       const char *md=cfget("m_model"); if(!*md)md="opus";
       const char *ef=cfget("m_effort"); if(!*ef)ef="low";
@@ -359,7 +376,7 @@ static int cmd_m(int c, char **v) {
               strftime(ts,32,"%FT%T",localtime(&t));
               fprintf(f,"\n%s %s\nflags: --model %s --effort %s --tools \"\"\n",mk,ts,md,ef);
               fprintf(f,"--system-prompt:\n%s\n",sc?sc:"");
-              if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",acat,al,ac);
+              if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",combo,al,ac);
               fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:"");
               fclose(f); }
       }
