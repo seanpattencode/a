@@ -175,7 +175,12 @@ static int cmd_m_panel(int c, char **v) {
         const char *cf = cfget("m_effort"); if (!*cf) cf = xx ? "xhigh" : "low";
         const char *ct = cfget("m_tier"); if (!*ct) ct = "default";
         int opsr = xx ? 5 : 4;
+        struct stat st; long tot=0; char pa[P];
+        snprintf(pa,P,"%s/m/m.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
+        snprintf(pa,P,"%s/m_combo.txt",TMP); if(!stat(pa,&st)) tot+=st.st_size;
+        tot/=4; long lim=!strcmp(cm,"opus")?1000000:200000; int pct=tot*100/lim;
         write(1, "\033[2J\033[H", 7); nb = 0;
+        printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
         if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
         else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n",cm,cf);
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
