@@ -74,6 +74,13 @@ static int mm_delta_codex(const char *l, char *a, size_t *al, size_t sz) {
     t = strstr(t, "\"text\":\""); if (!t) return 0;
     return mm_delta_raw(t+8, a, al, sz);
 }
+static int mm_delta_gemini(const char *l, char *a, size_t *al, size_t sz) {
+    if (strstr(l, "\"type\":\"result\"")) return 1;
+    const char *t = strstr(l, "\"role\":\"assistant\"");
+    if (!t) return 0;
+    t = strstr(t, "\"content\":\""); if (!t) return 0;
+    return mm_delta_raw(t+11, a, al, sz);
+}
 
 static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
     a[0] = bash[0] = 0;
@@ -82,8 +89,8 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     int has_acat = fexists(acat);
     load_cfg();
     const char *ag = cfget("m_agent"); if (!*ag) ag = "claude";
-    int is_codex = !strcmp(ag, "codex");
-    const char *md = cfget("m_model"); if (!*md) md = is_codex ? "gpt-5.5" : "opus";
+    int is_codex = !strcmp(ag, "codex"), is_gemini = !strcmp(ag, "gemini");
+    const char *md = cfget("m_model"); if (!*md) md = is_codex ? "gpt-5.5" : is_gemini ? "gemini-2.5-flash" : "opus";
     const char *ef = cfget("m_effort"); if (!*ef) ef = is_codex ? "xhigh" : "low";
     const char *tier = cfget("m_tier");
     int has_tier = is_codex && *tier && strcmp(tier,"default");
@@ -93,7 +100,9 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         int d = open("/dev/null", O_WRONLY);
         dup2(s, 0); dup2(pp[1], 1); dup2(d, 2);
         close(s); close(d); close(pp[0]); close(pp[1]);
-        if (is_codex) {
+        if (is_gemini)
+            execlp("gemini","gemini","--yolo","--output-format","stream-json","-m",md,(char*)0);
+        else if (is_codex) {
             char ecfg[64],tcfg[64]; snprintf(ecfg,64,"model_reasoning_effort=\"%s\"",ef);
             if (has_tier) {snprintf(tcfg,64,"service_tier=\"%s\"",tier);
                 execlp("codex","codex","exec","--json","--skip-git-repo-check",
@@ -118,7 +127,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     off_t start = ftello(of);
     char l[32768]; size_t al = 0, pl = 0, eo;
     while (fgets(l, sizeof l, fp)) {
-        int stop = is_codex ? mm_delta_codex(l, a, &al, sz) : mm_delta(l, a, &al, sz);
+        int stop = is_codex ? mm_delta_codex(l, a, &al, sz) : is_gemini ? mm_delta_gemini(l, a, &al, sz) : mm_delta(l, a, &al, sz);
         if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
         char *uh = strstr(a, "\n## user\n"); size_t cut = uh ? (size_t)(uh - a) : 0;
         if (!cut && mm_extract(a, bash, bsz, &eo) > 0) cut = eo;
@@ -150,9 +159,10 @@ static void mm_w(const char *p, const char *t, const char *m) {
 
 static int cmd_m_panel(int c, char **v) {
     (void)c; (void)v;
-    static const char *AGTS[] = {"claude","codex",NULL};
+    static const char *AGTS[] = {"claude","codex","gemini",NULL};
     static const char *MODS_C[] = {"opus","sonnet","haiku",NULL};
     static const char *MODS_X[] = {"gpt-5","gpt-5.5",NULL};
+    static const char *MODS_G[] = {"gemini-2.5-flash","gemini-2.5-pro","gemini-3-pro-preview",NULL};
     static const char *EFFS_C[] = {"low","medium","high","max",NULL};
     static const char *EFFS_X[] = {"low","medium","high","xhigh",NULL};
     static const char *TIERS[] = {"default","fast","flex",NULL};
@@ -168,26 +178,28 @@ static int cmd_m_panel(int c, char **v) {
     for (;;) {
         load_cfg();
         const char *cg = cfget("m_agent"); if (!*cg) cg = "claude";
-        int xx = !strcmp(cg, "codex");
-        const char **MODS = xx ? MODS_X : MODS_C;
+        int xx = !strcmp(cg, "codex"), gg = !strcmp(cg, "gemini");
+        const char **MODS = xx ? MODS_X : gg ? MODS_G : MODS_C;
         const char **EFFS = xx ? EFFS_X : EFFS_C;
-        const char *cm = cfget("m_model"); if (!*cm) cm = xx ? "gpt-5.5" : "opus";
+        const char *cm = cfget("m_model"); if (!*cm) cm = xx ? "gpt-5.5" : gg ? "gemini-2.5-flash" : "opus";
         const char *cf = cfget("m_effort"); if (!*cf) cf = xx ? "xhigh" : "low";
         const char *ct = cfget("m_tier"); if (!*ct) ct = "default";
-        int opsr = xx ? 5 : 4;
+        int opsr = 3 + (!gg) + xx;
         struct stat st; long tot=0; char pa[P];
         snprintf(pa,P,"%s/m/m.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
         snprintf(pa,P,"%s/m_combo.txt",TMP); if(!stat(pa,&st)) tot+=st.st_size;
-        tot/=4; long lim=!strcmp(cm,"opus")?1000000:200000; int pct=tot*100/lim;
+        tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
         write(1, "\033[2J\033[H", 7); nb = 0;
         printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
-        if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
+        if (gg) printf("gemini --yolo --output-format stream-json -m %s\033[K\n",cm);
+        else if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
         else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n",cm,cf);
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
             for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
                 bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
                 printf("%s[%s]%s ",s?"\033[7m":"",arr[i],s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
-        VROW("agent",AGTS,1,'a',cg); VROW("model",MODS,2,'m',cm); VROW("effort",EFFS,3,'e',cf);
+        VROW("agent",AGTS,1,'a',cg); VROW("model",MODS,2,'m',cm);
+        if (!gg) VROW("effort",EFFS,3,'e',cf);
         if (xx) VROW("tier",TIERS,4,'t',ct);
         #undef VROW
         {int cx=0;for(int i=0;OPS[i].l;i++){int w=(int)strlen(OPS[i].l)+2;
@@ -206,10 +218,10 @@ static int cmd_m_panel(int c, char **v) {
         if (mc!='M' || btn!=0) continue;
         int gx = mx-1, gy = my-1;
         for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) {
-            if (bk[i]=='a') { cfset("m_agent",AGTS[bi[i]]);
-                int cx2=!strcmp(AGTS[bi[i]],"codex");
-                cfset("m_model",cx2?"gpt-5.5":"opus"); cfset("m_effort",cx2?"xhigh":"low");
-                snprintf(last,80,"agent=%s",AGTS[bi[i]]); }
+            if (bk[i]=='a') { const char*a=AGTS[bi[i]]; cfset("m_agent",a);
+                cfset("m_model",!strcmp(a,"codex")?"gpt-5.5":!strcmp(a,"gemini")?"gemini-2.5-flash":"opus");
+                cfset("m_effort",!strcmp(a,"codex")?"xhigh":"low");
+                snprintf(last,80,"agent=%s",a); }
             else if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,80,"model=%s",MODS[bi[i]]); }
             else if (bk[i]=='e') { cfset("m_effort",EFFS[bi[i]]); snprintf(last,80,"effort=%s",EFFS[bi[i]]); }
             else if (bk[i]=='t') { cfset("m_tier",TIERS[bi[i]]); snprintf(last,80,"tier=%s",TIERS[bi[i]]); }
@@ -427,7 +439,7 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
                    "$S 'tail -Fn99999 %2$s';$S -l 3 'tail -Fn 50 %3$s';"
-                   "$S -l 7 'a m panel'",
+                   "$S -l 9 'a m panel'",
              AROOT, sf, ss);
     system(b);
     snprintf(b, B, "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
