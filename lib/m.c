@@ -72,6 +72,9 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     int pp[2]; if (pipe(pp) < 0) return -1;
     char acat[P]; snprintf(acat, P, "%s/local/a_cat.txt", AROOT);
     int has_acat = fexists(acat);
+    load_cfg();
+    const char *md = cfget("m_model"); if (!*md) md = "opus";
+    const char *ef = cfget("m_effort"); if (!*ef) ef = "low";
     pid_t cp = fork();
     if (!cp) {
         int s = open(sf, O_RDONLY); if (s < 0) _exit(127);
@@ -80,12 +83,14 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         close(s); close(d); close(pp[0]); close(pp[1]);
         if (has_acat)
             execlp("claude","claude","-p","--output-format","stream-json",
-                   "--include-partial-messages","--verbose","--tools","","--effort","low",
+                   "--include-partial-messages","--verbose","--tools","",
+                   "--model",md,"--effort",ef,
                    "--system-prompt", sp, "--append-system-prompt-file", acat,
                    "--settings", g_set, (char*)0);
         else
             execlp("claude","claude","-p","--output-format","stream-json",
-                   "--include-partial-messages","--verbose","--tools","","--effort","low",
+                   "--include-partial-messages","--verbose","--tools","",
+                   "--model",md,"--effort",ef,
                    "--system-prompt", sp, "--settings", g_set, (char*)0);
         _exit(127);
     }
@@ -126,61 +131,50 @@ static void mm_w(const char *p, const char *t, const char *m) {
 
 static int cmd_m_panel(int c, char **v) {
     (void)c; (void)v;
-    static const struct { const char *l, *cm; int a; } PC[] = {
-        {"archive", "a m archive", 0},
-        {"undo", "a m archive undo", 0},
-        {"restart", "a m restart", 0},
-        {NULL, NULL, 0}};
-    int np = 0; while (PC[np].l) np++;
+    static const char *MODS[] = {"opus","sonnet","haiku",NULL};
+    static const char *EFFS[] = {"low","medium","high","max",NULL};
+    static const struct { const char *l, *cm; } OPS[] = {
+        {"archive","a m archive"},{"undo","a m archive undo"},{"restart","a m restart"},{NULL,NULL}};
     struct termios old, raw; tcgetattr(0, &old); raw = old;
     raw.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG);
     raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0;
     tcsetattr(0, TCSANOW, &raw);
     write(1, "\033[?1000h\033[?1006h", 16);
-    int sel = 0; char f[64] = "", last[80] = ""; int fl = 0;
+    char last[80] = "";
+    int bx[32],bw[32],br[32],bi[32]; char bk[32]; int nb;
     for (;;) {
-        int vis[16], nv = 0;
-        for (int i = 0; i < np; i++) if (!fl || strstr(PC[i].l, f)) vis[nv++] = i;
-        if (sel >= nv) sel = nv ? nv - 1 : 0;
-        write(1, "\033[2J\033[H", 7);
-        printf("/ %s_  \033[90m%s\033[0m\033[K\n", f, last);
-        for (int j = 0; j < nv; j++) { int i = vis[j];
-            printf("%s [%s]%s\033[K\n", j == sel ? "\033[7m>" : " ", PC[i].l, PC[i].a ? " <arg>" : "");
-            if (j == sel) printf("\033[0m");
-        }
-        fflush(stdout);
+        load_cfg();
+        const char *cm = cfget("m_model"); if (!*cm) cm = "opus";
+        const char *cf = cfget("m_effort"); if (!*cf) cf = "low";
+        write(1, "\033[2J\033[H", 7); nb = 0;
+        printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n", cm, cf);
+        #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
+            for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
+                bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
+                printf("%s[%s]%s ",s?"\033[7m":"",arr[i],s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
+        VROW("model",MODS,1,'m',cm); VROW("effort",EFFS,2,'e',cf);
+        #undef VROW
+        {int cx=0;for(int i=0;OPS[i].l;i++){int w=(int)strlen(OPS[i].l)+2;
+            bx[nb]=cx;bw[nb]=w;br[nb]=3;bk[nb]='o';bi[nb]=i;nb++;
+            printf("[%s] ",OPS[i].l);cx+=w+1;}printf("\033[K\n");}
+        printf("\033[90m%s\033[0m\033[K",last); fflush(stdout);
         char ch; if (read(0, &ch, 1) != 1) break;
-        int pick = 0;
-        if (ch == '\x1b') { int av; usleep(50000); ioctl(0, FIONREAD, &av);
-            if (!av) break;
-            char s[2]; if (read(0, s, 1) != 1) break;
-            if (s[0] == '[') { if (read(0, s+1, 1) != 1) break;
-                if (s[1] == 'A') { if (sel > 0) sel--; }
-                else if (s[1] == 'B') { if (sel < nv - 1) sel++; }
-                else if (s[1] == '<') { int b=0,x=0,y=0; char mc;
-                    while (read(0,&mc,1)==1&&mc!=';') b=b*10+(mc-'0');
-                    while (read(0,&mc,1)==1&&mc!=';') x=x*10+(mc-'0');
-                    while (read(0,&mc,1)==1&&mc!='M'&&mc!='m') y=y*10+(mc-'0');
-                    (void)x; if (mc=='M'&&b==0&&y>=2&&y<2+nv) { sel = y-2; pick = 1; }
-                }}}
-        else if (ch == '\r' || ch == '\n') pick = 1;
-        else if (ch == 0x7f || ch == 8) { if (fl) f[--fl] = 0; sel = 0; }
-        else if (ch == 3 || ch == 4) break;
-        else if (isprint((unsigned char)ch)) { if (fl < 60) { f[fl++] = ch; f[fl] = 0; sel = 0; } }
-        if (pick && nv) { int i = vis[sel];
-            write(1, "\033[?1000l\033[?1006l\033[2J\033[H", 23);
-            tcsetattr(0, TCSANOW, &old);
-            char cmd[B], arg[128] = "";
-            if (PC[i].a) { printf("%s <arg>: ", PC[i].l); fflush(stdout);
-                if (!fgets(arg, 128, stdin)) break;
-                arg[strcspn(arg, "\n")] = 0;
-            }
-            snprintf(cmd, B, "%s%s%s >/dev/null 2>&1", PC[i].cm, arg[0] ? " " : "", arg);
-            int r = system(cmd);
-            snprintf(last, sizeof last, "%s%s%s [%d]", PC[i].l, arg[0] ? " " : "", arg, WIFEXITED(r)?WEXITSTATUS(r):-1);
-            tcsetattr(0, TCSANOW, &raw);
-            write(1, "\033[?1000h\033[?1006h", 16);
-            f[0]=0; fl=0; sel=0;
+        if (ch == 3 || ch == 4) break;
+        if (ch != '\x1b') continue;
+        int av; usleep(50000); ioctl(0, FIONREAD, &av); if (!av) break;
+        char s[2]; if (read(0, s, 1) != 1 || s[0] != '[' || read(0, s+1, 1) != 1 || s[1] != '<') continue;
+        int btn=0,mx=0,my=0; char mc;
+        while (read(0,&mc,1)==1 && mc!=';') btn = btn*10+(mc-'0');
+        while (read(0,&mc,1)==1 && mc!=';') mx = mx*10+(mc-'0');
+        while (read(0,&mc,1)==1 && mc!='M' && mc!='m') my = my*10+(mc-'0');
+        if (mc!='M' || btn!=0) continue;
+        int gx = mx-1, gy = my-1;
+        for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) {
+            if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,80,"model=%s",MODS[bi[i]]); }
+            else if (bk[i]=='e') { cfset("m_effort",EFFS[bi[i]]); snprintf(last,80,"effort=%s",EFFS[bi[i]]); }
+            else { char cmd[B]; snprintf(cmd,B,"%s >/dev/null 2>&1",OPS[bi[i]].cm); int r=system(cmd);
+                snprintf(last,80,"%s [%d]",OPS[bi[i]].l,WIFEXITED(r)?WEXITSTATUS(r):-1); }
+            break;
         }
     }
     write(1, "\033[?1000l\033[?1006l", 16);
@@ -345,6 +339,31 @@ static int cmd_m(int c, char **v) {
           free(sp);
       }
       free(cur); }
+    { /* a-loaded: write the full claude payload into m.txt so it's visible (hash-gated to avoid duplicates) */
+      load_cfg();
+      size_t sl=0,al=0,gl=0; char *sc=readf(spf,&sl);
+      char acat[P]; snprintf(acat,P,"%s/local/a_cat.txt",AROOT);
+      char *ac=fexists(acat)?readf(acat,&al):NULL;
+      char *gc=readf(g_set,&gl);
+      const char *md=cfget("m_model"); if(!*md)md="opus";
+      const char *ef=cfget("m_effort"); if(!*ef)ef="low";
+      unsigned long h=5381;
+      #define H(s,n) if(s) for(size_t i=0;i<(n);i++) h=((h<<5)+h)+(unsigned char)(s)[i]
+      H(sc,sl); H(ac,al); H(gc,gl); H(md,strlen(md)); H(ef,strlen(ef));
+      #undef H
+      char mk[48]; snprintf(mk,48,"## a-loaded sha=%08lx",h);
+      char *cur=readf(sf,NULL);
+      if (!cur || !strstr(cur,mk)) {
+          FILE *f=fopen(sf,"a");
+          if (f) { time_t t=time(NULL); char ts[32];
+              strftime(ts,32,"%FT%T",localtime(&t));
+              fprintf(f,"\n%s %s\nflags: --model %s --effort %s --tools \"\"\n",mk,ts,md,ef);
+              fprintf(f,"--system-prompt:\n%s\n",sc?sc:"");
+              if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",acat,al,ac);
+              fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:"");
+              fclose(f); }
+      }
+      free(cur); free(sc); free(ac); free(gc); }
     mm_w(ss, "", "w"); m_status("ready ^C=interrupt");
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"

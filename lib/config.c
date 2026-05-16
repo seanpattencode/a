@@ -12,7 +12,7 @@ static int cmd_set(int argc, char **argv) {
     return 0;
 }
 
-static const char*CFG_KEYS[]={"default_agent","claude_prefix","source","multi_default","worktrees_dir","tmux_conf","cat_a",NULL};
+static const char*CFG_KEYS[]={"default_agent","claude_prefix","source","multi_default","worktrees_dir","tmux_conf","cat_a","m_model","m_effort",NULL};
 static void cfg_show(void){for(const char**s=CFG_KEYS;*s;s++){const char*v=cfget(*s);
     printf("  %-16s%s\n",*s,v[0]?v:!strcmp(*s,"default_agent")?"c":"-");}}
 static int cmd_settings(int argc,char**argv) {
