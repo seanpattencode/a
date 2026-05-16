@@ -60,7 +60,7 @@ __MY__
   <form id=nf style="display:flex;gap:10px;width:95vw;align-items:center">
     <input id=nc autofocus placeholder="note" class=f style="flex:1;font-size:24px;padding:16px">
     <button class=b type=submit>save</button>
-    <button class=b type=button onclick="this.textContent='...';fetch('/api/sync').then(()=>location.reload())">sync</button>
+    <button class=b type=button onclick="fetch('/api/sync',{method:'POST'}).then(()=>show('/note'))">sync</button>
     <button class=b type=button data-go="/term">term</button>
   </form>
   <div id=nl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px">__NO__</div>
@@ -70,7 +70,7 @@ __MY__
 var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks'__MV__}, T, F, W;
 // perf: go() must stay <1ms. show() is DOM toggle only, no network. keep this instrumentation.
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);console.log('go('+p+') '+(performance.now()-t).toFixed(2)+'ms');}
-function show(p){wm.classList.remove('x');for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}}
+function show(p){wm.classList.remove('x');for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'&&F){connect();setTimeout(function(){F.fit();T.focus()},0);}if(p==='/note')fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h)}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 function arct(d,el){fetch('/api/task/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:d})});el.parentElement.remove();}
 function loadjobs(){Promise.all([fetch('/api/jobs').then(function(r){return r.text()}),fetch('/api/job-status').then(function(r){return r.json()})]).then(function(d){
@@ -84,14 +84,15 @@ window.onpopstate=function(){show(location.pathname);};
 try{
   T=new Terminal();F=new(FitAddon.FitAddon||FitAddon)();
   T.loadAddon(F);T.open(t);try{T.loadAddon(new WebglAddon.WebglAddon())}catch(e){}
+  var sz=()=>ws(JSON.stringify({cols:T.cols,rows:T.rows}));
   function connect(){if(W&&W.readyState<2)return;
     W=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
-    W.onopen=function(){v_dc.style.display='none';F.fit();ws(JSON.stringify({cols:T.cols,rows:T.rows}));};
-    W.onmessage=function(e){T.write(e.data);};
-    W.onerror=W.onclose=function(){v_dc.style.display='';setTimeout(connect,1000);};
+    W.onopen=()=>{v_dc.style.display='none';F.fit();sz()};
+    W.onmessage=e=>T.write(e.data);
+    W.onerror=W.onclose=()=>{v_dc.style.display='';setTimeout(connect,1000)};
   }
-  T.onData(function(d){ws(d);});
-  new ResizeObserver(function(){F.fit();ws(JSON.stringify({cols:T.cols,rows:T.rows}));}).observe(t);
+  T.onData(ws);
+  new ResizeObserver(()=>{F.fit();sz()}).observe(t);
 }catch(e){document.body.innerHTML='<pre style="color:red;padding:20px">'+e+'</pre>';}
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(c){nc.value='';fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(p){nl.insertAdjacentHTML('afterbegin','<div class=ni>'+c+'</div>');nc.placeholder=p;}).catch(function(){nc.placeholder='FAIL';nc.style.borderColor='red';setTimeout(function(){nc.style.borderColor='#333'},2000);});}};
 var _tg=0;document.addEventListener('touchstart',function(e){var g=e.target.closest('[data-go]');if(g){e.preventDefault();_tg=1;go(g.dataset.go);}},{passive:false});

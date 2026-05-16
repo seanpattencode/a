@@ -26,16 +26,21 @@ static void _sha1(const unsigned char*d,size_t n,unsigned char out[20]){
 }
 static char*_shtml;static int _shlen;
 #define SYNC_HTML "<span style=color:#888>sync <span class=sa>%s</span></span> <button style=\"background:#000;color:#888;border:1px solid #333;padding:0 6px;font:inherit;cursor:pointer\" onclick=\"fetch('/api/sync',{method:'POST'});let p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{document.querySelectorAll('.sa').forEach(s=>s.textContent=t);if(t!='syncing')clearInterval(p)}),1000)\">sync</button>"
+static int _ncmp(const void*a,const void*b){const char*x=strrchr((const char*)a,'_'),*y=strrchr((const char*)b,'_');return strcmp(y?y:"",x?x:"");}
 static int _notes_build(char*h,int cap){
     char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
     int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
     DIR*d=opendir(nd);if(!d)return hl;struct dirent*e;
-    while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt")||hl>cap-2048)continue;
-        char fp[P];snprintf(fp,P,"%s/%s",nd,e->d_name);
+    static char names[2048][64];int nn=0;
+    while((e=readdir(d))&&nn<2048){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt"))continue;
+        snprintf(names[nn++],64,"%s",e->d_name);}closedir(d);
+    qsort(names,(size_t)nn,sizeof(names[0]),_ncmp);
+    for(int i=0;i<nn&&hl<cap-2048;i++){
+        char fp[P];snprintf(fp,P,"%s/%s",nd,names[i]);
         FILE*f=fopen(fp,"r");if(!f)continue;char ln[512];
         while(fgets(ln,512,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
-            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span>%s</span></div>",e->d_name,ln+6);break;}}
-        fclose(f);}closedir(d);return hl;
+            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span>%s</span></div>",names[i],ln+6);break;}}
+        fclose(f);}return hl;
 }
 static int _tasks_build(char*h,int cap){
     char td[P];snprintf(td,P,"%s/git/tasks",AROOT);
