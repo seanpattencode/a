@@ -66,13 +66,20 @@ def get_mac_defaults():
     return out
 
 def get_mac_apps():
-    """List /Applications — cask-installed vs manual."""
+    """List /Applications; resolve drag-installed apps to casks where possible."""
     apps = [a.name for a in Path("/Applications").iterdir() if a.suffix == ".app"]
-    cask_names = set(run("brew list --cask -1").stdout.strip().split('\n'))
-    # rough match: cask "android-studio" → "Android Studio.app"
-    cask_lower = {c.replace('-',' ').lower() for c in cask_names if c}
-    manual = [a for a in apps if a.replace('.app','').lower() not in cask_lower]
-    return {"all": apps, "cask_managed": list(cask_names), "manual": manual}
+    casks = set(run("brew list --cask -1").stdout.strip().split('\n'))
+    cl = {c.replace('-',' ').lower() for c in casks if c}
+    resolved, manual = {}, []
+    for a in apps:
+        n = a[:-4].lower()
+        if n in cl: continue
+        base = '-'.join(n.split())
+        cands = {base, '@'.join(base.rsplit('-', 1))}
+        tok = next((t for t in cands if run(f"brew info --cask '{t}'").returncode == 0), None)
+        if tok: resolved[a] = tok
+        else: manual.append(a)
+    return {"all": apps, "cask_managed": list(casks), "resolved": resolved, "manual": manual}
 
 def get_vscode():
     paths = ["code-insiders", "code",
@@ -269,12 +276,15 @@ def _restore_mac(sd):
                 subprocess.run(f"defaults import '{domain}' -", shell=True, input=vals, text=True)
         print("  Applied. Some changes need logout to take effect.")
 
-    # manual apps reminder
+    # manual apps — install resolved casks, list the rest
     af = sd / "apps.json"
     if af.exists():
         apps = json.loads(af.read_text())
+        resolved = apps.get("resolved", {})
+        if resolved and confirm(f"Install {len(resolved)} drag-installed apps via cask?"):
+            run(f"brew install --cask {' '.join(resolved.values())}")
         manual = apps.get("manual", [])
-        if manual: print(f"\n  Manual apps to reinstall: {', '.join(manual)}")
+        if manual: print(f"\n  No cask — reinstall by hand: {', '.join(manual)}")
 
 def _restore_deb(sd):
     # apt repos
