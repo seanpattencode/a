@@ -41,3 +41,4 @@ a.deb
 
 # macOS Finder metadata
 .DS_Store
+lib/bri-ext/*.xpi

@@ -23,6 +23,7 @@ Drive shortcuts (bridge must already be running in another process):
   bri type <sel> <s> type into element (handles contenteditable like rich-textarea)
   bri keys <sel> <k> dispatch keydown/keyup (e.g. "Enter" to submit)
   bri url            return current URL
+  bri deploy         rebuild lib/bri-ext xpi + restart Firefox (zero-click extension bump)
   bri '{json}'       raw passthrough — full 9-action protocol, all fields
                      (id, sel, text, code, args, ms, keys, …). Use when a
                      shortcut shape doesn't fit, e.g. eval/wait/html/custom id.
@@ -67,11 +68,13 @@ pollers, pending = [], {}  # pollers: list[Queue]  pending: id -> Queue
 USERSCRIPT = r"""// ==UserScript==
 // @name         a-bridge
 // @namespace    https://github.com/seanpattencode/a
-// @version      0.5
+// @version      0.7
 // @match        *://*/*
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
 // @run-at       document-end
+// @updateURL    http://127.0.0.1:1234/a.user.js
+// @downloadURL  http://127.0.0.1:1234/a.user.js
 // ==/UserScript==
 // HTTP long-poll via GM_xmlhttpRequest — runs in TM's privileged extension
 // context, bypasses page CSP for our own network. WebSocket from page context
@@ -129,7 +132,7 @@ USERSCRIPT = r"""// ==UserScript==
     } catch (e) { return {error:String(e)}; }
   };
   const post = d => GM_xmlhttpRequest({url:RESP, method:'POST',
-    headers:{'Content-Type':'application/json'}, data:JSON.stringify(d)});
+    headers:{'Content-Type':'application/json'}, data:JSON.stringify({src:location.href, ...d})});
   post({hello:location.href, title:document.title});
   const loop = () => GM_xmlhttpRequest({
     url:POLL, method:'GET', timeout:30000,
@@ -213,7 +216,7 @@ def cmd_serve():
         if rid is None:
             c.send(f'sent to {len(pollers)} pollers\n'.encode())
         else:
-            out, end = [], time.time()+3
+            out, end = [], time.time()+8
             while time.time() < end:
                 try: out.append(pending[rid].get(timeout=end-time.time()))
                 except Exception: break
@@ -233,6 +236,28 @@ def main():
 # prints the response. The raw '{json}' form remains the full API.
 def client(args):
     a = args[0]
+    if a == 'deploy':  # zero-click rebuild+install of bri-ext + Firefox restart
+        import subprocess, shutil, os, glob
+        here = os.path.dirname(os.path.abspath(__file__))
+        extdir = os.path.join(here, 'bri-ext')
+        subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi',
+                               f'{extdir}/manifest.json', f'{extdir}/content.js'])
+        # Prefer Nightly profile (active one); fall back to dev/release.
+        cands = glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*'))
+        prof = [p for p in cands if 'nightly' in p.lower()] or \
+               [p for p in cands if p.endswith('default-dev')] or \
+               [p for p in cands if p.endswith('default-release')] or cands
+        if not prof: sys.stderr.write('x no FF profile found\n'); sys.exit(1)
+        os.makedirs(f'{prof[0]}/extensions', exist_ok=True)
+        shutil.copy(f'{extdir}/a-bridge.xpi', f'{prof[0]}/extensions/a-bridge@seanpatten.xpi')
+        print(f'  → {prof[0]}/extensions/')
+        subprocess.run(['osascript','-e','tell application "Firefox Nightly" to quit'], stderr=subprocess.DEVNULL)
+        for _ in range(15):
+            if subprocess.run(['pgrep','-f','Firefox Nightly.app/Contents/MacOS/firefox$'], capture_output=True).returncode != 0: break
+            time.sleep(1)
+        time.sleep(0.5)
+        subprocess.Popen(['/Applications/Firefox Nightly.app/Contents/MacOS/firefox','-foreground'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f'deployed bri-ext v{json.load(open(f"{extdir}/manifest.json"))["version"]}'); return
     if a.startswith('{'):
         msg = a
     else:
@@ -243,7 +268,8 @@ def client(args):
         elif a=='keys':  j = {'id':1,'action':'keys','sel':args[1],'keys':args[2]}
         elif a=='url':   j = {'id':1,'action':'url'}
         else:
-            sys.stderr.write("bri <url> | text [sel] | click <sel> | type <sel> <text> | keys <sel> <key> | url | '{json}'\n"
+            sys.stderr.write("bri <url> | text [sel] | click <sel> | type <sel> <text> | keys <sel> <key> | url | deploy | '{json}'\n"
+                "  deploy: zero-click rebuild+install of lib/bri-ext + Firefox restart.\n"
                 "  raw {json} supports all 9 actions + custom fields — use for "
                 "eval/wait/html or any control the shortcuts hide.\n"); sys.exit(1)
         msg = json.dumps(j)
