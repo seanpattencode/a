@@ -463,7 +463,7 @@ static int cmd_m(int c, char **v) {
             fprintf(f, "%s\"%.*s\":false", fst?"":",", (int)(q2-q1-1), q1+1); fst = 0; p = q2+1; } }
         fputs("}}\n", f); fclose(f); } free(s); }
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
-    mm_w(ss, "", "w"); m_status("ready ^C=interrupt");
+    mm_w(ss, "", "w");
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
@@ -515,7 +515,7 @@ static int cmd_m(int c, char **v) {
             m_commit("t"); if (g_halt) break;
         }
         mm_w(sf, "\n## user\n", "a");
-        m_status("ready ^C=interrupt");
+        m_status("ready ^C | conv edited? ^S in conv pane first");
     }
     return 0;
 }
