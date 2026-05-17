@@ -332,8 +332,6 @@ static void mkdirp(const char *p);
 static void alog(const char *cmd, const char *cwd);
 static void perf_disarm(void);
 static int cmd_sess(int, char**);
-static int cmd_restore(int, char**);
-static void tm_unsave_win(const char*);
 typedef struct{char n[64];int c;}FC;
 static int ctcmp(const void*a,const void*b){return((const FC*)b)->c-((const FC*)a)->c;}
 static const char*EXT[]={"",".py",".c",".sh",".html",0};
@@ -513,8 +511,6 @@ static int cmd_j(int c,char**v){
     return 0;}
 static int cmd_job(int c,char**v){return(c>2&&isdigit(*v[2]))?cmd_jobs(c,v):cmd_j(c,v);}
 static int cmd_tmux(int c,char**v){(void)c;(void)v;tm_go(NULL);return 0;}
-static int cmd_tm_unsave(int c,char**v){
-    if(c<3)return 1;tm_unsave_win(v[2]);return 0;}
 #define ADBSEL "S=${ANDROID_SERIAL:-};[ -z \"$S\" ]&&{ N=$(adb devices|awk '/\\tdevice$/{print $1}');n=$(printf %s \"$N\"|grep -c .);" \
     "case $n in 0)echo no device;exit 1;;1)S=$N;;*)printf %s \"$N\"|nl>&2;read -rp '# [1]: ' i </dev/tty||exit 130;S=$(printf %s \"$N\"|sed -n ${i:-1}p);[ -z \"$S\" ]&&{ echo invalid;exit 1;};;esac;};A=\"adb -s $S\";"
 static int cmd_adb(int c,char**v){
@@ -615,12 +611,12 @@ static const cmd_t CMDS[] = {
     {"o",cmd_op},{"once",cmd_run_once},{"op",cmd_op},{"operator",cmd_op},
     {"p",cmd_push},{"perf",cmd_perf},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},
-    {"ref",cmd_ref},{"remove",cmd_remove},{"repo",cmd_create},{"restore",cmd_restore},{"revert",cmd_revert},{"review",cmd_review},
+    {"ref",cmd_ref},{"remove",cmd_remove},{"repo",cmd_create},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
     {"set",cmd_set},{"settings",cmd_settings},{"setup",cmd_setup},
     {"ssh",cmd_ssh},
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
-    {"tm-unsave",cmd_tm_unsave},{"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},
+    {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},
     {"uninstall",cmd_uninstall},{"update",cmd_update},
     {"vm",cmd_vm},
     {"w",cmd_w},{"watch",cmd_watch},{"web",cmd_web},{"work",cmd_w},
@@ -633,7 +629,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|restore|m|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|m|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);

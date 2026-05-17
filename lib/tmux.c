@@ -1,15 +1,6 @@
 /* tmux — one session "a", windows are jobs */
 #define TMS "a"
 #define ACAT "a cat"
-static void tm_restore(void);
-static void tm_save_win(const char *sn, const char *wd, const char *cmd, const char *sid) {
-    char sf[P];snprintf(sf,P,"%s/tmux_wins.txt",DDIR);
-    char*d=readf(sf,NULL);FILE*f=fopen(sf,"w");if(!f){free(d);return;}
-    if(d){int sl=(int)strlen(sn);for(char*l=d,*nl;*l;l=nl?nl+1:l+strlen(l)){
-        nl=strchr(l,'\n');int ll=nl?(int)(nl-l):(int)strlen(l);
-        if(ll>0&&!(ll>=sl&&l[sl]=='|'&&!memcmp(l,sn,(size_t)sl)))fprintf(f,"%.*s\n",ll,l);}free(d);}
-    if(wd)fprintf(f,"%s|%s|%s|%s\n",sn,wd,cmd?cmd:"",sid?sid:"");fclose(f);}
-static void tm_unsave_win(const char*sn){tm_save_win(sn,NULL,NULL,NULL);}
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
@@ -17,7 +8,7 @@ static void tm_ensure_sess(void){
     if(WIFEXITED(r)&&WEXITSTATUS(r)==124){(void)!system("pkill -9 tmux 2>/dev/null; sleep 1");}}
     tm_gc();
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
-    (void)!system("tmux new-session -d -s '"TMS"'");tm_restore();}
+    (void)!system("tmux new-session -d -s '"TMS"'");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
@@ -120,7 +111,6 @@ static void tm_ensure_conf(void) {
         "bind-key -n C-y split-window -fh\n"
         "bind -n C-w if -F '#{==:#{pane_current_command},ssh}' 'send C-w' 'selectw -n;killw -t:!'\n"
         "bind -n M-w if -F '#{==:#{pane_current_command},ssh}' 'send M-w' kill-pane\n"
-        "set-hook -g window-unlinked 'run-shell -b \"a tm-unsave \\\"#{hook_window_name}\\\"\"'\n"
         "bind-key -n C-q detach\n"
         "bind-key -n C-x kill-session\n"
         "bind -n WheelUpStatus selectw -p\n"

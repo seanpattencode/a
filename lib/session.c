@@ -24,7 +24,7 @@ static void sess_log(const char *sn, const char *wd) {
     snprintf(c,B,"session:%s log:%s",sn,lf);alog(c,wd);
 }
 
-/* session create — returns 1 if window already existed (restored), 0 if created */
+/* session create — returns 1 if window already existed, 0 if created */
 static int create_sess(const char *sn, const char *wd, const char *cmd, const char *extra) {
     int ai = cmd && (strstr(cmd,"claude") || strstr(cmd,"codex") || strstr(cmd,"gemini") || strstr(cmd,"aider"));
     char sid[64]="",acmd[B];
@@ -57,23 +57,5 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
         }
         sess_log(sn, wd);
     }
-    tm_save_win(sn, wd, cmd, sid);
     return r;
 }
-
-static void tm_restore(void) {
-    char sf[P];snprintf(sf,P,"%s/tmux_wins.txt",DDIR);
-    char*d=readf(sf,NULL);if(!d)return;
-    for(char*l=d,*nl;*l;l=nl?nl+1:l+strlen(l)){
-        nl=strchr(l,'\n');if(nl)*nl=0;
-        char*s=strchr(l,'|');if(!s)continue;*s++=0;
-        char*bc=strchr(s,'|');if(!bc)continue;*bc++=0;
-        char*sd=strchr(bc,'|');if(sd)*sd++=0;
-        if(!dexists(s)||!*bc||tm_has(l))continue;
-        char cmd[1024];
-        snprintf(cmd,1024,sd&&*sd?"claude --dangerously-skip-permissions --effort max --resume %s":"%s",sd&&*sd?sd:bc);
-        create_sess(l,s,cmd,NULL);}
-    free(d);}
-
-static int cmd_restore(int c,char**v){(void)c;(void)v;
-    init_db();load_cfg();load_sess();tm_restore();return 0;}
