@@ -437,12 +437,11 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
-                   "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
-                   "$S 'e --tail %2$s';$S -l 3 'tail -Fn 50 %3$s';"
-                   "$S -l 9 'a m panel'",
+                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb 'e --tail %2$s';"
+                   "W=$(tmux new-window -d -P -F '#{window_id}' -e M_IN=1 -n m-tools 'a m panel');"
+                   "tmux split-window -t $W -e M_IN=1 -dv -l 3 'tail -Fn 50 %3$s';"
+                   "tmux split-window -t $W -e M_IN=1 -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash'",
              AROOT, sf, ss);
-    system(b);
-    snprintf(b, B, "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];
     snprintf(pf,P,"%s/m_pty",TMP); mm_w(pf,pty,"w");
