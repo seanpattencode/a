@@ -149,8 +149,10 @@ static void mm_w(const char *p, const char *t, const char *m) {
     FILE *f = fopen(p, m); if (f) { fputs(t, f); fclose(f); }
 }
 
+static void m_winch(int s){(void)s;}
 static int cmd_m_panel(int c, char **v) {
     (void)c; (void)v;
+    { struct sigaction sa; sa.sa_handler=m_winch; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGWINCH,&sa,NULL); }
     static const char *AGTS[] = {"claude","codex","gemini",NULL};
     static const char *MODS_C[] = {"opus","sonnet","haiku",NULL};
     static const char *MODS_X[] = {"gpt-5","gpt-5.5",NULL};
@@ -178,30 +180,36 @@ static int cmd_m_panel(int c, char **v) {
         const char *cm = cfget("m_model"); if (!*cm) cm = xx ? "gpt-5.5" : gg ? "gemini-2.5-flash" : "opus";
         const char *cf = cfget("m_effort"); if (!*cf) cf = xx ? "xhigh" : "low";
         const char *ct = cfget("m_tier"); if (!*ct) ct = "default";
-        int opsr = 3 + (!gg) + xx;
+        int opsr = 4 + (!gg) + xx;
         struct stat st; long tot=0; char pa[P];
         snprintf(pa,P,"%s/m/m.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
         snprintf(pa,P,"%s/m_combo.txt",TMP); if(!stat(pa,&st)) tot+=st.st_size;
         tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
+        char hb[16]={0}; pcmd("tmux display -p -t \"$TMUX_PANE\" '#{pane_height}'",hb,16); int ph=atoi(hb);
+        struct winsize ws={0}; ioctl(1,TIOCGWINSZ,&ws); int cw=ws.ws_col?ws.ws_col:80;
         write(1, "\033[2J\033[H", 7); nb = 0;
         printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
         if (gg) printf("gemini --yolo --output-format stream-json -m %s\033[K",cm);
         else if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
         else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K",cm,cf);
-        printf("\033[2;1H");
+        {const char*lbl=ph>5?" [-]  CLICK HERE TO COLLAPSE TOOLS  [-]":" [+]  CLICK HERE TO EXPAND TOOLS  [+]";
+         printf("\033[2;1H\033[7m%s",lbl); int ll=(int)strlen(lbl);
+         for(int i=ll;i<cw;i++)putchar(' '); printf("\033[0m");
+         bx[nb]=0;bw[nb]=cw;br[nb]=1;bk[nb]='T';bi[nb]=0;nb++;}
+        if (ph > 5) { printf("\033[3;1H");
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
             for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
                 bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
                 printf("%s[%s]%s ",s?"\033[7m":"",arr[i],s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
-        VROW("agent",AGTS,1,'a',cg); VROW("model",MODS,2,'m',cm);
-        if (!gg) VROW("effort",EFFS,3,'e',cf);
-        if (xx) VROW("tier",TIERS,4,'t',ct);
+        VROW("agent",AGTS,2,'a',cg); VROW("model",MODS,3,'m',cm);
+        if (!gg) VROW("effort",EFFS,4,'e',cf);
+        if (xx) VROW("tier",TIERS,5,'t',ct);
         #undef VROW
         {int cx=0;for(int i=0;OPS[i].l;i++){int w=(int)strlen(OPS[i].l)+2;
             bx[nb]=cx;bw[nb]=w;br[nb]=opsr;bk[nb]='o';bi[nb]=i;nb++;
-            printf("[%s] ",OPS[i].l);cx+=w+1;}printf("\033[K\n");}
+            printf("[%s] ",OPS[i].l);cx+=w+1;}printf("\033[K\n");} }
         printf("\033[90m%s\033[0m\033[K",last); fflush(stdout);
-        char ch; if (read(0, &ch, 1) != 1) break;
+        char ch; ssize_t rr=read(0,&ch,1); if(rr==0)break; if(rr!=1)continue;
         if (ch == 3 || ch == 4) break;
         if (ch != '\x1b') continue;
         int av; usleep(50000); ioctl(0, FIONREAD, &av); if (!av) break;
@@ -213,6 +221,9 @@ static int cmd_m_panel(int c, char **v) {
         if (mc!='M' || btn!=0) continue;
         int gx = mx-1, gy = my-1;
         for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) {
+            if (bk[i]=='T') { char hb2[16]={0}; pcmd("tmux display -p -t \"$TMUX_PANE\" '#{pane_height}'",hb2,16);
+                char cmd[64]; snprintf(cmd,64,"tmux resize-pane -t \"$TMUX_PANE\" -y %d",atoi(hb2)>5?2:15);
+                (void)!system(cmd); break; }
             if (bk[i]=='a') { const char*a=AGTS[bi[i]]; cfset("m_agent",a);
                 cfset("m_model",!strcmp(a,"codex")?"gpt-5.5":!strcmp(a,"gemini")?"gemini-2.5-flash":"opus");
                 cfset("m_effort",!strcmp(a,"codex")?"xhigh":"low");
@@ -228,7 +239,7 @@ static int cmd_m_panel(int c, char **v) {
                 char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t '{last}.0' \"e --tail %s/m/$F\"",TMP,AROOT);
+                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --tail %s/m/$F\"",TMP,AROOT);
                     (void)!system(rc);} }
             break;
         }
@@ -236,27 +247,6 @@ static int cmd_m_panel(int c, char **v) {
     write(1, "\033[?1000l\033[?1006l", 16);
     tcsetattr(0, TCSANOW, &old);
     return 0;
-}
-
-static int cmd_m_sw(int c, char **v) {
-    int it = c>3 && !strcmp(v[3],"main");  /* arg "main" means we're in tools, button shows "← main" */
-    struct termios old, raw; tcgetattr(0,&old); raw=old;
-    raw.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG); raw.c_cc[VMIN]=1; raw.c_cc[VTIME]=0;
-    tcsetattr(0,TCSANOW,&raw); write(1,"\033[?1000h\033[?1006h",16);
-    write(1,"\033[2J\033[H",7);
-    printf("\033[7;1m %s \033[0m\033[K",it?"← main":"tools →"); fflush(stdout);
-    for(;;) {
-        char ch; if(read(0,&ch,1)!=1) break;
-        if(ch==3||ch==4) break;
-        if(ch!='\x1b') continue;
-        char s[2]; if(read(0,s,1)!=1||s[0]!='['||read(0,s+1,1)!=1||s[1]!='<') continue;
-        int btn=0; char mc;
-        while(read(0,&mc,1)==1&&mc!=';') btn=btn*10+(mc-'0');
-        while(read(0,&mc,1)==1&&mc!=';'){} while(read(0,&mc,1)==1&&mc!='M'&&mc!='m'){}
-        if(mc!='M'||btn!=0) continue;
-        (void)!system(it?"tmux select-window -l":"tmux select-window -t :m-tools");
-    }
-    write(1,"\033[?1000l\033[?1006l",16); tcsetattr(0,TCSANOW,&old); return 0;
 }
 
 static void m_arch_commit(const char *kind, const char *ts) {
@@ -383,7 +373,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",TMP); mm_w(c,fn,"w");
-    snprintf(c,B,"tmux respawn-pane -k -t '{last}.0' 'e --tail %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"tmux respawn-pane -k -t :.0 'e --tail %s/m/%s'",AROOT,fn); (void)!system(c);
     snprintf(c,B,"%s/m_editorpid",TMP); char*p=readf(c,NULL);
     if(p)kill(atoi(p),SIGTERM); free(p); return 0;
 }
@@ -431,7 +421,9 @@ static void m_render(const char *sf, const char *spf) {
 static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
-    if (c > 2 && !strcmp(v[2], "sw")) return cmd_m_sw(c, v);
+    if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",TMP); char*p=readf(pf,NULL);
+        if(p){p[strcspn(p,"\n")]=0; char hc[128],hb[16]={0}; snprintf(hc,128,"tmux display -p -t %s '#{pane_height}'",p); pcmd(hc,hb,16);
+            char cmd[128]; snprintf(cmd,128,"tmux resize-pane -t %s -y %d",p,atoi(hb)>5?2:15); (void)!system(cmd); free(p);} return 0; }
     if (c > 2 && !strcmp(v[2], "reset")) return m_reset();
     if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
     if (c > 2 && !strcmp(v[2], "main")) return m_main();
@@ -459,27 +451,18 @@ static int cmd_m(int c, char **v) {
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
     mm_w(ss, "", "w");
     setenv("M_IN", "1", 1);
-    load_cfg(); const char *layout = cfget("m_layout"); if(!*layout) layout="2";
-    if (!strcmp(layout,"1")) {
-        snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
-                       "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
-                       "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
-                       "$S 'e --tail %2$s';$S -l 3 'tail -Fn 50 %3$s';$S -l 9 'a m panel';"
-                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %1$s/m;exec bash'",
-                 AROOT, sf, ss);
-    } else {
-        snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
-                       "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
-                       "S=\"tmux split-window -e M_IN=1 -dv\";"
-                       "$S -t $TMUX_PANE -b 'e --tail %2$s';$S -t $TMUX_PANE -l 1 'a m sw tools';"
-                       "W=$(tmux new-window -d -P -F '#{window_id}' -e M_IN=1 -n m-tools 'a m panel');"
-                       "$S -t $W -l 1 'a m sw main';$S -t $W -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash';"
-                       "$S -t $W -l 3 'tail -Fn 50 %3$s'",
-                 AROOT, sf, ss);
-    }
+    snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
+                   "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
+                   "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
+                   "$S -b 'e --tail %2$s';"
+                   "$S -l 3 'tail -Fn 50 %3$s';"
+                   "$S -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
+                   "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
+             AROOT, sf, ss, TMP);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];
-    snprintf(pf,P,"%s/m_pty",TMP); mm_w(pf,pty,"w");
+    snprintf(pf,P,"%s/m_panel",TMP); mm_w(pf,pty,"w");
+    snprintf(pf,P,"%s/m_pty",TMP); { char*bp=readf(pf,NULL); if(bp){strncpy(pty,bp,63);pty[63]=0;pty[strcspn(pty,"\n")]=0;free(bp);} }
     snprintf(pf,P,"%s/m_file",TMP); mm_w(pf,fn,"w");
     for (;;) {
         g_halt = 0;
