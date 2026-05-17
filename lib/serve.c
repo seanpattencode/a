@@ -215,7 +215,7 @@ static void _handle(int c){
         {int r;while((r=(int)read(pp[0],out+ol,(size_t)(8191-ol)))>0)ol+=r;}
         close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
         if(isnote){char np[P];snprintf(np,P,"%s/git/notes",AROOT);_sresp(c,200,"text/plain",np,(int)strlen(np));}
-        else{char resp[16384];int rl=snprintf(resp,16384,"<pre style=\"color:#fff\">%.*s</pre>",ol,out);
+        else{char resp[16384];int rl=ol?snprintf(resp,16384,"<pre style=\"color:#fff\">%.*s</pre>",ol,out):0;
             _sresp(c,200,"text/html",resp,rl);}
         return;}
     if(!strncmp(req,"POST /api/sync",14)){sync_bg();_sresp(c,200,"text/plain","ok",2);return;}
