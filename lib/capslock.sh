@@ -83,9 +83,8 @@ hs.eventtap.new({et.flagsChanged},function(e)
     if e:getFlags().shift then t=hs.timer.secondsSinceEpoch();c=true
     elseif c and hs.timer.secondsSinceEpoch()-t<.3 then hs.task.new("$TMUX_BIN",nil,{"next-window"}):start();c=false end end end):start()
 hs.eventtap.new({et.keyDown},function() c=false end):start()
-hs.alert.show("a: right shift tap → next window")
 LUA
-    open -a Hammerspoon
+    killall Hammerspoon 2>/dev/null; sleep 1; open -a Hammerspoon
     ok "Hammerspoon → right shift tap = tmux next-window"
     info "GRANT: System Settings → Privacy & Security → Accessibility → enable Hammerspoon" ;;
 *)  warn "unsupported OS — run $ABIN/a-launch manually" ;;
