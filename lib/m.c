@@ -195,20 +195,21 @@ static int cmd_m_panel(int c, char **v) {
         snprintf(pa,P,"%s/m_combo.txt",TMP); if(!stat(pa,&st)) tot+=st.st_size;
         tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
         write(1, "\033[2J\033[H", 7); nb = 0;
-        printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
-        if (gg) printf("gemini --yolo --output-format stream-json -m %s\033[K\n",cm);
-        else if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
-        else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n",cm,cf);
+        int vl=printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k")-9;
+        if (gg) vl+=printf("gemini --yolo --output-format stream-json -m %s\033[K\n",cm)-4;
+        else if (xx) vl+=printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"")-4;
+        else vl+=printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n",cm,cf)-4;
+        struct winsize ws;ws.ws_col=80;ioctl(1,TIOCGWINSZ,&ws);int wrap=vl/ws.ws_col;
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
             for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
-                bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
+                bx[nb]=cx;bw[nb]=w;br[nb]=row+wrap;bk[nb]=kind;bi[nb]=i;nb++;\
                 printf("%s[%s]%s ",s?"\033[7m":"",arr[i],s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
         VROW("agent",AGTS,1,'a',cg); VROW("model",MODS,2,'m',cm);
         if (!gg) VROW("effort",EFFS,3,'e',cf);
         if (xx) VROW("tier",TIERS,4,'t',ct);
         #undef VROW
         {int cx=0;for(int i=0;OPS[i].l;i++){int w=(int)strlen(OPS[i].l)+2;
-            bx[nb]=cx;bw[nb]=w;br[nb]=opsr;bk[nb]='o';bi[nb]=i;nb++;
+            bx[nb]=cx;bw[nb]=w;br[nb]=opsr+wrap;bk[nb]='o';bi[nb]=i;nb++;
             printf("[%s] ",OPS[i].l);cx+=w+1;}printf("\033[K\n");}
         printf("\033[90m%s\033[0m\033[K",last); fflush(stdout);
         char ch; if (read(0, &ch, 1) != 1) break;
