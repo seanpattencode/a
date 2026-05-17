@@ -33,10 +33,10 @@ static void m_commit(const char *tag) {
     pid_t p = fork();
     if (!p) {
         char c[B];
-        snprintf(c, B, "git -C '%s/m' add -A && (git -C '%s/m' diff --cached --quiet || git -C '%s/m' commit -q -m '%s')", AROOT, AROOT, AROOT, tag);
+        snprintf(c, B, "cd '%s/m' && git pull --rebase -q 2>/dev/null; git add -A && (git diff --cached --quiet || git commit -q -m '%s'); git push -q 2>/dev/null", AROOT, tag);
         execlp("sh", "sh", "-c", c, NULL); _exit(127);
     }
-    if (p > 0) { g_cmt = p; char sm[32]; snprintf(sm, 32, "git saving %s", tag); m_status(sm); }
+    if (p > 0) { g_cmt = p; char sm[32]; snprintf(sm, 32, "git sync %s", tag); m_status(sm); }
 }
 
 static int mm_extract(const char *a, char *bash, size_t bsz, size_t *eo) {
@@ -435,6 +435,7 @@ static int cmd_m(int c, char **v) {
     mm_w(ss, "", "w");
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
+                   "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
                    "$S 'e --tail %2$s';$S -l 3 'tail -Fn 50 %3$s';"
                    "$S -l 9 'a m panel'",
