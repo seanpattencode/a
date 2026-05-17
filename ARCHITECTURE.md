@@ -51,3 +51,5 @@ Apps should have all interactive elements on the bottom where thumbs are.
 
 34.
 Apps should use c wherever possible for speed including ui.
+
+35. Apps should immediately open to the most obvious and common use case and should open cold in milliseconds range time under 15 ms but ideally less to be useable for that
