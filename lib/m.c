@@ -235,6 +235,27 @@ static int cmd_m_panel(int c, char **v) {
     return 0;
 }
 
+static int cmd_m_sw(int c, char **v) {
+    int it = c>3 && !strcmp(v[3],"main");  /* arg "main" means we're in tools, button shows "← main" */
+    struct termios old, raw; tcgetattr(0,&old); raw=old;
+    raw.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG); raw.c_cc[VMIN]=1; raw.c_cc[VTIME]=0;
+    tcsetattr(0,TCSANOW,&raw); write(1,"\033[?1000h\033[?1006h",16);
+    write(1,"\033[2J\033[H",7);
+    printf("\033[7;1m %s \033[0m\033[K",it?"← main":"tools →"); fflush(stdout);
+    for(;;) {
+        char ch; if(read(0,&ch,1)!=1) break;
+        if(ch==3||ch==4) break;
+        if(ch!='\x1b') continue;
+        char s[2]; if(read(0,s,1)!=1||s[0]!='['||read(0,s+1,1)!=1||s[1]!='<') continue;
+        int btn=0; char mc;
+        while(read(0,&mc,1)==1&&mc!=';') btn=btn*10+(mc-'0');
+        while(read(0,&mc,1)==1&&mc!=';'){} while(read(0,&mc,1)==1&&mc!='M'&&mc!='m'){}
+        if(mc!='M'||btn!=0) continue;
+        (void)!system(it?"tmux select-window -l":"tmux select-window -t :m-tools");
+    }
+    write(1,"\033[?1000l\033[?1006l",16); tcsetattr(0,TCSANOW,&old); return 0;
+}
+
 static void m_arch_commit(const char *kind, const char *ts) {
     char c[B]; snprintf(c,B,"git -C '%1$s/m' add -A 2>/dev/null && (git -C '%1$s/m' diff --cached --quiet 2>/dev/null || git -C '%1$s/m' commit -q -m 'archive %2$s %3$s' 2>/dev/null)",AROOT,kind,ts);
     (void)!system(c);
@@ -407,6 +428,7 @@ static void m_render(const char *sf, const char *spf) {
 static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
+    if (c > 2 && !strcmp(v[2], "sw")) return cmd_m_sw(c, v);
     if (c > 2 && !strcmp(v[2], "reset")) return m_reset();
     if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
     if (c > 2 && !strcmp(v[2], "main")) return m_main();
@@ -434,14 +456,27 @@ static int cmd_m(int c, char **v) {
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
     mm_w(ss, "", "w");
     setenv("M_IN", "1", 1);
-    snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
-                   "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
-                   "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
-                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb 'e --tail %2$s';"
-                   "W=$(tmux new-window -d -P -F '#{window_id}' -e M_IN=1 -n m-tools 'a m panel');"
-                   "tmux split-window -t $W -e M_IN=1 -dv -l 3 'tail -Fn 50 %3$s';"
-                   "tmux split-window -t $W -e M_IN=1 -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash'",
-             AROOT, sf, ss);
+    load_cfg(); const char *layout = cfget("m_layout"); if(!*layout) layout="2";
+    if (!strcmp(layout,"1")) {
+        snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
+                       "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
+                       "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
+                       "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
+                       "$S 'e --tail %2$s';$S -l 3 'tail -Fn 50 %3$s';$S -l 9 'a m panel';"
+                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %1$s/m;exec bash'",
+                 AROOT, sf, ss);
+    } else {
+        snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
+                       "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
+                       "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
+                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb 'e --tail %2$s';"
+                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -l 1 'a m sw tools';"
+                       "W=$(tmux new-window -d -P -F '#{window_id}' -e M_IN=1 -n m-tools 'a m panel');"
+                       "tmux split-window -t $W -e M_IN=1 -dv -l 3 'tail -Fn 50 %3$s';"
+                       "tmux split-window -t $W -e M_IN=1 -dvb -l 1 'a m sw main';"
+                       "tmux split-window -t $W -e M_IN=1 -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash'",
+                 AROOT, sf, ss);
+    }
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];
     snprintf(pf,P,"%s/m_pty",TMP); mm_w(pf,pty,"w");
