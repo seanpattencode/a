@@ -236,8 +236,21 @@ static int cmd_m_panel(int c, char **v) {
 }
 
 static void m_arch_commit(const char *kind, const char *ts) {
-    char c[B]; snprintf(c,B,"git -C '%s/m' add -A 2>/dev/null && (git -C '%s/m' diff --cached --quiet 2>/dev/null || git -C '%s/m' commit -q -m 'archive %s %s' 2>/dev/null)",AROOT,AROOT,AROOT,kind,ts);
+    char c[B]; snprintf(c,B,"git -C '%1$s/m' add -A 2>/dev/null && (git -C '%1$s/m' diff --cached --quiet 2>/dev/null || git -C '%1$s/m' commit -q -m 'archive %2$s %3$s' 2>/dev/null)",AROOT,kind,ts);
     (void)!system(c);
+}
+
+/* write [s,e) of txt to archive/<ts>.txt, replace section in mp with marker, commit. returns ts (static). */
+static char *m_arch_save(char *txt, size_t tl, char *s, char *e, const char *mp, const char *adir, const char *kind, const char *info) {
+    static char ts[32]; char ap[P],mk[256];
+    mkdirp(adir);
+    time_t tt=time(NULL); strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tt));
+    snprintf(ap,P,"%s/%s.txt",adir,ts);
+    FILE *af=fopen(ap,"w"); if(af){fwrite(s,1,(size_t)(e-s),af); fclose(af);}
+    snprintf(mk,256,"[archived %s · %s · view: a m archive view %s]\n",ts,info,ts);
+    FILE *f=fopen(mp,"w"); if(f){fwrite(txt,1,(size_t)(s-txt),f); fputs(mk,f); fwrite(e,1,(size_t)((txt+tl)-e),f); fclose(f);}
+    m_arch_commit(kind, ts);
+    return ts;
 }
 
 static int m_archive(int c, char **v) {
@@ -259,27 +272,15 @@ static int m_archive(int c, char **v) {
         snprintf(mp, P, "%s/m/%s", AROOT, fn);
         size_t tl; char *txt = readf(mp, &tl);
         if (!txt) { printf("not found: %s\n", mp); return 1; }
-        char *last_um = NULL, *prev_um = NULL, *p = txt;
-        char *aend = strstr(txt, "## a-loaded-end\n");
-        const char *start = aend ? aend : txt;
+        char *last_um=NULL, *prev_um=NULL, *p=txt;
+        char *aend = strstr(txt, "## a-loaded-end\n"); const char *start = aend?aend:txt;
         while ((p = strstr(p+1, "\n## user\n")) && p < txt + tl) {
             if (p+1 < start) continue;
             prev_um = last_um; last_um = p + 1;
         }
         if (!prev_um || !last_um || prev_um == last_um) { puts("no completed turn to archive"); free(txt); return 0; }
-        mkdirp(adir);
-        char ts[32]; time_t t = time(NULL); strftime(ts, sizeof ts, "%Y%m%dT%H%M%S", localtime(&t));
-        snprintf(ap, P, "%s/%s.txt", adir, ts);
-        FILE *af = fopen(ap, "w"); if (!af) { free(txt); return 1; }
-        fwrite(prev_um, 1, (size_t)(last_um - prev_um), af); fclose(af);
-        char mk[256];
-        snprintf(mk, 256, "[archived %s · turn · view: a m archive view %s]\n", ts, ts);
-        FILE *f = fopen(mp, "w"); if (!f) { free(txt); return 1; }
-        fwrite(txt, 1, (size_t)(prev_um - txt), f); fputs(mk, f);
-        fwrite(last_um, 1, (size_t)((txt + tl) - last_um), f); fclose(f); free(txt);
-        printf("archived 1 turn → archive/%s.txt\n", ts);
-        m_arch_commit("turn", ts);
-        return 0;
+        printf("archived 1 turn → archive/%s.txt\n", m_arch_save(txt, tl, prev_um, last_um, mp, adir, "turn", "turn"));
+        free(txt); return 0;
     }
     if (c > 3 && !strcmp(v[3], "undo")) {
         mkdirp(adir);
@@ -305,8 +306,7 @@ static int m_archive(int c, char **v) {
         snprintf(mp, P, "%s/m/%s", AROOT, fn);
         size_t tl; char *txt = readf(mp, &tl);
         if (!txt) { printf("file not found: %s\n", mp); return 1; }
-        /* preserve ## a-loaded block: start archive AFTER ## a-loaded-end if present */
-        char *first = NULL, *aend = strstr(txt, "## a-loaded-end\n");
+        char *first=NULL, *aend=strstr(txt, "## a-loaded-end\n");
         if (aend) first = strstr(aend, "\n## user\n");
         if (!first) first = strstr(txt, "\n## user\n");
         if (!first) { puts("no conversation"); free(txt); return 0; }
@@ -314,19 +314,8 @@ static int m_archive(int c, char **v) {
         char *last = first, *p = first;
         while ((p = strstr(p + 1, "\n## user\n")) != NULL) last = p + 1;
         if (last == first) { puts("nothing to rotate"); free(txt); return 0; }
-        mkdirp(adir);
-        char ts[32]; time_t t = time(NULL); strftime(ts, sizeof ts, "%Y%m%dT%H%M%S", localtime(&t));
-        snprintf(ap, P, "%s/%s.txt", adir, ts);
-        FILE *af = fopen(ap, "w"); if (!af) { free(txt); return 1; }
-        fwrite(first, 1, (size_t)(last - first), af); fclose(af);
-        char mk[256];
-        snprintf(mk, 256, "[archived %s · rotate · view: a m archive view %s]\n", ts, ts);
-        FILE *f = fopen(mp, "w"); if (!f) { free(txt); return 1; }
-        fwrite(txt, 1, (size_t)(first - txt), f); fputs(mk, f);
-        fwrite(last, 1, (size_t)((txt + tl) - last), f); fclose(f); free(txt);
-        printf("rotated → archive/%s.txt\n", ts);
-        m_arch_commit("rotate", ts);
-        return 0;
+        printf("rotated → archive/%s.txt\n", m_arch_save(txt, tl, first, last, mp, adir, "rotate", "rotate"));
+        free(txt); return 0;
     }
     if (c < 4) { fputs(USAGE, stderr); return 1; }
     int has_ts = !strcmp(v[3], "view") || !strcmp(v[3], "unarchive");
@@ -356,7 +345,6 @@ static int m_archive(int c, char **v) {
     int N = atoi(v[3]); const char *dash = strchr(v[3], '-');
     int M = dash ? atoi(dash + 1) : N;
     if (N < 1 || M < N) { fprintf(stderr, "invalid range '%s': want N-M with N>=1 and M>=N\n", v[3]); return 1; }
-    mkdirp(adir);
     size_t tl; char *txt = readf(mp, &tl);
     if (!txt) { printf("file not found: %s\n", mp); return 1; }
     char *s = txt; int ln = 1;
@@ -364,19 +352,9 @@ static int m_archive(int c, char **v) {
     if (ln < N) { printf("past EOF (%d lines)\n", ln); free(txt); return 1; }
     char *e = s; int cnt = 0;
     while (e < txt + tl && cnt < M - N + 1) { if (*e++ == '\n') cnt++; }
-    char ts[32]; time_t t = time(NULL);
-    strftime(ts, sizeof ts, "%Y%m%dT%H%M%S", localtime(&t));
-    snprintf(ap, P, "%s/%s.txt", adir, ts);
-    FILE *af = fopen(ap, "w"); if (!af) { free(txt); return 1; }
-    fwrite(s, 1, (size_t)(e - s), af); fclose(af);
-    char mk[256];
-    snprintf(mk, 256, "[archived %s · L%d-%d · view: a m archive view %s]\n", ts, N, M, ts);
-    FILE *f = fopen(mp, "w"); if (!f) { free(txt); return 1; }
-    fwrite(txt, 1, (size_t)(s - txt), f); fputs(mk, f);
-    fwrite(e, 1, (size_t)((txt + tl) - e), f); fclose(f); free(txt);
-    printf("archived L%d-%d → archive/%s.txt (%ld bytes)\n", N, M, ts, (long)(e - s));
-    m_arch_commit("range", ts);
-    return 0;
+    char info[32]; snprintf(info,32,"L%d-%d",N,M);
+    printf("archived %s → archive/%s.txt (%ld bytes)\n", info, m_arch_save(txt, tl, s, e, mp, adir, "range", info), (long)(e-s));
+    free(txt); return 0;
 }
 
 static int m_reinit(const char *fn) {
@@ -390,26 +368,18 @@ static int m_main(void){return m_reinit("m.txt");}
 static int m_new(void){time_t t=time(NULL);char fn[64];strftime(fn,64,"agent-%Y%m%dT%H%M%S.txt",localtime(&t));return m_reinit(fn);}
 
 static int m_reset(void) {
-    char ptyf[P]; snprintf(ptyf, P, "%s/m_pty", TMP);
-    char *p = readf(ptyf, NULL);
-    if (!p || !*p) { puts("no pty registered (a m not running here)"); free(p); return 1; }
-    p[strcspn(p, "\n")] = 0;
-    char cmd[B];
-    snprintf(cmd, B, "tmux send-keys -t '%s' C-c; tmux send-keys -t '%s' 'clear' Enter", p, p);
-    int r = system(cmd); free(p); return r;
+    char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",TMP);
+    char *p=readf(pf,NULL); if(!p||!*p){puts("no pty (a m not running here)");free(p);return 1;}
+    p[strcspn(p,"\n")]=0;
+    snprintf(c,B,"tmux send-keys -t '%1$s' C-c; tmux send-keys -t '%1$s' 'clear' Enter",p);
+    int r=system(c); free(p); return r;
 }
 
 static void m_render(const char *sf, const char *spf) {
     /* materialized view: rebuild combo from latest a_cat + i.txt, append a-loaded block if hash changed */
     char combo[P]; snprintf(combo,P,"%s/m_combo.txt",TMP);
-    { char acat[P]; snprintf(acat,P,"%s/local/a_cat.txt",AROOT);
-      char ipath[P]; snprintf(ipath,P,"%s/m/i.txt",AROOT);
-      FILE *co=fopen(combo,"w");
-      if(co){char b2[8192];size_t n;FILE*in;
-        if((in=fopen(acat,"r"))){while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
-        if((in=fopen(ipath,"r"))){fputs("\n==> i.txt (meta-agent identity) <==\n",co);
-          while((n=fread(b2,1,8192,in))>0)fwrite(b2,1,n,co);fclose(in);}
-        fclose(co);} }
+    { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt (meta-agent identity) <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo);
+      (void)!system(c); }
     load_cfg();
     size_t sl=0,al=0,gl=0; char *sc=readf(spf,&sl);
     char *ac=fexists(combo)?readf(combo,&al):NULL;
@@ -426,8 +396,7 @@ static void m_render(const char *sf, const char *spf) {
         FILE *f=fopen(sf,"a");
         if (f) { time_t t=time(NULL); char ts[32];
             strftime(ts,32,"%FT%T",localtime(&t));
-            fprintf(f,"\n%s %s\nflags: --model %s --effort %s --tools \"\"\n",mk,ts,md,ef);
-            fprintf(f,"--system-prompt:\n%s\n",sc?sc:"");
+            fprintf(f,"\n%s %s\nflags: --model %s --effort %s --tools \"\"\n--system-prompt:\n%s\n",mk,ts,md,ef,sc?sc:"");
             if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",combo,al,ac);
             fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:"");
             fclose(f); }
@@ -473,9 +442,9 @@ static int cmd_m(int c, char **v) {
     system(b);
     snprintf(b, B, "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %s/m;exec bash'", AROOT);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
-    { char pf[P]; snprintf(pf, P, "%s/m_pty", TMP); mm_w(pf, pty, "w");
-      snprintf(pf, P, "%s/m_file", TMP); mm_w(pf, fn, "w"); }
     char pf[P];
+    snprintf(pf,P,"%s/m_pty",TMP); mm_w(pf,pty,"w");
+    snprintf(pf,P,"%s/m_file",TMP); mm_w(pf,fn,"w");
     for (;;) {
         g_halt = 0;
         snprintf(pf,P,"%s/m_file",TMP); char *fp=readf(pf,NULL);
