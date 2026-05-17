@@ -416,7 +416,32 @@ def detect_cpu(serial):
             if c:best="cortex-"+c
     if best:print("cpu:",best)
     return best
+def shizuku_pair():
+    import urllib.request,json,re
+    print("Phone steps:\n  1. Settings → Developer Options → Wireless Debugging → ON\n  2. Tap 'Pair device with pairing code' → dialog shows pairing port + 6-digit code\n")
+    pp=input("Pairing 'IP:port' from dialog: ").strip();code=input("6-digit code: ").strip()
+    ip=pp.split(":")[0]
+    p=S.Popen(["adb","pair",pp],stdin=S.PIPE,stdout=S.PIPE,stderr=S.STDOUT);o,_=p.communicate(input=(code+"\n").encode())
+    print(o.decode());"Successfully paired" in o.decode() or sys.exit("x Pair failed")
+    print("→ discovering debug port via mDNS...");S.run(["sleep","2"])
+    m=S.run(["adb","mdns","services"],capture_output=True,text=True).stdout
+    dp=next((re.search(rf"{re.escape(ip)}:(\d+)",l).group(1) for l in m.splitlines() if ip in l and "_adb-tls-connect" in l),None)
+    dp or sys.exit("x mDNS didn't find debug port; ensure Wireless Debugging still ON")
+    print(f"→ debug port: {dp}");S.check_call(["adb","connect",f"{ip}:{dp}"])
+    sz=S.run(["adb","-s",f"{ip}:{dp}","shell","pm","path","moe.shizuku.privileged.api"],capture_output=True,text=True).stdout.strip()
+    if not sz:
+        print("→ fetching latest Shizuku APK...")
+        r=urllib.request.urlopen("https://api.github.com/repos/RikkaApps/Shizuku/releases/latest");d=json.loads(r.read())
+        url=next(a["browser_download_url"] for a in d["assets"] if a["name"].endswith(".apk"))
+        urllib.request.urlretrieve(url,"/tmp/shizuku.apk")
+        S.check_call(["adb","-s",f"{ip}:{dp}","install","-r","/tmp/shizuku.apk"])
+        print("✓ Shizuku installed")
+    abi=S.run(["adb","-s",f"{ip}:{dp}","shell","getprop","ro.product.cpu.abi"],capture_output=True,text=True).stdout.strip()
+    sub={"arm64-v8a":"arm64","armeabi-v7a":"arm","x86_64":"x86_64","x86":"x86"}.get(abi,"arm64")
+    S.check_call(["adb","-s",f"{ip}:{dp}","shell",f'L=$(dirname $(pm path moe.shizuku.privileged.api|head -1|sed s/package://))/lib/{sub}/libshizuku.so; "$L"'])
+    print("\n✓ Shizuku service started. After reboot: re-run this command (pairing persists).")
 def run():
+    if "pair" in sys.argv[1:]:return shizuku_pair()
     proj=serial=None
     for a in sys.argv[2:]:
         for p in [a,H+"/"+a,R+"/adata/git/my/"+a]:
