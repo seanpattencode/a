@@ -43,3 +43,11 @@
 31. The e editor handles the user interaction and editing of the meta agent and more broadly serves as its ui layer. Changes to editor will be made to support changes to meta agent ui as needed. This is neccesary because a text editor is essential for making the agent editable by human trivially and e is a text editor that the main developer, Sean Patten, can control and edit and is sufficently fast for the task. Failures to do UI capabilities or bugs are resolved by fixing the e editor.
 
 
+## apps and UI
+32. Apps should immediately trigger actions on finger depression, not lift up, to be faster.
+
+33.
+Apps should have all interactive elements on the bottom where thumbs are. 
+
+34.
+Apps should use c wherever possible for speed including ui.
