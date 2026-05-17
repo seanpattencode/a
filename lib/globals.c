@@ -1,4 +1,8 @@
-/* globals */
+/* globals — paths:
+   AROOT=adata/        DDIR=adata/local/ (gitignored)   SROOT=adata/git/ (synced repo)
+   SROOT subdirs: notes/ tasks/ projects/ activity/ sessions/ perf/ workspace/ secrets/
+   SROOT/secrets/ — user-managed secrets (recovery keys, tokens, …). Plaintext OK since
+   adata/git is a private remote; append your own files there as desired. */
 static char HOME[P], TMP[P], DDIR[P], AROOT[P], SROOT[P], SDIR[P], DEV[128], LOGDIR[P];
 static int G_argc; static char **G_argv;
 
