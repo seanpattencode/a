@@ -393,9 +393,8 @@ def main():
  # Bundle tmux + tic as native libs (Android exec-allowed SELinux context)
  as_dir=D+"/app/src/main/assets";os.makedirs(as_dir,exist_ok=True)
  tmux_src="/tmp/dsrc/tmux-3.4/tmux";tic_src="/tmp/dsrc/ncurses-6.4/progs/tic";ssh_src="/tmp/dsrc/dropbear-2024.86/dbclient"
- NDK=sorted([d for d in os.listdir(H+"/Library/Android/sdk/ndk")])[-1]
- ACC=f"{H}/Library/Android/sdk/ndk/{NDK}/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android28-clang"
- AST=f"{H}/Library/Android/sdk/ndk/{NDK}/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-strip"
+ ACC=f"{NDK}/toolchains/llvm/prebuilt/{HOST}/bin/aarch64-linux-android28-clang"
+ AST=f"{NDK}/toolchains/llvm/prebuilt/{HOST}/bin/llvm-strip"
  SRC=H+"/a";a_out="/tmp/a_aarch64"
  S.check_call([ACC,"-w","-O2","-DSRC=\""+SRC+"\"","-o",a_out,SRC+"/a.c"])
  S.check_call([AST,a_out])
