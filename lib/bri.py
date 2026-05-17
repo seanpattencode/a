@@ -4,10 +4,17 @@
 Gemini/Claude.ai/other strict-CSP LLM UIs). Listens :1234 (HTTP: serves
 userscript, GET /poll for next cmd, POST /resp for results); :1235 (push JSON).
 
-Setup once: install Tampermonkey in Firefox → run this → open
-http://127.0.0.1:1234/a.user.js → click Install (or Update if already
-installed at older version) → launch Firefox WITHOUT -marionette → sign
-into target site manually once.
+Two interchangeable page-side clients (pick one or run both — server doesn't care):
+  (a) Tampermonkey userscript — Setup: install Tampermonkey extension → open
+      http://127.0.0.1:1234/a.user.js → click Install/Update. Per-bump cost is
+      one Update click. Works on any browser that has TM.
+  (b) Firefox WebExtension at lib/bri-ext/ — Setup: drop a-bridge.xpi into
+      <profile>/extensions/ + set user_pref("xpinstall.signatures.required",
+      false) in user.js + restart FF. No per-bump click; rebuild xpi & restart.
+      Wins over userscript: eval works on chatgpt.com (TM hits CSP there);
+      fetch goes through extension context (no GM_xhr). Same dispatch loop,
+      same /poll + /resp protocol — server is identical for both clients.
+  Both: launch Firefox WITHOUT -marionette → sign into target site once.
 
 Drive shortcuts (bridge must already be running in another process):
   bri <url>          navigate (http/https prefix detected)
@@ -60,15 +67,17 @@ pollers, pending = [], {}  # pollers: list[Queue]  pending: id -> Queue
 USERSCRIPT = r"""// ==UserScript==
 // @name         a-bridge
 // @namespace    https://github.com/seanpattencode/a
-// @version      0.4
+// @version      0.5
 // @match        *://*/*
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
 // @run-at       document-end
 // ==/UserScript==
 // HTTP long-poll via GM_xmlhttpRequest — runs in TM's privileged extension
-// context, bypasses page CSP. WebSocket from page context (v0.2) was blocked
-// by strict connect-src on Gemini/Claude.ai. GM_xhr is unaffected.
+// context, bypasses page CSP for our own network. WebSocket from page context
+// (v0.2) was blocked by strict connect-src on Gemini/Claude.ai. GM_xhr is fine.
+// Dep: Tampermonkey extension. Alternative client with same protocol but
+// fewer dep clicks: a-bridge WebExtension at lib/bri-ext/ (drop xpi).
 // Why TM beats Marionette/CDP for signed-in automation:
 //   Marionette: Firefox hard-codes navigator.webdriver=true while -marionette
 //     runs. Google → "browser may not be secure". Restart FF without it.
@@ -97,7 +106,22 @@ USERSCRIPT = r"""// ==UserScript==
                            return {ok:true}; }
         case 'text':     return {ok:true, value:$(m.sel).innerText};
         case 'html':     return {ok:true, value:document.documentElement.outerHTML.slice(0,200000)};
-        case 'eval':     return {ok:true, value:await (async()=>eval(m.code))()};
+        case 'find':     { // walk open shadow roots; match by visible text OR aria-label (case-insens, contains)
+                           const need = (m.text||'').toLowerCase().trim();
+                           const sel = m.sel || 'button, [role="button"], a, [tabindex]:not([tabindex="-1"])';
+                           const hits = [];
+                           const walk = root => {
+                             for (const el of root.querySelectorAll(sel)) {
+                               const t = ((el.innerText||el.textContent||'')+' '+(el.getAttribute('aria-label')||'')).toLowerCase();
+                               if (!need || t.includes(need)) hits.push(el);
+                             }
+                             for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
+                           };
+                           walk(document);
+                           if (m.click && hits.length) hits[0].click();
+                           return {ok:true, value:{n:hits.length, first:(hits[0]?(hits[0].innerText||hits[0].getAttribute('aria-label')||'').trim().slice(0,80):null)}}; }
+        case 'eval':     { let c=m.code; try{if(window.trustedTypes&&trustedTypes.createPolicy){const tt=window._abp||(window._abp=trustedTypes.createPolicy('abridge',{createScript:s=>s}));c=tt.createScript(m.code);}}catch(e){}
+                           return {ok:true, value:await (async()=>eval(c))()}; }
         case 'wait':     await new Promise(r=>setTimeout(r,m.ms||500)); return {ok:true};
         case 'url':      return {ok:true, value:location.href};
         default: return {error:'unknown action: '+m.action};

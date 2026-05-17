@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "name": "a-bridge",
+  "version": "0.1",
+  "description": "HTTP long-poll bridge for `a` automation. Interchangeable with the Tampermonkey userscript in lib/bri.py — pick either (or run both). Deps: Firefox Nightly + xpinstall.signatures.required=false in user.js. Wins vs userscript: extension-context fetch, eval works on chatgpt.com.",
+  "permissions": ["<all_urls>"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "a-bridge@seanpatten",
+      "strict_min_version": "115.0"
+    }
+  },
+  "content_scripts": [{
+    "matches": ["<all_urls>"],
+    "js": ["content.js"],
+    "run_at": "document_end",
+    "all_frames": true
+  }]
+}
