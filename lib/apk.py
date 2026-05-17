@@ -435,7 +435,7 @@ def run():
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
         w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC)
         TLS=R+"/adata/git/my/text-launcher/app/src/main"
-        HKT=open(TLS+"/java/com/tl/M.kt").read().replace("package com.tl","package com.aios.a").replace("class M :","class Home :").replace("this@M","this@Home").replace("M::class.java","Home::class.java")
+        HKT=open(TLS+"/java/com/tl/M.kt").read().replace("package com.tl","package com.aios.a").replace("class M :","class Home :").replace("this@M","this@Home")
         LC=open(TLS+"/cpp/launcher.c").read().replace("Java_com_tl_M_","Java_com_aios_a_Home_")
         w(D+"/app/src/main/java/com/aios/a/Home.kt",HKT);w(D+"/app/src/main/res/values/styles.xml",open(TLS+"/res/values/t.xml").read())
         NKB=R+"/adata/git/my/instant-keyboard-ndk/app/src/main"
