@@ -6,7 +6,7 @@ N = f"{S0}/ndk"
 v = sorted(os.listdir(N))[-1] if os.path.isdir(N) else sys.exit("x no NDK")
 T = f"{N}/{v}/toolchains/llvm/prebuilt";T=f"{T}/{os.listdir(T)[0]}"
 J="$(getconf _NPROCESSORS_ONLN)"
-E = {**os.environ, "PATH": f"{T}/bin:{os.environ['PATH']}", "CC": f"{T}/bin/aarch64-linux-android29-clang", "AR": f"{T}/bin/llvm-ar", "RANLIB": f"{T}/bin/llvm-ranlib"}
+E = {**os.environ, "PATH": f"{T}/bin:{os.environ['PATH']}", "CC": f"{T}/bin/aarch64-linux-android29-clang", "AR": f"{T}/bin/llvm-ar", "RANLIB": f"{T}/bin/llvm-ranlib", "LDFLAGS": "-Wl,-z,max-page-size=16384"}
 SRC, PRE = "/tmp/dsrc", "/tmp/dstatic"
 os.makedirs(SRC, exist_ok=True)
 def dl(u, d):
@@ -38,7 +38,7 @@ if not os.path.exists(TB):
         if 'offsetof' in src and '#include <stddef.h>' not in src: src = '#include <stddef.h>\n' + src
         open(f"{TB}/{f}", 'w').write(src)
 if not os.path.exists(f"{TB}/tmux"):
-    e2 = {**E, "CFLAGS":f"-I{PRE}/include -I{PRE}/include/ncurses -Os -fPIE", "LDFLAGS":f"-L{PRE}/lib -pie", "LIBEVENT_CFLAGS":f"-I{PRE}/include", "LIBEVENT_LIBS":f"-L{PRE}/lib -levent", "LIBNCURSES_CFLAGS":f"-I{PRE}/include/ncurses", "LIBNCURSES_LIBS":f"-L{PRE}/lib -lncurses", "ac_cv_func_forkpty":"yes"}
+    e2 = {**E, "CFLAGS":f"-I{PRE}/include -I{PRE}/include/ncurses -Os -fPIE", "LDFLAGS":f"-L{PRE}/lib -pie {E['LDFLAGS']}", "LIBEVENT_CFLAGS":f"-I{PRE}/include", "LIBEVENT_LIBS":f"-L{PRE}/lib -levent", "LIBNCURSES_CFLAGS":f"-I{PRE}/include/ncurses", "LIBNCURSES_LIBS":f"-L{PRE}/lib -lncurses", "ac_cv_func_forkpty":"yes"}
     S.check_call(f"./configure --host=aarch64-linux-android --disable-utf8proc --disable-dependency-tracking >/dev/null && make -j{J}", cwd=TB, env=e2, shell=True)
 for b in [f"{TB}/tmux", f"{NC}/progs/tic"]: S.check_call([f"{T}/bin/llvm-strip", b])
 d = next((l.split()[0] for l in S.run(["adb","devices"],capture_output=True,text=True).stdout.splitlines() if "\tdevice" in l),None) or sys.exit("x no adb device")
