@@ -210,7 +210,7 @@ static int cmd_ssh(int argc,char**argv){
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
     /* fast TCP probe; on fail switch to <name>-relay if it exists */
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
-        snprintf(pb,B,"timeout 1 bash -c 'exec 3<>/dev/tcp/%s/%s'2>/dev/null",ph,port);
+        snprintf(pb,B,"nc -z -w1 %s %s 2>/dev/null",ph,port);
         if(system(pb)){char rn[160];snprintf(rn,160,"%s-relay",H[idx].name);
             for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){idx=i;ssh_parse(H[idx].host,hp,port);break;}}}
     if(!H[idx].pw[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);

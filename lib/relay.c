@@ -6,8 +6,9 @@ static int cmd_relay(int argc,char**argv){
     kvs_t kv=kvfile(p);const char*h=kvget(&kv,"Host"),*pw=kvget(&kv,"Password");
     if(!h){puts("x no ubuntuSSD4Tb-wan");return 1;}
     ssh_parse(h,hp,port);
-    snprintf(p,P,"%s/ssh/%s.txt",SROOT,DEV);
-    kvs_t k2=kvfile(p);const char*opw=kvget(&k2,"Password");
+    const char*opw=NULL;kvs_t k2;
+    for(const char*s="";s;s=*s?NULL:"-lan"){snprintf(p,P,"%s/ssh/%s%s.txt",SROOT,DEV,s);
+        k2=kvfile(p);if((opw=kvget(&k2,"Password"))&&*opw)break;opw=NULL;}
     snprintf(p,P,"%s/ssh/%s-relay.txt",SROOT,DEV);
     snprintf(rd,B,"Name: %s-relay\nHost: seanpatten@127.0.0.1:%d\nPassword: %s\nJump: %s\nJumpPw: %s\n",DEV,rp,opw?opw:"",h,pw?pw:"");
     writef(p,rd);
