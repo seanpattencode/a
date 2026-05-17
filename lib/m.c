@@ -460,7 +460,6 @@ static int cmd_m(int c, char **v) {
     if (!strcmp(layout,"1")) {
         snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                        "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
-                       "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
                        "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
                        "$S 'e --tail %2$s';$S -l 3 'tail -Fn 50 %3$s';$S -l 9 'a m panel';"
                        "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -P -F '#{pane_id}' 'cd %1$s/m;exec bash'",
@@ -468,13 +467,11 @@ static int cmd_m(int c, char **v) {
     } else {
         snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                        "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
-                       "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
-                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb 'e --tail %2$s';"
-                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dv -l 1 'a m sw tools';"
+                       "S=\"tmux split-window -e M_IN=1 -dv\";"
+                       "$S -t $TMUX_PANE -b 'e --tail %2$s';$S -t $TMUX_PANE -l 1 'a m sw tools';"
                        "W=$(tmux new-window -d -P -F '#{window_id}' -e M_IN=1 -n m-tools 'a m panel');"
-                       "tmux split-window -t $W -e M_IN=1 -dv -l 1 'a m sw main';"
-                       "tmux split-window -t $W -e M_IN=1 -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash';"
-                       "tmux split-window -t $W -e M_IN=1 -dv -l 3 'tail -Fn 50 %3$s'",
+                       "$S -t $W -l 1 'a m sw main';$S -t $W -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash';"
+                       "$S -t $W -l 3 'tail -Fn 50 %3$s'",
                  AROOT, sf, ss);
     }
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
