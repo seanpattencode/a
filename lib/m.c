@@ -515,7 +515,7 @@ static int cmd_m(int c, char **v) {
             m_commit("t"); if (g_halt) break;
         }
         mm_w(sf, "\n## user\n", "a");
-        m_status("ready ^C | conv edited? ^S in conv pane first");
+        m_status("\033[1;7;31m⚠ If you typed in the conversation pane (above), Ctrl-S there FIRST to save edits ⚠\033[0m");
     }
     return 0;
 }
