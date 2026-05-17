@@ -151,7 +151,7 @@ analyze) _ensure_cc;_warn_flags
     find "$D" -maxdepth 1 -name '*.plist' -delete;;
 shell) _shell_funcs;;
 clean) rm -f "$D/adata/local/a";;
-capslock) bash "$D/lib/capslock.sh" "$D" "${2:-on}";;
+capslock) bash "$D/lib/capslock.sh" "${2:-on}";;
 install)
     BIN="$HOME/.local/bin"; mkdir -p "$BIN"; export PATH="$BIN:$PATH"
     if [[ "$OSTYPE" == darwin* ]]; then OS=mac

@@ -1,7 +1,7 @@
 #!/bin/bash
 # a set capslock on|off — remap capslock+a to launch a i or a ui
 set -e
-D="$1"; ACTION="${2:-on}"; ABIN="${D%%/adata/worktrees/*}/adata/local"
+D="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; ACTION="${1:-on}"; ABIN="${D%%/adata/worktrees/*}/adata/local"
 G='\033[32m' Y='\033[33m' C='\033[36m' R='\033[0m'
 ok() { echo -e "${G}✓${R} $1"; }; info() { echo -e "${C}>${R} $1"; }; warn() { echo -e "${Y}!${R} $1"; }
 KB="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/a-launch/"
@@ -73,7 +73,20 @@ linux*)
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB binding '<Hyper>a'
     ok "CapsLock+a → a i (or a ui if running)" ;;
 darwin*)
-    info "macOS: System Settings → Keyboard → Modifier Keys → CapsLock → Hyper"
-    info "then Karabiner-Elements: Hyper+a → $ABIN/a-launch" ;;
+    [[ -d /Applications/Hammerspoon.app ]] || { info "installing Hammerspoon..."; brew install --cask hammerspoon &>/dev/null || { warn "brew install failed"; exit 1; }; }
+    TMUX_BIN=$(command -v tmux)
+    mkdir -p ~/.hammerspoon
+    cat > ~/.hammerspoon/init.lua << LUA
+local t,c,et=0,false,hs.eventtap.event.types
+hs.eventtap.new({et.flagsChanged},function(e)
+  if e:getKeyCode()==60 then
+    if e:getFlags().shift then t=hs.timer.secondsSinceEpoch();c=true
+    elseif c and hs.timer.secondsSinceEpoch()-t<.3 then hs.task.new("$TMUX_BIN",nil,{"next-window"}):start();c=false end end end):start()
+hs.eventtap.new({et.keyDown},function() c=false end):start()
+hs.alert.show("a: right shift tap → next window")
+LUA
+    open -a Hammerspoon
+    ok "Hammerspoon → right shift tap = tmux next-window"
+    info "GRANT: System Settings → Privacy & Security → Accessibility → enable Hammerspoon" ;;
 *)  warn "unsupported OS — run $ABIN/a-launch manually" ;;
 esac
