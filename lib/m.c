@@ -392,30 +392,15 @@ static int m_archive(int c, char **v) {
     return 0;
 }
 
-static int m_restart(void) {
-    if (!getenv("M_IN")) { puts("a m restart: not in an a m session"); return 1; }
-    char c[B];
-    snprintf(c, B, "(w=$(tmux display-message -p -t \"$TMUX_PANE\" '#W');f=$(cat %s/m_file 2>/dev/null||echo m.txt);n=m-%ld;tmux new-window -d -t a: -n \"$n\" \"env -u M_IN a m $f\";sleep 1;tmux select-window -t \"a:$n\";tmux kill-window -t \"$w\")&",
-             TMP, (long)time(NULL));
-    return system(c);
+static int m_reinit(const char *fn) {
+    char c[B]; snprintf(c,B,"%s/m_file",TMP); mm_w(c,fn,"w");
+    snprintf(c,B,"W=$(tmux display-message -p -t \"$TMUX_PANE\" '#{window_id}');tmux respawn-pane -k -t \"$W.0\" 'tail -Fn99999 %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"%s/m_editorpid",TMP); char*p=readf(c,NULL);
+    if(p)kill(atoi(p),SIGTERM); free(p); return 0;
 }
-
-static int m_main(void) {
-    char ff[P]; snprintf(ff,P,"%s/m_file",TMP);
-    char *fp=readf(ff,NULL);
-    int already=!fp||!*fp||!strncmp(fp,"m.txt",5);
-    free(fp);
-    if (already) { puts("already in main"); return 0; }
-    mm_w(ff,"m.txt","w");
-    return m_restart();
-}
-
-static int m_new(void) {
-    time_t t=time(NULL); struct tm *tm=localtime(&t);
-    char fn[64]; strftime(fn,64,"agent-%Y%m%dT%H%M%S.txt",tm);
-    char ff[P]; snprintf(ff,P,"%s/m_file",TMP); mm_w(ff,fn,"w");
-    return m_restart();
-}
+static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",TMP);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
+static int m_main(void){return m_reinit("m.txt");}
+static int m_new(void){time_t t=time(NULL);char fn[64];strftime(fn,64,"agent-%Y%m%dT%H%M%S.txt",localtime(&t));return m_reinit(fn);}
 
 static int m_reset(void) {
     char ptyf[P]; snprintf(ptyf, P, "%s/m_pty", TMP);
@@ -491,14 +476,6 @@ static int cmd_m(int c, char **v) {
             fprintf(f, "%s\"%.*s\":false", fst?"":",", (int)(q2-q1-1), q1+1); fst = 0; p = q2+1; } }
         fputs("}}\n", f); fclose(f); } free(s); }
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
-    { char *cur = fexists(sf) ? readf(sf, NULL) : NULL;
-      if (!cur || strncmp(cur, "## system\n", 10)) {
-          size_t spl; char *sp = readf(spf, &spl); FILE *f = fopen(sf, "w");
-          if (f) { fprintf(f, "## system\n%s%s%s", sp?sp:"", (sp&&spl&&sp[spl-1]=='\n')?"":"\n", cur?cur:"## user\n"); fclose(f); }
-          free(sp);
-      }
-      free(cur); }
-    m_render(sf, spf);
     mm_w(ss, "", "w"); m_status("ready ^C=interrupt");
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
@@ -511,13 +488,22 @@ static int cmd_m(int c, char **v) {
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     { char pf[P]; snprintf(pf, P, "%s/m_pty", TMP); mm_w(pf, pty, "w");
       snprintf(pf, P, "%s/m_file", TMP); mm_w(pf, fn, "w"); }
+    char pf[P];
     for (;;) {
         g_halt = 0;
-        m_render(sf, spf);  /* re-render context if source files changed since last turn */
+        snprintf(pf,P,"%s/m_file",TMP); char *fp=readf(pf,NULL);
+        if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(sf,P,"%s/m/%s",AROOT,fp);} free(fp);
+        { char *cur=fexists(sf)?readf(sf,NULL):NULL;
+          if (!cur||strncmp(cur,"## system\n",10)) {
+            size_t spl;char *sp=readf(spf,&spl);FILE *f=fopen(sf,"w");
+            if(f){fprintf(f,"## system\n%s%s%s",sp?sp:"",(sp&&spl&&sp[spl-1]=='\n')?"":"\n",cur?cur:"## user\n");fclose(f);}
+            free(sp);} free(cur); }
+        m_render(sf, spf);
         char tf[] = "/tmp/m_inXXXXXX";
         int fd = mkstemp(tf); if (fd < 0) continue; close(fd);
         pid_t pp = fork();
         if (!pp) { execlp("e","e","--box","message:",tf,(char*)0); _exit(127); }
+        snprintf(pf,P,"%s/m_editorpid",TMP); char b2[16];snprintf(b2,16,"%d",pp);mm_w(pf,b2,"w");
         waitpid(pp, NULL, 0);
         size_t ml; char *m = readf(tf, &ml); unlink(tf);
         if (!m || !ml) { free(m); continue; }
