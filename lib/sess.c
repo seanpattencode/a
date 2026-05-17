@@ -72,11 +72,10 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
     return 0;
 }
 
-typedef struct{char*p;int sc;}fqm_t;
 static FC fq[1024];int nfq;
 static int fq_get(const char*s){int b=0,bl=0;
     for(int i=0;i<nfq;i++){int l=(int)strlen(fq[i].n);if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return b;}
-static int fqm_cmp(const void*a,const void*b){return((const fqm_t*)b)->sc-((const fqm_t*)a)->sc;}
+static int ln_cmp(const void*a,const void*b){return fq_get(*(char*const*)b)-fq_get(*(char*const*)a);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
     perf_disarm(); init_db();
@@ -93,6 +92,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     if(wraw){for(char*p=wraw,*end=wraw+wl;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
     if(!n){puts("Empty cache");free(raw);return 1;}
+    if(nfq)qsort(lines,(size_t)n,sizeof*lines,ln_cmp);  /* freq-rank: TUI + 'a i' pipe identical */
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
     struct winsize ws;ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-3:10;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
@@ -101,15 +101,14 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     char buf[256]="";int blen=0,sel=0;char prefix[256]="";
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw);free(wraw)
     while (1) {
-        fqm_t fm[1024]; int nm = 0; int plen = (int)strlen(prefix);
+        char*fm[1024]; int nm = 0; int plen = (int)strlen(prefix);
         for (int i=0;i<n&&nm<1024;i++) {
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||!strncmp(lines[i],"web ",4)))continue;
             if(blen){char*s=lines[i]+plen,b2[256],*w;snprintf(b2,256,"%s",buf);int ok=1;
                 for(w=strtok(b2," ");w&&ok;w=strtok(0," "))if(!strcasestr(s,w))ok=0;if(!ok)continue;}
-            fm[nm].p=lines[i];fm[nm].sc=fq_get(lines[i]);nm++;
+            fm[nm++]=lines[i];
         }
-        if(nfq)qsort(fm,(size_t)nm,sizeof(fqm_t),fqm_cmp);
         {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
         int top=sel>=maxshow?sel-maxshow+1:0, show=nm-top<maxshow?nm-top:maxshow;
         {char fb[B*4];int fl=0;
@@ -117,8 +116,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         FP("\033[H\033[?25l%s> %s\033[K\n",prefix,buf);
         if(!nm&&blen){FP("%s \033[35ma c \"%s\"\033[0m\033[K\n",sel==0?" >":"  ",buf);
             FP("%s \033[36mGoogle: %s\033[0m\033[K\n",sel==1?" >":"  ",buf);}
-        for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j].p,'\t');int ml=t?(int)(t-fm[j].p):(int)strlen(fm[j].p);
-            if(ml>W-5)ml=W-5;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j].p);
+        for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t');int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
+            if(ml>W-5)ml=W-5;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j]);
             if(t&&ml+5+(int)strlen(t+1)<W)FP("\033[%dG\033[90m%s\033[0m",W-(int)strlen(t+1),t+1);FP("\n");}
         FP("\033[J\033[1;%dH\033[?25h",plen+blen+3);
         #undef FP
@@ -146,7 +145,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             return 0;}do_pick=1;}
         else if(ch==3||ch==4)break;
         else if(isalnum(ch)||ch=='-'||ch=='_'||ch==' '||ch=='.'){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
-        if(do_pick&&nm){char*m=fm[sel].p,cmd[256];
+        if(do_pick&&nm){char*m=fm[sel],cmd[256];
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
             else{int cl=tab?(int)(tab-m):(int)strlen(m);snprintf(cmd,256,"%.*s",cl,m);}

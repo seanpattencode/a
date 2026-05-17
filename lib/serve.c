@@ -92,7 +92,7 @@ static void _html_gen(void){
         char*tab=strchr(l,'\t');char*name=l,*desc="";
         if(tab){*tab=0;desc=tab+1;}
         while(*name==' ')name++;
-        if(*name&&cl<4080&&!strstr(desc,"dir")&&!strstr(desc,"project")){
+        if(*name&&cl<4080){
             if(cl>1)cmds[cl++]=',';
             cl+=snprintf(cmds+cl,(size_t)(4095-cl),"[\"%s\",\"%s\"]",name,desc);}
         l=nl?nl+1:l+strlen(l);}
