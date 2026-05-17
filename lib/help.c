@@ -60,8 +60,9 @@ static void gen_icache(void) {
     for(int si=0;si<2;si++){char md[P];snprintf(md,P,"%s/%s",sd[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
     if(d){while((e=readdir(d))){if(e->d_name[0]=='.'||e->d_name[0]=='_')continue;
         char nm[64];snprintf(nm,64,"%s",e->d_name);char*dot=strrchr(nm,'.');
-        if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;if(!si&&dot)*dot=0;
-        fprintf(f,"%s\t%s\n",nm,sl[si]);}closedir(d);}}
+        if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;
+        const char*tg=!si&&dot&&!strcmp(dot,".html")?"page":sl[si];if(!si&&dot)*dot=0;
+        fprintf(f,"%s\t%s\n",nm,tg);}closedir(d);}}
     /* repos: scan adata/repos/ scripts */
     {char rd[P];snprintf(rd,P,"%s/repos",AROOT);DIR*d=opendir(rd);struct dirent*re;
     if(d){while((re=readdir(d))){if(re->d_name[0]=='.')continue;
@@ -78,7 +79,7 @@ static void gen_icache(void) {
     "ui\tweb dashboard\nterm\tterminal (a ui /term)\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
     "cal add\tadd event\nhub add\tadd\nhub run\trun\nhub rm\trm\nhub log\tlog\n"
-    "note l\tlist\nnote r\treview\nssh add\tadd host\nssh all\tall hosts\n"
+    "note\tnotes\nnote l\tlist\nnote r\treview\ntasks\ttasks\nssh add\tadd host\nssh all\tall hosts\n"
     "task add\tadd\ntask l\tlist\ntask r\treview\ntask rank\trank\n"
     "prompt\tdefault prompt\ntutorial\tguided intro\no\toperator\nop\toperator\noperator\toperator\n",f);
     /* recent downloads — tagged so TUI hides until typed */
