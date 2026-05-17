@@ -132,8 +132,8 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         int stop = is_codex ? mm_delta_codex(l, a, &al, sz) : is_gemini ? mm_delta_gemini(l, a, &al, sz) : mm_delta(l, a, &al, sz);
         if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
         char *uh = strstr(a, "\n## user\n"); size_t cut = uh ? (size_t)(uh - a) : 0;
-        if (!cut && mm_extract(a, bash, bsz, &eo) > 0) cut = eo;
-        if (cut) {
+        if (!uh && mm_extract(a, bash, bsz, &eo) > 0) cut = eo;
+        if (cut || uh) {
             if (cut < al) { a[cut] = 0; al = cut; ftruncate(fileno(of), start + (off_t)cut); }
             kill(cp, SIGTERM); break;
         }
