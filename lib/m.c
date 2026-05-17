@@ -108,17 +108,11 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
             if (has_tier) snprintf(t,80," -c 'service_tier=\"%s\"'",tier);
             snprintf(x,B,"iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
             execlp("sh","sh","-c",x,(char*)0);
-        } else if (has_acat)
-            execlp("claude","claude","-p","--output-format","stream-json",
-                   "--include-partial-messages","--verbose","--tools","",
-                   "--model",md,"--effort",ef,
-                   "--system-prompt", sp, "--append-system-prompt-file", acat,
-                   "--settings", g_set, (char*)0);
-        else
-            execlp("claude","claude","-p","--output-format","stream-json",
-                   "--include-partial-messages","--verbose","--tools","",
-                   "--model",md,"--effort",ef,
-                   "--system-prompt", sp, "--settings", g_set, (char*)0);
+        } else { char x[B*2],ap[P]="";
+            if (has_acat) snprintf(ap,P," --append-system-prompt-file '%s'",acat);
+            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\"%s --settings '%s'",md,ef,ap,g_set);
+            execlp("sh","sh","-c",x,"_",sp,(char*)0);
+        }
         _exit(127);
     }
     close(pp[1]); g_cp = cp;
@@ -128,12 +122,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     while (fgets(l, sizeof l, fp)) {
         int stop = is_codex ? mm_delta_codex(l, a, &al, sz) : is_gemini ? mm_delta_gemini(l, a, &al, sz) : mm_delta(l, a, &al, sz);
         if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
-        char *uh = strstr(a, "\n## user\n"); size_t cut = uh ? (size_t)(uh - a) : 0;
-        if (!uh && mm_extract(a, bash, bsz, &eo) > 0) cut = eo;
-        if (cut || uh) {
-            if (cut < al) { a[cut] = 0; al = cut; ftruncate(fileno(of), start + (off_t)cut); }
-            kill(cp, SIGTERM); break;
-        }
+        if (mm_extract(a, bash, bsz, &eo) > 0) { kill(cp, SIGTERM); break; }
         if (stop) break;
     }
     fclose(fp); fclose(of); waitpid(cp, NULL, 0); g_cp = 0;
@@ -192,21 +181,21 @@ static int cmd_m_panel(int c, char **v) {
         snprintf(pa,P,"%s/m_combo.txt",TMP); if(!stat(pa,&st)) tot+=st.st_size;
         tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
         write(1, "\033[2J\033[H", 7); nb = 0;
-        int vl=printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k")-9;
-        if (gg) vl+=printf("gemini --yolo --output-format stream-json -m %s\033[K\n",cm)-4;
-        else if (xx) vl+=printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K\n",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"")-4;
-        else vl+=printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K\n",cm,cf)-4;
-        struct winsize ws;ws.ws_col=80;ioctl(1,TIOCGWINSZ,&ws);int wrap=vl/ws.ws_col;
+        printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
+        if (gg) printf("gemini --yolo --output-format stream-json -m %s\033[K",cm);
+        else if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
+        else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K",cm,cf);
+        printf("\033[2;1H");
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
             for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
-                bx[nb]=cx;bw[nb]=w;br[nb]=row+wrap;bk[nb]=kind;bi[nb]=i;nb++;\
+                bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
                 printf("%s[%s]%s ",s?"\033[7m":"",arr[i],s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
         VROW("agent",AGTS,1,'a',cg); VROW("model",MODS,2,'m',cm);
         if (!gg) VROW("effort",EFFS,3,'e',cf);
         if (xx) VROW("tier",TIERS,4,'t',ct);
         #undef VROW
         {int cx=0;for(int i=0;OPS[i].l;i++){int w=(int)strlen(OPS[i].l)+2;
-            bx[nb]=cx;bw[nb]=w;br[nb]=opsr+wrap;bk[nb]='o';bi[nb]=i;nb++;
+            bx[nb]=cx;bw[nb]=w;br[nb]=opsr;bk[nb]='o';bi[nb]=i;nb++;
             printf("[%s] ",OPS[i].l);cx+=w+1;}printf("\033[K\n");}
         printf("\033[90m%s\033[0m\033[K",last); fflush(stdout);
         char ch; if (read(0, &ch, 1) != 1) break;
