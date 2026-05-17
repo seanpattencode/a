@@ -378,7 +378,9 @@ GS='pluginManagement{repositories{google();mavenCentral()};plugins{id("com.andro
 H=os.path.expanduser("~");IT=os.path.exists("/data/data/com.termux")
 _CMK='externalNativeBuild{cmake{path=file("src/main/cpp/CMakeLists.txt")}}\n'
 _DF='defaultConfig{applicationId="'+P+'";minSdk=24;targetSdk=34;versionCode=202;ndk{abiFilters+="arm64-v8a"}'+((';externalNativeBuild{cmake{arguments+="-DANDROID_STL=none"}}') if not IT else '')+'}\n'
-GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+_DF+('' if IT else _CMK)+'compileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\n'
+_ND=(os.environ.get("ANDROID_HOME") or H+"/Android/Sdk")+"/ndk"
+_NV=sorted(os.listdir(_ND))[-1] if os.path.isdir(_ND) else None
+GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'compileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\n'
 SDK="/data/data/com.termux/files/home/android-sdk" if IT else os.environ.get("ANDROID_HOME",H+"/Android/Sdk")
 R=os.path.dirname(os.path.dirname(os.path.abspath(__file__)));D=R+"/adata/_apk_build"
 if not IT:
@@ -421,14 +423,15 @@ def run():
             if os.path.isdir(p) and glob.glob(p+"/build.gradle*"):proj=os.path.abspath(p);break
         if proj:break
         elif not serial:serial=a
+    if not serial:
+        ds=devlist()
+        if ds:serial=ds[0] if len(ds)==1 else pick(ds)
+    cpu=detect_cpu(serial) if serial else None
+    cf="-O3 -flto"+(f" -mcpu={cpu}" if cpu else "")
     if proj:
         if not os.path.exists(proj+"/gradlew"):sys.exit("x No gradlew in "+proj)
         lp=proj+"/local.properties"
         if not os.path.exists(lp) or SDK not in open(lp).read():open(lp,"w").write(f"sdk.dir={SDK}\n")
-        if not serial:
-            ds=devlist()
-            if ds:serial=ds[0] if len(ds)==1 else pick(ds)
-        cpu=detect_cpu(serial) if serial else None
         ga=["./gradlew","assembleDebug"]
         if cpu:ga.append(f"-Pcpu_target={cpu}")
         os.chdir(proj);S.run(ga,check=True)
@@ -454,19 +457,25 @@ def run():
         if IT:
             sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
             w(D+"/native.c",NC);so=sf+"/libanative.so"
-            S.run(f"clang -shared -O3 -flto -w -o '{so}' '{D}/native.c'&&patchelf --remove-rpath '{so}'",shell=True,check=True)
+            S.run(f"clang -shared {cf} -w -o '{so}' '{D}/native.c'&&patchelf --remove-rpath '{so}'",shell=True,check=True)
             w(D+"/launcher.c",LC);lso=sf+"/liblauncher.so"
-            S.run(f"clang -shared -O3 -flto -w -lm -o '{lso}' '{D}/launcher.c'&&patchelf --remove-rpath '{lso}'",shell=True,check=True)
+            S.run(f"clang -shared {cf} -w -lm -o '{lso}' '{D}/launcher.c'&&patchelf --remove-rpath '{lso}'",shell=True,check=True)
             w(D+"/keyboard.c",KC);kso=sf+"/libkeyboard.so"
-            S.run(f"clang -shared -O3 -flto -w -o '{kso}' '{D}/keyboard.c'&&patchelf --remove-rpath '{kso}'",shell=True,check=True)
-        else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/CMakeLists.txt",CML)
+            S.run(f"clang -shared {cf} -w -o '{kso}' '{D}/keyboard.c'&&patchelf --remove-rpath '{kso}'",shell=True,check=True)
+        else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
         # Stage bundled bins + terminfo source (from a droid/droidtmux output)
         sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
         stage={"/tmp/a-droid":"liba.so","/tmp/dsrc/tmux-build-a/tmux":"libtmux.so","/tmp/dsrc/ncurses-6.4/progs/tic":"libtic.so"}
         opt={"/tmp/dsrc/dropbear-2024.86/dbclient":"libssh.so","/tmp/ssh_wrap":"libsshwrap.so"}
         miss=[s for s in stage if not os.path.exists(s)]
-        if miss:sys.exit(f"x run 'a droid && a droidtmux' first: missing {miss}")
+        if "/tmp/a-droid" in miss:
+            ndk=os.environ.get("ANDROID_HOME",H+"/Android/Sdk")+"/ndk"
+            cc=f"{ndk}/{sorted(os.listdir(ndk))[-1]}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+            S.check_call([cc,'-DSRC="/data/local/tmp"',"-w"]+cf.split()+["-o","/tmp/a-droid",f"{R}/a.c"])
+        if any("/tmp/dsrc" in s for s in miss):S.check_call(["a","droidtmux"])
+        miss=[s for s in stage if not os.path.exists(s)]
+        if miss:sys.exit(f"x build failed: {miss}")
         for s,n in {**stage,**{k:v for k,v in opt.items() if os.path.exists(k)}}.items():shutil.copy(s,f"{sf}/{n}")
         shutil.copy("/tmp/dsrc/ncurses-6.4/misc/terminfo.src",f"{ad}/terminfo.src")
         shutil.copy(R+"/lib/ui/ui_full.py",f"{ad}/ui_full.py")
