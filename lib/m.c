@@ -436,6 +436,7 @@ static int cmd_m(int c, char **v) {
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
+                   "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
                    "$S 'e --tail %2$s';$S -l 3 'tail -Fn 50 %3$s';"
                    "$S -l 9 'a m panel'",
