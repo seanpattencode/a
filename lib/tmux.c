@@ -109,7 +109,7 @@ static void tm_ensure_conf(void) {
         "set -g status 2\n"
         "set -g status-right \"\"\n"
         "set -g status-format[0] \"#[align=left]#{?#{e|>:#{session_windows},1},#[range=user|prev]  <  #[norange],}#[align=centre]#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#{?window_active,#[fg=colour232 bg=colour231 bold],#[fg=colour231 bg=colour243]}} #{?window_bell_flag,\\U0001F534 ,}#I:#W #{?window_active, , }#[default]#[norange]}#[align=right]#{?#{e|>:#{session_windows},1},#[range=user|next]  >  #[norange],}\"\n"
-        "set -g status-format[1] \"#[align=centre]#[range=user|aa]a#[norange] #[range=user|agent]Agent#[norange] #[range=user|win]Win#[norange] #[range=user|new]Pane#[norange] #[range=user|close]Close#[norange] #[range=user|menu] ... #[norange]#[align=right]#[range=user|kbd]Kb#[norange]\"\n"
+        "set -g status-format[1] \"#[align=centre]#[range=user|aa]a#[norange] #[range=user|win]Win#[norange] #[range=user|new]Pane#[norange] #[range=user|x]X#[norange] #[range=user|close]Close#[norange] #[range=user|menu] ... #[norange]#[align=right]#[range=user|kbd]Kb#[norange]\"\n"
         "bind-key -n M-Right next-window\n"
         "bind-key -n M-Left previous-window\n"
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
@@ -119,6 +119,7 @@ static void tm_ensure_conf(void) {
         "bind-key -n C-t new-window\n"
         "bind-key -n C-y split-window -fh\n"
         "bind -n C-w if -F '#{==:#{pane_current_command},ssh}' 'send C-w' 'selectw -n;killw -t:!'\n"
+        "bind -n M-w if -F '#{==:#{pane_current_command},ssh}' 'send M-w' kill-pane\n"
         "set-hook -g window-unlinked 'run-shell -b \"a tm-unsave \\\"#{hook_window_name}\\\"\"'\n"
         "bind-key -n C-q detach\n"
         "bind-key -n C-x kill-session\n"
@@ -128,9 +129,8 @@ static void tm_ensure_conf(void) {
         "{ select-window } { run-shell 'r=\"#{mouse_status_range}\"; case \"$r\" in "
         "prev) tmux previous-window;; next) tmux next-window;; "
         "aa) tmux new-window \"a\";; "
-        "agent) tmux new-window \"a a\";; "
-        "win) tmux new-window;; new) if [ #{window_panes} -gt 1 ];then tmux kill-pane -t {bottom};else tmux split-window;fi;; "
-        "close) tmux kill-window;; "
+        "win) tmux new-window;; new) tmux split-window;; "
+        "x) tmux kill-pane;; close) tmux kill-window;; "
         "menu) tmux display-menu Pane 1 \"split-window -fh\" Zoom 2 \"resize-pane -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"rename-window %%\\\"\" Quit 5 detach Kill 6 kill-session;; "
         "kbd) tmux set -g mouse off; tmux display-message \"Mouse off 3s\"; "
         "(sleep 3; tmux set -g mouse on) &;; esac' }\n", f);
