@@ -83,7 +83,7 @@ static void _html_gen(void){
     /* build commands JSON from a i */
     char cmds[4096]="[]";
     {char out[8192];int pp[2];pipe(pp);pid_t ch=fork();
-    if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execl("/proc/self/exe","a","i",(char*)0);_exit(1);}
+    if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","i",(char*)0);_exit(1);}
     close(pp[1]);int ol=0;{int r;while((r=(int)read(pp[0],out+ol,(size_t)(8191-ol)))>0)ol+=r;}
     close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
     /* parse tab-separated lines into JSON array */
