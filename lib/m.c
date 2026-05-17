@@ -104,13 +104,10 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         if (is_gemini) { char g[B];
             snprintf(g,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|gemini -p '' --skip-trust --approval-mode plan -o stream-json -m '%s'",md);
             execlp("sh","sh","-c",g,(char*)0); }
-        else if (is_codex) {
-            char ecfg[64],tcfg[64]; snprintf(ecfg,64,"model_reasoning_effort=\"%s\"",ef);
-            if (has_tier) {snprintf(tcfg,64,"service_tier=\"%s\"",tier);
-                execlp("codex","codex","exec","--json","--skip-git-repo-check",
-                       "--dangerously-bypass-approvals-and-sandbox","-m",md,"-c",ecfg,"-c",tcfg,(char*)0);}
-            else execlp("codex","codex","exec","--json","--skip-git-repo-check",
-                        "--dangerously-bypass-approvals-and-sandbox","-m",md,"-c",ecfg,(char*)0);
+        else if (is_codex) { char x[B],t[80]="";
+            if (has_tier) snprintf(t,80," -c 'service_tier=\"%s\"'",tier);
+            snprintf(x,B,"iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
+            execlp("sh","sh","-c",x,(char*)0);
         } else if (has_acat)
             execlp("claude","claude","-p","--output-format","stream-json",
                    "--include-partial-messages","--verbose","--tools","",
