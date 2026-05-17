@@ -470,11 +470,11 @@ static int cmd_m(int c, char **v) {
                        "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                        "(cd $HOME/editor && git pull -q && sh e.c install >/dev/null 2>&1) & "
                        "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb 'e --tail %2$s';"
-                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb -l 1 'a m sw tools';"
+                       "tmux split-window -t $TMUX_PANE -e M_IN=1 -dv -l 1 'a m sw tools';"
                        "W=$(tmux new-window -d -P -F '#{window_id}' -e M_IN=1 -n m-tools 'a m panel');"
-                       "tmux split-window -t $W -e M_IN=1 -dv -l 3 'tail -Fn 50 %3$s';"
-                       "tmux split-window -t $W -e M_IN=1 -dvb -l 1 'a m sw main';"
-                       "tmux split-window -t $W -e M_IN=1 -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash'",
+                       "tmux split-window -t $W -e M_IN=1 -dv -l 1 'a m sw main';"
+                       "tmux split-window -t $W -e M_IN=1 -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash';"
+                       "tmux split-window -t $W -e M_IN=1 -dv -l 3 'tail -Fn 50 %3$s'",
                  AROOT, sf, ss);
     }
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
