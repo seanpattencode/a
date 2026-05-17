@@ -239,7 +239,7 @@ static int cmd_m_panel(int c, char **v) {
                 char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn99999 %s/m/$F\";tmux clear-history -t :.0",TMP,AROOT);
+                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --tail %s/m/$F\"",TMP,AROOT);
                     (void)!system(rc);} }
             break;
         }
@@ -395,7 +395,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",TMP); mm_w(c,fn,"w");
-    snprintf(c,B,"W=$(tmux display-message -p -t \"$TMUX_PANE\" '#{window_id}');tmux respawn-pane -k -t \"$W.0\" 'tail -Fn99999 %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"W=$(tmux display-message -p -t \"$TMUX_PANE\" '#{window_id}');tmux respawn-pane -k -t \"$W.0\" 'e --tail %s/m/%s'",AROOT,fn); (void)!system(c);
     snprintf(c,B,"%s/m_editorpid",TMP); char*p=readf(c,NULL);
     if(p)kill(atoi(p),SIGTERM); free(p); return 0;
 }
@@ -481,7 +481,7 @@ static int cmd_m(int c, char **v) {
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dvb\";"
-                   "$S 'tail -Fn99999 %2$s';$S -l 3 'tail -Fn 50 %3$s';"
+                   "$S 'e --tail %2$s';$S -l 3 'tail -Fn 50 %3$s';"
                    "$S -l 9 'a m panel'",
              AROOT, sf, ss);
     system(b);

@@ -37,3 +37,9 @@
 28. Worst case, drop everything and pivot — this is necessary to minimize time to correct when a direction turns out wrong.
 29. The system must be structured so that a llm with limited context window and human can easily understand the system and full codebase in context still works for llms. a.c is the single file that if nothing else viewed should explain the project. This might make some info redundant to a whole repo reader but its worth it. 
 30. Trust and correctness comes from the user being able to use tools and artifacta to verify items and work directly. Not, the work is done human, but, here is the code here are commands to use in terminal to verify the actual thing is passed to user. 
+
+## The m meta agent/persistent agent
+
+31. The e editor handles the user interaction and editing of the meta agent and more broadly serves as its ui layer. Changes to editor will be made to support changes to meta agent ui as needed. This is neccesary because a text editor is essential for making the agent editable by human trivially and e is a text editor that the main developer, Sean Patten, can control and edit and is sufficently fast for the task. Failures to do UI capabilities or bugs are resolved by fixing the e editor.
+
+
