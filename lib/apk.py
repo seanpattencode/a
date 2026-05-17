@@ -51,13 +51,22 @@ w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(thi
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
-val nv=T(this).apply{visibility=View.GONE}
-val fr=FrameLayout(this);fr.addView(w);fr.addView(nv)
-val vs=listOf("Web" to{w.visibility=View.VISIBLE;nv.visibility=View.GONE},"Native" to{w.visibility=View.GONE;nv.visibility=View.VISIBLE;nv.invalidate()})
-val mb=Button(this).apply{text="≡ Web";setBackgroundColor(0xFF222222.toInt());setTextColor(-1);textSize=20f;setPadding(0,40,0,40)}
-mb.setOnClickListener{val pm=PopupMenu(this@M,mb);vs.forEachIndexed{i,(n,_)->pm.menu.add(0,i,0,"${i+1}. $n")};pm.setOnMenuItemClickListener{mi->vs[mi.itemId].second();mb.text="≡ "+vs[mi.itemId].first;true};pm.show()}
-val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+val nv=T(this);val fr=FrameLayout(this);fr.addView(w);fr.addView(nv);w.visibility=View.GONE
+val mb=S(this,listOf("Native" to{w.visibility=View.GONE;nv.visibility=View.VISIBLE;nv.invalidate()},"Web" to{w.visibility=View.VISIBLE;nv.visibility=View.GONE}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root)}}
+class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
+private val p=Paint().apply{textSize=100f;textAlign=Paint.Align.CENTER;typeface=Typeface.MONOSPACE;isAntiAlias=true}
+private val et=android.widget.EditText(a).apply{alpha=0f;background=null;inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_DONE}
+private val imm by lazy{a.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager}
+private fun ms()=et.text.toString().replace("\n","").lowercase().let{q->it.indices.filter{j->it[j].first.lowercase().contains(q)}}
+private fun cl(){o=false;imm.hideSoftInputFromWindow(et.windowToken,0);et.setText("");onCl();requestLayout();invalidate()}
+private fun sel(){val m=ms();if(m.isNotEmpty()){i=m[0];it[i].second()};cl()}
+private val v=object:android.view.View(a){
+override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());if(o){val m=ms();for((r,j) in m.withIndex()){p.color=if(r==0)0xFFFFFF00.toInt() else -1;cv.drawText(it[j].first,width/2f,height-r*200f-70f,p)}}else{p.color=-1;cv.drawText("≡ "+it[i].first,width/2f,85f,p)}}
+override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){if(o){val r=((height-e.y)/200).toInt();val m=ms();if(r in m.indices){i=m[r];it[i].second()};cl()}else{o=true;onOp();et.requestFocus();imm.showSoftInput(et,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);requestLayout();invalidate()}};return true}}
+init{addView(v,FrameLayout.LayoutParams(-1,-1));addView(et,FrameLayout.LayoutParams(1,1));et.addTextChangedListener(object:android.text.TextWatcher{override fun afterTextChanged(s:android.text.Editable?){if(s?.contains('\n')==true)sel() else{v.invalidate();requestLayout()}};override fun beforeTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){};override fun onTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){}});et.setOnEditorActionListener{_,_,_->sel();true};et.setOnKeyListener{_,k,e->if(e.action==android.view.KeyEvent.ACTION_DOWN&&k==android.view.KeyEvent.KEYCODE_ENTER){sel();true}else false}}
+override fun onMeasure(ws:Int,hs:Int){val h=if(o)ms().size.coerceAtLeast(1)*200+20 else 140;super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
 class T(c:android.content.Context):android.view.View(c){
 private val h=Handler(Looper.getMainLooper())
 private var px:IntArray?=null
