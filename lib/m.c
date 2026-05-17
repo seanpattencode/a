@@ -122,7 +122,10 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     while (fgets(l, sizeof l, fp)) {
         int stop = is_codex ? mm_delta_codex(l, a, &al, sz) : is_gemini ? mm_delta_gemini(l, a, &al, sz) : mm_delta(l, a, &al, sz);
         if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
-        if (mm_extract(a, bash, bsz, &eo) > 0) { kill(cp, SIGTERM); break; }
+        char *uh=strstr(a,"\n## user\n");
+        if (uh || mm_extract(a, bash, bsz, &eo) > 0) { size_t cut=uh?(size_t)(uh-a):al;
+            if (uh && cut<al) { a[cut]=0; al=cut; ftruncate(fileno(of),start+(off_t)cut); }
+            kill(cp, SIGTERM); break; }
         if (stop) break;
     }
     fclose(fp); fclose(of); waitpid(cp, NULL, 0); g_cp = 0;
@@ -225,7 +228,7 @@ static int cmd_m_panel(int c, char **v) {
                 char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --tail %s/m/$F\"",TMP,AROOT);
+                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t '{last}.0' \"e --tail %s/m/$F\"",TMP,AROOT);
                     (void)!system(rc);} }
             break;
         }
@@ -380,7 +383,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",TMP); mm_w(c,fn,"w");
-    snprintf(c,B,"W=$(tmux display-message -p -t \"$TMUX_PANE\" '#{window_id}');tmux respawn-pane -k -t \"$W.0\" 'e --tail %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"tmux respawn-pane -k -t '{last}.0' 'e --tail %s/m/%s'",AROOT,fn); (void)!system(c);
     snprintf(c,B,"%s/m_editorpid",TMP); char*p=readf(c,NULL);
     if(p)kill(atoi(p),SIGTERM); free(p); return 0;
 }
