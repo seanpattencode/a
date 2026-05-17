@@ -387,16 +387,15 @@ MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-p
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
 GS='pluginManagement{repositories{google();mavenCentral()};plugins{id("com.android.application") version "8.2.0";id("org.jetbrains.kotlin.android") version "1.9.22"}}\ndependencyResolutionManagement{repositories{google();mavenCentral()}}\ninclude(":app")\n'
 H=os.path.expanduser("~");IT=os.path.exists("/data/data/com.termux")
+SDK="/data/data/com.termux/files/home/android-sdk" if IT else os.environ.get("ANDROID_HOME") or next((p for p in[H+"/Library/Android/sdk",H+"/Android/Sdk"] if os.path.isdir(p)),H+"/Android/Sdk")
+_ND=SDK+"/ndk";_NV=sorted(os.listdir(_ND))[-1] if os.path.isdir(_ND) else None
+_NH=os.listdir(f"{_ND}/{_NV}/toolchains/llvm/prebuilt")[0] if _NV else None
 _CMK='externalNativeBuild{cmake{path=file("src/main/cpp/CMakeLists.txt")}}\n'
 _DF='defaultConfig{applicationId="'+P+'";minSdk=24;targetSdk=34;versionCode=202;ndk{abiFilters+="arm64-v8a"}'+((';externalNativeBuild{cmake{arguments+="-DANDROID_STL=none"}}') if not IT else '')+'}\n'
-_ND=(os.environ.get("ANDROID_HOME") or H+"/Android/Sdk")+"/ndk"
-_NV=sorted(os.listdir(_ND))[-1] if os.path.isdir(_ND) else None
 GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'compileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\ndependencies{implementation("dev.rikka.shizuku:api:13.1.5");implementation("dev.rikka.shizuku:provider:13.1.5")}\n'
-SDK="/data/data/com.termux/files/home/android-sdk" if IT else os.environ.get("ANDROID_HOME",H+"/Android/Sdk")
 R=os.path.dirname(os.path.dirname(os.path.abspath(__file__)));D=R+"/adata/_apk_build"
 if not IT:
-    for v in ["21","17"]:
-        p=f"/usr/lib/jvm/java-{v}-openjdk-amd64"
+    for p in[f"/opt/homebrew/opt/openjdk@{v}/libexec/openjdk.jdk/Contents/Home" for v in[21,17]]+[f"/usr/lib/jvm/java-{v}-openjdk-amd64" for v in[21,17]]:
         if os.path.exists(p):os.environ["JAVA_HOME"]=p;break
 def w(p,s):os.makedirs(os.path.dirname(p),exist_ok=True);open(p,"w").write(s)
 def adb(*a,serial=None):return S.run(["adb"]+(["-s",serial] if serial else[])+list(a),capture_output=True,text=True)
@@ -506,8 +505,7 @@ def run():
         opt={"/tmp/dsrc/dropbear-2024.86/dbclient":"libssh.so","/tmp/ssh_wrap":"libsshwrap.so"}
         miss=[s for s in stage if not os.path.exists(s)]
         if "/tmp/a-droid" in miss:
-            ndk=os.environ.get("ANDROID_HOME",H+"/Android/Sdk")+"/ndk"
-            cc=f"{ndk}/{sorted(os.listdir(ndk))[-1]}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android29-clang"
+            cc=f"{_ND}/{_NV}/toolchains/llvm/prebuilt/{_NH}/bin/aarch64-linux-android29-clang"
             S.check_call([cc,'-DSRC="/data/local/tmp"',"-w"]+cf.split()+["-o","/tmp/a-droid",f"{R}/a.c"])
         if any("/tmp/dsrc" in s for s in miss):S.check_call(["a","droidtmux"])
         miss=[s for s in stage if not os.path.exists(s)]
@@ -518,7 +516,7 @@ def run():
         for sub in["ssh","workspace/projects","workspace/cmds"]:
             sd=R+"/adata/git/"+sub;dd=ad+"/git/"+sub;os.makedirs(dd,exist_ok=True)
             for f in glob.glob(sd+"/*.txt"):shutil.copy(f,dd+"/"+os.path.basename(f))
-        if not os.path.exists(D+"/gradlew"):
+        if not os.path.exists(D+"/gradle/wrapper/gradle-wrapper.jar"):
             for s in glob.glob(H+"/*/gradlew")+glob.glob(R+"/adata/git/my/*/gradlew"):
                 d=os.path.dirname(s);shutil.copy(s,D+"/gradlew");os.chmod(D+"/gradlew",0o755)
                 wd=d+"/gradle/wrapper";os.makedirs(D+"/gradle/wrapper",exist_ok=True)
@@ -530,10 +528,10 @@ def run():
     if IT:
         sa=_self_adb()
         if sa:
-            r=adb("install","-r",apk,serial=sa)
+            r=adb("install","-r","-g",apk,serial=sa)
             if "INSTALL_FAILED" in r.stdout+r.stderr:
                 if pkg:adb("uninstall",pkg,serial=sa)
-                r=adb("install",apk,serial=sa)
+                r=adb("install","-g",apk,serial=sa)
             if r.returncode==0:
                 if pkg:adb("shell","am","start","-n",pkg+"/.M",serial=sa)
                 print("✓ "+(pkg or os.path.basename(apk)));return
@@ -546,10 +544,10 @@ def run():
             ds=devlist()
             if not ds:sys.exit("No devices")
             serial=pick(ds)
-        r=adb("install","-r",apk,serial=serial)
+        r=adb("install","-r","-g",apk,serial=serial)
         if "INSTALL_FAILED" in r.stdout+r.stderr:
             if pkg:adb("uninstall",pkg,serial=serial)
-            r=adb("install",apk,serial=serial)
+            r=adb("install","-g",apk,serial=serial)
         if r.returncode:print(r.stderr);sys.exit(1)
         if pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
     print("✓ "+(pkg or os.path.basename(apk)))

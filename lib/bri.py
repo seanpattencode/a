@@ -24,6 +24,8 @@ Drive shortcuts (bridge must already be running in another process):
   bri keys <sel> <k> dispatch keydown/keyup (e.g. "Enter" to submit)
   bri url            return current URL
   bri deploy         rebuild lib/bri-ext xpi + restart Firefox (zero-click extension bump)
+  bri restart        quit + relaunch Firefox Nightly (clears tab leaks)
+  bri mon            snapshot bri.py + Firefox CPU/RAM/tabs/connections
   bri '{json}'       raw passthrough — full 9-action protocol, all fields
                      (id, sel, text, code, args, ms, keys, …). Use when a
                      shortcut shape doesn't fit, e.g. eval/wait/html/custom id.
@@ -234,8 +236,33 @@ def main():
 
 # Shortcut CLI: thin client that pushes JSON to a running bridge on :1235 and
 # prints the response. The raw '{json}' form remains the full API.
+def _ff_restart():
+    import subprocess
+    subprocess.run(['osascript','-e','tell application "Firefox Nightly" to quit'], stderr=subprocess.DEVNULL)
+    for _ in range(15):
+        if subprocess.run(['pgrep','-f','Firefox Nightly.app/Contents/MacOS/firefox$'], capture_output=True).returncode != 0: break
+        time.sleep(1)
+    time.sleep(0.5)
+    subprocess.Popen(['/Applications/Firefox Nightly.app/Contents/MacOS/firefox','-foreground'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def _mon():
+    import subprocess, os
+    def run(c): return subprocess.run(c, capture_output=True, text=True).stdout
+    pid = (run(['pgrep','-f',r'bri\.py$']).strip().split('\n') or [''])[0]
+    if pid: print(f'bri.py   pid={pid:<6} {run(["ps","-o","pcpu,pmem,rss,etime","-p",pid]).strip().split(chr(10))[-1]}')
+    ff = [p for p in run(['pgrep','-f','Firefox Nightly']).split() if p]
+    if ff:
+        tabs = sum(1 for l in run(['pgrep','-fl','Firefox Nightly.app.*-isForBrowser']).split('\n') if l.strip())
+        rss = sum(int(x) for x in run(['ps','-o','rss=','-p',','.join(ff)]).split() if x.isdigit())
+        cpu = sum(float(x) for x in run(['ps','-o','%cpu=','-p',','.join(ff)]).split() if x.replace('.','').isdigit())
+        print(f'firefox  procs={len(ff):<3} tabs={tabs:<3} RAM={rss/1024/1024:.1f}GB CPU={cpu:.0f}%')
+    if os.path.exists(LOG): print(f'bri.log  {os.path.getsize(LOG)/1024:.0f}KB')
+    print(f'/poll    active long-poll holds: {max(0, len(run(["lsof","-iTCP:1234","-sTCP:ESTABLISHED"]).split(chr(10)))-2)}')
+
 def client(args):
     a = args[0]
+    if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
+    if a == 'mon':     _mon(); return
     if a == 'deploy':  # zero-click rebuild+install of bri-ext + Firefox restart
         import subprocess, shutil, os, glob
         here = os.path.dirname(os.path.abspath(__file__))
@@ -251,12 +278,7 @@ def client(args):
         os.makedirs(f'{prof[0]}/extensions', exist_ok=True)
         shutil.copy(f'{extdir}/a-bridge.xpi', f'{prof[0]}/extensions/a-bridge@seanpatten.xpi')
         print(f'  → {prof[0]}/extensions/')
-        subprocess.run(['osascript','-e','tell application "Firefox Nightly" to quit'], stderr=subprocess.DEVNULL)
-        for _ in range(15):
-            if subprocess.run(['pgrep','-f','Firefox Nightly.app/Contents/MacOS/firefox$'], capture_output=True).returncode != 0: break
-            time.sleep(1)
-        time.sleep(0.5)
-        subprocess.Popen(['/Applications/Firefox Nightly.app/Contents/MacOS/firefox','-foreground'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _ff_restart()
         print(f'deployed bri-ext v{json.load(open(f"{extdir}/manifest.json"))["version"]}'); return
     if a.startswith('{'):
         msg = a
@@ -268,8 +290,10 @@ def client(args):
         elif a=='keys':  j = {'id':1,'action':'keys','sel':args[1],'keys':args[2]}
         elif a=='url':   j = {'id':1,'action':'url'}
         else:
-            sys.stderr.write("bri <url> | text [sel] | click <sel> | type <sel> <text> | keys <sel> <key> | url | deploy | '{json}'\n"
-                "  deploy: zero-click rebuild+install of lib/bri-ext + Firefox restart.\n"
+            sys.stderr.write("bri <url> | text [sel] | click <sel> | type <sel> <text> | keys <sel> <key> | url | deploy | restart | mon | '{json}'\n"
+                "  deploy:  rebuild lib/bri-ext xpi + restart Firefox\n"
+                "  restart: quit + relaunch Firefox Nightly (clears tab leaks)\n"
+                "  mon:     bri.py + Firefox CPU/RAM/tabs snapshot\n"
                 "  raw {json} supports all 9 actions + custom fields — use for "
                 "eval/wait/html or any control the shortcuts hide.\n"); sys.exit(1)
         msg = json.dumps(j)

@@ -13,11 +13,11 @@ static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
 }
-static void tm_t(const char*w,char*t){if(*w=='%')snprintf(t,256,"%s",w);else snprintf(t,256,":%s",w);}
+static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
-    if(getenv("TMUX")){if(w){char t[256];tm_t(w,t);execlp("tmux","tmux","select-window","-t",t,(char*)NULL);}
-        else execlp("tmux","tmux","switch-client","-t",TMS,(char*)NULL);}
+    if(getenv("TMUX")){char t[256];if(w)tm_t(w,t);
+        execlp("tmux","tmux","switch-client","-t",w?t:TMS,(char*)NULL);}
     if(w){char t[256];tm_t(w,t);execlp("tmux","tmux","new-session","-t",TMS,"-s",g,";","select-window","-t",t,(char*)NULL);}
     execlp("tmux","tmux","new-session","-t",TMS,"-s",g,(char*)NULL);}
 static int tm_new(const char *w, const char *wd, const char *cmd) {
