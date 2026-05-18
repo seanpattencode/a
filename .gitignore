@@ -33,6 +33,7 @@ adata/
 # C build artifacts
 *.o
 *.plist
+*.so
 infer-out/
 a
 a.dmg

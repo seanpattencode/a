@@ -1,4 +1,6 @@
-/* m — chat with streaming cutoff + agentic loop, pure C. */
+/* m — chat+agentic loop. files (no /tmp; verify externally):
+ * adata/m/{m.txt,sysprompt.txt,i.txt,combo.txt,settings.json,archive/} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
+ * debug: tail adata/m/m.txt ; tmux capture-pane -t <id> -p ; cat adata/local/m_* */
 
 static volatile pid_t g_cp = 0;
 static pid_t g_cmt = 0;
@@ -10,7 +12,7 @@ static void mm_w(const char *p, const char *t, const char *m);
 static void m_status(const char *msg) {
     char p[P], l[256];
     time_t t = time(NULL); struct tm *tm = localtime(&t);
-    snprintf(p, P, "%s/m_status", TMP);
+    snprintf(p, P, "%s/m_status", DDIR);
     snprintf(l, 256, "[%02d:%02d:%02d] %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, msg);
     mm_w(p, l, "a");
 }
@@ -85,7 +87,7 @@ static int mm_delta_gemini(const char *l, char *a, size_t *al, size_t sz) {
 static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
     a[0] = bash[0] = 0;
     int pp[2]; if (pipe(pp) < 0) return -1;
-    char acat[P]; snprintf(acat, P, "%s/m_combo.txt", TMP);
+    char acat[P]; snprintf(acat, P, "%s/m/combo.txt", AROOT);
     int has_acat = fexists(acat);
     load_cfg();
     const char *ag = cfget("m_agent"); if (!*ag) ag = "claude";
@@ -94,7 +96,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     const char *ef = cfget("m_effort"); if (!*ef) ef = is_codex ? "xhigh" : "low";
     const char *tier = cfget("m_tier");
     int has_tier = is_codex && *tier && strcmp(tier,"default");
-    char errp[P]; snprintf(errp,P,"%s/m_err.log",TMP);
+    char errp[P]; snprintf(errp,P,"%s/m_err.log",DDIR);
     pid_t cp = fork();
     if (!cp) {
         int s = open(sf, O_RDONLY); if (s < 0) _exit(127);
@@ -183,7 +185,7 @@ static int cmd_m_panel(int c, char **v) {
         int opsr = 4 + (!gg) + xx;
         struct stat st; long tot=0; char pa[P];
         snprintf(pa,P,"%s/m/m.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
-        snprintf(pa,P,"%s/m_combo.txt",TMP); if(!stat(pa,&st)) tot+=st.st_size;
+        snprintf(pa,P,"%s/m/combo.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
         tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
         char hb[16]={0}; pcmd("tmux display -p -t \"$TMUX_PANE\" '#{pane_height}'",hb,16); int ph=atoi(hb);
         struct winsize ws={0}; ioctl(1,TIOCGWINSZ,&ws); int cw=ws.ws_col?ws.ws_col:80;
@@ -239,7 +241,7 @@ static int cmd_m_panel(int c, char **v) {
                 char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --tail %s/m/$F\"",TMP,AROOT);
+                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --tail %s/m/$F\"",DDIR,AROOT);
                     (void)!system(rc);} }
             break;
         }
@@ -372,17 +374,17 @@ static int m_archive(int c, char **v) {
 }
 
 static int m_reinit(const char *fn) {
-    char c[B]; snprintf(c,B,"%s/m_file",TMP); mm_w(c,fn,"w");
+    char c[B]; snprintf(c,B,"%s/m_file",DDIR); mm_w(c,fn,"w");
     snprintf(c,B,"tmux respawn-pane -k -t :.0 'e --tail %s/m/%s'",AROOT,fn); (void)!system(c);
-    snprintf(c,B,"%s/m_editorpid",TMP); char*p=readf(c,NULL);
+    snprintf(c,B,"%s/m_editorpid",DDIR); char*p=readf(c,NULL);
     if(p)kill(atoi(p),SIGTERM); free(p); return 0;
 }
-static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",TMP);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
+static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",DDIR);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
 static int m_main(void){return m_reinit("m.txt");}
 static int m_new(void){time_t t=time(NULL);char fn[64];strftime(fn,64,"agent-%Y%m%dT%H%M%S.txt",localtime(&t));return m_reinit(fn);}
 
 static int m_reset(void) {
-    char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",TMP);
+    char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",DDIR);
     char *p=readf(pf,NULL); if(!p||!*p){puts("no pty (a m not running here)");free(p);return 1;}
     p[strcspn(p,"\n")]=0;
     snprintf(c,B,"tmux send-keys -t '%1$s' C-c; tmux send-keys -t '%1$s' 'clear' Enter",p);
@@ -391,7 +393,7 @@ static int m_reset(void) {
 
 static void m_render(const char *sf, const char *spf) {
     /* materialized view: rebuild combo from latest a_cat + i.txt, append a-loaded block if hash changed */
-    char combo[P]; snprintf(combo,P,"%s/m_combo.txt",TMP);
+    char combo[P]; snprintf(combo,P,"%s/m/combo.txt",AROOT);
     { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt (meta-agent identity) <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo);
       (void)!system(c); }
     load_cfg();
@@ -421,7 +423,7 @@ static void m_render(const char *sf, const char *spf) {
 static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
-    if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",TMP); char*p=readf(pf,NULL);
+    if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
         if(p){p[strcspn(p,"\n")]=0; char hc[128],hb[16]={0}; snprintf(hc,128,"tmux display -p -t %s '#{pane_height}'",p); pcmd(hc,hb,16);
             char cmd[128]; snprintf(cmd,128,"tmux resize-pane -t %s -y %d",p,atoi(hb)>5?2:15); (void)!system(cmd); free(p);} return 0; }
     if (c > 2 && !strcmp(v[2], "reset")) return m_reset();
@@ -437,9 +439,9 @@ static int cmd_m(int c, char **v) {
     signal(SIGINT, m_sint);
     const char *fn = c > 2 ? v[2] : "m.txt";
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
-    snprintf(ss, P, "%s/m_status", TMP);
+    snprintf(ss, P, "%s/m_status", DDIR);
     snprintf(spf, P, "%s/m/sysprompt.txt", AROOT);
-    snprintf(g_set, P, "%s/m_settings.json", TMP);
+    snprintf(g_set, P, "%s/m/settings.json", AROOT);
     { char hp[P]; snprintf(hp, P, "%s/.claude/settings.json", HOME);
       char *s = readf(hp, NULL); FILE *f = fopen(g_set, "w");
       if (f) { fputs("{\"enabledPlugins\":{", f);
@@ -458,15 +460,15 @@ static int cmd_m(int c, char **v) {
                    "$S -l 3 'tail -Fn 50 %3$s';"
                    "$S -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
-             AROOT, sf, ss, TMP);
+             AROOT, sf, ss, DDIR);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];
-    snprintf(pf,P,"%s/m_panel",TMP); mm_w(pf,pty,"w");
-    snprintf(pf,P,"%s/m_pty",TMP); { char*bp=readf(pf,NULL); if(bp){strncpy(pty,bp,63);pty[63]=0;pty[strcspn(pty,"\n")]=0;free(bp);} }
-    snprintf(pf,P,"%s/m_file",TMP); mm_w(pf,fn,"w");
+    snprintf(pf,P,"%s/m_panel",DDIR); mm_w(pf,pty,"w");
+    snprintf(pf,P,"%s/m_pty",DDIR); { char*bp=readf(pf,NULL); if(bp){strncpy(pty,bp,63);pty[63]=0;pty[strcspn(pty,"\n")]=0;free(bp);} }
+    snprintf(pf,P,"%s/m_file",DDIR); mm_w(pf,fn,"w");
     for (;;) {
         g_halt = 0;
-        snprintf(pf,P,"%s/m_file",TMP); char *fp=readf(pf,NULL);
+        snprintf(pf,P,"%s/m_file",DDIR); char *fp=readf(pf,NULL);
         if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(sf,P,"%s/m/%s",AROOT,fp);} free(fp);
         { char *cur=fexists(sf)?readf(sf,NULL):NULL;
           if (!cur||strncmp(cur,"## system\n",10)) {
@@ -474,11 +476,11 @@ static int cmd_m(int c, char **v) {
             if(f){fprintf(f,"## system\n%s%s%s",sp?sp:"",(sp&&spl&&sp[spl-1]=='\n')?"":"\n",cur?cur:"## user\n");fclose(f);}
             free(sp);} free(cur); }
         m_render(sf, spf);
-        char tf[] = "/tmp/m_inXXXXXX";
+        char tf[P]; snprintf(tf,P,"%s/m_inXXXXXX",DDIR);
         int fd = mkstemp(tf); if (fd < 0) continue; close(fd);
         pid_t pp = fork();
         if (!pp) { execlp("e","e","--box","message:",tf,(char*)0); _exit(127); }
-        snprintf(pf,P,"%s/m_editorpid",TMP); char b2[16];snprintf(b2,16,"%d",pp);mm_w(pf,b2,"w");
+        snprintf(pf,P,"%s/m_editorpid",DDIR); char b2[16];snprintf(b2,16,"%d",pp);mm_w(pf,b2,"w");
         waitpid(pp, NULL, 0);
         size_t ml; char *m = readf(tf, &ml); unlink(tf);
         if (!m || !ml) { free(m); continue; }
