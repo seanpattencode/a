@@ -37,8 +37,14 @@ static int tm_read(const char*w,char*buf,int len){char t[256];tm_t(w,t);
     char c[B];snprintf(c,B,"tmux capture-pane -t '%s' -p 2>/dev/null",t);return pcmd(c,buf,len);}
 /* write default prompt + tools info to file. source=off skips intro+a-cat. */
 #define SRC_ON strcmp(cfget("source"),"off")
+static void prompt_freshness(FILE*f){
+    char c[B],b[256]="";
+    snprintf(c,B,"cd '%s';(git fetch -q origin main &);B=$(git rev-list --count HEAD..origin/main 2>/dev/null);U=$(git status -s 2>/dev/null|wc -l);[ \"${B:-0}$U\" != \"00\" ]&&echo \"a: $B behind origin/main, $U dirty. pull: git -C %s pull --ff-only\"",SDIR,SDIR);
+    pcmd(c,b,256);if(b[0])fprintf(f,"%s\n",b);
+}
 static int write_prompt_file(const char *path, const char *wd, const char *extra) {
     FILE *f=fopen(path,"w");if(!f)return 0;
+    prompt_freshness(f);
     const char *dp=dprompt(),*cp=cfget("claude_prefix");
     if(dp[0])fprintf(f,"%s\n",dp);
     if(cp[0])fprintf(f,"%s\n",cp);
