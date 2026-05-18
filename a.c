@@ -511,7 +511,7 @@ static int cmd_j(int c,char**v){
     tm_go(sn);
     return 0;}
 static int cmd_job(int c,char**v){return(c>2&&isdigit(*v[2]))?cmd_jobs(c,v):cmd_j(c,v);}
-static int cmd_tmux(int c,char**v){tm_ensure_sess();setenv("A_FILT_TAG","win",1);return cmd_i(c,v);}
+static int cmd_tmux(int c,char**v){if(c>2){execvp("tmux",v+1);return 1;}tm_ensure_sess();setenv("A_FILT_TAG","win pane quit",1);return cmd_i(c,v);}
 #define ADBSEL "S=${ANDROID_SERIAL:-};[ -z \"$S\" ]&&{ N=$(adb devices|awk '/\\tdevice$/{print $1}');n=$(printf %s \"$N\"|grep -c .);" \
     "case $n in 0)echo no device;exit 1;;1)S=$N;;*)printf %s \"$N\"|nl>&2;read -rp '# [1]: ' i </dev/tty||exit 130;S=$(printf %s \"$N\"|sed -n ${i:-1}p);[ -z \"$S\" ]&&{ echo invalid;exit 1;};;esac;};A=\"adb -s $S\";"
 static int cmd_adb(int c,char**v){

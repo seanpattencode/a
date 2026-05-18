@@ -88,25 +88,24 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     char*lines[1024];int n=0;
     for(char*p=raw,*end=raw+len;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&p[0]!='<'&&p[0]!='='&&p[0]!='>'&&p[0]!='#'){*nl=0;lines[n++]=p;}p=nl+1;}
-    size_t wl;char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);char*wraw=readf(wp,&wl);
-    if(wraw){for(char*p=wraw,*end=wraw+wl;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
-        if(!nl)nl=end;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
-    char*tbuf=NULL;{FILE*tp=popen("tmux list-windows -aF '#W\twin' 2>/dev/null","r");
-        if(tp){tbuf=malloc(4096);size_t tl=fread(tbuf,1,4095,tp);pclose(tp);tbuf[tl]=0;
-        for(char*p=tbuf,*end=tbuf+tl;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
-            if(!nl)break;*nl=0;if(nl>p)lines[n++]=p;p=nl+1;}}}
+    static char wb[32768];size_t wl=0;
+    {char cm[P];snprintf(cm,P,"cat '%s/web_cache.txt' 2>/dev/null;tmux list-windows -aF '#W\twin' 2>/dev/null",DDIR);
+     FILE*p=popen(cm,"r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
+    for(char*p=wb,*e=wb+wl;p<e&&n<1024;){char*nl=memchr(p,'\n',(size_t)(e-p));
+        if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
+    {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",0};
+    for(int i=0;acts[i]&&n<1024;i++)lines[n++]=(char*)acts[i];}
     if(!n){puts("Empty cache");free(raw);return 1;}
     if(nfq)qsort(lines,(size_t)n,sizeof*lines,ln_cmp);  /* freq-rank: TUI + 'a i' pipe identical */
-    {const char*ft=getenv("A_FILT_TAG");
-    if(ft){size_t fl2=strlen(ft);int j=0;for(int i=0;i<n;i++){char*t=strchr(lines[i],'\t');
-        if(t&&!strncmp(t+1,ft,fl2))lines[j++]=lines[i];}n=j;}}
+    {char*f=getenv("A_FILT_TAG"),*t;int j=0;
+    if(f){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))&&strstr(f,t+1))lines[j++]=lines[i];n=j;}}
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
     struct winsize ws;ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-3:10;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
     char buf[256]="";int blen=0,sel=0;char prefix[256]="";
-    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw);free(wraw);free(tbuf)
+    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
     while (1) {
         char*fm[1024]; int nm = 0; int plen = (int)strlen(prefix);
         for (int i=0;i<n&&nm<1024;i++) {
