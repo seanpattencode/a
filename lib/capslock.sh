@@ -71,7 +71,8 @@ linux*)
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB name 'a launch'
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB command "$ABIN/a-launch"
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB binding '<Hyper>a'
-    ok "CapsLock+a → a i (or a ui if running)" ;;
+    ok "CapsLock+a → a i (or a ui if running)"
+    sudo apt install -y keyd >/dev/null 2>&1 && printf "[ids]\n*\n\n[main]\nrightshift = overloadt(shift, command(runuser -u %s -- %s next-window), 200)\n" "$USER" "$(command -v tmux)" | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift tap = tmux next-window" || warn "keyd skipped" ;;
 darwin*)
     [[ -d /Applications/Hammerspoon.app ]] || { info "installing Hammerspoon..."; brew install --cask hammerspoon &>/dev/null || { warn "brew install failed"; exit 1; }; }
     TMUX_BIN=$(command -v tmux)
