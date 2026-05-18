@@ -81,7 +81,8 @@ static void gen_icache(void) {
     "cal add\tadd event\nhub add\tadd\nhub run\trun\nhub rm\trm\nhub log\tlog\n"
     "note\tnotes\nnote l\tlist\nnote r\treview\ntasks\ttasks\nssh add\tadd host\nssh all\tall hosts\n"
     "task add\tadd\ntask l\tlist\ntask r\treview\ntask rank\trank\n"
-    "prompt\tdefault prompt\ntutorial\tguided intro\no\toperator\nop\toperator\noperator\toperator\n",f);
+    "prompt\tdefault prompt\npow\tpower\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
+    "tutorial\tguided intro\no\toperator\nop\toperator\noperator\toperator\n",f);
     /* recent downloads — tagged so TUI hides until typed */
     {char dl[P];snprintf(dl,P,"%s/Downloads",HOME);DIR*dd=opendir(dl);struct dirent*de;
     if(dd){struct{char n[256];time_t t;}df[64];int nd=0;struct stat st;

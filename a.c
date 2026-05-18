@@ -110,7 +110,7 @@ _checkers() {
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
 build) _PT=${EPOCHREALTIME/./}
-    _abin; rm -f "$ABIN/.chk"
+    _abin; rm -f "$ABIN/.chk" "$ABIN/i_cache.txt"
     printf '%s' $$ > "$ABIN/.bld"
     _build_fix() {
         warn "Build failed, attempting fix..."
@@ -369,6 +369,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/vm.c"
 #include "lib/new.c"
 #include "lib/op.c"
+#include "lib/pow.c"
 #include "lib/bench.c"
 #include "lib/serve.c"
 #include "lib/tok.c"
@@ -610,7 +611,7 @@ static const cmd_t CMDS[] = {
     {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
     {"o",cmd_op},{"once",cmd_run_once},{"op",cmd_op},{"operator",cmd_op},
-    {"p",cmd_push},{"perf",cmd_perf},{"pr",cmd_pr},{"prompt",cmd_prompt},
+    {"p",cmd_push},{"perf",cmd_perf},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},
     {"ref",cmd_ref},{"relay",cmd_relay},{"remove",cmd_remove},{"repo",cmd_create},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
@@ -630,7 +631,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|m|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|m|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);
