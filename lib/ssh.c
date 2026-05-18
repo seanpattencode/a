@@ -220,7 +220,8 @@ static int cmd_ssh(int argc,char**argv){
     {char cmd[B]="",c[B*3],cd[64]="",cs[B]="",opts[B];
         {char cwd[P];size_t hl=strlen(HOME);if(getcwd(cwd,P)&&!strncmp(cwd,HOME,hl)&&cwd[hl]=='/'){char*p=cwd+hl+1;char*s=strchr(p,'/');if(s)*s=0;if(*p&&*p!='.')snprintf(cd,64,"cd ~/%s 2>/dev/null;",p);}}
         for(int i=3;i<argc;i++){int l=(int)strlen(cmd);snprintf(cmd+l,(size_t)(B-l),"%s%s",l?" ":"",argv[i]);}
-        if(cmd[0]||cd[0])snprintf(cs,B," 'bash -c '\"'\"'%sexport PATH=$HOME/.local/bin:$PATH; %s'\"'\"''",cd,cmd[0]?cmd:"exec bash -l");
+        if(cmd[0])snprintf(cs,B," 'bash -c '\"'\"'%sexport PATH=$HOME/.local/bin:$PATH; %s'\"'\"''",cd,cmd);
+        else snprintf(cs,B," 'tmux new-session -A -s a 2>/dev/null||exec bash -l'");
         if(H[idx].jump[0]){char jhp[256],jport[8];ssh_parse(H[idx].jump,jhp,jport);
             snprintf(opts,B,"-tt -oConnectTimeout=8 -oStrictHostKeyChecking=accept-new -oProxyCommand=\"sshpass -p '%s' ssh -W %%h:%%p -p %s -oStrictHostKeyChecking=accept-new '%s'\"",H[idx].jpw,jport,jhp);
         }else snprintf(opts,B,"-tt -oConnectTimeout=2 -oStrictHostKeyChecking=accept-new");
