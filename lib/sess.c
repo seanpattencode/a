@@ -97,6 +97,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(!nl)break;*nl=0;if(nl>p)lines[n++]=p;p=nl+1;}}}
     if(!n){puts("Empty cache");free(raw);return 1;}
     if(nfq)qsort(lines,(size_t)n,sizeof*lines,ln_cmp);  /* freq-rank: TUI + 'a i' pipe identical */
+    {const char*ft=getenv("A_FILT_TAG");
+    if(ft){size_t fl2=strlen(ft);int j=0;for(int i=0;i<n;i++){char*t=strchr(lines[i],'\t');
+        if(t&&!strncmp(t+1,ft,fl2))lines[j++]=lines[i];}n=j;}}
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
     struct winsize ws;ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-3:10;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
