@@ -188,6 +188,11 @@ static int cmd_ssh(int argc,char**argv){
             else printf("x %s\n",h->name);}
         return 0;}
 
+    /* fleet view: window per host, attach remote a: */
+    if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){char cm[B];size_t dl=strlen(DEV);
+        for(int i=0;i<nh;i++)if(strncmp(H[i].name,DEV,dl)){
+            snprintf(cm,B,"a ssh %s",H[i].name);tm_new(H[i].name,HOME,cm);}
+        tm_go(NULL);return 0;}
     /* all/broadcast — parallel */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
         char cmd[B]="";ajoin(cmd,B,argc,argv,3);
