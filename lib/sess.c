@@ -91,6 +91,10 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     size_t wl;char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);char*wraw=readf(wp,&wl);
     if(wraw){for(char*p=wraw,*end=wraw+wl;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
+    char*tbuf=NULL;{FILE*tp=popen("tmux list-windows -aF '#W\twin' 2>/dev/null","r");
+        if(tp){tbuf=malloc(4096);size_t tl=fread(tbuf,1,4095,tp);pclose(tp);tbuf[tl]=0;
+        for(char*p=tbuf,*end=tbuf+tl;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
+            if(!nl)break;*nl=0;if(nl>p)lines[n++]=p;p=nl+1;}}}
     if(!n){puts("Empty cache");free(raw);return 1;}
     if(nfq)qsort(lines,(size_t)n,sizeof*lines,ln_cmp);  /* freq-rank: TUI + 'a i' pipe identical */
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
@@ -99,7 +103,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
     char buf[256]="";int blen=0,sel=0;char prefix[256]="";
-    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw);free(wraw)
+    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw);free(wraw);free(tbuf)
     while (1) {
         char*fm[1024]; int nm = 0; int plen = (int)strlen(prefix);
         for (int i=0;i<n&&nm<1024;i++) {
