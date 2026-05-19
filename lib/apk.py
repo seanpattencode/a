@@ -51,8 +51,8 @@ w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(thi
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
-val nv=T(this);val nt=N(this);val fr=FrameLayout(this);fr.addView(w);fr.addView(nv);fr.addView(nt);w.visibility=View.GONE;nt.visibility=View.GONE
-val mb=S(this,listOf("Native" to{w.visibility=View.GONE;nv.visibility=View.VISIBLE;nt.visibility=View.GONE;nv.invalidate()},"Web" to{w.visibility=View.VISIBLE;nv.visibility=View.GONE;nt.visibility=View.GONE},"Notes" to{w.visibility=View.GONE;nv.visibility=View.GONE;nt.visibility=View.VISIBLE;nt.invalidate()}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val nv=T(this);val nt=N(this);val st=Stp(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
+val mb=S(this,listOf("Native","Web","Notes","Setup").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root)}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
@@ -99,6 +99,18 @@ val b=Bitmap.createBitmap(cw*95,ch,Bitmap.Config.ARGB_8888)
 Canvas(b).let{cc->for(i in 0 until 95){val s=((32+i).toChar()).toString();p.getTextBounds(s,0,1,tb);cc.drawText(s,(i*cw-tb.left).toFloat(),-p.ascent(),p)}}
 val r=IntArray(2+cw*95*ch);r[0]=cw;r[1]=ch
 b.getPixels(r,2,cw*95,0,0,cw*95,ch);b.recycle();return r}
+}
+class Stp(val a:Activity):android.view.View(a){
+private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
+private fun go(i:Intent?)=i?.let{a.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
+private val items=listOf(
+"Set as keyboard" to{(a.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()},
+"Set as launcher" to{go(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))},
+"Grant mic permission" to{a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1)},
+"Open Shizuku setup" to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))}
+)
+override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt());for((i,e) in items.withIndex())c.drawText(e.first,width/2f,300f+i*140f,p)}
+override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){val idx=((e.y-240f)/140f).toInt();if(idx in items.indices)items[idx].second()};return true}
 }
 class N(c:android.content.Context):android.view.View(c),android.speech.RecognitionListener{
 private val sr by lazy{android.speech.SpeechRecognizer.createSpeechRecognizer(c).apply{setRecognitionListener(this@N)}}
@@ -382,6 +394,652 @@ JF(void,nStart)(JNIEnv*e,jclass c,jstring libDir,jstring filesDir){(void)c;
 JF(void,nStop)(JNIEnv*e,jclass c){(void)e;(void)c;run_=0;if(pty_fd>=0){close(pty_fd);pty_fd=-1;}}
 JF(jboolean,nDirty)(JNIEnv*e,jclass c){(void)e;(void)c;return dirty?1:0;}
 '''
+HKT=r'''package com.aios.a
+import android.app.Activity
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.*
+import android.content.*
+import android.graphics.*
+import android.database.sqlite.SQLiteDatabase
+import java.io.File
+import java.util.concurrent.Executors
+
+class Home : Activity() {
+    companion object {
+        init { System.loadLibrary("launcher") }
+        val P = "爷ye奶nai爸ba妈ma哥ge姐jie弟di妹mei微wei信xin支zhi付fu宝bao淘tao京jing东dong抖dou音yin快kuai手shou美mei团tuan饿e了le么me百bai度du高gao德de地di图tu网wang易yi云yun乐le视shi频pin腾teng讯xun酷ku狗gou虾xia米mi播bo客ke阿a里li巴ba钉ding闲xian鱼yu盒he马ma飞fei猪zhu携xie程cheng去qu哪na儿er艺yi优you芒mang果guo咪mi咕gu喜xi拉la雅ya滴di出chu行xing货huo运yun满man帮bang瓜gua子zi转zhuan闪shan送song达da人ren民min日ri报bao新xin闻wen浪lang博bo豆dou瓣ban知zhi乎hu小xiao红hong书shu得de到dao懒lan饭fan菜cai谱pu下xia厨chu房fang大da众zhong点dian评ping口kou碑bei番fan茄qie钟zhong薄bo荷he唯wei品pin会hui拼pin多duo苏su宁ning当dang国guo贴tie吧ba虎hu扑pu最zui右you即ji刻ke探tan陌mo生sheng交jiao友you她ta他ta约yue爱ai奇qi".let { s -> (0 until s.length).filter { s[it] > '\u4E00' }.associate { i -> s[i] to s.substring(i + 1, (i + 2 until s.length).firstOrNull { s[it] > '\u4E00' } ?: s.length) } }
+    }
+    private val h = Handler(Looper.getMainLooper())
+    private val ex = Executors.newSingleThreadExecutor()
+    private val cache by lazy { File(filesDir, "apps.txt") }
+    private val db by lazy { SQLiteDatabase.openOrCreateDatabase(File(filesDir, "freq.db"), null).apply { execSQL("CREATE TABLE IF NOT EXISTS f(p TEXT PRIMARY KEY,c INT)"); execSQL("CREATE TABLE IF NOT EXISTS pin(p TEXT PRIMARY KEY)") } }
+    private var px: IntArray? = null
+    private var cnt = mutableMapOf<String, Int>()
+    private var pins = mutableSetOf<String>()
+    private lateinit var bmp: Bitmap
+    private lateinit var v: View
+    private val la by lazy { getSystemService(Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps }
+    private var sc: List<android.content.pm.ShortcutInfo>? = null
+    private var dx = 0f; private var dy = 0f
+    private val lpr = Runnable { if (sc == null) peek() }
+    private external fun nResize(w: Int, h: Int)
+    private external fun nFont(id: Int, data: IntArray)
+    private external fun nApps(names: Array<String>, pkgs: Array<String>, low: Array<String>, counts: IntArray, pinned: BooleanArray)
+    private external fun nRender(pixels: IntArray)
+    private external fun nTouch(action: Int, x: Float, y: Float): Int
+    private external fun nAnim(): Boolean
+    private external fun nResume()
+    private external fun nPkg(i: Int): String?
+    private external fun nQuery(): String?
+    private external fun nTop(): Int
+    private external fun nCnt(i: Int, c: Int)
+    private external fun nPin(i: Int)
+    private external fun nPeek(x: Float, y: Float): Int
+
+    private fun peek() {
+        val idx = nPeek(dx, dy) - 1; if (idx < 0) return
+        val pkg = nPkg(idx) ?: return
+        try {
+            val q = android.content.pm.LauncherApps.ShortcutQuery().setPackage(pkg).setQueryFlags(android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
+            val sl = la.getShortcuts(q, android.os.Process.myUserHandle()) ?: return
+            if (sl.isEmpty()) return
+            sc = sl
+            val names = Array(sl.size) { sl[it].shortLabel?.toString() ?: sl[it].id }
+            nApps(names, names, Array(sl.size) { names[it].lowercase() }, IntArray(sl.size), BooleanArray(sl.size))
+            nTouch(android.view.MotionEvent.ACTION_CANCEL and 0xFF, 0f, 0f)
+            v.invalidate()
+        } catch (e: Exception) {}
+    }
+    override fun onBackPressed() { if (sc != null) { sc = null; sendApps(cache.readText()); v.invalidate() } else super.onBackPressed() }
+
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        db.rawQuery("SELECT p,c FROM f", null).use { while (it.moveToNext()) cnt[it.getString(0)] = it.getInt(1) }
+        db.rawQuery("SELECT p FROM pin", null).use { while (it.moveToNext()) pins.add(it.getString(0)) }
+        if (cache.exists()) sendApps(cache.readText())
+        v = object : View(this@Home) {
+            override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+                if (::bmp.isInitialized) bmp.recycle()
+                bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888); px = IntArray(w * h)
+                nResize(w, h); nFont(0, atlas(72f)); nFont(1, atlas(44f)); nFont(2, atlas(52f))
+            }
+            override fun onDraw(c: Canvas) {
+                val a = px ?: return; if (!::bmp.isInitialized) return
+                nRender(a); bmp.setPixels(a, 0, width, 0, 0, width, height)
+                c.drawBitmap(bmp, 0f, 0f, null)
+            }
+            override fun onTouchEvent(e: MotionEvent): Boolean {
+                val a = e.action and 0xFF
+                if (a == MotionEvent.ACTION_DOWN) { dx = e.x; dy = e.y; h.postDelayed(lpr, 500) }
+                else if (a == MotionEvent.ACTION_MOVE) { if (Math.abs(e.x - dx) > 50 || Math.abs(e.y - dy) > 50) h.removeCallbacks(lpr) }
+                else h.removeCallbacks(lpr)
+                val r = nTouch(a, e.x, e.y)
+                when {
+                    r > 0 -> { val s = sc; if (s != null && r-1 < s.size) { try { la.startShortcut(s[r-1], null, null) } catch (_: Exception) {}; sc = null; sendApps(cache.readText()) } else launch(r - 1) }
+                    r == -1 -> nQuery()?.let { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(it)))) }
+                    r == -2 -> nPkg(nTop())?.let { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$it"))) }
+                    r == -3 -> { val i = nTop(); nPkg(i)?.let { p -> nPin(i); if (!pins.remove(p)) pins.add(p); ex.execute { db.execSQL("DELETE FROM pin WHERE p=?", arrayOf(p)); if (p in pins) db.execSQL("INSERT INTO pin VALUES(?)", arrayOf(p)) } } }
+                }
+                invalidate()
+                if (nAnim()) postInvalidateOnAnimation()
+                return true
+            }
+            override fun computeScroll() { if (nAnim()) { invalidate(); postInvalidateOnAnimation() } }
+        }
+        setContentView(v)
+        ex.execute { scan() }
+    }
+
+    override fun onResume() { super.onResume(); nResume(); if (::bmp.isInitialized) v.invalidate(); ex.execute { scan() } }
+
+    private fun atlas(sz: Float): IntArray {
+        val p = Paint().apply { textSize = sz; color = -1; isAntiAlias = true; typeface = Typeface.MONOSPACE }
+        val cw = p.measureText("M").toInt() + 1; val ch = (-p.ascent() + p.descent()).toInt() + 1
+        val b = Bitmap.createBitmap(cw * 95, ch, Bitmap.Config.ARGB_8888)
+        Canvas(b).let { c -> for (i in 0 until 95) c.drawText(((32+i).toChar()).toString(), (i*cw).toFloat(), -p.ascent(), p) }
+        val r = IntArray(2 + cw * 95 * ch); r[0] = cw; r[1] = ch
+        b.getPixels(r, 2, cw * 95, 0, 0, cw * 95, ch); b.recycle(); return r
+    }
+
+    private fun sendApps(txt: String) {
+        val lines = txt.lines().filter { it.contains('\t') }
+        val names = Array(lines.size) { lines[it].substringBefore('\t') }
+        val pkgs = Array(lines.size) { lines[it].substringAfter('\t') }
+        val low = Array(names.size) { names[it].lowercase() + " " + names[it].map { c -> P[c] ?: "" }.joinToString("") }
+        nApps(names, pkgs, low, IntArray(names.size) { cnt[pkgs[it]] ?: 0 }, BooleanArray(names.size) { pkgs[it] in pins })
+    }
+
+    private fun launch(i: Int) {
+        nPkg(i)?.let { pkg ->
+            if (pkg.startsWith("~")) { try { startActivity(Intent(pkg.substring(1)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) {} ; return }
+            val c = (cnt[pkg] ?: 0) + 1; cnt[pkg] = c; nCnt(i, c)
+            ex.execute { db.execSQL("INSERT OR REPLACE INTO f VALUES(?,?)", arrayOf(pkg, c)) }
+            packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
+        }
+    }
+
+    private fun scan() {
+        val pm = packageManager
+        val real = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0).map { it.loadLabel(pm).toString() to it.activityInfo.packageName }
+        val sys = android.provider.Settings::class.java.fields.filter { it.name.startsWith("ACTION_") && it.type == String::class.java }.mapNotNull { f ->
+            val a = try { f.get(null) as String } catch (e: Exception) { return@mapNotNull null }
+            if (pm.resolveActivity(Intent(a), 0) == null) return@mapNotNull null
+            val raw = f.name.removePrefix("ACTION_").removeSuffix("_SETTINGS")
+            if (raw.isEmpty()) return@mapNotNull null
+            raw.split("_").joinToString(" ") { it.lowercase().replaceFirstChar(Char::uppercase) } to "~$a"
+        }
+        val txt = (real + listOf("Hotspot" to "~android.settings.TETHER_SETTINGS") + sys).joinToString("\n") { "${it.first}\t${it.second}" }
+        val old = if (cache.exists()) cache.readText() else ""
+        if (txt != old) { cache.writeText(txt); h.post { sendApps(txt); if (::bmp.isInitialized) v.invalidate() } }
+    }
+}
+'''
+LC=r'''#include <jni.h>
+#include <android/bitmap.h>
+#include <string.h>
+#include <stdlib.h>
+#include <math.h>
+
+#define NA 1024
+#define NM 96
+#define NC 95
+
+typedef struct { uint32_t* px; int cw, ch, aw; } Font;
+static Font F[3];
+static int W, H;
+
+static struct { char n[NM]; char p[128]; char l[NM]; int c, pin; } A[NA];
+static int na, srt[NA], flt[NA], nf;
+static char Q[64];
+static int ql, scr, pressed, drag;
+static float sv, ly, ty;
+
+static const char* KR[] = {"1234567890","qwertyuiop","asdfghjkl","\x02zxcvbnm\b","\x01 \n"};
+static float KB[50][4];
+static int nk;
+
+static void dosort() {
+    for (int i = 0; i < na; i++) srt[i] = i;
+    for (int i = 1; i < na; i++) {
+        int k = srt[i], v = A[k].pin * 1000000 + A[k].c, j = i - 1;
+        while (j >= 0 && A[srt[j]].pin * 1000000 + A[srt[j]].c < v) { srt[j+1] = srt[j]; j--; }
+        srt[j+1] = k;
+    }
+}
+
+static void dofilter() {
+    nf = 0; scr = 0; sv = 0;
+    if (!ql) { for (int i = 0; i < na; i++) flt[i] = srt[i]; nf = na; return; }
+    char q[64]; for (int i = 0; i < ql; i++) q[i] = Q[i] | 32; q[ql] = 0;
+    for (int i = 0; i < na; i++) if (strstr(A[srt[i]].l, q)) flt[nf++] = srt[i];
+}
+
+static void computekb() {
+    float kw = W / 10.0f, kbh = H * 0.52f, ky = H - kbh, rh = kbh / 5; nk = 0;
+    for (int r = 0; r < 5; r++) {
+        int n = strlen(KR[r]); float y = ky + r * rh;
+        for (int i = 0; i < n; i++) {
+            float x = i * kw, w = kw;
+            if (r == 2) x = kw * 0.5f + i * kw;
+            else if (r == 3) {
+                if (i == 0) { x = 0; w = kw * 1.5f; }
+                else if (i == n-1) { x = kw * 8.5f; w = W - x; }
+                else { x = kw * 1.5f + (i-1) * kw; }
+            } else if (r == 4) {
+                if (i == 0) { x = 0; w = kw * 1.5f; }
+                else if (i == 1) { x = kw * 1.5f; w = kw * 6.5f; }
+                else { x = kw * 8; w = W - x; }
+            }
+            KB[nk][0] = x; KB[nk][1] = y; KB[nk][2] = x + w; KB[nk][3] = y + rh; nk++;
+        }
+    }
+}
+
+static int kbhit(float x, float y) {
+    for (int i = 0; i < nk; i++)
+        if (x >= KB[i][0] && x < KB[i][2] && y >= KB[i][1] && y < KB[i][3]) return i;
+    return -1;
+}
+
+static char kbchar(int idx) {
+    int c = 0;
+    for (int r = 0; r < 5; r++) { int n = strlen(KR[r]); if (idx < c + n) return KR[r][idx - c]; c += n; }
+    return 0;
+}
+
+static inline void drawch(uint32_t* px, int stride, Font* f, int x, int y, int ch, uint32_t col) {
+    int ci = ch - 32; if (ci < 0 || ci >= NC) return;
+    int sx = ci * f->cw;
+    uint32_t cr = col >> 16 & 0xFF, cg = col >> 8 & 0xFF, cb = col & 0xFF;
+    for (int dy = 0; dy < f->ch; dy++) {
+        int fy = y + dy; if ((unsigned)fy >= (unsigned)H) continue;
+        for (int dx = 0; dx < f->cw; dx++) {
+            int fx = x + dx; if ((unsigned)fx >= (unsigned)W) continue;
+            uint32_t a = f->px[dy * f->aw + sx + dx] >> 24;
+            if (a) px[fy * stride + fx] = 0xFF000000 | (a*cr/255 << 16) | (a*cg/255 << 8) | a*cb/255;
+        }
+    }
+}
+
+static void drawstr(uint32_t* px, int stride, Font* f, const char* s, int x, int y, uint32_t col) {
+    for (; *s; s++, x += f->cw) drawch(px, stride, f, x, y, *s, col);
+}
+
+static void drawcenter(uint32_t* px, int stride, Font* f, const char* s, int y, uint32_t col) {
+    drawstr(px, stride, f, s, (W - (int)strlen(s) * f->cw) / 2, y, col);
+}
+
+#define JF(ret, name) JNIEXPORT ret JNICALL Java_com_aios_a_Home_##name
+
+JF(void, nResize)(JNIEnv* e, jclass c, jint w, jint h) { W = w; H = h; computekb(); }
+
+JF(void, nFont)(JNIEnv* e, jclass c, jint id, jintArray arr) {
+    jint* d = (*e)->GetIntArrayElements(e, arr, NULL);
+    int cw = d[0], ch = d[1];
+    F[id].cw = cw; F[id].ch = ch; F[id].aw = cw * NC;
+    free(F[id].px); F[id].px = malloc(F[id].aw * ch * 4);
+    memcpy(F[id].px, d + 2, F[id].aw * ch * 4);
+    (*e)->ReleaseIntArrayElements(e, arr, d, 0);
+
+}
+
+static void gs(JNIEnv* e, jobjectArray a, int i, char* d, int m) {
+    jstring s = (*e)->GetObjectArrayElement(e, a, i);
+    const char* c = (*e)->GetStringUTFChars(e, s, NULL);
+    strncpy(d, c, m-1); d[m-1] = 0;
+    (*e)->ReleaseStringUTFChars(e, s, c); (*e)->DeleteLocalRef(e, s);
+}
+
+JF(void, nApps)(JNIEnv* e, jclass c, jobjectArray names, jobjectArray pkgs, jobjectArray low, jintArray cnts, jbooleanArray pins) {
+    na = (*e)->GetArrayLength(e, names); if (na > NA) na = NA;
+    jint* cn = (*e)->GetIntArrayElements(e, cnts, NULL);
+    jboolean* pn = (*e)->GetBooleanArrayElements(e, pins, NULL);
+    for (int i = 0; i < na; i++) { gs(e, names, i, A[i].n, NM); gs(e, pkgs, i, A[i].p, 128); gs(e, low, i, A[i].l, NM); A[i].c = cn[i]; A[i].pin = pn[i]; }
+    (*e)->ReleaseIntArrayElements(e, cnts, cn, 0);
+    (*e)->ReleaseBooleanArrayElements(e, pins, pn, 0);
+    dosort(); dofilter();
+
+}
+
+JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
+    jint* p = (*e)->GetIntArrayElements(e, arr, NULL);
+    int stride = W;
+    for (int i = 0; i < W * H; i++) p[i] = 0xFF000000;
+
+    int ky = H - H * 52 / 100, lh = ky - 70, rh = 120;
+
+    if (!drag && fabsf(sv) > 0.5f) { scr += (int)sv; sv *= 0.95f; } else if (!drag) sv = 0;
+    int mx = nf * rh - lh; if (mx < 0) mx = 0;
+    if (scr < 0) scr = 0; if (scr > mx) scr = mx;
+
+    if (ql > 0 && F[2].px) { char q[65]; memcpy(q, Q, ql); q[ql] = 0; drawstr((uint32_t*)p, stride, &F[2], q, 32, ky - 60, 0xFFFF00); }
+
+    if (F[0].px) {
+        if (nf == 0 && ql > 0) {
+            char buf[80] = "Google: "; memcpy(buf+8, Q, ql); buf[8+ql] = 0;
+            drawcenter((uint32_t*)p, stride, &F[0], buf, lh - rh + rh/2 - F[0].ch/2, 0xFFFF00);
+        } else for (int i = 0; i < nf; i++) {
+            int y = lh - rh * (i+1) + scr;
+            if (y < -rh || y > lh) continue;
+            int idx = flt[i]; char buf[NM+3]; int off = 0;
+            if (A[idx].pin) { buf[0] = '*'; buf[1] = ' '; off = 2; }
+            strncpy(buf+off, A[idx].n, NM); buf[off+NM-1] = 0;
+            { uint32_t nc = i==0 ? 0xFFFF00 : 0xFFFFFF;
+              if (A[idx].p[0]=='~') { int nw=(int)strlen(buf)*F[0].cw, tw=13*F[1].cw, sx=(W-nw-20-tw)/2; if (sx<0) sx=0;
+                drawstr((uint32_t*)p, stride, &F[0], buf, sx, y+rh/2-F[0].ch/2, nc);
+                drawstr((uint32_t*)p, stride, &F[1], "settings menu", sx+nw+20, y+rh/2-F[1].ch/2, 0x808080); }
+              else drawcenter((uint32_t*)p, stride, &F[0], buf, y+rh/2-F[0].ch/2, nc); }
+        }
+    }
+
+    if (F[1].px) {
+        int ki = 0;
+        for (int r = 0; r < 5; r++) for (int i = 0; KR[r][i]; i++, ki++) {
+            char ch = KR[r][i]; if (ch == ' ') continue;
+            uint32_t col = ki == pressed ? 0xFF3333 : 0xFFFFFF;
+            char lbl = ch;
+            if (ch == '\b') lbl = '<'; else if (ch == '\n') lbl = '>';
+            else if (ch == '\x01') lbl = '*'; else if (ch == '\x02') lbl = 'i';
+            float cx = (KB[ki][0] + KB[ki][2]) / 2, cy = (KB[ki][1] + KB[ki][3]) / 2;
+            drawch((uint32_t*)p, stride, &F[1], cx - F[1].cw/2, cy - F[1].ch/2, lbl, col);
+        }
+    }
+    (*e)->ReleaseIntArrayElements(e, arr, p, 0);
+}
+
+JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
+    int ky = H - H * 52 / 100, lh = ky - 70, rh = 120;
+    switch (act) {
+    case 0:
+        if (y >= ky) {
+            pressed = kbhit(x, y);
+            if (pressed >= 0) {
+                char ch = kbchar(pressed);
+                if (ch == '\b') { if (ql > 0) ql--; }
+                else if (ch == '\n') { if (nf > 0) return flt[0]+1; if (ql > 0) return -1; }
+                else if (ch == '\x01') { if (nf > 0) return -3; }
+                else if (ch == '\x02') { if (nf > 0) return -2; }
+                else if (ql < 63) Q[ql++] = ch;
+                dofilter();
+            }
+        } else if (y < lh) { drag = 1; ly = y; ty = y; sv = 0; }
+        break;
+    case 1: case 3:
+        pressed = -1;
+        if (drag) { drag = 0; float d = y - ty;
+            if (d*d < 400) { float edge = W * 0.2f;
+                if (x > edge && x < W - edge) { int i = (int)((lh - ty + scr) / rh); if (i >= 0 && i < nf) return flt[i]+1; }
+                if (nf == 0 && ql > 0) return -1;
+            }
+        } break;
+    case 2:
+        if (drag) { sv = y - ly; scr += (int)(y - ly); ly = y;
+            int mx = nf * rh - lh; if (mx < 0) mx = 0;
+            if (scr < 0) scr = 0; if (scr > mx) scr = mx;
+        } break;
+    }
+    return 0;
+}
+
+JF(jboolean, nAnim)(JNIEnv* e, jclass c) { return fabsf(sv) > 0.5f; }
+JF(void, nResume)(JNIEnv* e, jclass c) { ql = 0; scr = 0; pressed = -1; sv = 0; drag = 0; dofilter(); }
+JF(jstring, nPkg)(JNIEnv* e, jclass c, jint i) { return (i >= 0 && i < na) ? (*e)->NewStringUTF(e, A[i].p) : NULL; }
+JF(jstring, nQuery)(JNIEnv* e, jclass c) { char b[65]; memcpy(b, Q, ql); b[ql] = 0; return (*e)->NewStringUTF(e, b); }
+JF(jint, nTop)(JNIEnv* e, jclass c) { return nf > 0 ? flt[0] : -1; }
+JF(void, nCnt)(JNIEnv* e, jclass c, jint i, jint v) { if (i >= 0 && i < na) { A[i].c = v; dosort(); dofilter(); } }
+JF(void, nPin)(JNIEnv* e, jclass c, jint i) { if (i >= 0 && i < na) { A[i].pin = !A[i].pin; dosort(); dofilter(); } }
+JF(jint, nPeek)(JNIEnv* e, jclass c, jfloat x, jfloat y) { int ky=H-H*52/100, lh=ky-70, rh=120; if (y>=lh||y<0) return 0; float ed=W*0.2f; if (x<=ed||x>=W-ed) return 0; int i=(int)((lh-y+scr)/rh); return (i>=0&&i<nf)?flt[i]+1:0; }
+'''
+TXML=r'''<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="T" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorBackground">#000</item>
+        <item name="android:textColor">#fff</item>
+    </style>
+</resources>
+'''
+IKT=r'''package com.aios.a
+import android.inputmethodservice.InputMethodService
+import android.graphics.*
+import android.view.*
+import android.os.Handler
+import android.os.Looper
+
+object NativeKB {
+    init { System.loadLibrary("keyboard") }
+    external fun init(w: Int, h: Int)
+    external fun setRowFudge(row: Int, fudge: Float)
+    external fun setHFudge(fudge: Float)
+    external fun getRowCount(): Int
+    external fun onTouch(action: Int, x: Float, y: Float): Int
+    external fun checkHold(): Int
+    external fun toggleMode()
+    external fun toggleShift()
+    external fun clearShift()
+    external fun getMode(): Int
+    external fun getShift(): Int
+    external fun getPressed(): Int
+    external fun getHFudge(): Float
+    external fun getRowFudge(row: Int): Float
+    external fun getBounds(out: FloatArray)
+    external fun getLabels(): String
+}
+
+class InstantNdkService : InputMethodService(), android.view.textservice.SpellCheckerSession.SpellCheckerSessionListener {
+    private lateinit var kbView: NdkKeyboardView
+    private var sc: android.view.textservice.SpellCheckerSession? = null
+    private var fix: String? = null; private var fixWord = ""; private var skip = ""
+
+    override fun onEvaluateFullscreenMode() = false
+    override fun onGetSuggestions(r: Array<out android.view.textservice.SuggestionsInfo>?) { r?.firstOrNull()?.let { if (it.suggestionsCount > 0) fix = it.getSuggestionAt(0) } }
+    override fun onGetSentenceSuggestions(r: Array<out android.view.textservice.SentenceSuggestionsInfo>?) {}
+
+    override fun onCreateInputView(): View { sc = (getSystemService(android.content.Context.TEXT_SERVICES_MANAGER_SERVICE) as? android.view.textservice.TextServicesManager)?.newSpellCheckerSession(null, null, this, true); kbView = NdkKeyboardView(this); return kbView }
+    override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting); kbView.requestLayout(); fix = null; fixWord = ""; skip = "" }
+
+    fun sendChar(c: Char) = when (c) {
+        '\b' -> currentInputConnection?.deleteSurroundingText(1, 0)
+        '\n' -> { val a = currentInputEditorInfo?.imeOptions?.and(android.view.inputmethod.EditorInfo.IME_MASK_ACTION) ?: 0
+            if (a != 0 && a != android.view.inputmethod.EditorInfo.IME_ACTION_NONE) currentInputConnection?.performEditorAction(a)
+            else currentInputConnection?.commitText("\n", 1) }
+        ' ' -> { val word = currentInputConnection?.getTextBeforeCursor(20, 0)?.trim()?.split(Regex("\\s+"))?.lastOrNull() ?: ""
+            if (fix != null && word.equals(fixWord, true) && word.lowercase() != skip) { currentInputConnection?.deleteSurroundingText(word.length, 0); currentInputConnection?.commitText("$fix ", 1); skip = word.lowercase() }
+            else currentInputConnection?.commitText(" ", 1); fix = null; null }
+        '\u0001' -> { NativeKB.toggleMode(); kbView.invalidate(); null }
+        '\u0002' -> { NativeKB.toggleShift(); kbView.invalidate(); null }
+        else -> { val out = if (NativeKB.getShift() == 1 && c in 'a'..'z') c.uppercaseChar() else c
+            currentInputConnection?.commitText(out.toString(), 1)
+            if (NativeKB.getShift() == 1 && c in 'a'..'z') { NativeKB.clearShift(); kbView.invalidate() }
+            val w = currentInputConnection?.getTextBeforeCursor(20, 0)?.trim()?.split(Regex("\\s+"))?.lastOrNull() ?: ""; if (w.length >= 2) { fixWord = w; fix = null; sc?.getSuggestions(android.view.textservice.TextInfo(w), 3) }; null }
+    }
+}
+
+class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
+    private val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(svc)
+    private val bgPaint = Paint().apply { color = 0xFF000000.toInt() }
+    private val keyPaint = Paint().apply { color = 0xFF000000.toInt() }
+    private val pressPaint = Paint()
+    private val textPaint = Paint().apply { color = Color.WHITE; textSize = 48f; textAlign = Paint.Align.CENTER; isAntiAlias = true }
+    private fun updatePressPaint() { pressPaint.color = if (prefs.getBoolean("debug_red", true)) 0xFFFF0000.toInt() else 0xFF606060.toInt() }
+    private val bounds = FloatArray(44 * 4)
+    private val handler = Handler(Looper.getMainLooper())
+    private val holdCheck = object : Runnable { override fun run() {
+        val c = NativeKB.checkHold()
+        if (c == '\b'.code) { svc.sendChar('\b'); invalidate() }
+        else if (c == 'S'.code) svc.startActivity(android.content.Intent(svc, SettingsActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        if (NativeKB.getPressed() >= 0) handler.postDelayed(this, 16)
+    }}
+    private val hz120 = object : android.view.Choreographer.FrameCallback { override fun doFrame(t: Long) { invalidate(0,0,1,1); android.view.Choreographer.getInstance().postFrameCallback(this) } }
+
+    private val toolbarH = 80f
+    private var listening = false
+    private fun startTranscription() {
+        listening = true; invalidate()
+        val sr = android.speech.SpeechRecognizer.createSpeechRecognizer(svc)
+        sr.setRecognitionListener(object : android.speech.RecognitionListener {
+            override fun onResults(b: android.os.Bundle?) { b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { svc.currentInputConnection?.commitText("$it ", 1) }; listening = false; invalidate(); sr.destroy() }
+            override fun onError(c: Int) { listening = false; invalidate(); sr.destroy() }
+            override fun onEndOfSpeech() { listening = false; invalidate() }
+            override fun onReadyForSpeech(b: android.os.Bundle?) {}; override fun onBeginningOfSpeech() {}; override fun onRmsChanged(r: Float) {}; override fun onBufferReceived(b: ByteArray?) {}; override fun onPartialResults(b: android.os.Bundle?) {}; override fun onEvent(c: Int, b: android.os.Bundle?) {}
+        })
+        val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH); i.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); sr.startListening(i)
+    }
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        NativeKB.init(w, h - toolbarH.toInt())
+        for (r in 0 until 5) NativeKB.setRowFudge(r, prefs.getInt("fudge$r", 20).toFloat())
+        NativeKB.setHFudge(prefs.getInt("hfudge", 10).toFloat())
+        updatePressPaint()
+    }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); updatePressPaint(); android.view.Choreographer.getInstance().postFrameCallback(hz120) }
+    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); android.view.Choreographer.getInstance().removeFrameCallback(hz120) }
+    override fun onMeasure(ws: Int, hs: Int) {
+        val w = MeasureSpec.getSize(ws)
+        val pct = prefs.getInt("kb_height", 75).coerceIn(20, 200) / 100f
+        setMeasuredDimension(w, (w * pct).toInt().coerceAtMost(resources.displayMetrics.heightPixels / 2) + toolbarH.toInt())
+    }
+
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (e.action == MotionEvent.ACTION_DOWN && e.y < toolbarH) { if (e.x > width - toolbarH * 1.5f) startTranscription(); return true }
+        val c = NativeKB.onTouch(e.action, e.x, e.y - toolbarH)
+        if (e.action == MotionEvent.ACTION_DOWN && c != 0) {
+            svc.sendChar(c.toChar())
+            handler.removeCallbacks(holdCheck)
+            handler.postDelayed(holdCheck, 50)
+        } else if (e.action == MotionEvent.ACTION_UP || e.action == MotionEvent.ACTION_CANCEL) {
+            handler.removeCallbacks(holdCheck)
+        }
+        invalidate(); return true
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+        textPaint.textSize = 40f; val lbl = if (listening) "listening" else "mic"; canvas.drawText(lbl, width - (lbl.length * 14f + 24f), toolbarH * 0.7f, textPaint)
+        canvas.save(); canvas.translate(0f, toolbarH)
+        NativeKB.getBounds(bounds)
+        val labels = NativeKB.getLabels()
+        val pressed = NativeKB.getPressed()
+        val mode = NativeKB.getMode()
+        val rowCount = NativeKB.getRowCount()
+        val debugRed = prefs.getBoolean("debug_red", true)
+        val hf = NativeKB.getHFudge()
+        val rowSizes = if (mode == 1) intArrayOf(10, 10, 8, 5) else intArrayOf(10, 10, 9, 9, 4)
+        var row = 0; var inRow = 0
+        for (i in labels.indices) {
+            val b = i * 4
+            if (bounds[b+2] - bounds[b] <= 0) continue
+            val rf = NativeKB.getRowFudge(row)
+            val isPressed = i == pressed
+            if (isPressed && debugRed) canvas.drawRoundRect(bounds[b] - hf, bounds[b+1] + rf, bounds[b+2] + hf, bounds[b+3] + rf, 8f, 8f, pressPaint)
+            else canvas.drawRoundRect(bounds[b]+4, bounds[b+1]+4, bounds[b+2]-4, bounds[b+3]-4, 8f, 8f, if (isPressed) pressPaint else keyPaint)
+            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; else -> ch.toString() }
+            canvas.drawText(label, (bounds[b] + bounds[b+2]) / 2, (bounds[b+1] + bounds[b+3]) / 2 + 16, textPaint)
+            inRow++; if (row < rowSizes.size && inRow >= rowSizes[row]) { row++; inRow = 0 }
+        }
+        canvas.restore()
+    }
+}
+
+class SettingsActivity : android.app.Activity() {
+    override fun onCreate(b: android.os.Bundle?) {
+        super.onCreate(b)
+        val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+        val layout = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(48, 48, 48, 48) }
+        layout.addView(android.widget.TextView(this).apply { text = "InstantKB-NDK Termux"; textSize = 18f })
+        layout.addView(android.widget.Button(this).apply { text = "Enable Keyboard"; setOnClickListener { startActivity(android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)) } })
+        layout.addView(android.widget.TextView(this).apply { text = "\nHeight %"; textSize = 14f })
+        val h0 = prefs.getInt("kb_height", 75)
+        layout.addView(android.widget.SeekBar(this).apply { max = 180; progress = h0 - 20
+            setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) { prefs.edit().putInt("kb_height", p + 20).apply() }
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}; override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
+            })
+        })
+        for (r in 0..4) {
+            val f0 = prefs.getInt("fudge$r", 20)
+            val row = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+            row.addView(android.widget.TextView(this).apply { text = "R${r+1} "; textSize = 14f })
+            val num = android.widget.EditText(this).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER; setText(f0.toString()); minWidth = 100 }
+            val slider = android.widget.SeekBar(this).apply { max = 60; progress = f0; layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+            num.setOnEditorActionListener { _, _, _ -> val v = num.text.toString().toIntOrNull()?.coerceIn(0, 60) ?: 20; num.setText(v.toString()); slider.progress = v; prefs.edit().putInt("fudge$r", v).apply(); NativeKB.setRowFudge(r, v.toFloat()); true }
+            slider.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) { num.setText(p.toString()); prefs.edit().putInt("fudge$r", p).apply(); NativeKB.setRowFudge(r, p.toFloat()) }
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}; override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
+            })
+            row.addView(num); row.addView(slider); layout.addView(row)
+        }
+        val hf0 = prefs.getInt("hfudge", 10)
+        val hrow = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+        hrow.addView(android.widget.TextView(this).apply { text = "L/R "; textSize = 14f })
+        val hnum = android.widget.EditText(this).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER; setText(hf0.toString()); minWidth = 100 }
+        val hslider = android.widget.SeekBar(this).apply { max = 40; progress = hf0; layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f) }
+        hnum.setOnEditorActionListener { _, _, _ -> val v = hnum.text.toString().toIntOrNull()?.coerceIn(0, 40) ?: 10; hnum.setText(v.toString()); hslider.progress = v; prefs.edit().putInt("hfudge", v).apply(); NativeKB.setHFudge(v.toFloat()); true }
+        hslider.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) { hnum.setText(p.toString()); prefs.edit().putInt("hfudge", p).apply(); NativeKB.setHFudge(p.toFloat()) }
+            override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}; override fun onStopTrackingTouch(s: android.widget.SeekBar?) {}
+        })
+        hrow.addView(hnum); hrow.addView(hslider); layout.addView(hrow)
+        layout.addView(android.widget.CheckBox(this).apply { text = "Debug: Red flash"; isChecked = prefs.getBoolean("debug_red", true); setOnCheckedChangeListener { _, c -> prefs.edit().putBoolean("debug_red", c).apply() } })
+        setContentView(layout)
+    }
+}
+'''
+KC=r'''// Instant Keyboard - Native C implementation
+#include <jni.h>
+#include <string.h>
+#include <time.h>
+
+static const char* ABC[] = {"1234567890","qwertyuiop","asdfghjkl","\002zxcvbnm\b","\001 .\n"};
+static const char* SYM[] = {"1234567890","@#$_&-+()/","*\"':;!?\b","\001, .\n"};
+static int symMode = 0, shift = 0, pressedKey = -1, kbWidth, kbHeight;
+static float keyW, rowH, bounds[44][4], rowFudge[5] = {0}, hFudge = 0;
+static long pressTime = 0;
+static char pressedChar = 0;
+
+static long now_ms() { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec*1000 + t.tv_nsec/1000000; }
+
+static void computeBounds() {
+    int rows = symMode ? 4 : 5;
+    const char** L = symMode ? SYM : ABC;
+    rowH = kbHeight / (float)rows;
+    float y = 0; int idx = 0;
+    for (int r = 0; r < rows; r++, y += rowH) {
+        int n = strlen(L[r]);
+        for (int i = 0; i < n; i++) {
+            float w = keyW, x = i * keyW;
+            int rr = symMode ? r : r - 1; // row index for layout calc (skip num row logic)
+            if (!symMode && r == 0) { /* num row: simple */ }
+            else if (rr == 0) { /* qwerty row: simple */ }
+            else if (rr == 1 && !symMode) x = keyW * 0.5f + i * keyW;
+            else if (rr == 2) {
+                if (symMode) { x = keyW * 1.5f + i * keyW; if (i == n-1) { x = keyW * 8.5f; w = keyW * 1.5f; } }
+                else { if (i == 0) { w = keyW * 1.5f; } else if (i == n-1) { x = keyW * 8.5f; w = keyW * 1.5f; } else { x = keyW * 1.5f + (i-1) * keyW; } }
+            } else if (rr == 3) {
+                if (symMode) { w = (i==0) ? keyW*2 : (i==2) ? keyW*4 : (i==4) ? keyW*2 : keyW; }
+                else { w = (i==0) ? keyW*2 : (i==1) ? keyW*5 : (i==2) ? keyW*1 : keyW*2; }
+                x = 0; for (int j = 0; j < i; j++) { if (symMode) x += (j==0) ? keyW*2 : (j==2) ? keyW*4 : (j==4) ? keyW*2 : keyW; else x += (j==0) ? keyW*2 : (j==1) ? keyW*5 : (j==2) ? keyW*1 : keyW*2; }
+            }
+            bounds[idx][0] = x; bounds[idx][1] = y; bounds[idx][2] = x + w; bounds[idx][3] = y + rowH; idx++;
+        }
+    }
+}
+
+static int hitTest(float x, float y) {
+    int rows = symMode ? 4 : 5;
+    const char** L = symMode ? SYM : ABC;
+    int idx = 0;
+    for (int r = 0; r < rows; r++) {
+        int n = strlen(L[r]);
+        float ay = y - rowFudge[r];
+        for (int i = 0; i < n; i++, idx++)
+            if (x >= bounds[idx][0] - hFudge && x <= bounds[idx][2] + hFudge && ay >= bounds[idx][1] && ay <= bounds[idx][3]) return idx;
+    }
+    return -1;
+}
+
+static char getChar(int idx) {
+    int rows = symMode ? 4 : 5;
+    const char** L = symMode ? SYM : ABC;
+    int i = 0;
+    for (int r = 0; r < rows; r++) { int n = strlen(L[r]); if (idx < i + n) return L[r][idx - i]; i += n; }
+    return 0;
+}
+
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_init(JNIEnv* e, jclass c, jint w, jint h) { kbWidth = w; kbHeight = h; keyW = w / 10.0f; computeBounds(); }
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_setRowFudge(JNIEnv* e, jclass c, jint row, jfloat fudge) { if (row >= 0 && row < 5) rowFudge[row] = fudge; }
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_setHFudge(JNIEnv* e, jclass c, jfloat fudge) { hFudge = fudge; }
+JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_getRowCount(JNIEnv* e, jclass c) { return symMode ? 4 : 5; }
+JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_onTouch(JNIEnv* e, jclass c, jint action, jfloat x, jfloat y) {
+    if (action == 0) { pressedKey = hitTest(x, y); pressTime = now_ms(); if (pressedKey >= 0) { pressedChar = getChar(pressedKey); return pressedChar; } }
+    else if (action == 1 || action == 3) { pressedKey = -1; pressedChar = 0; }
+    return 0;
+}
+JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_checkHold(JNIEnv* e, jclass c) {
+    if (pressedKey < 0) return 0;
+    long el = now_ms() - pressTime;
+    if (pressedChar == '\b' && el > 400) { pressTime = now_ms() - 350; return '\b'; }
+    if (pressedChar == '\001' && el > 400) { pressTime += 99999; return 'S'; }
+    return 0;
+}
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_toggleMode(JNIEnv* e, jclass c) { symMode = !symMode; shift = 0; computeBounds(); }
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_toggleShift(JNIEnv* e, jclass c) { shift = !shift; }
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_clearShift(JNIEnv* e, jclass c) { shift = 0; }
+JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_getMode(JNIEnv* e, jclass c) { return symMode; }
+JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_getShift(JNIEnv* e, jclass c) { return shift; }
+JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_getPressed(JNIEnv* e, jclass c) { return pressedKey; }
+JNIEXPORT jfloat JNICALL Java_com_aios_a_NativeKB_getHFudge(JNIEnv* e, jclass c) { return hFudge; }
+JNIEXPORT jfloat JNICALL Java_com_aios_a_NativeKB_getRowFudge(JNIEnv* e, jclass c, jint row) { return (row >= 0 && row < 5) ? rowFudge[row] : 0; }
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_getBounds(JNIEnv* e, jclass c, jfloatArray out) { (*e)->SetFloatArrayRegion(e, out, 0, 44*4, (jfloat*)bounds); }
+JNIEXPORT jstring JNICALL Java_com_aios_a_NativeKB_getLabels(JNIEnv* e, jclass c) {
+    static char buf[64]; int rows = symMode ? 4 : 5; const char** L = symMode ? SYM : ABC; int i = 0;
+    for (int r = 0; r < rows; r++) for (int j = 0; L[r][j]; j++) { char ch = L[r][j]; buf[i++] = (shift && ch >= 'a' && ch <= 'z') ? ch - 32 : ch; }
+    buf[i] = 0; return (*e)->NewStringUTF(e, buf);
+}
+'''
+MXML=r'''<?xml version="1.0" encoding="utf-8"?>
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"/>
+'''
 CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\n'
 MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/></application></manifest>'
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
@@ -450,8 +1108,59 @@ def shizuku_pair():
     sub={"arm64-v8a":"arm64","armeabi-v7a":"arm","x86_64":"x86_64","x86":"x86"}.get(abi,"arm64")
     S.check_call(["adb","-s",f"{ip}:{dp}","shell",f'L=$(dirname $(pm path moe.shizuku.privileged.api|head -1|sed s/package://))/lib/{sub}/libshizuku.so; "$L"'])
     print("\n✓ Shizuku service started. After reboot: re-run this command (pairing persists).")
+def _rish_install(apk_path,pkg,serial=None):
+    """Silent install via Shizuku rish. Works from Linux (adb shell) AND Termux self-install."""
+    in_tmx=IT and not serial
+    rid="com.termux" if in_tmx else "moe.shizuku.privileged.api"
+    R=f"RISH_APPLICATION_ID={rid} /system/bin/sh /data/local/tmp/rish"
+    sh=(lambda c:adb("shell",c,serial=serial)) if serial else (lambda c:S.run(["sh","-c",c],capture_output=True,text=True))
+    if sh("[ -r /data/local/tmp/rish ] && [ -r /data/local/tmp/rish_shizuku.dex ] && echo OK").stdout.strip()!="OK":
+        if in_tmx:print("x rish missing — run 'a apk' from a device with USB/wireless adb first to set up");return False
+        p=sh("pm path moe.shizuku.privileged.api 2>/dev/null|head -1|cut -d: -f2").stdout.strip()
+        if not p:return False
+        sh(f"cd /data/local/tmp && unzip -o '{p}' assets/rish assets/rish_shizuku.dex >/dev/null 2>&1 && mv assets/rish rish 2>/dev/null && mv assets/rish_shizuku.dex rish_shizuku.dex 2>/dev/null; rmdir assets 2>/dev/null; chmod 755 rish 2>/dev/null; chmod 444 rish_shizuku.dex 2>/dev/null")
+        if sh("[ -r /data/local/tmp/rish ] && echo OK").stdout.strip()!="OK":return False
+    dst=f"/data/local/tmp/{os.path.basename(apk_path)}"
+    if serial:
+        if adb("push",apk_path,dst,serial=serial).returncode!=0:return False
+    elif in_tmx:
+        sd=f"/sdcard/Download/{os.path.basename(apk_path)}";os.makedirs("/sdcard/Download",exist_ok=True);shutil.copy(apk_path,sd)
+        if sh(f"{R} -c 'cp \"{sd}\" \"{dst}\"'").returncode!=0:return False
+    else:
+        if S.run(["cp",apk_path,dst]).returncode!=0:return False
+    r=sh(f"{R} -c 'pm install -r -t -d \"{dst}\"'")
+    if "Success" in (r.stdout or ""):
+        if pkg:sh(f"{R} -c 'am start -n {pkg}/.M'" if in_tmx else f"am start -n {pkg}/.M")
+        return True
+    print(f"x rish: {(r.stdout or '').strip()} {(r.stderr or '').strip()}")
+    return False
+
+def qr_pair():
+    """One-tap wireless debug pairing via QR scan. No code typing."""
+    import secrets,string,re,time
+    if not shutil.which("qrencode"):sys.exit("x install qrencode (apt install qrencode / brew install qrencode)")
+    svc="studio-"+secrets.token_hex(4);pw="".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(12))
+    print("\nPhone: Settings → Developer options → Wireless debugging → Pair device with QR code → scan:\n")
+    S.run(["qrencode","-t","ANSIUTF8","-m","1",f"WIFI:T:ADB;S:{svc};P:{pw};;"])
+    print(f"\nsvc={svc}  waiting up to 90s for scan...")
+    seen=lambda pat:[re.search(r"(\S+):(\d+)",l) for l in S.run(["adb","mdns","services"],capture_output=True,text=True).stdout.splitlines() if pat in l]
+    for _ in range(180):
+        for m in seen(svc) if any(svc in l for l in S.run(["adb","mdns","services"],capture_output=True,text=True).stdout.splitlines()) else []:
+            if not m:continue
+            host,port=m.group(1),m.group(2);print(f"\n→ pair {host}:{port}")
+            p=S.Popen(["adb","pair",f"{host}:{port}"],stdin=S.PIPE,stdout=S.PIPE,stderr=S.STDOUT);o,_=p.communicate(input=(pw+"\n").encode());print(o.decode())
+            if b"Successfully paired" not in o:return
+            for _ in range(30):
+                for m2 in seen("_adb-tls-connect"):
+                    if m2:S.run(["adb","connect",f"{m2.group(1)}:{m2.group(2)}"]);print(f"✓ connected {m2.group(1)}:{m2.group(2)}");return
+                time.sleep(0.5)
+            return
+        time.sleep(0.5)
+    print("x timeout")
+
 def run():
     if "pair" in sys.argv[1:]:return shizuku_pair()
+    if "pair-qr" in sys.argv[1:] or "qr" in sys.argv[1:]:return qr_pair()
     proj=serial=None
     for a in sys.argv[2:]:
         for p in [a,H+"/"+a,R+"/adata/git/my/"+a]:
@@ -481,14 +1190,8 @@ def run():
         gp="android.useAndroidX=true\norg.gradle.jvmargs=-Xmx4g\n"
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
         w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC)
-        TLS=R+"/adata/git/my/text-launcher/app/src/main"
-        HKT=open(TLS+"/java/com/tl/M.kt").read().replace("package com.tl","package com.aios.a").replace("class M :","class Home :").replace("this@M","this@Home")
-        LC=open(TLS+"/cpp/launcher.c").read().replace("Java_com_tl_M_","Java_com_aios_a_Home_")
-        w(D+"/app/src/main/java/com/aios/a/Home.kt",HKT);w(D+"/app/src/main/res/values/styles.xml",open(TLS+"/res/values/t.xml").read())
-        NKB=R+"/adata/git/my/instant-keyboard-ndk/app/src/main"
-        IKT=open(NKB+"/java/com/aios/nkb/InstantNdkService.kt").read().replace("package com.aios.nkb","package com.aios.a")
-        KC=open(NKB+"/cpp/keyboard.c").read().replace("Java_com_aios_nkb_NativeKB_","Java_com_aios_a_NativeKB_")
-        w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",open(NKB+"/res/xml/method.xml").read())
+        w(D+"/app/src/main/java/com/aios/a/Home.kt",HKT);w(D+"/app/src/main/res/values/styles.xml",TXML)
+        w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",MXML)
         if IT:
             sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
             w(D+"/native.c",NC);so=sf+"/libanative.so"
@@ -526,6 +1229,7 @@ def run():
         os.chdir(D);S.run(["./gradlew","--no-configuration-cache","assembleDebug"],check=True)
         apk=D+"/app/build/outputs/apk/debug/app-debug.apk";pkg=P
     if IT:
+        if _rish_install(apk,pkg):print("✓ "+(pkg or os.path.basename(apk))+" (rish)");return
         sa=_self_adb()
         if sa:
             r=adb("install","-r","-g",apk,serial=sa)
@@ -544,6 +1248,7 @@ def run():
             ds=devlist()
             if not ds:sys.exit("No devices")
             serial=pick(ds)
+        if _rish_install(apk,pkg,serial=serial):print("✓ "+(pkg or os.path.basename(apk))+" (rish)");return
         r=adb("install","-r","-g",apk,serial=serial)
         if "INSTALL_FAILED" in r.stdout+r.stderr:
             if pkg:adb("uninstall",pkg,serial=serial)
