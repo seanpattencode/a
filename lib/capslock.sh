@@ -50,6 +50,22 @@ chmod +x "$ABIN/a-launch"; ok "wrote $ABIN/a-launch"
 
 case "$OSTYPE" in
 linux*)
+    if grep -qi microsoft /proc/version 2>/dev/null; then
+        WU=$(powershell.exe -NoProfile -Command 'echo $env:USERNAME'|tr -d '\r\n ')
+        SU="/mnt/c/Users/$WU/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
+        mkdir -p "$SU"; cat > "$SU/a-rshift.ahk" << 'AHK'
+#Requires AutoHotkey v2.0
+~RShift::return
+~RShift Up::{
+    if (A_PriorKey = "RShift")
+        SendInput "^b{n}"
+}
+AHK
+        powershell.exe -NoProfile -Command "if(!(Get-Command AutoHotkey64.exe -EA 0)){winget install -e --silent --accept-package-agreements --accept-source-agreements AutoHotkey.AutoHotkey|Out-Null}" 2>/dev/null || :
+        cmd.exe /c start "" "$(wslpath -w "$SU/a-rshift.ahk")" 2>/dev/null &
+        ok "WSL: right shift tap = tmux next-window"
+        exit 0
+    fi
     # Capslock → Hyper
     OPTS=$(gsettings get org.gnome.desktop.input-sources xkb-options 2>/dev/null)
     if [[ "$OPTS" != *"caps:hyper"* ]]; then
