@@ -121,15 +121,14 @@ static void tm_ensure_conf(void) {
         "bind-key -n C-x kill-session\n"
         "bind -n WheelUpStatus selectw -p\n"
         "bind -n WheelDownStatus selectw -n\n"
-        "bind-key -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
-        "{ select-window } { run-shell 'r=\"#{mouse_status_range}\"; case \"$r\" in "
-        "prev) tmux previous-window;; next) tmux next-window;; "
-        "aa) tmux new-window \"a\";; "
-        "win) tmux display-popup -E -w90% -h80% \\\"a i\\\";; new) tmux split-window;; "
-        "x) tmux kill-pane;; close) tmux kill-window;; "
-        "menu) tmux display-menu Pane 1 \"split-window -fh\" Zoom 2 \"resize-pane -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"rename-window %%\\\"\" Quit 5 detach Kill 6 kill-session;; "
-        "kbd) tmux set -g mouse off; tmux display-message \"Mouse off 3s\"; "
-        "(sleep 3; tmux set -g mouse on) &;; esac' }\n", f);
+        "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
+        "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
+        "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; "
+        "win) tmux neww;; new) tmux splitw;; "
+        "x) tmux killp;; close) tmux killw;; "
+        "menu) tmux menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills;; "
+        "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
+        "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n", f);
     if (access("/data/data/com.termux",F_OK)==0)
         fprintf(f,"set-environment -g CLAUDE_CODE_TMPDIR \"%s/.tmp\"\n",HOME);
     if (cc) fprintf(f, "set -s copy-command \"%s\"\n", cc);
