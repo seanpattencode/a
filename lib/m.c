@@ -367,7 +367,7 @@ static int m_reinit(const char *fn) {
 }
 static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",DDIR);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
 static int m_main(void){return m_reinit("m.txt");}
-static int m_new(void){time_t t=time(NULL);char fn[64];strftime(fn,64,"agent-%Y%m%dT%H%M%S.txt",localtime(&t));return m_reinit(fn);}
+static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agent",AROOT);mkdirp(ad);time_t t=time(NULL);char fn[64];strftime(fn,64,"agent/%Y-%m-%d_%H-%M-%S.txt",localtime(&t));return m_reinit(fn);}
 
 static int m_reset(void) {
     char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",DDIR);
