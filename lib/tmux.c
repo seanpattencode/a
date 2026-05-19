@@ -4,9 +4,6 @@
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
-    {int r=system("timeout 5 tmux info >/dev/null 2>&1");
-    if(WIFEXITED(r)&&WEXITSTATUS(r)==124){int r2=system("timeout 5 tmux info >/dev/null 2>&1");
-    if(WIFEXITED(r2)&&WEXITSTATUS(r2)==124)(void)!system("tmux kill-server 2>/dev/null; sleep 1");}}
     tm_gc();
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
     (void)!system("tmux new-session -d -s '"TMS"'");}
