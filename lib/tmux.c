@@ -122,6 +122,8 @@ static void tm_ensure_conf(void) {
         "bind -n WheelDownStatus selectw -n\n", f);
     fprintf(f,
         "bind-key -n M-a run-shell '%1$s/lib/omni.sh'\n"
+        "set-hook -g after-new-window 'run-shell \"%1$s/lib/omni.sh ensure\"'\n"
+        "set-hook -g session-created 'run-shell \"%1$s/lib/omni.sh ensure\"'\n"
         "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
         "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
         "omni) sh %1$s/lib/omni.sh;; "

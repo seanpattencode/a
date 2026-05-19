@@ -1,7 +1,11 @@
 #!/bin/sh
-# Per-window omnibox dock: spawn/focus 8-line `a i` pane at bottom; toggle out if inside.
-W=$(tmux display -p '#{window_id}'); C=$(tmux display -p '#{pane_id}')
-D=$(tmux list-panes -t "$W" -F '#{pane_id}|#{pane_start_command}'|awk -F'|' '/while a i/{print $1;exit}')
-[ -z "$D" ] && exec tmux split-window -t "$W" -fv -l 8 -P -F '#{pane_id}' 'while clear&&a i 2>/dev/null;do :;done'
+# Omnibox dock: per-window 8-line `a i` pane stored in @omni_pane. `ensure` creates without focus; default toggles.
+o=$(tmux display -p '#{window_id} #{pane_id} #{@omni_pane}')
+W=${o%% *};r=${o#* };C=${r%% *};D=${r#* }
+{ [ -z "$D" ] || ! tmux lsp -t "$D" >/dev/null 2>&1; } && {
+    D=$(tmux split-window -t "$W" -fv -l 8 -d -P -F '#{pane_id}' 'while a i 2>/dev/null;do :;done')
+    tmux set -t "$W" -wq @omni_pane "$D"
+}
+[ "$1" = ensure ] && exit
 [ "$C" = "$D" ] && exec tmux last-pane
 exec tmux select-pane -t "$D"
