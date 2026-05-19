@@ -1,5 +1,5 @@
 /* m — chat+agentic loop. files (no /tmp; verify externally):
- * adata/m/{m.txt,sysprompt.txt,i.txt,combo.txt,settings.json,archive/} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
+ * adata/m/{m.txt,sysprompt.txt,i.txt,combo.txt,archive/} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
  * debug: tail adata/m/m.txt ; tmux capture-pane -t <id> -p ; cat adata/local/m_*
  * e --nosb: skip e's internal scrollbar — tmux pane-scrollbars handles vertical scroll, avoids fold-aware sb math */
 
@@ -7,7 +7,6 @@ static volatile pid_t g_cp = 0;
 static pid_t g_cmt = 0;
 static int g_halt = 0;
 static volatile sig_atomic_t g_rst = 0;
-static char g_set[P] = "";
 static void m_sint(int s){(void)s;if(g_cp>0)kill(g_cp,SIGTERM);}
 static void m_usr1(int s){(void)s;g_rst=1;}
 static void mm_w(const char *p, const char *t, const char *m);
@@ -102,7 +101,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
             execlp("sh","sh","-c",x,(char*)0);
         } else { char x[B*2],ap[P]="";
             if (has_acat) snprintf(ap,P," --append-system-prompt-file '%s'",acat);
-            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\"%s --settings '%s'",md,ef,ap,g_set);
+            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\"%s --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,ap);
             execlp("sh","sh","-c",x,"_",sp,(char*)0);
         }
         _exit(127);
@@ -421,15 +420,6 @@ static int cmd_m(int c, char **v) {
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
     snprintf(ss, P, "%s/m_status", DDIR);
     snprintf(spf, P, "%s/m/sysprompt.txt", AROOT);
-    snprintf(g_set, P, "%s/m/settings.json", AROOT);
-    { char hp[P]; snprintf(hp, P, "%s/.claude/settings.json", HOME);
-      char *s = readf(hp, NULL); FILE *f = fopen(g_set, "w");
-      if (f) { fputs("{\"enabledPlugins\":{", f);
-        if (s) { char *ep = strstr(s, "\"enabledPlugins\""), *br = ep?strchr(ep,'{'):0, *en = br?strchr(br,'}'):0, *p = br?br+1:0; int fst = 1;
-          while (p && p < en) { char *q1 = memchr(p,'"',(size_t)(en-p)); if (!q1) break;
-            char *q2 = memchr(q1+1,'"',(size_t)(en-q1-1)); if (!q2) break;
-            fprintf(f, "%s\"%.*s\":false", fst?"":",", (int)(q2-q1-1), q1+1); fst = 0; p = q2+1; } }
-        fputs("}}\n", f); fclose(f); } free(s); }
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
     mm_w(ss, "", "w");
     setenv("M_IN", "1", 1);
