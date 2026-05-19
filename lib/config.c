@@ -88,6 +88,11 @@ static int cmd_config(int argc, char **argv) {
 
 static int cmd_prompt(int argc, char **argv) {
     char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
+    if(argc>2 && !strcmp(argv[2],"show")) {
+        perf_disarm();CWD(wd);char tf[P];snprintf(tf,P,"/tmp/a_prompt_show_%d.txt",(int)getpid());
+        write_prompt_file(tf,wd,argc>3?argv[3]:NULL);
+        char*c=readf(tf,NULL);if(c){fputs(c,stdout);free(c);}unlink(tf);return 0;
+    }
     if(argc>2 && !strcmp(argv[2],"edit")) {
         char t[P]; snprintf(t,P,"%s/cd_target",DDIR); writef(t,d);
         char c[B]; snprintf(c,B,"echo 'default.txt = session prepend' && ls '%s'",d); return system(c);
