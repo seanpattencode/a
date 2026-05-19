@@ -432,10 +432,10 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "new")) return m_new();
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     char b[B], sf[P], ss[P], spf[P], pty[64] = "";
-    if (!getenv("TMUX")) { CWD(w); ajoin(b,B,c,v,0);
-        struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
-        snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
-        tm_new(sn,w,b); tm_go(sn); return 0; }
+    CWD(w); struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
+    snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
+    if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b); tm_go(sn); return 0; }
+    tm_rename(sn);
     signal(SIGINT, m_sint);
     const char *fn = c > 2 ? v[2] : "m.txt";
     snprintf(sf, P, "%s/m/%s", AROOT, fn);

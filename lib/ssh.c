@@ -241,6 +241,7 @@ static int cmd_ssh(int argc,char**argv){
         int n=ssh_pre(c,(int)sizeof(c),H[idx].pw,opts,port,hp);
         n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),"%s",cs);
         if(!cs[0])printf("Connecting to %s...\n",H[idx].name);
+        if(getenv("TMUX")&&!cmd[0])tm_rename(H[idx].name);
         if(cmd[0])alarm(30);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 }
