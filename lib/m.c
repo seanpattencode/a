@@ -1,5 +1,5 @@
 /* m — chat+agentic loop. files (no /tmp; verify externally):
- * adata/m/{m.txt,sysprompt.txt,i.txt,combo.txt,archive/} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
+ * adata/m/{m.txt,sysprompt.txt,i.txt,archive/} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
  * debug: tail adata/m/m.txt ; tmux capture-pane -t <id> -p ; cat adata/local/m_*
  * e --nosb: skip e's internal scrollbar — tmux pane-scrollbars handles vertical scroll, avoids fold-aware sb math */
 
@@ -76,8 +76,6 @@ static int mm_delta(const char *l, char *a, size_t *al, size_t sz, int ag) {
 static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
     a[0] = bash[0] = 0;
     int pp[2]; if (pipe(pp) < 0) return -1;
-    char acat[P]; snprintf(acat, P, "%s/m/combo.txt", AROOT);
-    int has_acat = fexists(acat);
     load_cfg();
     const char *ag = cfget("m_agent"); if (!*ag) ag = "claude";
     int is_codex = !strcmp(ag, "codex"), is_gemini = !strcmp(ag, "gemini");
@@ -99,10 +97,9 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
             if (has_tier) snprintf(t,80," -c 'service_tier=\"%s\"'",tier);
             snprintf(x,B,"iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
             execlp("sh","sh","-c",x,(char*)0);
-        } else { char x[B*2],ap[P]="";
-            if (has_acat) snprintf(ap,P," --append-system-prompt-file '%s'",acat);
-            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\"%s --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,ap);
-            execlp("sh","sh","-c",x,"_",sp,(char*)0);
+        } else { char x[B*2];
+            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\" --append-system-prompt-file <(cat %2$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %2$s/m/i.txt 2>/dev/null) --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,AROOT);
+            execlp("bash","bash","-c",x,"_",sp,(char*)0);
         }
         _exit(127);
     }
@@ -379,25 +376,6 @@ static int m_reset(void) {
     int r=system(c); free(p); return r;
 }
 
-static void m_render(const char *sf) {
-    char combo[P]; snprintf(combo,P,"%s/m/combo.txt",AROOT);
-    { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo); (void)!system(c); }
-    size_t al=0,cl=0; char *ac=readf(combo,&al),*cur=readf(sf,&cl);
-    unsigned long h=5381; for(size_t i=0;i<al;i++) h=33*h+(unsigned char)ac[i];
-    { static unsigned long lh=0; if(h!=lh){lh=h;m_commit("c");} }
-    char mk[48]; snprintf(mk,48,"## a-loaded sha=%08lx",h);
-    if (!cur || !strstr(cur,mk)) {
-        char *st=cur?strstr(cur,"\n## a-loaded "):0,*en=st?strstr(st,"\n## a-loaded-end\n"):0;
-        if(en) en+=sizeof("\n## a-loaded-end\n")-1;
-        FILE *f=fopen(sf,st?"w":"a");
-        if(f) { if(st) fwrite(cur,1,(size_t)(st-cur),f);
-            fprintf(f,"\n%s\n%s\n## a-loaded-end\n",mk,ac?ac:"");
-            if(en) fwrite(en,1,cl-(size_t)(en-cur),f); else fputs("## user\n",f);
-            fclose(f); }
-    }
-    free(cur); free(ac);
-}
-
 static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
@@ -447,7 +425,6 @@ static int cmd_m(int c, char **v) {
             char *us=cur?strstr(cur,"\n## user\n"):0; FILE *f=fopen(sf,"w");
             if(f){fputs(hdr,f); fputs(us?us+1:"## user\n",f); fclose(f);} }
           free(sp); free(cur); }
-        m_render(sf);
         write(1,"\n── message (Enter sends) ──\n› ",41);
         char m[16384]; if(!fgets(m,sizeof m,stdin)) { if(g_rst){g_rst=0;continue;} break; }
         if(m[0]=='\n'||!m[0]) continue;
