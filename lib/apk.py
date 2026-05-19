@@ -104,7 +104,7 @@ class Stp(val a:Activity):android.view.View(a){
 private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
 private fun go(i:Intent?)=i?.let{a.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
 private val items=listOf(
-"Set as keyboard" to{(a.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()},
+"Set as keyboard" to{go(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS))},
 "Set as launcher" to{go(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))},
 "Grant mic permission" to{a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1)},
 "Open Shizuku setup" to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))}
