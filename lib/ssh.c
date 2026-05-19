@@ -190,6 +190,7 @@ static int cmd_ssh(int argc,char**argv){
 
     /* fleet view: enumerate remote tmux sessions in parallel, window per session */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){
+        if(!getenv("TMUX")){char sn[32];snprintf(sn,32,"a-%d",(int)getpid());execlp("tmux","tmux","new-session","-s",sn,"a","ssh","all",(char*)NULL);}
         struct{int fd;pid_t pid;int hi;}E[32];int ne=0;size_t dl=strlen(DEV);
         for(int i=0;i<nh;i++)if(strncmp(H[i].name,DEV,dl))ne++;
         printf("a ssh all: probing %d hosts...\n",ne);fflush(stdout);ne=0;
