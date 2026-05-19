@@ -86,7 +86,7 @@ override fun onSizeChanged(w:Int,hh:Int,ow:Int,oh:Int){
 if(::bmp.isInitialized)bmp.recycle()
 bmp=Bitmap.createBitmap(w,hh,Bitmap.Config.ARGB_8888)
 px=IntArray(w*hh);nResize(w,hh)
-if(!started){nFont(atlas(40f));nStart(context.applicationInfo.nativeLibraryDir,context.filesDir.absolutePath);started=true}}
+if(!started){nFont(atlas(56f));nStart(context.applicationInfo.nativeLibraryDir,context.filesDir.absolutePath);started=true}}
 override fun onDraw(c:Canvas){val a=px?:return;if(!::bmp.isInitialized)return
 nRender(a);bmp.setPixels(a,0,width,0,0,width,height);c.drawBitmap(bmp,0f,0f,null)}
 override fun onTouchEvent(e:MotionEvent):Boolean{nTouch(e.action and 0xFF,e.x,e.y);invalidate();return true}
@@ -159,8 +159,8 @@ static const char*KR[NROWS]={
  "1234567890",
  "qwertyuiop",
  "asdfghjkl",
- "zxcvbnm,.\x08",
- "-= \x09"};
+ "zxcvbnm,\x08",
+ "-=. \x09"};
 static float KB[60][4];
 static int nkeys,pressed=-1;
 static uint32_t PAL[16]={
@@ -258,19 +258,19 @@ static void*inp_thr(void*_){
 static int kbh(float x,float y){for(int i=0;i<nkeys;i++)if(x>=KB[i][0]&&x<KB[i][2]&&y>=KB[i][1]&&y<KB[i][3])return i;return -1;}
 static char kch(int idx){int c=0;for(int r=0;r<NROWS;r++){int n=(int)strlen(KR[r]);if(idx<c+n)return KR[r][idx-c];c+=n;}return 0;}
 static void compute_kb(void){
- float kh=H*0.40f,ky=H-kh,rh=kh/NROWS;nkeys=0;
+ float kh=H*0.55f,ky=H-kh,rh=kh/NROWS;nkeys=0;
  for(int r=0;r<NROWS;r++){
   int n=(int)strlen(KR[r]);float y=ky+r*rh,kw=W/10.0f;
   for(int i=0;i<n;i++){
    float x,w;
    if(r==0){kw=W/(float)n;x=i*kw;w=kw;}
-   else if(r==3){x=kw*0.5f+i*kw;w=kw;}
-   else if(r==5){float pos[]={0,kw,2*kw,9*kw},wd[]={kw,kw,7*kw,W-9*kw};x=pos[i];w=wd[i];}
+   else if(r==3||r==4){x=kw*0.5f+i*kw;w=kw;}
+   else if(r==5){float pos[]={0,kw,2*kw,3*kw,9*kw},wd[]={kw,kw,kw,6*kw,W-9*kw};x=pos[i];w=wd[i];}
    else{x=i*kw;w=kw;}
    KB[nkeys][0]=x;KB[nkeys][1]=y;KB[nkeys][2]=x+w;KB[nkeys][3]=y+rh;nkeys++;}}}
 static void compute_grid(void){
  if(!FN.cw||!FN.ch){rows=24;cols=80;return;}
- int kh=(int)(H*0.40f);
+ int kh=(int)(H*0.55f);
  int avail_h=H-kh;
  rows=avail_h/FN.ch;if(rows<1)rows=1;if(rows>MR)rows=MR;
  cols=W/FN.cw;if(cols<20)cols=20;if(cols>MC)cols=MC;
