@@ -53,3 +53,9 @@ Apps should have all interactive elements on the bottom where thumbs are.
 Apps should use c wherever possible for speed including ui.
 
 35. Apps should immediately open to the most obvious and common use case and should open cold in milliseconds range time under 15 ms but ideally less to be useable for that
+
+Expected user interactions based on empirical practice, will change:
+36. The user will manage a fleet of devices from any one device to the others, trust is based on the user trusting their physical devices and connecting them into a fleet.
+37. The user will manage work in tmux windows as the easiest way to interact with pty sessions and a unified view through a ssh all is achived
+38. The user will rapidly switch between windows as the agents work and see their actual status in real time as desired, primarily right shift for one click cycling to rapidly spot check and order work and fix issues with agents
+39. There is one main or only one tmux session per device to simplify management. Everything human and agents occurs here.
