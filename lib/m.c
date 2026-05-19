@@ -6,8 +6,10 @@
 static volatile pid_t g_cp = 0;
 static pid_t g_cmt = 0;
 static int g_halt = 0;
+static volatile sig_atomic_t g_rst = 0;
 static char g_set[P] = "";
 static void m_sint(int s){(void)s;if(g_cp>0)kill(g_cp,SIGTERM);}
+static void m_usr1(int s){(void)s;g_rst=1;}
 static void mm_w(const char *p, const char *t, const char *m);
 
 static void m_status(const char *msg) {
@@ -363,7 +365,8 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",DDIR); mm_w(c,fn,"w");
-    snprintf(c,B,"tmux respawn-pane -k -t :.0 'tail -Fn +1 %s/m/%s'",AROOT,fn); (void)!system(c); return 0;
+    snprintf(c,B,"tmux respawn-pane -k -t :.0 'tail -Fn +1 %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"%s/m_pid",DDIR); char *p=readf(c,NULL); if(p) kill(atoi(p),SIGUSR1); free(p); return 0;
 }
 static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",DDIR);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
 static int m_main(void){return m_reinit("m.txt");}
@@ -412,6 +415,8 @@ static int cmd_m(int c, char **v) {
     if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b); tm_go(sn); return 0; }
     tm_rename(sn);
     signal(SIGINT, m_sint);
+    { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
+    { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); }
     const char *fn = c > 2 ? v[2] : "m.txt";
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
     snprintf(ss, P, "%s/m_status", DDIR);
@@ -453,7 +458,7 @@ static int cmd_m(int c, char **v) {
           free(sp); free(cur); }
         m_render(sf);
         write(1,"\n── message (Enter sends) ──\n> ",32);
-        char m[16384]; if(!fgets(m,sizeof m,stdin)) break;
+        char m[16384]; if(!fgets(m,sizeof m,stdin)) { if(g_rst){g_rst=0;continue;} break; }
         if(m[0]=='\n'||!m[0]) continue;
         mm_w(sf, m, "a");
         m_commit("u");
