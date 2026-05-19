@@ -1219,7 +1219,10 @@ def run():
         if any("/tmp/dsrc" in s for s in miss):S.check_call(["a","droidtmux"])
         miss=[s for s in stage if not os.path.exists(s)]
         if miss:sys.exit(f"x build failed: {miss}")
-        for s,n in {**stage,**{k:v for k,v in opt.items() if os.path.exists(k)}}.items():shutil.copy(s,f"{sf}/{n}")
+        for s,n in {**stage,**{k:v for k,v in opt.items() if os.path.exists(k)}}.items():
+            d=f"{sf}/{n}";shutil.copy(s,d)
+            if "aarch64" not in S.run(["file",d],capture_output=True,text=True).stdout:sys.exit(f"x wrong arch: {s} → {d}")
+            S.run(["patchelf","--page-size","16384",d],capture_output=True)
         shutil.copy("/tmp/dsrc/ncurses-6.4/misc/terminfo.src",f"{ad}/terminfo.src")
         shutil.copy(R+"/lib/ui/ui_full.py",f"{ad}/ui_full.py")
         for sub in["ssh","workspace/projects","workspace/cmds"]:
