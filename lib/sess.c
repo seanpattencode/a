@@ -171,7 +171,6 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 } else snprintf(ac,512,APP_CMD " '%s'",app);
                 (void)!system(ac);}
                 else bg_exec(OPENER,cmd+4);return 0;}}
-            printf("Running: a %s\n",cmd);
             char*args[32];int ac=0;args[ac++]="a";
             for(char*p=cmd;*p&&ac<31;){while(*p==' ')p++;if(!*p)break;args[ac++]=p;while(*p&&*p!=' ')p++;if(*p)*p++=0;}
             args[ac]=NULL;setenv("A_TUI","1",1);execvp("a",args);return 0;}
