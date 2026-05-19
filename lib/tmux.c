@@ -6,7 +6,7 @@ static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_atta
 static void tm_ensure_sess(void){
     tm_gc();
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
-    (void)!system("tmux new-session -d -s '"TMS"'");}
+    (void)!system("tmux new-session -d -s '"TMS"';tmux set-option -gs exit-empty off 2>/dev/null;tmux set-option -gs exit-unattached off 2>/dev/null");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
