@@ -1,6 +1,7 @@
 /* m — chat+agentic loop. files (no /tmp; verify externally):
  * adata/m/{m.txt,sysprompt.txt,i.txt,combo.txt,settings.json,archive/} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
- * debug: tail adata/m/m.txt ; tmux capture-pane -t <id> -p ; cat adata/local/m_* */
+ * debug: tail adata/m/m.txt ; tmux capture-pane -t <id> -p ; cat adata/local/m_*
+ * e --nosb: skip e's internal scrollbar — tmux pane-scrollbars handles vertical scroll, avoids fold-aware sb math */
 
 static volatile pid_t g_cp = 0;
 static pid_t g_cmt = 0;
@@ -241,7 +242,7 @@ static int cmd_m_panel(int c, char **v) {
                 char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --tail %s/m/$F\"",DDIR,AROOT);
+                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --nosb --tail %s/m/$F\"",DDIR,AROOT);
                     (void)!system(rc);} }
             break;
         }
@@ -375,7 +376,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",DDIR); mm_w(c,fn,"w");
-    snprintf(c,B,"tmux respawn-pane -k -t :.0 'e --tail %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"tmux respawn-pane -k -t :.0 'e --nosb --tail %s/m/%s'",AROOT,fn); (void)!system(c);
     snprintf(c,B,"%s/m_editorpid",DDIR); char*p=readf(c,NULL);
     if(p)kill(atoi(p),SIGTERM); free(p); return 0;
 }
@@ -445,7 +446,7 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
-                   "$S -b 'e --tail %2$s';"
+                   "$S -b 'e --nosb --tail %2$s';"
                    "$S -l 3 'tail -Fn 50 %3$s';"
                    "$S -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
