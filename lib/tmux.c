@@ -6,7 +6,7 @@ static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_atta
 static void tm_ensure_sess(void){
     tm_gc();
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
-    (void)!system("{ tmux new-session -d -s '"TMS"';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
+    (void)!system("{ tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do :;done';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
@@ -112,8 +112,8 @@ static void tm_ensure_conf(void) {
         "bind -n C-k if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-k' 'next-window'\n"
         "bind -n C-j if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-j' 'previous-window'\n"
         "bind -n C-PageDown if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
-        "bind-key -n C-n new-window\n"
-        "bind-key -n C-t new-window\n"
+        "bind-key -n C-n new-window 'while a i 2>/dev/null;do :;done'\n"
+        "bind-key -n C-t new-window 'while a i 2>/dev/null;do :;done'\n"
         "bind-key -n C-y split-window -fh\n"
         "bind -n C-w if -F '#{==:#{pane_current_command},ssh}' 'send C-w' 'selectw -n;killw -t:!'\n"
         "bind -n M-w if -F '#{==:#{pane_current_command},ssh}' 'send M-w' kill-pane\n"
@@ -122,14 +122,12 @@ static void tm_ensure_conf(void) {
         "bind -n WheelUpStatus selectw -p\n"
         "bind -n WheelDownStatus selectw -n\n", f);
     fprintf(f,
-        "bind-key -n M-a run-shell '%1$s/lib/omni.sh'\n"
-        "set-hook -g after-new-window 'run-shell \"%1$s/lib/omni.sh\"'\n"
-        "set-hook -g session-created 'run-shell \"%1$s/lib/omni.sh\"'\n"
+        "bind-key -n M-a new-window 'while a i 2>/dev/null;do :;done'\n"
         "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
         "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
-        "omni) sh %1$s/lib/omni.sh;; "
+        "omni) tmux new-window \"while a i 2>/dev/null;do :;done\";; "
         "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; "
-        "win) tmux neww;; new) tmux splitw;; "
+        "win) tmux new-window \"while a i 2>/dev/null;do :;done\";; new) tmux splitw;; "
         "x) tmux killp;; close) tmux killw;; "
         "menu) tmux menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%%%\\\"\" Quit 5 detach Kill 6 kills;; "
         "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
