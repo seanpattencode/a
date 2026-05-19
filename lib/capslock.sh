@@ -55,10 +55,10 @@ linux*)
         SU="/mnt/c/Users/$WU/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
         mkdir -p "$SU"; cat > "$SU/a-rshift.ahk" << 'AHK'
 #Requires AutoHotkey v2.0
-~RShift::return
-~RShift Up::{
-    if (A_PriorKey = "RShift")
-        SendInput "^b{n}"
+~RShift::{
+KeyWait "RShift"
+if A_PriorKey="RShift"
+SendInput "^b{n}"
 }
 AHK
         powershell.exe -NoProfile -Command "if(!(Get-Command AutoHotkey64.exe -EA 0)){winget install -e --silent --accept-package-agreements --accept-source-agreements AutoHotkey.AutoHotkey|Out-Null}" 2>/dev/null || :
