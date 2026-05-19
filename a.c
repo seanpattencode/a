@@ -427,6 +427,9 @@ static int cmd_cat(int c,char**v){perf_disarm();
     if(fl){while((n=fread(b,1,8192,fl))>0){if(fl2+n<65536){memcpy(fb+fl2,b,n);fl2+=n;}}pclose(fl);}
     fb[fl2]=0;
     if(ia){const char*am="\nYou are an agent spawned by the a agent manager. The source code is included for better understnading of the tools you can use. If you encounter issues in their use, consider fixing them and sending a pr of the fix as shorter tokens.\n";GA(am,strlen(am));}
+    {char ep[P];snprintf(ep,P,"%s/editor/e.c",HOME);FILE*ef=fopen(ep,"r");
+     if(ef){GA("\n==> e.c (editor source) <==\n",29);char eb[8192];size_t er;
+     while((er=fread(eb,1,8192,ef))>0){GA(eb,er);}fclose(ef);nf++;}}
     for(char*p=fb;p<fb+fl2;){char*e=memchr(p,'\n',(size_t)(fb+fl2-p));if(!e)break;*e=0;
         if(l>6*1024*1024){GA("\n(too large to continue)\n",25);skf++;break;}
         if(m=='3'&&l>131072&&strchr(p,'/')){skf++;p=e+1;continue;}
