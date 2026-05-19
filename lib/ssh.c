@@ -195,9 +195,9 @@ static int cmd_ssh(int argc,char**argv){
             if(!strncmp(H[i].name,DEV,dl))continue;
             int pfd[2];if(pipe(pfd))continue;
             pid_t p=fork();
-            if(p==0){close(pfd[0]);fcntl(pfd[1],F_SETFD,FD_CLOEXEC);alarm(8);
+            if(p==0){close(pfd[0]);fcntl(pfd[1],F_SETFD,FD_CLOEXEC);alarm(20);
                 char hp[256],port[8];ssh_parse(H[i].host,hp,port);
-                char c[B*2];int l=ssh_pre(c,(int)sizeof(c),H[i].pw,"-oConnectTimeout=5 -oStrictHostKeyChecking=no",port,hp);
+                char c[B*2];int l=ssh_pre(c,(int)sizeof(c),H[i].pw,"-oConnectTimeout=8 -oStrictHostKeyChecking=no",port,hp);
                 snprintf(c+l,(size_t)(sizeof(c)-(size_t)l)," 'bash -lc \"tmux ls 2>/dev/null|cut -d: -f1\"' 2>/dev/null");
                 char o[B];int r=pcmd(c,o,B);
                 if(!r)(void)!write(pfd[1],o,strlen(o));
@@ -221,7 +221,7 @@ static int cmd_ssh(int argc,char**argv){
         char qc[B];snprintf(qc,B," 'bash -c '\"'\"'export PATH=$HOME/.local/bin:$PATH; %s'\"'\"'' 2>&1",cmd);
         struct{int fd;pid_t pid;char nm[128];}S[32];int ns=0;
         for(int i=0;i<nh&&ns<32;i++){int pfd[2];if(pipe(pfd))continue;
-            pid_t p=fork();if(p==0){close(pfd[0]);char hp[256],port[8];ssh_parse(H[i].host,hp,port);
+            pid_t p=fork();if(p==0){close(pfd[0]);fcntl(pfd[1],F_SETFD,FD_CLOEXEC);alarm(20);char hp[256],port[8];ssh_parse(H[i].host,hp,port);
                 char c[B*2];int l=ssh_pre(c,(int)sizeof c,H[i].pw,"-oConnectTimeout=5 -oStrictHostKeyChecking=no",port,hp);
                 snprintf(c+l,(size_t)(sizeof(c)-(size_t)l),"%s",qc);char o[B];int r=pcmd(c,o,B);
                 l=snprintf(c,B,"%c%s",r?'x':'+',o);(void)!write(pfd[1],c,(size_t)l);close(pfd[1]);_exit(0);}
