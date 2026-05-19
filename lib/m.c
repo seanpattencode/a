@@ -43,14 +43,11 @@ static void m_commit(const char *tag) {
 }
 
 static int mm_extract(const char *a, char *bash, size_t bsz, size_t *eo) {
-    const char *o = strstr(a, "<cmd>");
-    if (!o) return 0;
-    const char *bs = o + 5, *cl = strstr(bs, "</cmd>");
-    if (!cl) return -1;
-    size_t bl = (size_t)(cl - bs);
-    if (bl >= bsz) bl = bsz - 1;
-    memcpy(bash, bs, bl); bash[bl] = 0;
-    if (eo) *eo = (size_t)(cl - a) + 6;
+    const char *o=strstr(a,"<cmd>"); if(!o) return 0;
+    const char *cl=strstr(o+5,"</cmd>"); if(!cl) return -1;
+    size_t bl=(size_t)(cl-o-5); if(bl>=bsz) bl=bsz-1;
+    memcpy(bash,o+5,bl); bash[bl]=0;
+    if(eo) *eo=(size_t)(cl-a)+6;
     return 1;
 }
 
@@ -64,25 +61,15 @@ static int mm_delta_raw(const char *t, char *a, size_t *al, size_t sz) {
     }
     a[*al] = 0; return 0;
 }
-static int mm_delta(const char *l, char *a, size_t *al, size_t sz) {
-    if (strstr(l, "\"message_stop\"")) return 1;
-    const char *t = strstr(l, "\"text_delta\",\"text\":\"");
-    if (!t) return 0;
-    return mm_delta_raw(t+21, a, al, sz);
-}
-static int mm_delta_codex(const char *l, char *a, size_t *al, size_t sz) {
-    if (strstr(l, "\"turn.completed\"")) return 1;
-    const char *t = strstr(l, "\"agent_message\"");
-    if (!t) return 0;
-    t = strstr(t, "\"text\":\""); if (!t) return 0;
-    return mm_delta_raw(t+8, a, al, sz);
-}
-static int mm_delta_gemini(const char *l, char *a, size_t *al, size_t sz) {
-    if (strstr(l, "\"type\":\"result\"")) return 1;
-    const char *t = strstr(l, "\"role\":\"assistant\"");
-    if (!t) return 0;
-    t = strstr(t, "\"content\":\""); if (!t) return 0;
-    return mm_delta_raw(t+11, a, al, sz);
+static int mm_delta(const char *l, char *a, size_t *al, size_t sz, int ag) {
+    static const char *S[]={"\"message_stop\"","\"turn.completed\"","\"type\":\"result\""};
+    static const char *F[]={"\"text_delta\",\"text\":\"","\"agent_message\"","\"role\":\"assistant\""};
+    static const char *K[]={0,"\"text\":\"","\"content\":\""};
+    static const int O[]={21,8,11};
+    if (strstr(l,S[ag])) return 1;
+    const char *t=strstr(l,F[ag]); if(!t) return 0;
+    if (K[ag]) { t=strstr(t,K[ag]); if(!t) return 0; }
+    return mm_delta_raw(t+O[ag],a,al,sz);
 }
 
 static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *bash, size_t bsz) {
@@ -123,7 +110,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     off_t start = ftello(of);
     char l[32768]; size_t al = 0, pl = 0, eo;
     while (fgets(l, sizeof l, fp)) {
-        int stop = is_codex ? mm_delta_codex(l, a, &al, sz) : is_gemini ? mm_delta_gemini(l, a, &al, sz) : mm_delta(l, a, &al, sz);
+        int stop = mm_delta(l, a, &al, sz, is_codex?1:is_gemini?2:0);
         if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); pl = al; }
         char *uh=strstr(a,"\n## user\n");
         if (uh || mm_extract(a, bash, bsz, &eo) > 0) { size_t cut=uh?(size_t)(uh-a):al;
@@ -392,22 +379,22 @@ static int m_reset(void) {
     int r=system(c); free(p); return r;
 }
 
-static void m_render(const char *sf, const char *spf) {
+static void m_render(const char *sf) {
     char combo[P]; snprintf(combo,P,"%s/m/combo.txt",AROOT);
-    { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo);
-      (void)!system(c); }
-    char *cur=readf(sf,NULL);
-    if (cur && strstr(cur,"\n## a-loaded ")) { free(cur); return; }
-    free(cur); load_cfg();
-    size_t al=0; char *sc=readf(spf,NULL), *ac=fexists(combo)?readf(combo,&al):NULL, *gc=readf(g_set,NULL);
-    const char *md=cfget("m_model"); if(!*md)md="opus";
-    const char *ef=cfget("m_effort"); if(!*ef)ef="low";
-    FILE *f=fopen(sf,"a");
-    if (f) { time_t t=time(NULL); char ts[32]; strftime(ts,32,"%FT%T",localtime(&t));
-        fprintf(f,"\n## a-loaded %s\nflags: --model %s --effort %s --tools \"\"\n--system-prompt:\n%s\n",ts,md,ef,sc?sc:"");
-        if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",combo,al,ac);
-        fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:""); fclose(f); }
-    free(sc); free(ac); free(gc);
+    { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo); (void)!system(c); }
+    size_t al=0,cl=0; char *ac=readf(combo,&al),*cur=readf(sf,&cl);
+    unsigned long h=5381; for(size_t i=0;i<al;i++) h=33*h+(unsigned char)ac[i];
+    char mk[48]; snprintf(mk,48,"## a-loaded sha=%08lx",h);
+    if (!cur || !strstr(cur,mk)) {
+        char *st=cur?strstr(cur,"\n## a-loaded "):0,*en=st?strstr(st,"\n## a-loaded-end\n"):0;
+        if(en) en+=sizeof("\n## a-loaded-end\n")-1;
+        FILE *f=fopen(sf,st?"w":"a");
+        if(f) { if(st) fwrite(cur,1,(size_t)(st-cur),f);
+            fprintf(f,"\n%s\n%s\n## a-loaded-end\n",mk,ac?ac:"");
+            if(en) fwrite(en,1,cl-(size_t)(en-cur),f); else fputs("## user\n",f);
+            fclose(f); }
+    }
+    free(cur); free(ac);
 }
 
 static int cmd_m(int c, char **v) {
@@ -465,7 +452,7 @@ static int cmd_m(int c, char **v) {
             size_t spl;char *sp=readf(spf,&spl);FILE *f=fopen(sf,"w");
             if(f){fprintf(f,"## system\n%s%s%s",sp?sp:"",(sp&&spl&&sp[spl-1]=='\n')?"":"\n",cur?cur:"## user\n");fclose(f);}
             free(sp);} free(cur); }
-        m_render(sf, spf);
+        m_render(sf);
         char tf[P]; snprintf(tf,P,"%s/m_inXXXXXX",DDIR);
         int fd = mkstemp(tf); if (fd < 0) continue; close(fd);
         pid_t pp = fork();
