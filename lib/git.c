@@ -41,6 +41,19 @@ static void sync_bg(void) {
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }
+static void sync_pane(const char *text){
+    if(!getenv("TMUX")){sync_bg();return;}
+    char tf[P];struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);
+    snprintf(tf,P,"/tmp/.a_pv_%ld",tp.tv_nsec);writef(tf,text?text:"");
+    char c[B*2];snprintf(c,B*2,
+      "M=/tmp/.a_sp_$(tmux display-message -pt \"$TMUX_PANE\" '#{window_id}'|tr -d @);P=$(cat $M 2>/dev/null);"
+      "tmux lsp -aF '#{pane_id}'|grep -qx \"${P:-x}\"||"
+      "{ P=$(tmux split-window -vdP -F '#{pane_id}' -l 8 -t \"$TMUX_PANE\");echo $P>$M; };"
+      "tmux send-keys -t \"$P\" 'cd %s;set -x;git add notes tasks;git commit -m sync||:;"
+      "sy(){ git pull --no-rebase --no-edit origin main&&git push origin main; };sy||sy&&"
+      "echo \"saved + pushed: $(head -c 60 %s)\"||echo \"NOT saved/pushed: $(head -c 60 %s)\";rm -f %s' Enter",SROOT,tf,tf,tf);
+    (void)!system(c);
+}
 static const char*sync_age(void){static char b[16];char p[P];
     snprintf(p,P,"%s/.git/FETCH_HEAD",SROOT);struct stat st;
     if(stat(p,&st))return"never";

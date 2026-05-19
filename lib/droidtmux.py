@@ -24,7 +24,7 @@ if not os.path.exists(f"{NC}/progs/tic"):
     os.path.exists(f"{PRE}/lib/libtinfo.a") or os.symlink("libncurses.a", f"{PRE}/lib/libtinfo.a")
 TB = f"{SRC}/tmux-build-a"
 if not os.path.exists(TB):
-    if os.path.isdir(f"{H}/tmux-build"):S.check_call(f"cp -r {H}/tmux-build {TB}", shell=True)
+    if os.path.isdir(f"{H}/tmux-build"):S.check_call(f"cp -r {H}/tmux-build {TB} && find {TB} -name '*.o' -delete && rm -f {TB}/tmux && cd {TB} && touch -r Makefile.in aclocal.m4 configure configure.ac Makefile.am 2>/dev/null || true", shell=True)
     else:dl("https://github.com/tmux/tmux/releases/download/3.5a/tmux-3.5a.tar.gz",f"{SRC}/tmux-3.5a");os.rename(f"{SRC}/tmux-3.5a",TB)
     open(f"{TB}/compat/forkpty-linux.c","w").write("/* stub */\n")
     import re

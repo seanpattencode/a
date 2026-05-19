@@ -16,8 +16,7 @@ static int tm_has(const char *w) {
 static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
-    if(getenv("TMUX")){char t[256];if(w)tm_t(w,t);
-        execlp("tmux","tmux","switch-client","-t",w?t:TMS,(char*)NULL);}
+    if(getenv("TMUX"))execlp("tmux","tmux",w?"select-window":"switch-client","-t",w?w:TMS,(char*)NULL);
     if(w){char t[256];tm_t(w,t);execlp("tmux","tmux","new-session","-t",TMS,"-s",g,";","select-window","-t",t,(char*)NULL);}
     execlp("tmux","tmux","new-session","-t",TMS,"-s",g,(char*)NULL);}
 static int tm_new(const char *w, const char *wd, const char *cmd) {
@@ -121,15 +120,14 @@ static void tm_ensure_conf(void) {
         "bind-key -n C-x kill-session\n"
         "bind -n WheelUpStatus selectw -p\n"
         "bind -n WheelDownStatus selectw -n\n"
-        "bind-key -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
-        "{ select-window } { run-shell 'r=\"#{mouse_status_range}\"; case \"$r\" in "
-        "prev) tmux previous-window;; next) tmux next-window;; "
-        "aa) tmux new-window \"a\";; "
-        "win) tmux display-popup -E -w90% -h80% \\\"a i\\\";; new) tmux split-window;; "
-        "x) tmux kill-pane;; close) tmux kill-window;; "
-        "menu) tmux display-menu Pane 1 \"split-window -fh\" Zoom 2 \"resize-pane -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"rename-window %%\\\"\" Quit 5 detach Kill 6 kill-session;; "
-        "kbd) tmux set -g mouse off; tmux display-message \"Mouse off 3s\"; "
-        "(sleep 3; tmux set -g mouse on) &;; esac' }\n", f);
+        "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
+        "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
+        "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; "
+        "win) tmux neww;; new) tmux splitw;; "
+        "x) tmux killp;; close) tmux killw;; "
+        "menu) tmux menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills;; "
+        "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
+        "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n", f);
     if (access("/data/data/com.termux",F_OK)==0)
         fprintf(f,"set-environment -g CLAUDE_CODE_TMPDIR \"%s/.tmp\"\n",HOME);
     if (cc) fprintf(f, "set -s copy-command \"%s\"\n", cc);
