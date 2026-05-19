@@ -46,8 +46,9 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     const char *dp=dprompt(),*cp=cfget("claude_prefix");
     if(dp[0])fprintf(f,"%s\n",dp);
     if(cp[0])fprintf(f,"%s\n",cp);
-    fprintf(f,"When work finished, run the a done command with a message to notify human."
-        " a tools: a done <msg> a help a diff a push [msg] a note <text> a cat 2|3 a ssh\n");
+    fprintf(f,"When work finished, run a done \"[<test>cmd</test>][<diff>files</diff>] msg\""
+        " — split pane shows full diff, focused diff, runs test live as PTY."
+        " a tools: a done a help a diff a push [msg] a note <text> a cat 2|3 a ssh\n");
     if(SRC_ON){char ip[P];snprintf(ip,P,"%s/common/prompts/intro.txt",SROOT);
         char*in=readf(ip,NULL);if(!in){const char*d="This is the code for a, the agent manager system you have been spawned from. You can use these tools and any other to acomplish your goal. User specific tools are in /adata/git/my. If you find an error in one of the /lib tools or /a, it is recommended to fix it on the spot to be shorter or the same length and send a pull request so all users may benefit from the fix. You can also use \"a task\" to help the user track deadlines for things which are in the future and can't be done in this session.";writef(ip,d);in=strdup(d);}
         fprintf(f,"%s\n",in);free(in);}
@@ -103,8 +104,8 @@ static void tm_ensure_conf(void) {
         "set -g status-position bottom\n"
         "set -g status 2\n"
         "set -g status-right \"\"\n"
-        "set -g status-format[0] \"#[align=left]#{?#{e|>:#{session_windows},1},#[range=user|prev]  <  #[norange],}#[align=centre]#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#{?window_active,#[fg=colour232 bg=colour231 bold],#[fg=colour231 bg=colour243]}} #{?window_bell_flag,\\U0001F534 ,}#I:#W #{?window_active, , }#[default]#[norange]}#[align=right]#{?#{e|>:#{session_windows},1},#[range=user|next]  >  #[norange],}\"\n"
-        "set -g status-format[1] \"#[align=centre]#[range=user|aa]a#[norange] #[range=user|win]Win#[norange] #[range=user|new]Pane#[norange] #[range=user|x]X#[norange] #[range=user|close]Close#[norange] #[range=user|menu] ... #[norange]#[align=right]#[range=user|kbd]Kb#[norange]\"\n"
+        "set -g status-format[0] \"#[align=left,bg=colour24,fg=colour231,bold] #H #[bg=colour237,fg=colour250,nobold] #{pane_current_path} #[bg=default]#[align=centre]#[range=user|omni,bg=colour25,fg=colour231,bold]  ▸ a i — click or Alt+a   #[norange]#[align=right,bg=default,fg=colour231,nobold]#[range=user|aa] a #[norange] #[range=user|win]Win#[norange] #[range=user|new]Pane#[norange] #[range=user|x]X#[norange] #[range=user|close]Close#[norange] #[range=user|menu] ... #[norange] #[range=user|kbd]Kb#[norange] \"\n"
+        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[range=user|prev]  <  #[norange],}#[align=centre]#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#{?window_active,#[fg=colour232 bg=colour231 bold],#[fg=colour231 bg=colour243]}} #{?window_bell_flag,\\U0001F534 ,}#I:#W #{?window_active, , }#[default]#[norange]}#[align=right]#{?#{e|>:#{session_windows},1},#[range=user|next]  >  #[norange],}\"\n"
         "bind -n M-Right if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
         "bind -n M-Left if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl p #W\"' previous-window\n"
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
@@ -118,15 +119,19 @@ static void tm_ensure_conf(void) {
         "bind-key -n C-q detach\n"
         "bind-key -n C-x kill-session\n"
         "bind -n WheelUpStatus selectw -p\n"
-        "bind -n WheelDownStatus selectw -n\n"
+        "bind -n WheelDownStatus selectw -n\n", f);
+    fprintf(f,
+        "bind-key -n M-a run-shell '%1$s/lib/omni.sh'\n"
         "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
         "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
+        "omni) sh %1$s/lib/omni.sh;; "
         "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; "
         "win) tmux neww;; new) tmux splitw;; "
         "x) tmux killp;; close) tmux killw;; "
-        "menu) tmux menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills;; "
+        "menu) tmux menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%%%\\\"\" Quit 5 detach Kill 6 kills;; "
         "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
-        "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n", f);
+        "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n",
+        SDIR);
     if (access("/data/data/com.termux",F_OK)==0)
         fprintf(f,"set-environment -g CLAUDE_CODE_TMPDIR \"%s/.tmp\"\n",HOME);
     if (cc) fprintf(f, "set -s copy-command \"%s\"\n", cc);
