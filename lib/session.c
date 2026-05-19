@@ -55,7 +55,7 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
             snprintf(c,sizeof(c),"tmux lsp -F '#{pane_id}'|grep -xv '%s'|head -1",dk);
             pcmd(c,mp,sizeof(mp));mp[strcspn(mp,"\n")]=0;
             snprintf(c,sizeof(c),"tmux split-window -b -v -t '%s' -c '%s' '%s'",mp[0]?mp:dk,wd,wcmd);
-            (void)!system(c);return 2;}}}
+            (void)!system(c);sess_log(sn,wd);return 2;}}}
     int r = tm_new(sn, wd, wcmd);
     if (!r) {
         if (ai) {
