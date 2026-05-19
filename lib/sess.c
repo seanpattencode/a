@@ -164,17 +164,11 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             {int wo=!strncmp(cmd,"open ",5)?5:!strncmp(cmd,"web ",4)?4:0;
             if(wo){alog(cmd,"");if(wo==5){char ac[512];const char*app=cmd+5;
                 if(getenv("SWAYSOCK")){
-                    /* find Exec= from .desktop, strip %U etc, run via swaymsg */
-                    char df[P]="";snprintf(df,P,"/usr/share/applications/%s.desktop",app);
-                    if(!fexists(df))snprintf(df,P,"/usr/local/share/applications/%s.desktop",app);
-                    if(fexists(df)){char*d=readf(df,NULL);char*ex=d?strstr(d,"Exec="):NULL;
-                        if(ex){ex+=5;char*nl=strchr(ex,'\n');if(nl)*nl=0;
-                            char*pct=strchr(ex,'%');if(pct)*pct=0;
-                            while(ex[strlen(ex)-1]==' ')ex[strlen(ex)-1]=0;
-                            snprintf(ac,512,"swaymsg 'exec %s'",ex);}
-                        else snprintf(ac,512,"swaymsg 'exec %s'",app);
-                        free(d);
-                    } else snprintf(ac,512,"swaymsg 'exec %s'",app);
+                    char df[P]="",hd[P];snprintf(hd,P,"%s/.local/share/applications",HOME);
+                    const char*ad[]={"/usr/share/applications","/usr/local/share/applications","/var/lib/flatpak/exports/share/applications",hd};
+                    for(int i=0;i<4;i++){snprintf(df,P,"%s/%s.desktop",ad[i],app);if(fexists(df))break;df[0]=0;}
+                    if(df[0])snprintf(ac,512,"swaymsg exec \"gio launch '%s'\"",df);
+                    else snprintf(ac,512,"swaymsg exec '%s'",app);
                 } else snprintf(ac,512,APP_CMD " '%s'",app);
                 (void)!system(ac);}
                 else bg_exec(OPENER,cmd+4);return 0;}}
