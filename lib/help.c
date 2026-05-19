@@ -174,6 +174,7 @@ static int cmd_done(int argc,char**argv){AB;
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
         FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}}
+    if(getenv("TMUX"))(void)!system("tmux split-window -v -l 70% 'echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff;exec $SHELL' 2>/dev/null");
     (void)!write(STDERR_FILENO,"\a",1);
     puts("✓ done");return 0;}
 
