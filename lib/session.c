@@ -48,6 +48,12 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
         "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%stmux wait-for -S rdy-%s;for _ in 1 2 3;do %s%s&&exit;echo \"$(date) $? $(pwd)\">>%s/crashes.log;sleep 1;done;exec bash", src_pfx,sn,acmd,csuf,LOGDIR);
     else snprintf(wcmd, sizeof(wcmd), "%s", cmd ? cmd : "");
     tm_ensure_conf();
+    /* From dock pick: spawn above dock in current window instead of new tmux window */
+    {const char*tp=getenv("TMUX_PANE");if(tp&&*tp){char dk[64]="";
+        pcmd("tmux display -p '#{@omni_pane}'",dk,sizeof(dk));dk[strcspn(dk,"\n")]=0;
+        if(dk[0]&&!strcmp(dk,tp)){char c[B*2];
+            snprintf(c,sizeof(c),"tmux split-window -b -v -t '%s' -c '%s' '%s'",dk,wd,wcmd);
+            (void)!system(c);sess_log(sn,wd);return 2;}}}
     int r = tm_new(sn, wd, wcmd);
     if (!r) {
         if (ai) {

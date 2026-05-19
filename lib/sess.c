@@ -46,8 +46,7 @@ static int cmd_sess(int argc, char **argv) {
         tm_go(sn);
         return 0;
     }
-    create_sess(sn, wd, s->cmd, xp);
-    tm_go(sn);
+    if (create_sess(sn, wd, s->cmd, xp) != 2) tm_go(sn);
     return 0;
 }
 
