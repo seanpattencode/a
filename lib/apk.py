@@ -86,7 +86,7 @@ override fun onSizeChanged(w:Int,hh:Int,ow:Int,oh:Int){
 if(::bmp.isInitialized)bmp.recycle()
 bmp=Bitmap.createBitmap(w,hh,Bitmap.Config.ARGB_8888)
 px=IntArray(w*hh);nResize(w,hh)
-if(!started){nFont(atlas(40f));nStart(context.applicationInfo.nativeLibraryDir,context.filesDir.absolutePath);started=true}}
+if(!started){nFont(atlas(56f));nStart(context.applicationInfo.nativeLibraryDir,context.filesDir.absolutePath);started=true}}
 override fun onDraw(c:Canvas){val a=px?:return;if(!::bmp.isInitialized)return
 nRender(a);bmp.setPixels(a,0,width,0,0,width,height);c.drawBitmap(bmp,0f,0f,null)}
 override fun onTouchEvent(e:MotionEvent):Boolean{nTouch(e.action and 0xFF,e.x,e.y);invalidate();return true}
@@ -104,7 +104,7 @@ class Stp(val a:Activity):android.view.View(a){
 private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
 private fun go(i:Intent?)=i?.let{a.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
 private val items=listOf(
-"Set as keyboard" to{(a.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()},
+"Set as keyboard" to{go(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS))},
 "Set as launcher" to{go(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))},
 "Grant mic permission" to{a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1)},
 "Open Shizuku setup" to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))}
@@ -159,8 +159,8 @@ static const char*KR[NROWS]={
  "1234567890",
  "qwertyuiop",
  "asdfghjkl",
- "zxcvbnm,.\x08",
- "-= \x09"};
+ "zxcvbnm,\x08",
+ "-=. \x09"};
 static float KB[60][4];
 static int nkeys,pressed=-1;
 static uint32_t PAL[16]={
@@ -258,19 +258,19 @@ static void*inp_thr(void*_){
 static int kbh(float x,float y){for(int i=0;i<nkeys;i++)if(x>=KB[i][0]&&x<KB[i][2]&&y>=KB[i][1]&&y<KB[i][3])return i;return -1;}
 static char kch(int idx){int c=0;for(int r=0;r<NROWS;r++){int n=(int)strlen(KR[r]);if(idx<c+n)return KR[r][idx-c];c+=n;}return 0;}
 static void compute_kb(void){
- float kh=H*0.40f,ky=H-kh,rh=kh/NROWS;nkeys=0;
+ float kh=H*0.55f,ky=H-kh,rh=kh/NROWS;nkeys=0;
  for(int r=0;r<NROWS;r++){
   int n=(int)strlen(KR[r]);float y=ky+r*rh,kw=W/10.0f;
   for(int i=0;i<n;i++){
    float x,w;
    if(r==0){kw=W/(float)n;x=i*kw;w=kw;}
-   else if(r==3){x=kw*0.5f+i*kw;w=kw;}
-   else if(r==5){float pos[]={0,kw,2*kw,9*kw},wd[]={kw,kw,7*kw,W-9*kw};x=pos[i];w=wd[i];}
+   else if(r==3||r==4){x=kw*0.5f+i*kw;w=kw;}
+   else if(r==5){float pos[]={0,kw,2*kw,3*kw,9*kw},wd[]={kw,kw,kw,6*kw,W-9*kw};x=pos[i];w=wd[i];}
    else{x=i*kw;w=kw;}
    KB[nkeys][0]=x;KB[nkeys][1]=y;KB[nkeys][2]=x+w;KB[nkeys][3]=y+rh;nkeys++;}}}
 static void compute_grid(void){
  if(!FN.cw||!FN.ch){rows=24;cols=80;return;}
- int kh=(int)(H*0.40f);
+ int kh=(int)(H*0.55f);
  int avail_h=H-kh;
  rows=avail_h/FN.ch;if(rows<1)rows=1;if(rows>MR)rows=MR;
  cols=W/FN.cw;if(cols<20)cols=20;if(cols>MC)cols=MC;
@@ -856,7 +856,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     override fun onDetachedFromWindow() { super.onDetachedFromWindow(); android.view.Choreographer.getInstance().removeFrameCallback(hz120) }
     override fun onMeasure(ws: Int, hs: Int) {
         val w = MeasureSpec.getSize(ws)
-        val pct = prefs.getInt("kb_height", 75).coerceIn(20, 200) / 100f
+        val pct = prefs.getInt("kb_height", 110).coerceIn(20, 200) / 100f
         setMeasuredDimension(w, (w * pct).toInt().coerceAtMost(resources.displayMetrics.heightPixels / 2) + toolbarH.toInt())
     }
 
@@ -909,7 +909,7 @@ class SettingsActivity : android.app.Activity() {
         layout.addView(android.widget.TextView(this).apply { text = "InstantKB-NDK Termux"; textSize = 18f })
         layout.addView(android.widget.Button(this).apply { text = "Enable Keyboard"; setOnClickListener { startActivity(android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)) } })
         layout.addView(android.widget.TextView(this).apply { text = "\nHeight %"; textSize = 14f })
-        val h0 = prefs.getInt("kb_height", 75)
+        val h0 = prefs.getInt("kb_height", 110)
         layout.addView(android.widget.SeekBar(this).apply { max = 180; progress = h0 - 20
             setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) { prefs.edit().putInt("kb_height", p + 20).apply() }
@@ -1050,7 +1050,7 @@ _ND=SDK+"/ndk";_NV=sorted(os.listdir(_ND))[-1] if os.path.isdir(_ND) else None
 _NH=os.listdir(f"{_ND}/{_NV}/toolchains/llvm/prebuilt")[0] if _NV else None
 _CMK='externalNativeBuild{cmake{path=file("src/main/cpp/CMakeLists.txt")}}\n'
 _DF='defaultConfig{applicationId="'+P+'";minSdk=24;targetSdk=34;versionCode=202;ndk{abiFilters+="arm64-v8a"}'+((';externalNativeBuild{cmake{arguments+="-DANDROID_STL=none"}}') if not IT else '')+'}\n'
-GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'compileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\ndependencies{implementation("dev.rikka.shizuku:api:13.1.5");implementation("dev.rikka.shizuku:provider:13.1.5")}\n'
+GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'signingConfigs{getByName("debug"){storeFile=file("debug.keystore")}}\ncompileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\ndependencies{implementation("dev.rikka.shizuku:api:13.1.5");implementation("dev.rikka.shizuku:provider:13.1.5")}\n'
 R=os.path.dirname(os.path.dirname(os.path.abspath(__file__)));D=R+"/adata/_apk_build"
 if not IT:
     for p in[f"/opt/homebrew/opt/openjdk@{v}/libexec/openjdk.jdk/Contents/Home" for v in[21,17]]+[f"/usr/lib/jvm/java-{v}-openjdk-amd64" for v in[21,17]]:
@@ -1129,6 +1129,9 @@ def _rish_install(apk_path,pkg,serial=None):
     else:
         if S.run(["cp",apk_path,dst]).returncode!=0:return False
     r=sh(f"{R} -c 'pm install -r -t -d \"{dst}\"'")
+    if "Success" not in (r.stdout or "") and pkg:
+        sh(f"{R} -c 'pm uninstall {pkg}'")
+        r=sh(f"{R} -c 'pm install -t -d \"{dst}\"'")
     if "Success" in (r.stdout or ""):
         if pkg:sh(f"{R} -c 'am start -n {pkg}/.M'" if in_tmx else f"am start -n {pkg}/.M")
         return True
@@ -1187,6 +1190,9 @@ def run():
                 if ("applicationId" in line or "namespace" in line) and '"' in line:pkg=line.split('"')[1];break
     else:
         w(D+"/settings.gradle.kts",GS);w(D+"/app/build.gradle.kts",GB);w(D+"/local.properties",f"sdk.dir={SDK}\n")
+        ks=f"{R}/adata/git/common/debug.keystore";hk=f"{H}/.android/debug.keystore"
+        if not os.path.exists(ks) and os.path.exists(hk):shutil.copy(hk,ks);print(f"→ seeded {ks}")
+        os.makedirs(f"{D}/app",exist_ok=True);shutil.copy(ks,f"{D}/app/debug.keystore")
         gp="android.useAndroidX=true\norg.gradle.jvmargs=-Xmx4g\n"
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
         w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC)
