@@ -1129,6 +1129,9 @@ def _rish_install(apk_path,pkg,serial=None):
     else:
         if S.run(["cp",apk_path,dst]).returncode!=0:return False
     r=sh(f"{R} -c 'pm install -r -t -d \"{dst}\"'")
+    if "Success" not in (r.stdout or "") and pkg:
+        sh(f"{R} -c 'pm uninstall {pkg}'")
+        r=sh(f"{R} -c 'pm install -t -d \"{dst}\"'")
     if "Success" in (r.stdout or ""):
         if pkg:sh(f"{R} -c 'am start -n {pkg}/.M'" if in_tmx else f"am start -n {pkg}/.M")
         return True
