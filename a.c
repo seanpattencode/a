@@ -683,13 +683,13 @@ int main(int argc, char **argv) {
      snprintf(pf,P,"%s/my/%s",SDIR,arg);
      if(strrchr(arg,'.')&&fexists(pf))RL
      for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
+     init_db();load_cfg();load_sess();if(find_sess(arg))return cmd_sess(argc,argv);
      DIR*ld;struct dirent*le;snprintf(pf,P,"%s/my",SDIR);ld=opendir(pf);
      if(ld){while((le=readdir(ld))){if(le->d_name[0]=='.')continue;
       for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s/%s%s",SDIR,le->d_name,arg,EXT[i]);
        if(fexists(pf)){closedir(ld);RL}}}closedir(ld);}
      #undef RL
      }
-    {init_db();load_cfg();load_sess();if(find_sess(arg))return cmd_sess(argc,argv);}
     if(dexists(arg)||fexists(arg))return cmd_dir_file(argc,argv);
     {char ep[P];snprintf(ep,P,"%s%s",HOME,arg);if(*arg=='/'&&dexists(ep))return cmd_dir_file(argc,argv);}
     if(strlen(arg)<=3&&islower(*arg))return cmd_sess(argc,argv);
