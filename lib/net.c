@@ -181,32 +181,28 @@ static int cmd_update(int argc, char **argv) { AB;
         puts("✓ Cache"); return 0;
     }
     {char g[P];snprintf(g,P,"%s/.git",SDIR);if(access(g,F_OK)!=0){puts("x Not in git repo");init_db();load_cfg();list_all(1,1);gen_icache();return 0;}}
-    char c[B],oh[64]={0};
+    char c[B],oh[64]={0},nh[64]={0};
     snprintf(c,B,"git -C '%s' rev-parse HEAD 2>/dev/null",SDIR);pcmd(c,oh,64);oh[strcspn(oh,"\n")]=0;
-    snprintf(c,B,"git -C '%s' fetch 2>/dev/null",SDIR);(void)!system(c);
-    snprintf(c,B,"git -C '%s' status -uno 2>/dev/null",SDIR);char out[B];pcmd(c,out,B);
-    int ch=0;
-    if(strstr(out,"diverged")){puts("Diverged — rebasing...");snprintf(c,B,"git -C '%s' pull --rebase 2>/dev/null",SDIR);(void)!system(c);ch=1;}
-    else if(strstr(out,"behind")){snprintf(c,B,"git -C '%s' pull --ff-only 2>/dev/null",SDIR);(void)!system(c);ch=1;}
+    snprintf(c,B,"git -C '%s' pull --ff-only 2>/dev/null",SDIR);
+    if(system(c)!=0){puts("Diverged — rebasing...");snprintf(c,B,"git -C '%s' pull --rebase 2>/dev/null",SDIR);(void)!system(c);}
+    snprintf(c,B,"git -C '%s' rev-parse HEAD 2>/dev/null",SDIR);pcmd(c,nh,64);nh[strcspn(nh,"\n")]=0;
+    int ch=strcmp(oh,nh)!=0;
     /* no-op: up to date + binary exists */
     {char b[P];snprintf(b,P,"%s/a",DDIR);if(!ch&&!access(b,X_OK)){puts("✓ Up to date");return 0;}}
     /* detect dep change: a.c modified → pip/shell/node */
     int dc=0;
     if(ch&&oh[0]){snprintf(c,B,"git -C '%s' diff --name-only '%s' HEAD 2>/dev/null",SDIR,oh);char df[B];pcmd(c,df,B);dc=!!strstr(df,"a.c");}
     init_db();load_cfg();
-    snprintf(c,B,"sh '%s/a.c'",SDIR);
-    if(system(c)==0){puts("✓ Built");init_migrate();}else puts("x Build failed");
-    if(dc){
-        {char vp[P];snprintf(vp,P,"%s/venv/bin/pip",AROOT);
-         if(access(vp,X_OK)==0){snprintf(c,B,"'%s' install -q pexpect prompt_toolkit aiohttp 2>/dev/null",vp);
-          if(system(c)==0)puts("✓ Python deps");else puts("x pip failed");}}
-        snprintf(c,B,"bash '%s/a.c' shell 2>&-;bash '%s/a.c' node 2>&-",SDIR,SDIR);(void)!system(c);
-        if(access("/data/data/com.termux",F_OK)==0){char td[P];snprintf(td,P,"%s/.tmp",HOME);mkdirp(td);
-         snprintf(c,B,"tmux set-environment -g CLAUDE_CODE_TMPDIR '%s' 2>/dev/null",td);(void)!system(c);}
-    }
-    snprintf(c,B,"'%s/a' update cache",DDIR);(void)!system(c);
-    /* background: sync, rclone, backup */
+    puts("✓ Updated (bg)");
+    /* background: build, deps, cache, sync, rclone, backup */
     {pid_t p=fork();if(p==0){setsid();int n=open("/dev/null",O_WRONLY);dup2(n,1);dup2(n,2);close(n);
+        snprintf(c,B,"sh '%s/a.c'",SDIR);if(!system(c))init_migrate();
+        if(dc){char vp[P];snprintf(vp,P,"%s/venv/bin/pip",AROOT);
+            if(!access(vp,X_OK)){snprintf(c,B,"'%s' install -q pexpect prompt_toolkit aiohttp 2>/dev/null",vp);(void)!system(c);}
+            snprintf(c,B,"bash '%s/a.c' shell 2>&-;bash '%s/a.c' node 2>&-",SDIR,SDIR);(void)!system(c);
+            if(!access("/data/data/com.termux",F_OK)){char td[P];snprintf(td,P,"%s/.tmp",HOME);mkdirp(td);
+                snprintf(c,B,"tmux set-environment -g CLAUDE_CODE_TMPDIR '%s' 2>/dev/null",td);(void)!system(c);}}
+        snprintf(c,B,"'%s/a' update cache",DDIR);(void)!system(c);
         ensure_adata();sync_repo();
         {char ld[P];snprintf(ld,P,"%s/git/login",AROOT);mkdirp(ld);
          char t[64];pcmd("rclone listremotes 2>/dev/null|grep a-gdrive|head -1",t,64);
