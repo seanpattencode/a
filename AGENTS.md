@@ -39,10 +39,10 @@ Never present code to the user that hasn't passed "sh a.c check".
 
 Human in loop:
 Run debug code before declaring it done.
-Output copy pastable commands for human to run to verify changes are both correct and valuable. Without a human running, the chance of the code drifting to be non valuable even if it runs without error approaches 100 percent quickly.
-Output a diff token change numbers and time of command info.
+Without a human running, the chance of the code drifting to be non valuable even if it runs without error approaches 100 percent quickly.
+Done command: `a done "<test>verify_cmd</test><diff>your_files</diff> msg"` — auto-spawns two panes below your pane: (1) diff pane with full `a diff` + colored focused-diff stat for the files you tagged, (2) live PTY pane that prints the exact test cmd in yellow then runs it. Both tags optional; with neither, just the diff pane spawns. Use both — the human verifies by watching the live PTY, not by re-deriving your work. Test cmd should be the minimal verification (e.g. `sh a.c check`, `pytest tests/foo.py`, `a <subcommand>` smoke test).
 If main has advanced in the time since you started working, merge in the main changes to your code before delaring a done. 
-When human approves, push your changes only. Use "a done" to get human if there is a push issue.
+When human approves, push your changes only. Use plain `a done <msg>` (no tags) to get human if there is a push issue or merge conflict.
 
 Multi-agent:
 Spawn: `a ssh <device> 'cd <dir> && a j "<prompt>"'` — runs in tmux window.

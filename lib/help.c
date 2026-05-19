@@ -174,7 +174,21 @@ static int cmd_done(int argc,char**argv){AB;
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
         FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}}
-    if(getenv("TMUX"))(void)!system("tmux split-window -v -l 70% 'echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff;exec $SHELL' 2>/dev/null");
+    if(getenv("TMUX")){char ts[B]="",dl[B]="",sp[P];
+        #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
+            if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);}}
+        TAG(ts,"test");TAG(dl,"diff");
+        #undef TAG
+        snprintf(sp,P,"%s/a_done.sh",DDIR);FILE*sf=fopen(sp,"w");
+        if(sf){fputs("echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff\n",sf);
+            if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';git --no-pager diff --stat -- %s\n",dl,dl);
+            fputs("exec $SHELL\n",sf);fclose(sf);
+            const char*tp=getenv("TMUX_PANE");char c[P*2],tg[64]="",dp[64]="";
+            if(tp)snprintf(tg,64," -t %s",tp);
+            snprintf(c,P*2,"tmux split-window -v -l 70%%%s -P -F '#{pane_id}' 'sh %s' 2>/dev/null",tg,sp);pcmd(c,dp,64);dp[strcspn(dp,"\n")]=0;
+            if(ts[0]&&dp[0]){char tp2[P];snprintf(tp2,P,"%s/a_test.sh",DDIR);FILE*tf=fopen(tp2,"w");
+                if(tf){fprintf(tf,"printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\nexec $SHELL\n",ts,ts);fclose(tf);
+                    snprintf(c,P*2,"tmux split-window -v -t %s 'sh %s' 2>/dev/null",dp,tp2);(void)!system(c);}}}}
     (void)!write(STDERR_FILENO,"\a",1);
     puts("✓ done");return 0;}
 
