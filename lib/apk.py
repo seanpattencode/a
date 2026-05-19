@@ -856,7 +856,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     override fun onDetachedFromWindow() { super.onDetachedFromWindow(); android.view.Choreographer.getInstance().removeFrameCallback(hz120) }
     override fun onMeasure(ws: Int, hs: Int) {
         val w = MeasureSpec.getSize(ws)
-        val pct = prefs.getInt("kb_height", 75).coerceIn(20, 200) / 100f
+        val pct = prefs.getInt("kb_height", 110).coerceIn(20, 200) / 100f
         setMeasuredDimension(w, (w * pct).toInt().coerceAtMost(resources.displayMetrics.heightPixels / 2) + toolbarH.toInt())
     }
 
@@ -909,7 +909,7 @@ class SettingsActivity : android.app.Activity() {
         layout.addView(android.widget.TextView(this).apply { text = "InstantKB-NDK Termux"; textSize = 18f })
         layout.addView(android.widget.Button(this).apply { text = "Enable Keyboard"; setOnClickListener { startActivity(android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)) } })
         layout.addView(android.widget.TextView(this).apply { text = "\nHeight %"; textSize = 14f })
-        val h0 = prefs.getInt("kb_height", 75)
+        val h0 = prefs.getInt("kb_height", 110)
         layout.addView(android.widget.SeekBar(this).apply { max = 180; progress = h0 - 20
             setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) { prefs.edit().putInt("kb_height", p + 20).apply() }
@@ -1050,7 +1050,7 @@ _ND=SDK+"/ndk";_NV=sorted(os.listdir(_ND))[-1] if os.path.isdir(_ND) else None
 _NH=os.listdir(f"{_ND}/{_NV}/toolchains/llvm/prebuilt")[0] if _NV else None
 _CMK='externalNativeBuild{cmake{path=file("src/main/cpp/CMakeLists.txt")}}\n'
 _DF='defaultConfig{applicationId="'+P+'";minSdk=24;targetSdk=34;versionCode=202;ndk{abiFilters+="arm64-v8a"}'+((';externalNativeBuild{cmake{arguments+="-DANDROID_STL=none"}}') if not IT else '')+'}\n'
-GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'compileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\ndependencies{implementation("dev.rikka.shizuku:api:13.1.5");implementation("dev.rikka.shizuku:provider:13.1.5")}\n'
+GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'signingConfigs{getByName("debug"){storeFile=file("debug.keystore")}}\ncompileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\ndependencies{implementation("dev.rikka.shizuku:api:13.1.5");implementation("dev.rikka.shizuku:provider:13.1.5")}\n'
 R=os.path.dirname(os.path.dirname(os.path.abspath(__file__)));D=R+"/adata/_apk_build"
 if not IT:
     for p in[f"/opt/homebrew/opt/openjdk@{v}/libexec/openjdk.jdk/Contents/Home" for v in[21,17]]+[f"/usr/lib/jvm/java-{v}-openjdk-amd64" for v in[21,17]]:
@@ -1190,6 +1190,9 @@ def run():
                 if ("applicationId" in line or "namespace" in line) and '"' in line:pkg=line.split('"')[1];break
     else:
         w(D+"/settings.gradle.kts",GS);w(D+"/app/build.gradle.kts",GB);w(D+"/local.properties",f"sdk.dir={SDK}\n")
+        ks=f"{R}/adata/git/common/debug.keystore";hk=f"{H}/.android/debug.keystore"
+        if not os.path.exists(ks) and os.path.exists(hk):shutil.copy(hk,ks);print(f"→ seeded {ks}")
+        os.makedirs(f"{D}/app",exist_ok=True);shutil.copy(ks,f"{D}/app/debug.keystore")
         gp="android.useAndroidX=true\norg.gradle.jvmargs=-Xmx4g\n"
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
         w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC)
