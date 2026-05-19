@@ -659,8 +659,9 @@ int main(int argc, char **argv) {
     if (argc < 2) { perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
-    alog(acmd, wd);sync_bg();
+    alog(acmd, wd);
     const char *arg = argv[1];
+    if(strcmp(arg,"n")&&strcmp(arg,"note"))sync_bg();
 
     if (*arg && !arg[strspn(arg,"0123456789")]) { init_db(); return cmd_project_num(argc, argv, atoi(arg)); }
 

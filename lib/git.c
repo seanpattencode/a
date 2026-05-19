@@ -41,6 +41,16 @@ static void sync_bg(void) {
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }
+static void sync_pane(void){
+    if(!getenv("TMUX")){sync_bg();return;}
+    char c[B*2];snprintf(c,B*2,
+      "M=/tmp/.a_sp_$(tmux display-message -pt \"$TMUX_PANE\" '#{window_id}'|tr -d @);P=$(cat $M 2>/dev/null);"
+      "tmux lsp -aF '#{pane_id}'|grep -qx \"${P:-x}\"||"
+      "{ P=$(tmux split-window -vdP -F '#{pane_id}' -l 8 -t \"$TMUX_PANE\");echo $P>$M; };"
+      "tmux send-keys -t \"$P\" 'cd %s;set -x;git add notes;git commit -m sync||:;"
+      "git pull --no-rebase --no-edit origin main&&git push origin main&&echo success||echo not' Enter",SROOT);
+    (void)!system(c);
+}
 static const char*sync_age(void){static char b[16];char p[P];
     snprintf(p,P,"%s/.git/FETCH_HEAD",SROOT);struct stat st;
     if(stat(p,&st))return"never";

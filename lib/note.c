@@ -10,7 +10,7 @@ static void note_save(const char *d, const char *t) {
 }
 static char rdir[P],ltd[P]="";
 static void dl_norm(const char*,char*,size_t);
-static void rapid_note(const char*t){note_save(rdir,t);puts("✓");}
+static void rapid_note(const char*t){note_save(rdir,t);puts("✓");sync_pane();}
 typedef struct{char p[P];char t[512];}GN;
 static GN*gn;static int gn_cap;
 static int gncmp(const void*a,const void*b){return strcmp(strrchr(((const GN*)a)->p,'_'),strrchr(((const GN*)b)->p,'_'));}
@@ -49,7 +49,7 @@ static int cmd_note(int argc, char **argv) {
     if(argc>2&&!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
     {char t[B]="";ajoin(t,B,argc,argv,2);
-        note_save(dir,t);puts("✓");
+        note_save(dir,t);puts("✓");sync_pane();
         snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
