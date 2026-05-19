@@ -40,7 +40,9 @@
 
 ## The m meta agent/persistent agent
 
-31. The e editor handles the user interaction and editing of the meta agent and more broadly serves as its ui layer. Changes to editor will be made to support changes to meta agent ui as needed. This is neccesary because a text editor is essential for making the agent editable by human trivially and e is a text editor that the main developer, Sean Patten, can control and edit and is sufficently fast for the task. Failures to do UI capabilities or bugs are resolved by fixing the e editor.
+31. `a` owns its own TUI. The meta agent UI is composed directly from tmux primitives (split panes for chat tail, pty, status, op panel) plus native input via `fgets` — no external editor dependency at runtime. The `e` editor remains as coded inspiration: its patterns for fast, minimal-keystroke text manipulation inform how `a`'s TUI is built, but `a` does not call into `e` or require it to function. UI bugs are resolved by fixing tmux composition in `lib/m.c` and the surrounding shell, not by patching a separate editor.
+
+31a. All meta agent state lives in `adata/m/` and every file there is git-tracked — no `.gitignore` exclusions, no ephemeral cache carve-outs. Nothing meta-agent-related lives anywhere else (not `adata/local/`, not `/tmp`, not sibling folders). This is inviolable. The meta agent is portable across the device fleet only because the entire `adata/m/` tree round-trips through the synced `m` repo; any file pulled out to a local-only path becomes invisible on other devices and breaks portability. Regenerated context blobs (e.g. `combo.txt`) are not an exception — if a file appears in `adata/m/` it gets committed, even when its content churns. Noisy diffs are the acceptable cost of guaranteed fleet-wide reproducibility.
 
 
 ## apps and UI
