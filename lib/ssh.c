@@ -191,6 +191,8 @@ static int cmd_ssh(int argc,char**argv){
     /* fleet view: enumerate remote tmux sessions in parallel, window per session */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){
         struct{int fd;pid_t pid;int hi;}E[32];int ne=0;size_t dl=strlen(DEV);
+        for(int i=0;i<nh;i++)if(strncmp(H[i].name,DEV,dl))ne++;
+        printf("a ssh all: probing %d hosts...\n",ne);fflush(stdout);ne=0;
         for(int i=0;i<nh&&ne<32;i++){
             if(!strncmp(H[i].name,DEV,dl))continue;
             int pfd[2];if(pipe(pfd))continue;
@@ -203,17 +205,22 @@ static int cmd_ssh(int argc,char**argv){
                 if(!r)(void)!write(pfd[1],o,strlen(o));
                 close(pfd[1]);_exit(0);}
             close(pfd[1]);E[ne].fd=pfd[0];E[ne].pid=p;E[ne].hi=i;ne++;}
+        int tot=0;
         for(int i=0;i<ne;i++){
             char o[B];int l=(int)read(E[i].fd,o,B-1);o[l>0?l:0]=0;
             close(E[i].fd);waitpid(E[i].pid,NULL,0);
-            host_t*h=&H[E[i].hi];int any=0;
+            host_t*h=&H[E[i].hi];int any=0,ns=0;
             for(char*p=o,*nl=NULL;p&&*p;p=nl?nl+1:NULL){
                 nl=strchr(p,'\n');if(nl)*nl=0;
-                if(!*p)continue;any=1;
+                if(!*p)continue;any=1;ns++;
                 char cm[B*2];snprintf(cm,sizeof(cm),"A_TMUX_SESSION='%s' a ssh %s",p,h->name);
                 char wn[160];snprintf(wn,sizeof(wn),"%s/%s",h->name,p);
-                tm_new(wn,HOME,cm);}
-            if(!any){char cm[B*2];snprintf(cm,sizeof(cm),"a ssh %s",h->name);tm_new(h->name,HOME,cm);}}
+                tm_new(wn,HOME,cm);tot++;}
+            if(!any){char cm[B*2];snprintf(cm,sizeof(cm),"a ssh %s",h->name);tm_new(h->name,HOME,cm);tot++;}
+            if(any)printf("  \033[32m✓\033[0m %-25s %d session%s\n",h->name,ns,ns==1?"":"s");
+            else printf("  \033[33m·\033[0m %-25s (no response, bare-ssh fallback)\n",h->name);
+            fflush(stdout);}
+        printf("→ %d window%s in a: session\n",tot,tot==1?"":"s");fflush(stdout);
         tm_go(NULL);return 0;}
     /* all/broadcast — parallel */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
