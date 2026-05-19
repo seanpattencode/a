@@ -1213,7 +1213,8 @@ def run():
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
         stage={"/tmp/a-droid":"liba.so","/tmp/dsrc/tmux-build-a/tmux":"libtmux.so","/tmp/dsrc/ncurses-6.4/progs/tic":"libtic.so"}
         opt={"/tmp/dsrc/dropbear-2024.86/dbclient":"libssh.so","/tmp/ssh_wrap":"libsshwrap.so"}
-        miss=[s for s in stage if not os.path.exists(s)]
+        srcmax=max((os.path.getmtime(p) for p in [f"{R}/a.c"]+glob.glob(f"{R}/lib/*.c")+glob.glob(f"{R}/lib/*.h")),default=0)
+        miss=[s for s in stage if not os.path.exists(s) or (s=="/tmp/a-droid" and os.path.getmtime(s)<srcmax)]
         if "/tmp/a-droid" in miss:
             cc=f"{_ND}/{_NV}/toolchains/llvm/prebuilt/{_NH}/bin/aarch64-linux-android29-clang"
             S.check_call([cc,'-DSRC="/data/local/tmp"',"-w"]+cf.split()+["-o","/tmp/a-droid",f"{R}/a.c"])

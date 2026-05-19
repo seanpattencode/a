@@ -188,10 +188,32 @@ static int cmd_ssh(int argc,char**argv){
             else printf("x %s\n",h->name);}
         return 0;}
 
-    /* fleet view: window per host, attach remote a: */
-    if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){char cm[B];size_t dl=strlen(DEV);
-        for(int i=0;i<nh;i++)if(strncmp(H[i].name,DEV,dl)){
-            snprintf(cm,B,"a ssh %s",H[i].name);tm_new(H[i].name,HOME,cm);}
+    /* fleet view: enumerate remote tmux sessions in parallel, window per session */
+    if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){
+        struct{int fd;pid_t pid;int hi;}E[32];int ne=0;size_t dl=strlen(DEV);
+        for(int i=0;i<nh&&ne<32;i++){
+            if(!strncmp(H[i].name,DEV,dl))continue;
+            int pfd[2];if(pipe(pfd))continue;
+            pid_t p=fork();
+            if(p==0){close(pfd[0]);fcntl(pfd[1],F_SETFD,FD_CLOEXEC);alarm(8);
+                char hp[256],port[8];ssh_parse(H[i].host,hp,port);
+                char c[B*2];int l=ssh_pre(c,(int)sizeof(c),H[i].pw,"-oConnectTimeout=5 -oStrictHostKeyChecking=no",port,hp);
+                snprintf(c+l,(size_t)(sizeof(c)-(size_t)l)," 'bash -lc \"tmux ls 2>/dev/null|cut -d: -f1\"' 2>/dev/null");
+                char o[B];int r=pcmd(c,o,B);
+                if(!r)(void)!write(pfd[1],o,strlen(o));
+                close(pfd[1]);_exit(0);}
+            close(pfd[1]);E[ne].fd=pfd[0];E[ne].pid=p;E[ne].hi=i;ne++;}
+        for(int i=0;i<ne;i++){
+            char o[B];int l=(int)read(E[i].fd,o,B-1);o[l>0?l:0]=0;
+            close(E[i].fd);waitpid(E[i].pid,NULL,0);
+            host_t*h=&H[E[i].hi];int any=0;
+            for(char*p=o,*nl=NULL;p&&*p;p=nl?nl+1:NULL){
+                nl=strchr(p,'\n');if(nl)*nl=0;
+                if(!*p)continue;any=1;
+                char cm[B*2];snprintf(cm,sizeof(cm),"A_TMUX_SESSION='%s' a ssh %s",p,h->name);
+                char wn[160];snprintf(wn,sizeof(wn),"%s/%s",h->name,p);
+                tm_new(wn,HOME,cm);}
+            if(!any){char cm[B*2];snprintf(cm,sizeof(cm),"a ssh %s",h->name);tm_new(h->name,HOME,cm);}}
         tm_go(NULL);return 0;}
     /* all/broadcast — parallel */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
@@ -226,7 +248,10 @@ static int cmd_ssh(int argc,char**argv){
         {char cwd[P];size_t hl=strlen(HOME);if(getcwd(cwd,P)&&!strncmp(cwd,HOME,hl)&&cwd[hl]=='/'){char*p=cwd+hl+1;char*s=strchr(p,'/');if(s)*s=0;if(*p&&*p!='.')snprintf(cd,64,"cd ~/%s 2>/dev/null;",p);}}
         for(int i=3;i<argc;i++){int l=(int)strlen(cmd);snprintf(cmd+l,(size_t)(B-l),"%s%s",l?" ":"",argv[i]);}
         if(cmd[0])snprintf(cs,B," 'bash -c '\"'\"'%sexport PATH=$HOME/.local/bin:$PATH; %s'\"'\"''",cd,cmd);
-        else snprintf(cs,B," 'tmux new-session -A -s a 2>/dev/null||exec bash -l'");
+        else{const char*ts=getenv("A_TMUX_SESSION");char tx[256];
+            if(ts&&ts[0])snprintf(tx,256,"tmux attach -t %s 2>/dev/null||tmux new -A -s %s",ts,ts);
+            else snprintf(tx,256,"tmux attach 2>/dev/null||tmux new -A -s a");
+            snprintf(cs,B," 'bash -lc \"%s\" 2>/dev/null||exec bash -l'",tx);}
         if(H[idx].jump[0]){char jhp[256],jport[8];ssh_parse(H[idx].jump,jhp,jport);
             snprintf(opts,B,"-tt -oConnectTimeout=8 -oStrictHostKeyChecking=accept-new -oProxyCommand=\"sshpass -p '%s' ssh -W %%h:%%p -p %s -oStrictHostKeyChecking=accept-new '%s'\"",H[idx].jpw,jport,jhp);
         }else snprintf(opts,B,"-tt -oConnectTimeout=2 -oStrictHostKeyChecking=accept-new");
