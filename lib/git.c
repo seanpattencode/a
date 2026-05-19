@@ -50,7 +50,7 @@ static void sync_pane(const char *text){
       "tmux lsp -aF '#{pane_id}'|grep -qx \"${P:-x}\"||"
       "{ P=$(tmux split-window -vdP -F '#{pane_id}' -l 8 -t \"$TMUX_PANE\");echo $P>$M; };"
       "tmux send-keys -t \"$P\" 'cd %s;set -x;git add notes tasks;git commit -m sync||:;"
-      "git pull --no-rebase --no-edit origin main&&git push origin main&&"
+      "sy(){ git pull --no-rebase --no-edit origin main&&git push origin main; };sy||sy&&"
       "echo \"saved + pushed: $(head -c 60 %s)\"||echo \"NOT saved/pushed: $(head -c 60 %s)\";rm -f %s' Enter",SROOT,tf,tf,tf);
     (void)!system(c);
 }
