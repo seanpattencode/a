@@ -143,7 +143,7 @@ static void tm_ensure_conf(void) {
         :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);}
     char vbuf[64] = ""; int vmaj = 0, vmin = 0;
     pcmd("tmux -V 2>/dev/null", vbuf, 64);
-    { char *v = strstr(vbuf, "tmux "); if (v) sscanf(v + 5, "%d.%d", &vmaj, &vmin); }
+    sscanf(vbuf, "%*[^0-9]%d.%d", &vmaj, &vmin);
     if (vmaj > 3 || (vmaj == 3 && vmin >= 6))
         fputs("set -g pane-scrollbars on\nset -g pane-scrollbars-position right\n", f);
     fclose(f);
