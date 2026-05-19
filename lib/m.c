@@ -384,6 +384,7 @@ static void m_render(const char *sf) {
     { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo); (void)!system(c); }
     size_t al=0,cl=0; char *ac=readf(combo,&al),*cur=readf(sf,&cl);
     unsigned long h=5381; for(size_t i=0;i<al;i++) h=33*h+(unsigned char)ac[i];
+    { static unsigned long lh=0; if(h!=lh){lh=h;m_commit("c");} }
     char mk[48]; snprintf(mk,48,"## a-loaded sha=%08lx",h);
     if (!cur || !strstr(cur,mk)) {
         char *st=cur?strstr(cur,"\n## a-loaded "):0,*en=st?strstr(st,"\n## a-loaded-end\n"):0;
@@ -447,7 +448,7 @@ static int cmd_m(int c, char **v) {
             if(f){fputs(hdr,f); fputs(us?us+1:"## user\n",f); fclose(f);} }
           free(sp); free(cur); }
         m_render(sf);
-        write(1,"\n── message (Enter sends) ──\n> ",32);
+        write(1,"\n── message (Enter sends) ──\n› ",41);
         char m[16384]; if(!fgets(m,sizeof m,stdin)) { if(g_rst){g_rst=0;continue;} break; }
         if(m[0]=='\n'||!m[0]) continue;
         mm_w(sf, m, "a");
