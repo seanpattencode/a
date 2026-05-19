@@ -445,11 +445,12 @@ static int cmd_m(int c, char **v) {
         g_halt = 0;
         snprintf(pf,P,"%s/m_file",DDIR); char *fp=readf(pf,NULL);
         if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(sf,P,"%s/m/%s",AROOT,fp);} free(fp);
-        { char *cur=fexists(sf)?readf(sf,NULL):NULL;
-          if (!cur||strncmp(cur,"## system\n",10)) {
-            size_t spl;char *sp=readf(spf,&spl);FILE *f=fopen(sf,"w");
-            if(f){fprintf(f,"## system\n%s%s%s",sp?sp:"",(sp&&spl&&sp[spl-1]=='\n')?"":"\n",cur?cur:"## user\n");fclose(f);}
-            free(sp);} free(cur); }
+        { size_t spl=0; char *sp=readf(spf,&spl); char *cur=readf(sf,NULL);
+          char hdr[B]; snprintf(hdr,B,"## system\n%s%s",sp?sp:"",(spl&&sp[spl-1]=='\n')?"":"\n");
+          if (!cur || strncmp(cur,hdr,strlen(hdr))) {
+            char *us=cur?strstr(cur,"\n## user\n"):0; FILE *f=fopen(sf,"w");
+            if(f){fputs(hdr,f); fputs(us?us+1:"## user\n",f); fclose(f);} }
+          free(sp); free(cur); }
         m_render(sf);
         write(1,"\n── message (Enter sends) ──\n> ",32);
         char m[16384]; if(!fgets(m,sizeof m,stdin)) break;
@@ -460,9 +461,7 @@ static int cmd_m(int c, char **v) {
             m_status("thinking");
             mm_w(sf, "\n## assistant\n", "a");
             static char a[64*1024], bash[8*1024], ob[16*1024], syc[B];
-            { char *all = readf(sf, NULL); char *spc = all?strstr(all,"## system\n"):0; char *us = spc?strstr(spc,"\n## user\n"):0;
-              if (spc && us) { size_t l = (size_t)(us - (spc + 10)); if (l >= B) l = B-1; memcpy(syc, spc+10, l); syc[l] = 0; }
-              else { char *sp = readf(spf, NULL); snprintf(syc, B, "%s", sp?sp:""); free(sp); } free(all); }
+            { char *sp=readf(spf,NULL); snprintf(syc,B,"%s",sp?sp:""); free(sp); }
             if (mm_stream(sf, syc, a, sizeof a, bash, sizeof bash) < 0) break;
             m_commit("a"); if (g_halt) break;
             if (!bash[0]) break;
