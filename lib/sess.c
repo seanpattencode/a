@@ -74,7 +74,7 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
 
 static FC fq[1024];int nfq;
 static int fq_get(const char*s){int b=0,bl=0;
-    for(int i=0;i<nfq;i++){int l=(int)strlen(fq[i].n);if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return b;}
+    for(int i=0;i<nfq;i++){int l=(int)strlen(fq[i].n);if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return strstr(s,"\tproject")?(1<<30)-atoi(s):b;}
 static int ln_cmp(const void*a,const void*b){return fq_get(*(char*const*)b)-fq_get(*(char*const*)a);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
@@ -96,7 +96,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",0};
     for(int i=0;acts[i]&&n<1024;i++)lines[n++]=(char*)acts[i];}
     if(!n){puts("Empty cache");free(raw);return 1;}
-    if(nfq)qsort(lines,(size_t)n,sizeof*lines,ln_cmp);  /* freq-rank: TUI + 'a i' pipe identical */
+    qsort(lines,(size_t)n,sizeof*lines,ln_cmp);
     {char*f=getenv("A_FILT_TAG"),*t;int j=0;
     if(f){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))&&strstr(f,t+1))lines[j++]=lines[i];n=j;}}
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
