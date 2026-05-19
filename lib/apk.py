@@ -383,6 +383,7 @@ JF(void,nStart)(JNIEnv*e,jclass c,jstring libDir,jstring filesDir){(void)c;
   {char rc[600];snprintf(rc,600,"%s/rclone.conf",home);setenv("RCLONE_CONFIG",rc,1);}
   chdir(home);
   setenv("PS1","$ ",1);
+  execlp("tmux","tmux","new-session","-A","-s","apk",(char*)NULL);
   execl("/system/bin/sh","sh",(char*)NULL);_exit(127);}
  pty_fd=m;run_=1;setenv("HOME",home,1);
  {char lp[512];snprintf(lp,512,"%s/.log",home);log_fd=open(lp,O_WRONLY|O_CREAT|O_TRUNC,0600);}
