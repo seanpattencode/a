@@ -661,7 +661,7 @@ int main(int argc, char **argv) {
     CWD(wd);
     alog(acmd, wd);
     const char *arg = argv[1];
-    if(strcmp(arg,"n")&&strcmp(arg,"note"))sync_bg();
+    if(strcmp(arg,"n")&&strcmp(arg,"note")&&strcmp(arg,"t")&&strcmp(arg,"task"))sync_bg();
 
     if (*arg && !arg[strspn(arg,"0123456789")]) { init_db(); return cmd_project_num(argc, argv, atoi(arg)); }
 

@@ -10,7 +10,7 @@ static void note_save(const char *d, const char *t) {
 }
 static char rdir[P],ltd[P]="";
 static void dl_norm(const char*,char*,size_t);
-static void rapid_note(const char*t){note_save(rdir,t);puts("✓");sync_pane();}
+static void rapid_note(const char*t){note_save(rdir,t);puts("✓");sync_pane(t);}
 typedef struct{char p[P];char t[512];}GN;
 static GN*gn;static int gn_cap;
 static int gncmp(const void*a,const void*b){return strcmp(strrchr(((const GN*)a)->p,'_'),strrchr(((const GN*)b)->p,'_'));}
@@ -49,7 +49,7 @@ static int cmd_note(int argc, char **argv) {
     if(argc>2&&!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
     {char t[B]="";ajoin(t,B,argc,argv,2);
-        note_save(dir,t);puts("✓");sync_pane();
+        note_save(dir,t);puts("✓");sync_pane(t);
         snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
@@ -90,10 +90,10 @@ static void rapid_task(const char*t){
             rename(ltd,nw);snprintf(ltd,P,"%s",nw);printf("✓ P%s\n",np);}
         else{char dn[32],df[P];dl_norm(t+2,dn,32);snprintf(df,P,"%s/deadline.txt",ltd);writef(df,dn);printf("✓ %s\n",dn);}
         return;}
-    task_add(rdir,t,50000);printf("✓ P50000 %s\n" THINT,t);}
+    task_add(rdir,t,50000);printf("✓ P50000 %s\n" THINT,t);sync_pane(t);}
 static int task_add_p(const char*dir,int argc,char**argv,int si){
     int pri=50000;if(si<argc&&is5d(argv[si])){pri=atoi(argv[si]);si++;if(si>=argc){puts("a task [PPPPP] <text>");return 1;}}
-    char t[B]="";ajoin(t,B,argc,argv,si);task_add(dir,t,pri);printf("✓ P%05d %s\n" THINT,pri,t);
+    char t[B]="";ajoin(t,B,argc,argv,si);task_add(dir,t,pri);printf("✓ P%05d %s\n" THINT,pri,t);sync_pane(t);
     snprintf(rdir,P,"%s",dir);rapid("t> ",rapid_task);return 0;}
 static void task_printbody(const char*path){
     size_t l;char*r=readf(path,&l);if(!r)return;if(!strncmp(r,"Text: ",6))r+=6;
