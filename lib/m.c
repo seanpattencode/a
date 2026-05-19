@@ -229,7 +229,7 @@ static int cmd_m_panel(int c, char **v) {
                 char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
                 o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
                 snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"e --nosb --tail %s/m/$F\"",DDIR,AROOT);
+                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn 50 %s/m/$F\"",DDIR,AROOT);
                     (void)!system(rc);} }
             break;
         }
@@ -363,9 +363,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",DDIR); mm_w(c,fn,"w");
-    snprintf(c,B,"tmux respawn-pane -k -t :.0 'e --nosb --tail %s/m/%s'",AROOT,fn); (void)!system(c);
-    snprintf(c,B,"%s/m_editorpid",DDIR); char*p=readf(c,NULL);
-    if(p)kill(atoi(p),SIGTERM); free(p); return 0;
+    snprintf(c,B,"tmux respawn-pane -k -t :.0 'tail -Fn 50 %s/m/%s'",AROOT,fn); (void)!system(c); return 0;
 }
 static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",DDIR);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
 static int m_main(void){return m_reinit("m.txt");}
@@ -433,7 +431,7 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
-                   "$S -b 'e --nosb --tail %2$s';"
+                   "$S -b 'tail -Fn 50 %2$s';"
                    "$S -l 3 'tail -Fn 50 %3$s';"
                    "$S -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
@@ -453,15 +451,10 @@ static int cmd_m(int c, char **v) {
             if(f){fprintf(f,"## system\n%s%s%s",sp?sp:"",(sp&&spl&&sp[spl-1]=='\n')?"":"\n",cur?cur:"## user\n");fclose(f);}
             free(sp);} free(cur); }
         m_render(sf);
-        char tf[P]; snprintf(tf,P,"%s/m_inXXXXXX",DDIR);
-        int fd = mkstemp(tf); if (fd < 0) continue; close(fd);
-        pid_t pp = fork();
-        if (!pp) { execlp("e","e","--box","message:",tf,(char*)0); _exit(127); }
-        snprintf(pf,P,"%s/m_editorpid",DDIR); char b2[16];snprintf(b2,16,"%d",pp);mm_w(pf,b2,"w");
-        waitpid(pp, NULL, 0);
-        size_t ml; char *m = readf(tf, &ml); unlink(tf);
-        if (!m || !ml) { free(m); continue; }
-        mm_w(sf, m, "a"); mm_w(sf, "\n", "a"); free(m);
+        write(1,"\n── message (Enter sends) ──\n> ",32);
+        char m[16384]; if(!fgets(m,sizeof m,stdin)) break;
+        if(m[0]=='\n'||!m[0]) continue;
+        mm_w(sf, m, "a");
         m_commit("u");
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
