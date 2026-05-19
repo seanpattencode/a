@@ -16,8 +16,7 @@ static int tm_has(const char *w) {
 static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
-    if(getenv("TMUX")){char t[256];if(w)tm_t(w,t);
-        execlp("tmux","tmux","switch-client","-t",w?t:TMS,(char*)NULL);}
+    if(getenv("TMUX"))execlp("tmux","tmux",w?"select-window":"switch-client","-t",w?w:TMS,(char*)NULL);
     if(w){char t[256];tm_t(w,t);execlp("tmux","tmux","new-session","-t",TMS,"-s",g,";","select-window","-t",t,(char*)NULL);}
     execlp("tmux","tmux","new-session","-t",TMS,"-s",g,(char*)NULL);}
 static int tm_new(const char *w, const char *wd, const char *cmd) {
