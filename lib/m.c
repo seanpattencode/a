@@ -392,32 +392,21 @@ static int m_reset(void) {
 }
 
 static void m_render(const char *sf, const char *spf) {
-    /* materialized view: rebuild combo from latest a_cat + i.txt, append a-loaded block if hash changed */
     char combo[P]; snprintf(combo,P,"%s/m/combo.txt",AROOT);
-    { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt (meta-agent identity) <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo);
+    { char c[B]; snprintf(c,B,"{ cat %1$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %1$s/m/i.txt 2>/dev/null; } > %2$s",AROOT,combo);
       (void)!system(c); }
-    load_cfg();
-    size_t sl=0,al=0,gl=0; char *sc=readf(spf,&sl);
-    char *ac=fexists(combo)?readf(combo,&al):NULL;
-    char *gc=readf(g_set,&gl);
+    char *cur=readf(sf,NULL);
+    if (cur && strstr(cur,"\n## a-loaded ")) { free(cur); return; }
+    free(cur); load_cfg();
+    size_t al=0; char *sc=readf(spf,NULL), *ac=fexists(combo)?readf(combo,&al):NULL, *gc=readf(g_set,NULL);
     const char *md=cfget("m_model"); if(!*md)md="opus";
     const char *ef=cfget("m_effort"); if(!*ef)ef="low";
-    unsigned long h=5381;
-    #define H(s,n) if(s) for(size_t i=0;i<(n);i++) h=((h<<5)+h)+(unsigned char)(s)[i]
-    H(sc,sl); H(ac,al); H(gc,gl); H(md,strlen(md)); H(ef,strlen(ef));
-    #undef H
-    char mk[48]; snprintf(mk,48,"## a-loaded sha=%08lx",h);
-    char *cur=readf(sf,NULL);
-    if (!cur || !strstr(cur,mk)) {
-        FILE *f=fopen(sf,"a");
-        if (f) { time_t t=time(NULL); char ts[32];
-            strftime(ts,32,"%FT%T",localtime(&t));
-            fprintf(f,"\n%s %s\nflags: --model %s --effort %s --tools \"\"\n--system-prompt:\n%s\n",mk,ts,md,ef,sc?sc:"");
-            if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",combo,al,ac);
-            fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:"");
-            fclose(f); }
-    }
-    free(cur); free(sc); free(ac); free(gc);
+    FILE *f=fopen(sf,"a");
+    if (f) { time_t t=time(NULL); char ts[32]; strftime(ts,32,"%FT%T",localtime(&t));
+        fprintf(f,"\n## a-loaded %s\nflags: --model %s --effort %s --tools \"\"\n--system-prompt:\n%s\n",ts,md,ef,sc?sc:"");
+        if(ac) fprintf(f,"--append-system-prompt-file: %s (%zu b)\n%s\n",combo,al,ac);
+        fprintf(f,"--settings: %s\n%s\n## a-loaded-end\n## user\n",g_set,gc?gc:""); fclose(f); }
+    free(sc); free(ac); free(gc);
 }
 
 static int cmd_m(int c, char **v) {

@@ -59,12 +59,12 @@ linux*)
 ~RShift::{
 KeyWait "RShift"
 if A_PriorKey="RShift"
-SendInput "^b{n}"
+SendInput "^{PgDn}"
 }
 AHK
         powershell.exe -NoProfile -Command "if(!(Get-Command AutoHotkey64.exe -EA 0)){winget install -e --silent --accept-package-agreements --accept-source-agreements AutoHotkey.AutoHotkey|Out-Null}" 2>/dev/null || :
         cmd.exe /c start "" "$(wslpath -w "$SU/a-rshift.ahk")" 2>/dev/null &
-        ok "WSL: right shift tap = tmux next-window"
+        ok "WSL: right shift = Ctrl+PageDown"
         exit 0
     fi
     # Capslock → Hyper
@@ -89,21 +89,20 @@ AHK
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB command "$ABIN/a-launch"
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB binding '<Hyper>a'
     ok "CapsLock+a → a i (or a ui if running)"
-    sudo apt install -y keyd >/dev/null 2>&1 && printf "[ids]\n*\n\n[main]\nrightshift = overloadt(shift, command(runuser -u %s -- %s next-window), 200)\n" "$USER" "$(command -v tmux)" | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift tap = tmux next-window" || warn "keyd skipped" ;;
+    sudo apt install -y keyd >/dev/null 2>&1 && printf '[ids]\n*\n\n[main]\nrightshift = overloadt(shift, C-pagedown, 200)\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift = Ctrl+PageDown (tmux next-window / Chrome next-tab)" || warn "keyd skipped" ;;
 darwin*)
-    TMUX_BIN=$(command -v tmux)
     if [[ -d /Applications/Hammerspoon.app ]]; then  # Macs already on Hammerspoon — keep old method
     mkdir -p ~/.hammerspoon
-    cat > ~/.hammerspoon/init.lua << LUA
+    cat > ~/.hammerspoon/init.lua << 'LUA'
 local t,c,et=0,false,hs.eventtap.event.types
 hs.eventtap.new({et.flagsChanged},function(e)
   if e:getKeyCode()==60 then
     if e:getFlags().shift then t=hs.timer.secondsSinceEpoch();c=true
-    elseif c and hs.timer.secondsSinceEpoch()-t<.3 then hs.task.new("$TMUX_BIN",nil,{"next-window"}):start();c=false end end end):start()
+    elseif c and hs.timer.secondsSinceEpoch()-t<.3 then hs.eventtap.keyStroke({"ctrl"},"pagedown",0);c=false end end end):start()
 hs.eventtap.new({et.keyDown},function() c=false end):start()
 LUA
     killall Hammerspoon 2>/dev/null||true; sleep 1; open -a Hammerspoon
-    ok "Hammerspoon → right shift tap = tmux next-window"
+    ok "Hammerspoon → right shift = Ctrl+PageDown"
     info "GRANT: System Settings → Privacy & Security → Accessibility → enable Hammerspoon"
     else
     command -v swiftc >/dev/null || { warn "need Command Line Tools: xcode-select --install"; exit 1; }
@@ -114,8 +113,7 @@ import Foundation
 func run(_ a: [String]) { let p = Process(); p.executableURL = URL(fileURLWithPath: a[0]); p.arguments = Array(a.dropFirst()); try? p.run() }
 run(["/usr/bin/hidutil", "property", "--set", "{\"UserKeyMapping\":[{\"HIDKeyboardModifierMappingSrc\":0x700000039,\"HIDKeyboardModifierMappingDst\":0x70000006D}]}"])
 _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
-let arg = CommandLine.arguments
-let tmux = arg.count > 1 ? arg[1] : "tmux", summon = arg.count > 2 ? arg[2] : ""
+let summon = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
 var t = 0.0, cand = false
 let mask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
 let cb: CGEventTapCallBack = { _, type, e, _ in
@@ -125,7 +123,7 @@ let cb: CGEventTapCallBack = { _, type, e, _ in
     if kc == 79 && e.getIntegerValueField(.keyboardEventAutorepeat) == 0 { run(["/usr/bin/open", summon]) }
   } else if kc == 60 {
     if e.flags.contains(.maskShift) { t = Date().timeIntervalSince1970; cand = true }
-    else if cand && Date().timeIntervalSince1970 - t < 0.3 { run([tmux, "next-window"]); cand = false } }
+    else if cand && Date().timeIntervalSince1970 - t < 0.3 { for d in [true,false] { let e = CGEvent(keyboardEventSource: nil, virtualKey: 0x79, keyDown: d); e?.flags = .maskControl; e?.post(tap: .cghidEventTap) }; cand = false } }
   return Unmanaged.passUnretained(e) }
 guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
     options: .listenOnly, eventsOfInterest: CGEventMask(mask), callback: cb, userInfo: nil) else { exit(1) }
@@ -140,11 +138,11 @@ SWIFT
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>a-keys</string>
-<key>ProgramArguments</key><array><string>$ABIN/a-keys</string><string>$TMUX_BIN</string><string>$ABIN/a-summon.command</string></array>
+<key>ProgramArguments</key><array><string>$ABIN/a-keys</string><string>$ABIN/a-summon.command</string></array>
 <key>RunAtLoad</key><true/></dict></plist>
 PLIST
     launchctl unload "$PL" 2>/dev/null||true; launchctl load "$PL"
-    ok "a-keys → caps lock summons a · right shift tap → tmux next-window"
+    ok "a-keys → caps lock summons a · right shift = Ctrl+PageDown"
     info "GRANT: System Settings → Privacy & Security → Accessibility → enable a-keys, then re-run: a capslock"
     fi ;;
 *)  warn "unsupported OS — run $ABIN/a-launch manually" ;;
