@@ -11,6 +11,9 @@ static int cmd_project_num(int argc, char **argv, int idx) { (void)argc; (void)a
             printf("Cloning %s...\n",p->repo);snprintf(c,B,"git clone '%s' '%s'",p->repo,p->path);(void)!system(c);
         }
         if (!dexists(p->path)) { printf("x %s\n", p->path); return 1; }
+        if (getenv("A_TUI")) { unsetenv("A_TUI"); (void)!chdir(p->path);
+            int t=open("/dev/tty",O_WRONLY);if(t>=0){dup2(t,2);close(t);}
+            const char*sh=getenv("SHELL");execlp(sh?sh:"bash",sh?sh:"bash","-i",(char*)NULL);}
         snprintf(c,B,"%s/cd_target",DDIR); writef(c,p->path); printf("%s\n",p->path);
         if(p->gdrive[0]) return 0; /* gdrive project: skip git/ghost */
         if(!fork()){snprintf(c,B,"git -C '%s' ls-remote --exit-code origin HEAD>/dev/null 2>&1&&mkdir -p '%s/logs'&&touch '%s/logs/push.ok'",p->path,DDIR,DDIR);(void)!system(c);_exit(0);}
