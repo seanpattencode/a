@@ -111,6 +111,7 @@ static void tm_ensure_conf(void) {
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
         "bind -n C-k if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-k' 'next-window'\n"
         "bind -n C-j if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-j' 'previous-window'\n"
+        "bind -n C-PageDown next-window\n"
         "bind-key -n C-n new-window\n"
         "bind-key -n C-t new-window\n"
         "bind-key -n C-y split-window -fh\n"
