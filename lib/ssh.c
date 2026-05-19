@@ -244,3 +244,11 @@ static int cmd_ssh(int argc,char**argv){
         if(cmd[0])alarm(30);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 }
+/* fl n|p <host>: advance remote a: window; if at end, advance local tmux */
+static int cmd_fl(int c,char**v){
+    if(c<4)return 1;int n=*v[2]=='n';const char*w=n?"next-window":"previous-window";
+    char cm[B],o[8]="";
+    snprintf(cm,B,"a ssh %s 'w=$(tmux display -p -ta: \"#{window_index} #{session_windows}\");set -- $w;[ \"$1\" %s ]&&{ tmux %s -ta:;echo r;}' 2>/dev/null",v[3],n?"-lt $(($2-1))":"-gt 0",w);
+    pcmd(cm,o,8);
+    if(*o!='r')execlp("tmux","tmux",w,(char*)NULL);
+    return 0;}

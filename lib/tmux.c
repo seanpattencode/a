@@ -6,7 +6,7 @@ static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_atta
 static void tm_ensure_sess(void){
     tm_gc();
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
-    (void)!system("tmux new-session -d -s '"TMS"';tmux set-option -gs exit-empty off 2>/dev/null;tmux set-option -gs exit-unattached off 2>/dev/null");}
+    (void)!system("{ tmux new-session -d -s '"TMS"';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
@@ -104,8 +104,8 @@ static void tm_ensure_conf(void) {
         "set -g status-right \"\"\n"
         "set -g status-format[0] \"#[align=left]#{?#{e|>:#{session_windows},1},#[range=user|prev]  <  #[norange],}#[align=centre]#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#{?window_active,#[fg=colour232 bg=colour231 bold],#[fg=colour231 bg=colour243]}} #{?window_bell_flag,\\U0001F534 ,}#I:#W #{?window_active, , }#[default]#[norange]}#[align=right]#{?#{e|>:#{session_windows},1},#[range=user|next]  >  #[norange],}\"\n"
         "set -g status-format[1] \"#[align=centre]#[range=user|aa]a#[norange] #[range=user|win]Win#[norange] #[range=user|new]Pane#[norange] #[range=user|x]X#[norange] #[range=user|close]Close#[norange] #[range=user|menu] ... #[norange]#[align=right]#[range=user|kbd]Kb#[norange]\"\n"
-        "bind-key -n M-Right next-window\n"
-        "bind-key -n M-Left previous-window\n"
+        "bind -n M-Right if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
+        "bind -n M-Left if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl p #W\"' previous-window\n"
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
         "bind -n C-k if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-k' 'next-window'\n"
         "bind -n C-j if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-j' 'previous-window'\n"
