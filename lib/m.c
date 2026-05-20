@@ -433,8 +433,6 @@ static int cmd_m(int c, char **v) {
     snprintf(pf,P,"%s/m_file",DDIR); mm_w(pf,fn,"w");
     for (;;) {
         g_halt = 0;
-        snprintf(pf,P,"%s/m_file",DDIR); char *fp=readf(pf,NULL);
-        if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(sf,P,"%s/m/%s",AROOT,fp);} free(fp);
         { size_t spl=0; char *sp=readf(spf,&spl); char *cur=readf(sf,NULL);
           char hdr[B]; snprintf(hdr,B,"## system\n%s%s",sp?sp:"",(spl&&sp[spl-1]=='\n')?"":"\n");
           if (!cur || strncmp(cur,hdr,strlen(hdr))) {
