@@ -35,7 +35,7 @@ static void init_db(void) {
     }
     snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
     if (!fexists(p)) {
-        const char *C = "claude --dangerously-skip-permissions --effort max";
+        const char *C = "claude --dangerously-skip-permissions";
         const char *X = "codex -c model_reasoning_effort=\"xhigh\" --model gpt-5.5 --dangerously-bypass-approvals-and-sandbox";
         char buf[B*4]; snprintf(buf, sizeof(buf),
             "g|gemini|gemini --yolo\ngemini|gemini|gemini --yolo\n"
@@ -134,8 +134,6 @@ static void load_sess(void) {
                 if (dq) *dq = 0;
             }
             snprintf(SE[NSE].cmd, 1024, "%s", expanded);
-            if(strstr(SE[NSE].cmd,"claude ")&&!strstr(SE[NSE].cmd,"--effort")){char t[1024],*p=strstr(SE[NSE].cmd,"claude ");
-                snprintf(t,1024,"%.*sclaude --effort max %s",(int)(p-SE[NSE].cmd),SE[NSE].cmd,p+7);snprintf(SE[NSE].cmd,1024,"%s",t);}
             NSE++;
         }
         if (!nl) break; line = nl + 1;
