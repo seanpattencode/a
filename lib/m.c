@@ -4,7 +4,6 @@
  * e --nosb: skip e's internal scrollbar — tmux pane-scrollbars handles vertical scroll, avoids fold-aware sb math */
 
 static volatile pid_t g_cp = 0;
-static pid_t g_cmt = 0;
 static int g_halt = 0;
 static volatile sig_atomic_t g_rst = 0;
 static void m_sint(int s){(void)s;if(g_cp>0)kill(g_cp,SIGTERM);}
@@ -21,26 +20,15 @@ static void m_status(const char *msg) {
 
 static void m_commit(const char *tag) {
     if (g_halt) return;
-    if (g_cmt > 0) {
-        int st; pid_t r;
-        while ((r = waitpid(g_cmt, &st, 0)) < 0 && errno == EINTR) {}
-        g_cmt = 0;
-        if (r < 0 || !WIFEXITED(st) || WEXITSTATUS(st)) {
-            char mp[P], m[512];
-            snprintf(m, 512, "\n## error\nauto-commit failed (exit %d). working tree dirty. fix: `git -C adata/m status` then `git -C adata/m commit -m fix`. type to retry.\n", WIFEXITED(st)?WEXITSTATUS(st):-1);
-            snprintf(mp, P, "%s/m/m.txt", AROOT); mm_w(mp, m, "a");
-            m_status("✗ commit failed — see ## error in m.txt");
-            if (g_cp > 0) kill(g_cp, SIGTERM);
-            g_halt = 1; return;
-        }
-    }
     pid_t p = fork();
     if (!p) {
+        int lf = open("/tmp/.a_m.lock", O_CREAT|O_RDWR, 0644);
+        if (lf >= 0) flock(lf, LOCK_EX);
         char c[B];
-        snprintf(c, B, "cd '%s/m' && git pull --rebase -q 2>/dev/null; git add -A && (git diff --cached --quiet || git commit -q -m '%s'); git push -q 2>/dev/null", AROOT, tag);
+        snprintf(c, B, "cd '%s/m' && git add -A && (git diff --cached --quiet || git commit -q -m '%s'); git pull --rebase --autostash -q 2>/dev/null; git push -q 2>/dev/null", AROOT, tag);
         execlp("sh", "sh", "-c", c, NULL); _exit(127);
     }
-    if (p > 0) { g_cmt = p; char sm[32]; snprintf(sm, 32, "git sync %s", tag); m_status(sm); }
+    if (p > 0) { char sm[32]; snprintf(sm, 32, "git sync %s", tag); m_status(sm); }
 }
 
 static int mm_extract(const char *a, char *bash, size_t bsz, size_t *eo) {
@@ -104,6 +92,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         _exit(127);
     }
     close(pp[1]); g_cp = cp;
+    int lf = open("/tmp/.a_m.lock", O_CREAT|O_RDWR, 0644); if(lf>=0) flock(lf, LOCK_EX);
     FILE *fp = fdopen(pp[0], "r"), *of = fopen(sf, "a");
     off_t start = ftello(of);
     char l[32768]; size_t al = 0, pl = 0, eo;
@@ -117,6 +106,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         if (stop) break;
     }
     fclose(fp); fclose(of); waitpid(cp, NULL, 0); g_cp = 0;
+    if(lf>=0){flock(lf,LOCK_UN);close(lf);}
     if (!pl) { char *e=readf(errp,NULL); if(e&&*e){char m[2048]; snprintf(m,2048,"\n## error (%s)\n%s\n",ag,e); mm_w(sf,m,"a");} free(e); }
     if (!bash[0]) mm_extract(a, bash, bsz, NULL);
     return 0;
