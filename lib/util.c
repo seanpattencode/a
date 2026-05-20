@@ -50,20 +50,19 @@ static const char *bname(const char *p) { const char *s = strrchr(p, '/'); retur
 /* join argv[from..argc) with spaces into buf */
 static int ajoin(char*b,int sz,int argc,char**argv,int from){int l=0;for(int i=from;i<argc;i++)l+=snprintf(b+l,(size_t)(sz-l),"%s%s",i>from?" ":"",argv[i]);return l;}
 
-/* rapid input loop — call fn(line) for each line, empty line exits */
+/* rapid input loop — call fn(line) for each line, empty line exits; bracketed paste = one note */
 static void rapid(const char *prompt, void (*fn)(const char*)) {
     if (!isatty(STDIN_FILENO)) return; perf_disarm();
-    struct termios orig,raw;tcgetattr(0,&orig);raw=orig;
-    raw.c_lflag&=~(tcflag_t)(ISIG|ICANON|ECHO);raw.c_cc[VMIN]=1;raw.c_cc[VTIME]=0;
-    tcsetattr(0,TCSAFLUSH,&raw);char line[512];int len;
-    for(;;){fputs(prompt,stdout);fflush(stdout);len=0;
-        for(;;){char c;if(read(0,&c,1)!=1){len=-1;break;}
-            if(c=='\x1b'||c==3){len=-1;break;}
-            if(c=='\r'||c=='\n'){putchar('\n');break;}
-            if((c=='\x7f'||c=='\b')&&len>0){len--;fputs("\b \b",stdout);fflush(stdout);continue;}
-            if(len<510){line[len++]=c;putchar(c);fflush(stdout);}}
-        if(len<0)break;line[len]=0;if(!len)break;fn(line);}
-    tcsetattr(0,TCSAFLUSH,&orig);putchar('\n');
+    (void)!write(1,"\x1b[?2004h",8);
+    static char b[65536];size_t bl;char *p,*e;
+    for(;;){fputs(prompt,stdout);fflush(stdout);bl=0;b[0]=0;int paste=0;
+        for(;;){if(!fgets(b+bl,sizeof b-bl,stdin))goto x;
+            bl+=strlen(b+bl);
+            if((p=strstr(b,"\x1b[200~"))){memmove(p,p+6,strlen(p+6)+1);bl-=6;paste=1;continue;}
+            if((e=strstr(b,"\x1b[201~"))){*e=0;break;}
+            if(!paste&&b[bl-1]=='\n'){b[--bl]=0;break;}}
+        if(!*b)break;fn(b);}
+    x:(void)!write(1,"\x1b[?2004l",8);
 }
 
 /* raw terminal helpers */
