@@ -443,9 +443,12 @@ static int cmd_m(int c, char **v) {
             if(f){fputs(hdr,f); fputs(us?us+1:"## user\n",f); fclose(f);} }
           free(sp); free(cur); }
         write(1,"\n── message (Enter sends) ──\n› ",41);
-        char m[16384]; if(!fgets(m,sizeof m,stdin)) { if(g_rst){g_rst=0;continue;} break; }
-        if(m[0]=='\n'||!m[0]) continue;
-        mm_w(sf, m, "a");
+        (void)!write(1,"\x1b[?2004h",8);
+        static char m[65536];size_t ml=paste_line(m,sizeof m,stdin);
+        (void)!write(1,"\x1b[?2004l",8);
+        if(!ml){if(g_rst){g_rst=0;continue;} break;}
+        if(!m[0]) continue;
+        m[ml]='\n';m[ml+1]=0;mm_w(sf, m, "a");
         m_commit("u");
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
