@@ -20,15 +20,12 @@ static void m_status(const char *msg) {
 
 static void m_commit(const char *tag) {
     if (g_halt) return;
-    pid_t p = fork();
-    if (!p) {
-        int lf = open("/tmp/.a_m.lock", O_CREAT|O_RDWR, 0644);
-        if (lf >= 0) flock(lf, LOCK_EX);
+    if (fork() == 0) {
         char c[B];
-        snprintf(c, B, "cd '%s/m' && git add -A && (git diff --cached --quiet || git commit -q -m '%s'); git pull --rebase --autostash -q 2>/dev/null; git push -q 2>/dev/null", AROOT, tag);
+        snprintf(c, B, "cd '%s/m' && git add -A && (git diff --cached --quiet || git commit -q -m '%s'); git push -q 2>/dev/null", AROOT, tag);
         execlp("sh", "sh", "-c", c, NULL); _exit(127);
     }
-    if (p > 0) { char sm[32]; snprintf(sm, 32, "git sync %s", tag); m_status(sm); }
+    char sm[32]; snprintf(sm, 32, "git sync %s", tag); m_status(sm);
 }
 
 static int mm_extract(const char *a, char *bash, size_t bsz, size_t *eo) {
@@ -92,7 +89,6 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         _exit(127);
     }
     close(pp[1]); g_cp = cp;
-    int lf = open("/tmp/.a_m.lock", O_CREAT|O_RDWR, 0644); if(lf>=0) flock(lf, LOCK_EX);
     FILE *fp = fdopen(pp[0], "r"), *of = fopen(sf, "a");
     off_t start = ftello(of);
     char l[32768]; size_t al = 0, pl = 0, eo;
@@ -106,7 +102,6 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         if (stop) break;
     }
     fclose(fp); fclose(of); waitpid(cp, NULL, 0); g_cp = 0;
-    if(lf>=0){flock(lf,LOCK_UN);close(lf);}
     if (!pl) { char *e=readf(errp,NULL); if(e&&*e){char m[2048]; snprintf(m,2048,"\n## error (%s)\n%s\n",ag,e); mm_w(sf,m,"a");} free(e); }
     if (!bash[0]) mm_extract(a, bash, bsz, NULL);
     return 0;
