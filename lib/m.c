@@ -136,14 +136,14 @@ static int cmd_m_panel(int c, char **v) {
     static const struct { const char *l, *cm; } OPS[] = {
         {"main agent","a m main"},{"new agent","a m new"},
         {"archive turn","a m archive turn"},{"archive","a m archive"},
-        {"undo","a m archive undo"},{"restart","a m restart"},{NULL,NULL}};
+        {"undo","a m archive undo"},{"restart","a m restart"},{"edit","a m edit"},{NULL,NULL}};
     struct termios old, raw; tcgetattr(0, &old); raw = old;
     raw.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG);
     raw.c_cc[VMIN] = 1; raw.c_cc[VTIME] = 0;
     tcsetattr(0, TCSANOW, &raw);
     write(1, "\033[?1000h\033[?1006h", 16);
-    char last[80] = "";
-    int bx[64],bw[64],br[64],bi[64]; char bk[64]; int nb;
+    char last[160] = "";
+    int bx[64],bw[64],br[64],bi[64],sel=0; char bk[64]; int nb=0;
     for (;;) {
         load_cfg();
         const char *cg = cfget("m_agent"); if (!*cg) cg = "claude";
@@ -160,61 +160,88 @@ static int cmd_m_panel(int c, char **v) {
         tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
         char hb[16]={0}; pcmd("tmux display -p -t \"$TMUX_PANE\" '#{pane_height}'",hb,16); int ph=atoi(hb);
         struct winsize ws={0}; ioctl(1,TIOCGWINSZ,&ws); int cw=ws.ws_col?ws.ws_col:80;
+        if(ph<=5) sel=0;
         write(1, "\033[2J\033[H", 7); nb = 0;
         printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
         if (gg) printf("gemini --yolo --output-format stream-json -m %s\033[K",cm);
         else if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
         else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K",cm,cf);
-        {const char*lbl=ph>5?" [-]  CLICK HERE TO COLLAPSE TOOLS  [-]":" [+]  CLICK HERE TO EXPAND TOOLS  [+]";
-         printf("\033[2;1H\033[7m%s",lbl); int ll=(int)strlen(lbl);
+        {const char*lbl=ph>5?"[-] collapse $ tmux resize-pane -t \"$TMUX_PANE\" -y 2":"[+] expand $ tmux resize-pane -t \"$TMUX_PANE\" -y 15";
+         printf("\033[2;1H\033[%dm%s",sel==nb?7:1,lbl); int ll=(int)strlen(lbl);
          for(int i=ll;i<cw;i++)putchar(' '); printf("\033[0m");
          bx[nb]=0;bw[nb]=cw;br[nb]=1;bk[nb]='T';bi[nb]=0;nb++;}
         if (ph > 5) { printf("\033[3;1H");
         #define VROW(lbl,arr,row,kind,curv) do{int cx=printf("%s: ",lbl);\
-            for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),w=(int)strlen(arr[i])+2;\
+            for(int i=0;arr[i];i++){int s=!strcmp(curv,arr[i]),f=sel==nb,w=(int)strlen(arr[i])+2;\
                 bx[nb]=cx;bw[nb]=w;br[nb]=row;bk[nb]=kind;bi[nb]=i;nb++;\
-                printf("%s[%s]%s ",s?"\033[7m":"",arr[i],s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
+                printf("%s[%s]%s ",f?"\033[7m":s?"\033[1m":"",arr[i],f||s?"\033[0m":"");cx+=w+1;}printf("\033[K\n");}while(0)
         VROW("agent",AGTS,2,'a',cg); VROW("model",MODS,3,'m',cm);
         if (!gg) VROW("effort",EFFS,4,'e',cf);
         if (xx) VROW("tier",TIERS,5,'t',ct);
         #undef VROW
-        {int cx=0;for(int i=0;OPS[i].l;i++){int w=(int)strlen(OPS[i].l)+2;
+        {int cx=0;for(int i=0;OPS[i].l;i++){int f=sel==nb,w=(int)strlen(OPS[i].l)+2;
             bx[nb]=cx;bw[nb]=w;br[nb]=opsr;bk[nb]='o';bi[nb]=i;nb++;
-            printf("[%s] ",OPS[i].l);cx+=w+1;}printf("\033[K\n");} }
-        printf("\033[90m%s\033[0m\033[K",last); fflush(stdout);
+            printf("%s[%s]%s ",f?"\033[7m":"",OPS[i].l,f?"\033[0m":"");cx+=w+1;}printf("\033[K\n");} }
+        if(sel>=nb)sel=nb-1; if(sel<0)sel=0;
+        char sc[B];
+        if (bk[sel]=='T') snprintf(sc,B,"tmux resize-pane -t \"$TMUX_PANE\" -y %d",ph>5?2:15);
+        else if (bk[sel]=='a') { const char*a=AGTS[bi[sel]]; snprintf(sc,B,"a config m_agent %s; a config m_model %s; a config m_effort %s",a,!strcmp(a,"codex")?"gpt-5.5":!strcmp(a,"gemini")?"gemini-2.5-flash":"opus",!strcmp(a,"codex")?"xhigh":"low"); }
+        else if (bk[sel]=='m') snprintf(sc,B,"a config m_model %s",MODS[bi[sel]]);
+        else if (bk[sel]=='e') snprintf(sc,B,"a config m_effort %s",EFFS[bi[sel]]);
+        else if (bk[sel]=='t') snprintf(sc,B,"a config m_tier %s",TIERS[bi[sel]]);
+        else snprintf(sc,B,"%s",OPS[bi[sel]].cm);
+        if(ph>5){int bot=opsr+2;
+            printf("\033[%d;1H\033[36m$ %s\033[0m\033[K",bot,sc);
+            printf("\033[%d;1H\033[90marrows select Enter run q exit %s\033[0m\033[K",bot+1,last);}
+        fflush(stdout);
         char ch; ssize_t rr=read(0,&ch,1); if(rr==0)break; if(rr!=1)continue;
-        if (ch == 3 || ch == 4) break;
-        if (ch != '\x1b') continue;
-        int av; usleep(50000); ioctl(0, FIONREAD, &av); if (!av) break;
-        char s[2]; if (read(0, s, 1) != 1 || s[0] != '[' || read(0, s+1, 1) != 1 || s[1] != '<') continue;
-        int btn=0,mx=0,my=0; char mc;
-        while (read(0,&mc,1)==1 && mc!=';') btn = btn*10+(mc-'0');
-        while (read(0,&mc,1)==1 && mc!=';') mx = mx*10+(mc-'0');
-        while (read(0,&mc,1)==1 && mc!='M' && mc!='m') my = my*10+(mc-'0');
-        if (mc!='M' || btn!=0) continue;
-        int gx = mx-1, gy = my-1;
-        for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) {
-            if (bk[i]=='T') { char hb2[16]={0}; pcmd("tmux display -p -t \"$TMUX_PANE\" '#{pane_height}'",hb2,16);
-                char cmd[64]; snprintf(cmd,64,"tmux resize-pane -t \"$TMUX_PANE\" -y %d",atoi(hb2)>5?2:15);
-                (void)!system(cmd); break; }
-            if (bk[i]=='a') { const char*a=AGTS[bi[i]]; cfset("m_agent",a);
-                cfset("m_model",!strcmp(a,"codex")?"gpt-5.5":!strcmp(a,"gemini")?"gemini-2.5-flash":"opus");
-                cfset("m_effort",!strcmp(a,"codex")?"xhigh":"low");
-                snprintf(last,80,"agent=%s",a); }
-            else if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,80,"model=%s",MODS[bi[i]]); }
-            else if (bk[i]=='e') { cfset("m_effort",EFFS[bi[i]]); snprintf(last,80,"effort=%s",EFFS[bi[i]]); }
-            else if (bk[i]=='t') { cfset("m_tier",TIERS[bi[i]]); snprintf(last,80,"tier=%s",TIERS[bi[i]]); }
-            else { static time_t aw=0; time_t now=time(NULL);
-                if (!strcmp(OPS[bi[i]].l,"archive") && now-aw>=10) {
-                    snprintf(last,80,"\033[33m⚠ main is for curation, not bulk-archive — click again within 10s, or use [archive turn]\033[0m");
-                    aw=now; break; }
-                aw=0;
-                char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
-                o[strcspn(o,"\n")]=0; time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
-                snprintf(last,80,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32m✓":"\033[31m✗",OPS[bi[i]].l,o);
-                if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn +1 %s/m/$F\"",DDIR,AROOT);
-                    (void)!system(rc);} }
-            break;
+        if (ch == 3 || ch == 4 || ch == 'q') break;
+        int hit=-1;
+        if (ch == '\r' || ch == '\n' || ch == ' ') hit=sel;
+        else if (ch != '\x1b') continue;
+        else {
+            int av; usleep(50000); ioctl(0, FIONREAD, &av); if (!av) break;
+            char s[2]; if (read(0, s, 1) != 1 || s[0] != '[' || read(0, s+1, 1) != 1) continue;
+            if (s[1]=='A' || s[1]=='D') { sel=(sel+nb-1)%nb; continue; }
+            if (s[1]=='B' || s[1]=='C') { sel=(sel+1)%nb; continue; }
+            if (s[1] != '<') continue;
+            int btn=0; char mc;
+            int mx=0,my=0;
+            while (read(0,&mc,1)==1 && mc!=';') btn = btn*10+(mc-'0');
+            while (read(0,&mc,1)==1 && mc!=';') mx = mx*10+(mc-'0');
+            while (read(0,&mc,1)==1 && mc!='M' && mc!='m') my = my*10+(mc-'0');
+            if (mc!='M' || btn!=0) continue;
+            int gx = mx-1, gy = my-1;
+            for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) { hit=sel=i; break; }
+        }
+        if (hit < 0) continue;
+        int i = hit;
+        if (bk[i]=='T') {
+            char hb2[16]={0}; pcmd("tmux display -p -t \"$TMUX_PANE\" '#{pane_height}'",hb2,16);
+            char cmd[64]; snprintf(cmd,64,"tmux resize-pane -t \"$TMUX_PANE\" -y %d",atoi(hb2)>5?2:15);
+            (void)!system(cmd); }
+        else if (bk[i]=='a') { const char*a=AGTS[bi[i]]; cfset("m_agent",a);
+            cfset("m_model",!strcmp(a,"codex")?"gpt-5.5":!strcmp(a,"gemini")?"gemini-2.5-flash":"opus");
+            cfset("m_effort",!strcmp(a,"codex")?"xhigh":"low");
+            snprintf(last,160,"agent=%s",a); }
+        else if (bk[i]=='m') { cfset("m_model",MODS[bi[i]]); snprintf(last,160,"model=%s",MODS[bi[i]]); }
+        else if (bk[i]=='e') { cfset("m_effort",EFFS[bi[i]]); snprintf(last,160,"effort=%s",EFFS[bi[i]]); }
+        else if (bk[i]=='t') { cfset("m_tier",TIERS[bi[i]]); snprintf(last,160,"tier=%s",TIERS[bi[i]]); }
+        else {
+            static time_t aw=0; time_t now=time(NULL);
+            if (!strcmp(OPS[bi[i]].l,"archive") && now-aw>=10) {
+                snprintf(last,160,"\033[33mrun [archive] again within 10s, or use [archive turn]\033[0m");
+                aw=now; continue;
+            }
+            aw=0;
+            char cmd[B],o[200]=""; snprintf(cmd,B,"%s 2>/dev/null",OPS[bi[i]].cm); int r=pcmd(cmd,o,200);
+            o[strcspn(o,"\n")]=0;
+            time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
+            snprintf(last,160,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32mOK":"\033[31mX",OPS[bi[i]].l,o);
+            if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){
+                char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn +1 %s/m/$F\"",DDIR,AROOT);
+                (void)!system(rc);
+            }
         }
     }
     write(1, "\033[?1000l\033[?1006l", 16);
@@ -362,6 +389,10 @@ static int m_reset(void) {
 }
 
 static int cmd_m(int c, char **v) {
+    if (c>2&&!strcmp(v[2],"edit")) { char p[P],fn[64]="m.txt",*f; const char*me=getenv("M_FILE");
+        if(me&&*me)snprintf(fn,64,"%s",me);
+        else{snprintf(p,P,"%s/m_file",DDIR); f=readf(p,NULL); if(f&&*f){f[strcspn(f,"\n")]=0;snprintf(fn,64,"%s",f);} free(f);}
+        char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb %s'",AROOT,fn); return system(cc); }
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
@@ -392,9 +423,9 @@ static int cmd_m(int c, char **v) {
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
                    "$S -b 'tail -Fn +1 %2$s';"
                    "$S -l 3 'tail -Fn 50 %3$s';"
-                   "$S -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
+                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%5$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
-             AROOT, sf, ss, DDIR);
+             AROOT, sf, ss, DDIR, fn);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];
     snprintf(pf,P,"%s/m_panel",DDIR); mm_w(pf,pty,"w");
