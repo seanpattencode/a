@@ -78,7 +78,7 @@ static void tm_ensure_conf(void) {
     FILE *f = fopen(cpath, "w");
     if (!f) return;
     const char *cc = clip_cmd();
-    fputs("# aio-managed-config\n"
+    fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\n"
         "set -g history-limit 1000000\n"
         "set -ga update-environment \"WAYLAND_DISPLAY\"\n"
         "set -ga update-environment \"SWAYSOCK\"\n"
@@ -125,9 +125,8 @@ static void tm_ensure_conf(void) {
         "bind-key -n M-a new-window 'while a i 2>/dev/null;do :;done'\n"
         "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
         "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
-        "omni) tmux new-window \"while a i 2>/dev/null;do :;done\";; "
-        "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; "
-        "win) tmux new-window \"while a i 2>/dev/null;do :;done\";; new) tmux splitw;; "
+        "omni|win) tmux new-window \"while a i 2>/dev/null;do :;done\";; "
+        "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; new) tmux splitw;; "
         "x) tmux killp;; close) tmux killw;; "
         "menu) tmux menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%%%\\\"\" Quit 5 detach Kill 6 kills;; "
         "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
@@ -139,11 +138,6 @@ static void tm_ensure_conf(void) {
     {const char*cm[]={"copy-mode","copy-mode-vi",NULL};
     for(int i=0;cm[i];i++) cc?fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel \"%s\"\n",cm[i],cc)
         :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);}
-    char vbuf[64] = ""; int vmaj = 0, vmin = 0;
-    pcmd("tmux -V 2>/dev/null", vbuf, 64);
-    sscanf(vbuf, "%*[^0-9]%d.%d", &vmaj, &vmin);
-    if (vmaj > 3 || (vmaj == 3 && vmin >= 6))
-        fputs("set -g pane-scrollbars on\nset -g pane-scrollbars-position right\n", f);
     fclose(f);
     char uconf[P]; snprintf(uconf, P, "%s/.tmux.conf", HOME);
     char *uc = readf(uconf, NULL);

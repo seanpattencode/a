@@ -80,6 +80,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     perf_disarm(); init_db();
     char cache[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);
     size_t len;char*raw=readf(cache,&len);
+    {struct stat c,s;char d[P];snprintf(d,P,"%s/ssh",SROOT);if(raw&&!stat(cache,&c)&&!stat(d,&s)&&s.st_mtime>c.st_mtime){free(raw);raw=0;}}
     if(!raw){gen_icache();raw=readf(cache,&len);if(!raw)return 1;}
     {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);FILE*ff=fopen(fp,"r");if(ff){char ln[128];nfq=0;
         while(nfq<1024&&fgets(ln,128,ff)){char*c=strchr(ln,':');if(!c)continue;*c=0;

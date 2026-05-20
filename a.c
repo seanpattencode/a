@@ -207,6 +207,7 @@ install)
             brew tap hudochenkov/sshpass 2>/dev/null; brew install git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null||brew upgrade git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null
             /opt/homebrew/bin/python3 -m pip install -q --break-system-packages pyobjc-framework-Quartz 2>/dev/null
             command -v clang &>/dev/null || { xcode-select --install 2>/dev/null; warn "Run 'xcode-select --install' then retry"; }
+            HS="$D/adata/git/settings/mac/hammerspoon.lua"; [[ -f "$HS" ]] && { [[ -d /Applications/Hammerspoon.app ]] || brew install --cask hammerspoon &>/dev/null; mkdir -p "$HOME/.hammerspoon"; ln -sfn "$HS" "$HOME/.hammerspoon/init.lua"; ln -sf /Applications/Hammerspoon.app/Contents/Frameworks/hs/hs "$BIN/hs" 2>/dev/null; open -ga Hammerspoon; sleep 0.6; "$BIN/hs" -c "hs.reload()" &>/dev/null; sleep 0.4; "$BIN/hs" -c "1+1" &>/dev/null && ok "hammerspoon (right-shift→a fl)" || warn "hammerspoon: grant Accessibility in System Settings"; }
             ok "tmux + node + gh + rclone" ;;
         debian)
             if [[ -n "$SUDO" ]]; then export DEBIAN_FRONTEND=noninteractive
