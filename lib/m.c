@@ -80,7 +80,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
             execlp("sh","sh","-c",g,(char*)0); }
         else if (is_codex) { char x[B],t[80]="";
             if (has_tier) snprintf(t,80," -c 'service_tier=\"%s\"'",tier);
-            snprintf(x,B,"iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
+            snprintf(x,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
             execlp("sh","sh","-c",x,(char*)0);
         } else { char x[B*2];
             snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\" --append-system-prompt-file <(cat %2$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %2$s/m/i.txt 2>/dev/null) --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,AROOT);
@@ -155,8 +155,11 @@ static int cmd_m_panel(int c, char **v) {
         const char *ct = cfget("m_tier"); if (!*ct) ct = "default";
         int opsr = 4 + (!gg) + xx;
         struct stat st; long tot=0; char pa[P];
-        snprintf(pa,P,"%s/m/m.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
-        snprintf(pa,P,"%s/m/combo.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
+        static long mc=0; static time_t mt=0;
+        snprintf(pa,P,"%s/m/m.txt",AROOT);
+        if(!stat(pa,&st)){if(st.st_mtime!=mt){FILE*mf=fopen(pa,"r");mc=0;if(mf){char ln[4096];int s=0;while(fgets(ln,4096,mf)){if(!strncmp(ln,"## a-loaded",11))s=(ln[11]==' ');else if(!s)mc+=(long)strlen(ln);}fclose(mf);}mt=st.st_mtime;}tot+=mc;}
+        snprintf(pa,P,"%s/local/a_cat.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
+        snprintf(pa,P,"%s/m/i.txt",AROOT); if(!stat(pa,&st)) tot+=st.st_size;
         tot/=4; long lim=(gg||!strcmp(cm,"opus"))?1000000:200000; int pct=tot*100/lim;
         char hb[16]={0}; pcmd("tmux display -p -t \"$TMUX_PANE\" '#{pane_height}'",hb,16); int ph=atoi(hb);
         struct winsize ws={0}; ioctl(1,TIOCGWINSZ,&ws); int cw=ws.ws_col?ws.ws_col:80;
