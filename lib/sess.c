@@ -115,6 +115,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 for(w=strtok(b2," ");w&&ok;w=strtok(0," "))if(!strcasestr(s,w))ok=0;if(!ok)continue;}
             fm[nm++]=lines[i];
         }
+        if(blen){int j=0;for(int i=0;i<nm;i++){char*s=fm[i]+plen;int k=0;while(s[k]>' ')k++;if(k==blen&&!strncasecmp(s,buf,(size_t)blen)){char*t=fm[i];memmove(fm+j+1,fm+j,sizeof*fm*(size_t)(i-j));fm[j++]=t;}}}
         {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
         int top=sel>=maxshow?sel-maxshow+1:0, show=nm-top<maxshow?nm-top:maxshow;
         {char fb[B*4];int fl=0;
