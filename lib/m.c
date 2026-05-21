@@ -1,5 +1,6 @@
 /* m — chat+agentic loop. files (no /tmp; verify externally):
- * adata/m/{m.txt,sysprompt.txt,i.txt,archive/} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
+ * adata/m/{m.txt,sysprompt.txt,i.txt} · adata/local/m_{status,panel,pty,st,file,editorpid,err.log,inXXXXXX}
+ * archive: trim in place + git commit with preview in subject. retrieval via git log/show. no marker, no archive/ dir.
  * debug: tail adata/m/m.txt ; tmux capture-pane -t <id> -p ; cat adata/local/m_*
  * e --nosb: skip e's internal scrollbar — tmux pane-scrollbars handles vertical scroll, avoids fold-aware sb math */
 
@@ -252,39 +253,55 @@ static int cmd_m_panel(int c, char **v) {
     return 0;
 }
 
-static void m_arch_commit(const char *kind, const char *ts) {
-    char c[B]; snprintf(c,B,"git -C '%1$s/m' add -A 2>/dev/null && (git -C '%1$s/m' diff --cached --quiet 2>/dev/null || git -C '%1$s/m' commit -q -m 'archive %2$s %3$s' 2>/dev/null)",AROOT,kind,ts);
-    (void)!system(c);
+/* preview: first K + " … " + last K chars, NL/TAB→space. K=25, outsz>=64. */
+static void m_preview(const char *s, size_t n, char *o, size_t osz) {
+    const int K=25; size_t w=0;
+    #define PUT(c) do{char x=(c);if(w+1<osz)o[w++]=(x=='\n'||x=='\r'||x=='\t')?' ':x;}while(0)
+    if (n <= (size_t)(K*2+5)) { for(size_t i=0;i<n;i++)PUT(s[i]); }
+    else { for(int i=0;i<K;i++)PUT(s[i]);
+           if(w+5<osz){memcpy(o+w," … ",5);w+=5;}
+           for(int i=0;i<K;i++)PUT(s[n-K+i]); }
+    o[w]=0;
+    #undef PUT
 }
 
-/* write [s,e) of txt to archive/<ts>.txt, replace section in mp with marker, commit. returns ts (static). */
-static char *m_arch_save(char *txt, size_t tl, char *s, char *e, const char *mp, const char *adir, const char *kind, const char *info) {
-    static char ts[32]; char ap[P],mk[256];
-    mkdirp(adir);
-    time_t tt=time(NULL); strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tt));
-    snprintf(ap,P,"%s/%s.txt",adir,ts);
-    FILE *af=fopen(ap,"w"); if(af){fwrite(s,1,(size_t)(e-s),af); fclose(af);}
-    snprintf(mk,256,"[archived %s · %s · view: a m archive view %s]\n",ts,info,ts);
-    FILE *f=fopen(mp,"w"); if(f){fwrite(txt,1,(size_t)(s-txt),f); fputs(mk,f); fwrite(e,1,(size_t)((txt+tl)-e),f); fclose(f);}
-    m_arch_commit(kind, ts);
-    return ts;
+/* trim [s,e) from mp, git commit with `archive <file> <info> | <preview>`. */
+static int m_arch_cut(const char *mp, char *txt, size_t tl, char *s, char *e, const char *info) {
+    char prev[128]; m_preview(s, (size_t)(e-s), prev, sizeof prev);
+    FILE *f=fopen(mp,"w"); if(!f) return 1;
+    fwrite(txt,1,(size_t)(s-txt),f); fwrite(e,1,(size_t)((txt+tl)-e),f); fclose(f);
+    char mf[P]; snprintf(mf,P,"%s/m_commit_msg",DDIR);
+    FILE *mp_=fopen(mf,"w"); if(mp_){fprintf(mp_,"archive %s %s | %s\n",bname(mp),info,prev); fclose(mp_);}
+    char c[B]; snprintf(c,B,"git -C '%1$s/m' add -A && git -C '%1$s/m' commit -q -F '%2$s'",AROOT,mf);
+    (void)!system(c);
+    printf("archived %s (%ld bytes) — a m archive hist\n",info,(long)(e-s));
+    return 0;
 }
 
 static int m_archive(int c, char **v) {
-    char mp[P], adir[P], ap[P];
-    snprintf(adir, P, "%s/m/archive", AROOT);
+    char mp[P];
     static const char *USAGE =
         "usage:\n"
-        "  a m archive                       rotate m.txt (archive whole conversation)\n"
+        "  a m archive                       rotate m.txt (keep last user turn)\n"
         "  a m archive <file.txt>            rotate <file.txt>\n"
         "  a m archive N-M [file.txt]        archive lines N..M\n"
-        "  a m archive view <ts> [file.txt]  print archived content\n"
-        "  a m archive unarchive <ts> [file] restore archived content at marker (alias: restore)\n";
-    if (c > 3 && (!strcmp(v[3], "--help") || !strcmp(v[3], "-h") || !strcmp(v[3], "help"))) {
-        fputs(USAGE, stdout); return 0;
+        "  a m archive turn                  archive last completed turn\n"
+        "  a m archive hist                  list archives (git log with preview)\n"
+        "  a m archive show <hash>           git show <hash> (diff of cut)\n"
+        "  a m archive get <hash>            dump cut content to /tmp/m_unarch_<hash>.txt\n"
+        "  a m archive undo                  revert most recent archive commit\n";
+    if (c > 3 && (!strcmp(v[3],"--help")||!strcmp(v[3],"-h")||!strcmp(v[3],"help"))) { fputs(USAGE,stdout); return 0; }
+    if (c > 3 && !strcmp(v[3],"hist")) { char x[B]; snprintf(x,B,"git -C '%s/m' log --oneline --grep='^archive '",AROOT); return system(x); }
+    if (c > 4 && !strcmp(v[3],"show")) { char x[B]; snprintf(x,B,"git -C '%s/m' show %s",AROOT,v[4]); return system(x); }
+    if (c > 4 && !strcmp(v[3],"get")) { char tf[P],x[B]; snprintf(tf,P,"/tmp/m_unarch_%s.txt",v[4]);
+        snprintf(x,B,"git -C '%s/m' show %s | grep '^-[^-]' | cut -c2- > '%s' && echo %s",AROOT,v[4],tf,tf);
+        return system(x); }
+    if (c > 3 && (!strcmp(v[3],"undo")||!strcmp(v[3],"restore")||!strcmp(v[3],"unarchive"))) {
+        if (c > 4) { char *nv[]={v[0],v[1],v[2],(char*)"get",v[4],NULL}; return m_archive(5,nv); }
+        char x[B]; snprintf(x,B,"H=$(git -C '%1$s/m' log --grep='^archive ' -n 1 --format='%%H'); [ -n \"$H\" ] && git -C '%1$s/m' revert \"$H\" --no-edit || { echo 'no archive to undo'; exit 1; }",AROOT);
+        return system(x);
     }
-    if (c > 3 && !strcmp(v[3], "restore")) v[3] = (char*)"unarchive";
-    if (c > 3 && !strcmp(v[3], "turn")) {
+    if (c > 3 && !strcmp(v[3],"turn")) {
         const char *fn = c > 4 ? v[4] : "m.txt";
         snprintf(mp, P, "%s/m/%s", AROOT, fn);
         size_t tl; char *txt = readf(mp, &tl);
@@ -296,28 +313,8 @@ static int m_archive(int c, char **v) {
             prev_um = last_um; last_um = p + 1;
         }
         if (!prev_um || !last_um || prev_um == last_um) { puts("no completed turn to archive"); free(txt); return 0; }
-        printf("archived 1 turn → archive/%s.txt\n", m_arch_save(txt, tl, prev_um, last_um, mp, adir, "turn", "turn"));
-        free(txt); return 0;
+        int r = m_arch_cut(mp, txt, tl, prev_um, last_um, "turn"); free(txt); return r;
     }
-    if (c > 3 && !strcmp(v[3], "undo")) {
-        mkdirp(adir);
-        DIR *d = opendir(adir); if (!d) { puts("no archive dir"); return 1; }
-        struct dirent *e; static char latest[64] = ""; time_t lt = 0;
-        while ((e = readdir(d))) {
-            if (e->d_name[0] == '.' || !strstr(e->d_name, ".txt")) continue;
-            char fp[P]; snprintf(fp, P, "%s/%s", adir, e->d_name);
-            struct stat st;
-            if (stat(fp, &st) == 0 && st.st_mtime > lt) {
-                lt = st.st_mtime; snprintf(latest, 64, "%s", e->d_name);
-                char *dot = strrchr(latest, '.'); if (dot) *dot = 0;
-            }
-        }
-        closedir(d);
-        if (!latest[0]) { puts("no archive to undo"); return 1; }
-        char *nv[6] = {v[0], v[1], v[2], (char*)"unarchive", latest, NULL};
-        return m_archive(5, nv);
-    }
-    /* rotate: a m archive [file.txt]  (no args, or .txt filename) */
     if (c == 3 || (c == 4 && strstr(v[3], ".txt"))) {
         const char *fn = (c == 4) ? v[3] : "m.txt";
         snprintf(mp, P, "%s/m/%s", AROOT, fn);
@@ -331,37 +328,14 @@ static int m_archive(int c, char **v) {
         char *last = first, *p = first;
         while ((p = strstr(p + 1, "\n## user\n")) != NULL) last = p + 1;
         if (last == first) { puts("nothing to rotate"); free(txt); return 0; }
-        printf("rotated → archive/%s.txt\n", m_arch_save(txt, tl, first, last, mp, adir, "rotate", "rotate"));
-        free(txt); return 0;
+        int r = m_arch_cut(mp, txt, tl, first, last, "rotate"); free(txt); return r;
     }
-    if (c < 4) { fputs(USAGE, stderr); return 1; }
-    int has_ts = !strcmp(v[3], "view") || !strcmp(v[3], "unarchive");
-    int is_range = isdigit((unsigned char)v[3][0]);
-    if (!has_ts && !is_range) { fprintf(stderr, "unknown subcommand: %s\n", v[3]); fputs(USAGE, stderr); return 1; }
-    int fn_idx = has_ts ? 5 : 4;
-    const char *fn = c > fn_idx ? v[fn_idx] : "m.txt";
-    snprintf(mp, P, "%s/m/%s", AROOT, fn);
-    if (has_ts) {
-        if (c < 5) { puts("need <ts>"); return 1; }
-        snprintf(ap, P, "%s/%s.txt", adir, v[4]);
-        if (!strcmp(v[3], "view")) {
-            char *d = readf(ap, NULL); if (!d) { printf("not found: %s\n", ap); return 1; }
-            fputs(d, stdout); free(d); return 0;
-        }
-        char mh[64]; snprintf(mh, 64, "[archived %s ·", v[4]);
-        char *cnt = readf(ap, NULL); if (!cnt) { puts("archive missing"); return 1; }
-        size_t tl; char *txt = readf(mp, &tl); if (!txt) { free(cnt); return 1; }
-        char *pos = strstr(txt, mh);
-        if (!pos) { puts("marker not found"); free(cnt); free(txt); return 1; }
-        char *eol = strchr(pos, '\n'); eol = eol ? eol + 1 : txt + tl;
-        FILE *f = fopen(mp, "w"); if (!f) { free(cnt); free(txt); return 1; }
-        fwrite(txt, 1, (size_t)(pos - txt), f); fputs(cnt, f);
-        fwrite(eol, 1, (size_t)((txt + tl) - eol), f); fclose(f); unlink(ap);
-        free(cnt); free(txt); printf("unarchived %s\n", v[4]); m_arch_commit("unarchive", v[4]); return 0;
-    }
+    if (!isdigit((unsigned char)v[3][0])) { fprintf(stderr,"unknown: %s\n",v[3]); fputs(USAGE,stderr); return 1; }
     int N = atoi(v[3]); const char *dash = strchr(v[3], '-');
     int M = dash ? atoi(dash + 1) : N;
-    if (N < 1 || M < N) { fprintf(stderr, "invalid range '%s': want N-M with N>=1 and M>=N\n", v[3]); return 1; }
+    if (N < 1 || M < N) { fprintf(stderr, "invalid range '%s'\n", v[3]); return 1; }
+    const char *fn = c > 4 ? v[4] : "m.txt";
+    snprintf(mp, P, "%s/m/%s", AROOT, fn);
     size_t tl; char *txt = readf(mp, &tl);
     if (!txt) { printf("file not found: %s\n", mp); return 1; }
     char *s = txt; int ln = 1;
@@ -370,8 +344,7 @@ static int m_archive(int c, char **v) {
     char *e = s; int cnt = 0;
     while (e < txt + tl && cnt < M - N + 1) { if (*e++ == '\n') cnt++; }
     char info[32]; snprintf(info,32,"L%d-%d",N,M);
-    printf("archived %s → archive/%s.txt (%ld bytes)\n", info, m_arch_save(txt, tl, s, e, mp, adir, "range", info), (long)(e-s));
-    free(txt); return 0;
+    int r = m_arch_cut(mp, txt, tl, s, e, info); free(txt); return r;
 }
 
 static int m_reinit(const char *fn) {
@@ -395,7 +368,7 @@ static int cmd_m(int c, char **v) {
     if (c>2&&!strcmp(v[2],"edit")) { char p[P],fn[64]="m.txt",*f; const char*me=getenv("M_FILE");
         if(me&&*me)snprintf(fn,64,"%s",me);
         else{snprintf(p,P,"%s/m_file",DDIR); f=readf(p,NULL); if(f&&*f){f[strcspn(f,"\n")]=0;snprintf(fn,64,"%s",f);} free(f);}
-        char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb %s'",AROOT,fn); return system(cc); }
+        char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb --nofold %s'",AROOT,fn); return system(cc); }
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
