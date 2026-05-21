@@ -77,14 +77,14 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         dup2(s, 0); dup2(pp[1], 1); dup2(d, 2);
         close(s); close(d); close(pp[0]); close(pp[1]);
         if (is_gemini) { char g[B];
-            snprintf(g,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|gemini -p '' --skip-trust --approval-mode plan -o stream-json -m '%s'",md);
+            snprintf(g,B,"awk 'NR==FNR{if(/^## a-archive [0-9]/){A[++n]=$3}else if(/^## a-archive-undo/){if(n)n--}next}{h=0;for(i=1;i<=n;i++){split(A[i],r,\"-\");if(FNR>=r[1]+0&&FNR<=r[2]+0){h=1;break}}if(/^## a-archive/||h)next;if(/^## a-loaded /){s=1;next}if(s&&/^## a-loaded-end$/){s=0;next}if(!s)print}' '%s' '%s'|gemini -p '' --skip-trust --approval-mode plan -o stream-json -m '%s'",sf,sf,md);
             execlp("sh","sh","-c",g,(char*)0); }
         else if (is_codex) { char x[B],t[80]="";
             if (has_tier) snprintf(t,80," -c 'service_tier=\"%s\"'",tier);
-            snprintf(x,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --disable shell_tool --disable unified_exec --disable tool_search --disable tool_suggest -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
+            snprintf(x,B,"awk 'NR==FNR{if(/^## a-archive [0-9]/){A[++n]=$3}else if(/^## a-archive-undo/){if(n)n--}next}{h=0;for(i=1;i<=n;i++){split(A[i],r,\"-\");if(FNR>=r[1]+0&&FNR<=r[2]+0){h=1;break}}if(/^## a-archive/||h)next;if(/^## a-loaded /){s=1;next}if(s&&/^## a-loaded-end$/){s=0;next}if(!s)print}' '%s' '%s'|iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --disable shell_tool --disable unified_exec --disable tool_search --disable tool_suggest -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",sf,sf,md,ef,t);
             execlp("sh","sh","-c",x,(char*)0);
         } else { char x[B*2];
-            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\" --append-system-prompt-file <(cat %2$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %2$s/m/i.txt 2>/dev/null) --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,AROOT);
+            snprintf(x,B*2,"awk 'NR==FNR{if(/^## a-archive [0-9]/){A[++n]=$3}else if(/^## a-archive-undo/){if(n)n--}next}{h=0;for(i=1;i<=n;i++){split(A[i],r,\"-\");if(FNR>=r[1]+0&&FNR<=r[2]+0){h=1;break}}if(/^## a-archive/||h)next;if(/^## a-loaded /){s=1;next}if(s&&/^## a-loaded-end$/){s=0;next}if(!s)print}' '%4$s' '%4$s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%1$s' --effort '%2$s' --system-prompt \"$1\" --append-system-prompt-file <(cat %3$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %3$s/m/i.txt 2>/dev/null) --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,AROOT,sf);
             execlp("bash","bash","-c",x,"_",sp,(char*)0);
         }
         _exit(127);
@@ -243,7 +243,7 @@ static int cmd_m_panel(int c, char **v) {
             time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
             snprintf(last,160,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32mOK":"\033[31mX",OPS[bi[i]].l,o);
             if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){
-                char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn 200 %s/m/$F\"",DDIR,AROOT);
+                char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn +1 %s/m/$F\"",DDIR,AROOT);
                 (void)!system(rc);
             }
         }
@@ -265,16 +265,20 @@ static void m_preview(const char *s, size_t n, char *o, size_t osz) {
     #undef PUT
 }
 
-/* trim [s,e) from mp, git commit with `archive <file> <info> | <preview>`. */
+/* append-only archive: appends ## a-archive L1-L2 marker (file never shrinks → tail doesn't re-stream → instant). */
 static int m_arch_cut(const char *mp, char *txt, size_t tl, char *s, char *e, const char *info) {
+    (void)tl;
     char prev[128]; m_preview(s, (size_t)(e-s), prev, sizeof prev);
-    FILE *f=fopen(mp,"w"); if(!f) return 1;
-    fwrite(txt,1,(size_t)(s-txt),f); fwrite(e,1,(size_t)((txt+tl)-e),f); fclose(f);
+    long sl=1, el=1;
+    for (char *p=txt; p<s; p++) if (*p=='\n') sl++;
+    for (char *p=txt; p<e; p++) if (*p=='\n') el++;
+    FILE *f=fopen(mp,"a"); if(!f) return 1;
+    fprintf(f,"## a-archive %ld-%ld\n",sl,el); fclose(f);
     char mf[P]; snprintf(mf,P,"%s/m_commit_msg",DDIR);
-    FILE *mp_=fopen(mf,"w"); if(mp_){fprintf(mp_,"archive %s %s | %s\n",bname(mp),info,prev); fclose(mp_);}
+    FILE *mp_=fopen(mf,"w"); if(mp_){fprintf(mp_,"archive %s %s lines=%ld-%ld | %s\n",bname(mp),info,sl,el,prev); fclose(mp_);}
     char c[B]; snprintf(c,B,"git -C '%1$s/m' add -A && git -C '%1$s/m' commit -q -F '%2$s'",AROOT,mf);
     (void)!system(c);
-    printf("archived %s (%ld bytes) — a m archive hist\n",info,(long)(e-s));
+    printf("archived %s lines=%ld-%ld — a m archive hist\n",info,sl,el);
     return 0;
 }
 
@@ -298,8 +302,10 @@ static int m_archive(int c, char **v) {
         return system(x); }
     if (c > 3 && (!strcmp(v[3],"undo")||!strcmp(v[3],"restore")||!strcmp(v[3],"unarchive"))) {
         if (c > 4) { char *nv[]={v[0],v[1],v[2],(char*)"get",v[4],NULL}; return m_archive(5,nv); }
-        char x[B]; snprintf(x,B,"H=$(git -C '%1$s/m' log --grep='^archive ' -n 1 --format='%%H'); [ -n \"$H\" ] && git -C '%1$s/m' revert \"$H\" --no-edit || { echo 'no archive to undo'; exit 1; }",AROOT);
-        return system(x);
+        const char *fn = "m.txt"; char xp[P]; snprintf(xp,P,"%s/m/%s",AROOT,fn);
+        FILE *f=fopen(xp,"a"); if(!f){perror("open");return 1;} fprintf(f,"## a-archive-undo\n"); fclose(f);
+        char x[B]; snprintf(x,B,"git -C '%s/m' add -A && git -C '%s/m' commit -q -m 'archive-undo'",AROOT,AROOT);
+        (void)!system(x); puts("undone (append-only cancel marker)"); return 0;
     }
     if (c > 3 && !strcmp(v[3],"turn")) {
         const char *fn = c > 4 ? v[4] : "m.txt";
@@ -349,7 +355,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",DDIR); mm_w(c,fn,"w");
-    snprintf(c,B,"tmux respawn-pane -k -t :.0 'tail -Fn 200 %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"tmux respawn-pane -k -t :.0 'tail -Fn +1 %s/m/%s'",AROOT,fn); (void)!system(c);
     snprintf(c,B,"%s/m_pid",DDIR); char *p=readf(c,NULL); if(p) kill(atoi(p),SIGUSR1); free(p); return 0;
 }
 static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",DDIR);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
@@ -397,7 +403,7 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
-                   "$S -b 'tail -Fn 200 %2$s';"
+                   "$S -b 'tail -Fn +1 %2$s';"
                    "$S -l 3 'tail -Fn 50 %3$s';"
                    "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%5$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
