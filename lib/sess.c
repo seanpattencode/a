@@ -87,7 +87,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             snprintf(fq[nfq].n,64,"%s",ln);fq[nfq].c=atoi(c+1);nfq++;}fclose(ff);}}
     char*lines[1024];int n=0;
     for(char*p=raw,*end=raw+len;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
-        if(!nl)nl=end;if(nl>p&&p[0]!='<'&&p[0]!='='&&p[0]!='>'&&p[0]!='#'){*nl=0;lines[n++]=p;}p=nl+1;}
+        if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
     static char wb[32768];size_t wl=0;
     {char cm[P];snprintf(cm,P,"cat '%s/web_cache.txt' 2>/dev/null;tmux list-windows -aF '#W\twin' 2>/dev/null",DDIR);
      FILE*p=popen(cm,"r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
@@ -107,15 +107,15 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     char buf[256]="";int blen=0,sel=0;char prefix[256]="";
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
     while (1) {
-        char*fm[1024]; int nm = 0; int plen = (int)strlen(prefix);
+        char*fm[1024]; int nm=0,ex=0,plen=(int)strlen(prefix);
         for (int i=0;i<n&&nm<1024;i++) {
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||!strncmp(lines[i],"web ",4)))continue;
-            if(blen){char*s=lines[i]+plen,b2[256],*w;snprintf(b2,256,"%s",buf);int ok=1;
-                for(w=strtok(b2," ");w&&ok;w=strtok(0," "))if(!strcasestr(s,w))ok=0;if(!ok)continue;}
+            if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,buf);int ok=1;
+                for(w=strtok(b2," ");w&&ok;w=strtok(0," "))if(!strcasestr(s,w))ok=0;if(!ok)continue;
+                if(s[blen]<=' '&&!strncasecmp(s,buf,(size_t)blen)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
             fm[nm++]=lines[i];
         }
-        if(blen){int j=0;for(int i=0;i<nm;i++){char*s=fm[i]+plen;int k=0;while(s[k]>' ')k++;if(k==blen&&!strncasecmp(s,buf,(size_t)blen)){char*t=fm[i];memmove(fm+j+1,fm+j,sizeof*fm*(size_t)(i-j));fm[j++]=t;}}}
         {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
         int top=sel>=maxshow?sel-maxshow+1:0, show=nm-top<maxshow?nm-top:maxshow;
         {char fb[B*4];int fl=0;
@@ -138,10 +138,10 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 else if(seq[1]=='B'){int mx=nm?nm-1:blen?1:0;if(sel<mx)sel++;}
                 else if(seq[1]=='<'){int mb=0,my=0;char mc;
                     while(read(0,&mc,1)==1&&mc!=';')mb=mb*10+mc-'0';
-                    while(read(0,&mc,1)==1&&mc!=';'){}
+                    while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
-                    if(mc=='M'&&mb==0){int ci=my-2+top;if(ci>=0&&ci<nm){sel=ci;do_pick=1;}}
-                    else if(mc=='M'&&(mb==64||mb==65)){if(mb==64&&sel>0)sel--;if(mb==65&&sel<nm-1)sel++;}}
+                    if(mc=='M'){if(!mb){int ci=my-2+top;if(ci>=0&&ci<nm){sel=ci;do_pick=1;}}
+                    else if(mb==64&&sel>0)sel--;else if(mb==65&&sel<nm-1)sel++;}}
             } else if(prefix[0]){prefix[0]=0;buf[0]=0;blen=0;sel=0;} else break;
         } else if(ch=='\t'){int mx=nm?nm-1:blen?1:0;if(sel<mx)sel++;}
         else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;}
@@ -151,7 +151,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 for(char*p=u;*p;p++)if(*p==' ')*p='+';bg_exec(OPENER,u);}
             return 0;}do_pick=1;}
         else if(ch==3||ch==4)break;
-        else if(isalnum(ch)||ch=='-'||ch=='_'||ch==' '||ch=='.'){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
+        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
         if(do_pick&&nm){char*m=fm[sel],cmd[256];
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
