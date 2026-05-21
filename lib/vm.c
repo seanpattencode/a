@@ -69,18 +69,16 @@ static int cmd_vm(int argc, char **argv) {
         if(system(cmd)){char*rv[]={"a","vm","run",(char*)osn,NULL};if(cmd_vm(4,rv))return 1;}
         printf("> replicating a...\n");
         snprintf(cmd,B,"a new -p %s %s:%s",pw,usr,port);system(cmd);
-        printf("> setting up claude auth...\n");
-        char kf[P];snprintf(kf,P,"%s/git/login/api_keys.env",AROOT);
-        char*keys=readf(kf,NULL);
-        if(keys){char*ak=strstr(keys,"ANTHROPIC_API_KEY=");
-            if(ak){char val[256];int i=0;ak+=18;while(ak[i]&&ak[i]!='\n'&&i<255){val[i]=ak[i];i++;}val[i]=0;
-                snprintf(cmd,B,"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'echo export ANTHROPIC_API_KEY=%s >> ~/.bashrc'",pw,port,usr,val);
-                system(cmd);}free(keys);}
-        printf("> ensuring claude installed...\n");
-        snprintf(cmd,B,"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'export PATH=$HOME/.local/bin:$PATH && (command -v claude >/dev/null || npm install -g @anthropic-ai/claude-code) 2>&1'",pw,port,usr);
+        printf("> installing claude (native) + applying oauth creds from host...\n");
+#ifdef __APPLE__
+        const char*getcreds="security find-generic-password -s 'Claude Code-credentials' -w 2>/dev/null";
+#else
+        const char*getcreds="cat ~/.claude/.credentials.json 2>/dev/null";
+#endif
+        snprintf(cmd,B,"%s | sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'sh ~/a/lib/claude_login.sh' 2>&1",getcreds,pw,port,usr);
         system(cmd);
         printf("> running claude on codebase...\n");
-        snprintf(cmd,B,"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'export PATH=$HOME/.local/bin:$HOME/.claude/local/bin:$PATH && export ANTHROPIC_API_KEY=$(grep ANTHROPIC ~/a/adata/git/login/api_keys.env|cut -d= -f2) && cd ~/a && claude -p --dangerously-skip-permissions \"Read the codebase with a cat 3. Describe what this project is and list all commands.\"' 2>&1",pw,port,usr);
+        snprintf(cmd,B,"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'export PATH=$HOME/.local/bin:$PATH && cd ~/a && claude -p --dangerously-skip-permissions \"Read the codebase with a cat 3. Describe what this project is and list all commands.\"' 2>&1",pw,port,usr);
         system(cmd);
         printf("\n> tearing down VM...\n");
         snprintf(cmd,B,"pkill -f hostfwd=tcp::%s",port);system(cmd);
@@ -111,15 +109,25 @@ static int cmd_vm(int argc, char **argv) {
     if(p==0){setsid();close(0);int fd=open(log,O_WRONLY|O_CREAT|O_TRUNC,0644);dup2(fd,1);dup2(fd,2);
         char di[P],mon[P];snprintf(di,P,"file=%s,format=qcow2,if=virtio",img);snprintf(mon,P,"unix:%s/mon.sock,server,nowait",d);
         char*av[32];int n=0;
-        av[n++]="qemu-system-x86_64";av[n++]="-cpu";av[n++]="host";av[n++]="-m";av[n++]="4G";av[n++]="-smp";av[n++]="2";
+        av[n++]="qemu-system-x86_64";
+#ifdef __APPLE__
+        av[n++]="-cpu";av[n++]="max";
+#else
+        av[n++]="-cpu";av[n++]="host";av[n++]="-enable-kvm";
+#endif
+        av[n++]="-m";av[n++]="4G";av[n++]="-smp";av[n++]="2";
         av[n++]="-drive";av[n++]=di;av[n++]="-cdrom";av[n++]=seed;
         av[n++]="-device";av[n++]="virtio-net-pci,netdev=n0";av[n++]="-netdev";av[n++]="user,id=n0,hostfwd=tcp::2222-:22";
-        av[n++]="-nographic";av[n++]="-enable-kvm";av[n++]="-monitor";av[n++]=mon;
+        av[n++]="-nographic";av[n++]="-monitor";av[n++]=mon;
         if(hassnap){av[n++]="-loadvm";av[n++]="ready";}
         av[n]=NULL;execvp(av[0],av);_exit(1);}
     struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
     printf("booting %s%s (pid %d)...\n",os->name,hassnap?" [snap]":"",(int)p);
+#ifdef __APPLE__
+    int tries=hassnap?30:60,wait=hassnap?2:10;
+#else
     int tries=hassnap?10:12,wait=hassnap?1:10;
+#endif
     for(int i=0;i<tries;i++){sleep((unsigned)wait);
         char c[B];snprintf(c,B,"sshpass -p %s ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p %s %s 'echo ready' 2>/dev/null",pw,port,usr);
         if(!system(c)){clock_gettime(CLOCK_MONOTONIC,&t1);

@@ -46,9 +46,9 @@ static int cmd_deps(int argc, char **argv) { (void)argc;(void)argv; AB;
     printf("%s tmux\n", system("which tmux >/dev/null 2>&1") == 0 ? "✓" : "x");
     (void)!system("which node >/dev/null 2>&1 || sudo apt-get install -y nodejs npm 2>/dev/null");
     printf("%s node\n", system("which node >/dev/null 2>&1") == 0 ? "✓" : "x");
-    const char *tools[][2] = {{"codex","@openai/codex"},{"claude","@anthropic-ai/claude-code"},{"gemini","@google/gemini-cli"}};
+    const char *tools[][2] = {{"codex","npm i -g @openai/codex"},{"claude","curl -fsSL https://claude.ai/install.sh | bash"},{"gemini","npm i -g @google/gemini-cli"}};
     for (int i = 0; i < 3; i++) {
-        char c[256]; snprintf(c, 256, "p=$(which %s 2>/dev/null);[ -n \"$p\" ] && [ \"${p:0:5}\" != /mnt/ ] || npm i -g %s 2>/dev/null", tools[i][0], tools[i][1]); (void)!system(c);
+        char c[256]; snprintf(c, 256, "p=$(which %s 2>/dev/null);[ -n \"$p\" ] && [ \"${p:0:5}\" != /mnt/ ] || %s 2>/dev/null", tools[i][0], tools[i][1]); (void)!system(c);
         snprintf(c, 256, "p=$(which %s 2>/dev/null);[ -n \"$p\" ] && [ \"${p:0:5}\" != /mnt/ ]", tools[i][0]);
         printf("%s %s\n", system(c) == 0 ? "✓" : "x", tools[i][0]);
     }
