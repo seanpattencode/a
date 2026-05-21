@@ -243,7 +243,7 @@ static int cmd_m_panel(int c, char **v) {
             time_t tt=time(NULL); char ts[16]; strftime(ts,16,"%H:%M:%S",localtime(&tt));
             snprintf(last,160,"[%s] %s %s %s",ts,WIFEXITED(r)&&!WEXITSTATUS(r)?"\033[32mOK":"\033[31mX",OPS[bi[i]].l,o);
             if(!WEXITSTATUS(r)&&(strstr(OPS[bi[i]].l,"archive")||!strcmp(OPS[bi[i]].l,"undo"))){
-                char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn +1 %s/m/$F\"",DDIR,AROOT);
+                char rc[B];snprintf(rc,B,"F=$(cat %s/m_file 2>/dev/null||echo m.txt);tmux respawn-pane -k -t :.0 \"tail -Fn 200 %s/m/$F\"",DDIR,AROOT);
                 (void)!system(rc);
             }
         }
@@ -349,7 +349,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[B]; snprintf(c,B,"%s/m_file",DDIR); mm_w(c,fn,"w");
-    snprintf(c,B,"tmux respawn-pane -k -t :.0 'tail -Fn +1 %s/m/%s'",AROOT,fn); (void)!system(c);
+    snprintf(c,B,"tmux respawn-pane -k -t :.0 'tail -Fn 200 %s/m/%s'",AROOT,fn); (void)!system(c);
     snprintf(c,B,"%s/m_pid",DDIR); char *p=readf(c,NULL); if(p) kill(atoi(p),SIGUSR1); free(p); return 0;
 }
 static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",DDIR);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
@@ -397,7 +397,7 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
-                   "$S -b 'tail -Fn +1 %2$s';"
+                   "$S -b 'tail -Fn 200 %2$s';"
                    "$S -l 3 'tail -Fn 50 %3$s';"
                    "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%5$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
