@@ -368,7 +368,7 @@ static int cmd_m(int c, char **v) {
     if (c>2&&!strcmp(v[2],"edit")) { char p[P],fn[64]="m.txt",*f; const char*me=getenv("M_FILE");
         if(me&&*me)snprintf(fn,64,"%s",me);
         else{snprintf(p,P,"%s/m_file",DDIR); f=readf(p,NULL); if(f&&*f){f[strcspn(f,"\n")]=0;snprintf(fn,64,"%s",f);} free(f);}
-        char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb --nofold %s'",AROOT,fn); return system(cc); }
+        char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb --nofold --tail %s'",AROOT,fn); return system(cc); }
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
