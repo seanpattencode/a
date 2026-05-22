@@ -387,14 +387,16 @@ static int cmd_m(int c, char **v) {
     signal(SIGINT, m_sint);
     { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
     { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); }
-    const char *fn = c > 2 ? v[2] : "m.txt";
+    char fnb[128]="m.txt";const char *fn=c>2?v[2]:fnb;
+    if(c<=2){char cm[B];snprintf(cm,B,"cd %s/m 2>/dev/null && ls -t m.txt agent/*.txt 2>/dev/null|head -1",AROOT);
+      FILE*pp=popen(cm,"r");if(pp){char bb[128];if(fgets(bb,128,pp)){bb[strcspn(bb,"\n")]=0;if(*bb)snprintf(fnb,128,"%s",bb);}pclose(pp);}}
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
     snprintf(ss, P, "%s/m_status", DDIR);
     snprintf(spf, P, "%s/m/sysprompt.txt", AROOT);
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
     mm_w(ss, "", "w");
     setenv("M_IN", "1", 1);
-    snprintf(b, B, "[ -d %1$s/m ]||(cd %1$s&&gh repo create m --private --clone);"
+    snprintf(b, B, "[ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(gh repo clone m 2>/dev/null||gh repo create m --private --clone);};"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
                    "$S -b 'tail -Fn 200 %2$s';"
