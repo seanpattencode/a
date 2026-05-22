@@ -85,16 +85,16 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);FILE*ff=fopen(fp,"r");if(ff){char ln[128];nfq=0;
         while(nfq<1024&&fgets(ln,128,ff)){char*c=strchr(ln,':');if(!c)continue;*c=0;
             snprintf(fq[nfq].n,64,"%s",ln);fq[nfq].c=atoi(c+1);nfq++;}fclose(ff);}}
-    char*lines[1024];int n=0;
-    for(char*p=raw,*end=raw+len;p<end&&n<1024;){char*nl=memchr(p,'\n',(size_t)(end-p));
+    char*lines[2048];int n=0;
+    for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
     static char wb[32768];size_t wl=0;
     {char cm[P];snprintf(cm,P,"cat '%s/web_cache.txt' 2>/dev/null;tmux list-windows -aF '#W\twin' 2>/dev/null",DDIR);
      FILE*p=popen(cm,"r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
-    for(char*p=wb,*e=wb+wl;p<e&&n<1024;){char*nl=memchr(p,'\n',(size_t)(e-p));
+    for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",0};
-    for(int i=0;acts[i]&&n<1024;i++)lines[n++]=(char*)acts[i];}
+    for(int i=0;acts[i]&&n<2048;i++)lines[n++]=(char*)acts[i];}
     if(!n){puts("Empty cache");free(raw);return 1;}
     qsort(lines,(size_t)n,sizeof*lines,ln_cmp);
     {char*f=getenv("A_FILT_TAG"),*t;int j=0;
@@ -107,8 +107,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     char buf[256]="";int blen=0,sel=0;char prefix[256]="";
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
     while (1) {
-        char*fm[1024]; int nm=0,ex=0,plen=(int)strlen(prefix);
-        for (int i=0;i<n&&nm<1024;i++) {
+        char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
+        for (int i=0;i<n&&nm<2048;i++) {
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||!strncmp(lines[i],"web ",4)))continue;
             if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,buf);int ok=1;
