@@ -123,9 +123,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         FP("\033[H\033[?25l%s> %s\033[K\n",prefix,buf);
         if(!nm&&blen){FP("%s \033[35ma c \"%s\"\033[0m\033[K\n",sel==0?" >":"  ",buf);
             FP("%s \033[36mGoogle: %s\033[0m\033[K\n",sel==1?" >":"  ",buf);}
-        for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t');int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
-            if(ml>W-5)ml=W-5;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j]);
-            if(t&&ml+5+(int)strlen(t+1)<W)FP("\033[%dG\033[90m%s\033[0m",W-(int)strlen(t+1),t+1);FP("\n");}
+        for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t');int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]),tl=t?(int)strlen(t+1):0;
+            if(ml>W-7-tl)ml=W-7-tl;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j]);
+            if(t)FP("\033[%dG\033[90m%s\033[0m",W-tl,t+1);FP("\n");}
         FP("\033[J\033[1;%dH\033[?25h",plen+blen+3);
         #undef FP
         (void)!write(STDOUT_FILENO,fb,(size_t)fl);}
