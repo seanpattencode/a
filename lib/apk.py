@@ -52,7 +52,7 @@ webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:Console
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Fleet","Native","Web","Notes","Setup").mapIndexed{i,n->n to{val t=if(i==0)0 else i-1;vs.forEachIndexed{j,v->v.visibility=if(j==t)View.VISIBLE else View.GONE};vs[t].invalidate();if(i==0)Thread{val tx="$nl/libtmux.so";val env=mapOf("TMUX_TMPDIR" to filesDir.absolutePath,"PATH" to "$nl:/system/bin");var k=0;while(k++<60){try{val p=ProcessBuilder(tx,"has-session","-t","apk").apply{environment().putAll(env)}.start();if(p.waitFor()==0){ProcessBuilder(tx,"send-keys","-t","apk","a ssh all","Enter").apply{environment().putAll(env)}.start().waitFor();break}}catch(e:Exception){};Thread.sleep(200)}}.start()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val mb=S(this,listOf("Native","Web","Notes","Setup").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
@@ -767,6 +767,7 @@ import android.graphics.*
 import android.view.*
 import android.os.Handler
 import android.os.Looper
+import android.speech.*
 
 object NativeKB {
     init { System.loadLibrary("keyboard") }
@@ -838,14 +839,14 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     private var listening = false
     private fun startTranscription() {
         listening = true; invalidate()
-        val sr = android.speech.SpeechRecognizer.createSpeechRecognizer(svc)
-        sr.setRecognitionListener(object : android.speech.RecognitionListener {
-            override fun onResults(b: android.os.Bundle?) { b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { svc.currentInputConnection?.commitText("$it ", 1) }; listening = false; invalidate(); sr.destroy() }
-            override fun onError(c: Int) { listening = false; invalidate(); sr.destroy() }
-            override fun onEndOfSpeech() { listening = false; invalidate() }
-            override fun onReadyForSpeech(b: android.os.Bundle?) {}; override fun onBeginningOfSpeech() {}; override fun onRmsChanged(r: Float) {}; override fun onBufferReceived(b: ByteArray?) {}; override fun onPartialResults(b: android.os.Bundle?) {}; override fun onEvent(c: Int, b: android.os.Bundle?) {}
+        val sr = SpeechRecognizer.createSpeechRecognizer(svc)
+        val stop = { listening = false; invalidate(); sr.destroy() }
+        sr.setRecognitionListener(object : RecognitionListener {
+            override fun onResults(b: android.os.Bundle?) { b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { svc.currentInputConnection?.commitText("$it ", 1) }; stop() }
+            override fun onError(c: Int) { stop() }
+            override fun onEndOfSpeech() {}; override fun onReadyForSpeech(b: android.os.Bundle?) {}; override fun onBeginningOfSpeech() {}; override fun onRmsChanged(r: Float) {}; override fun onBufferReceived(b: ByteArray?) {}; override fun onPartialResults(b: android.os.Bundle?) {}; override fun onEvent(c: Int, b: android.os.Bundle?) {}
         })
-        val i = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH); i.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM); sr.startListening(i)
+        sr.startListening(android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))
     }
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         NativeKB.init(w, h - toolbarH.toInt())
@@ -857,7 +858,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     override fun onDetachedFromWindow() { super.onDetachedFromWindow(); android.view.Choreographer.getInstance().removeFrameCallback(hz120) }
     override fun onMeasure(ws: Int, hs: Int) {
         val w = MeasureSpec.getSize(ws)
-        val pct = prefs.getInt("kb_height", 110).coerceIn(20, 200) / 100f
+        val pct = prefs.getInt("kb_height", 95).coerceIn(20, 200) / 100f
         setMeasuredDimension(w, (w * pct).toInt().coerceAtMost(resources.displayMetrics.heightPixels / 2) + toolbarH.toInt())
     }
 
@@ -910,7 +911,7 @@ class SettingsActivity : android.app.Activity() {
         layout.addView(android.widget.TextView(this).apply { text = "InstantKB-NDK Termux"; textSize = 18f })
         layout.addView(android.widget.Button(this).apply { text = "Enable Keyboard"; setOnClickListener { startActivity(android.content.Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS)) } })
         layout.addView(android.widget.TextView(this).apply { text = "\nHeight %"; textSize = 14f })
-        val h0 = prefs.getInt("kb_height", 110)
+        val h0 = prefs.getInt("kb_height", 95)
         layout.addView(android.widget.SeekBar(this).apply { max = 180; progress = h0 - 20
             setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) { prefs.edit().putInt("kb_height", p + 20).apply() }
@@ -1129,11 +1130,12 @@ def _rish_install(apk_path,pkg,serial=None):
         if sh(f"{R} -c 'cp \"{sd}\" \"{dst}\"'").returncode!=0:return False
     else:
         if S.run(["cp",apk_path,dst]).returncode!=0:return False
-    r=sh(f"{R} -c 'pm install -r -t -d \"{dst}\"'")
+    r=sh(f"{R} -c 'pm install -r -t -d -g \"{dst}\"'")
     if "Success" not in (r.stdout or "") and pkg:
         sh(f"{R} -c 'pm uninstall {pkg}'")
-        r=sh(f"{R} -c 'pm install -t -d \"{dst}\"'")
+        r=sh(f"{R} -c 'pm install -t -d -g \"{dst}\"'")
     if "Success" in (r.stdout or ""):
+        if pkg:sh(f"{R} -c 'pm grant {pkg} android.permission.RECORD_AUDIO'")
         if pkg:sh(f"{R} -c 'am start -n {pkg}/.M'" if in_tmx else f"am start -n {pkg}/.M")
         return True
     print(f"x rish: {(r.stdout or '').strip()} {(r.stderr or '').strip()}")
