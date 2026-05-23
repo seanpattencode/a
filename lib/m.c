@@ -374,6 +374,10 @@ static int cmd_m(int c, char **v) {
         else{snprintf(p,P,"%s/m_file",DDIR); f=readf(p,NULL); if(f&&*f){f[strcspn(f,"\n")]=0;snprintf(fn,64,"%s",f);} free(f);}
         char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb --nofold --tail %s'",AROOT,fn); return system(cc); }
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
+    if (c > 3 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort")||!strcmp(v[2],"tier"))) {
+        char k[16];snprintf(k,16,"m_%s",v[2]);cfset(k,v[3]);
+        if(!strcmp(v[2],"agent")){cfset("m_model",!strcmp(v[3],"codex")?"gpt-5.5":!strcmp(v[3],"gemini")?"gemini-2.5-flash":"opus");cfset("m_effort",!strcmp(v[3],"codex")?"xhigh":"low");}
+        return 0;}
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
         if(p){p[strcspn(p,"\n")]=0; char hc[128],hb[16]={0}; snprintf(hc,128,"tmux display -p -t %s '#{pane_height}'",p); pcmd(hc,hb,16);
@@ -402,7 +406,7 @@ static int cmd_m(int c, char **v) {
     snprintf(b, B, "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
                    "$S -b 'a v %2$s';"
                    "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%4$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %3$s/m_pty;"
-                   "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
+                   "$S -l 8 -P -F '#{pane_id}' 'A_FILT_TAG=m a i'",
              AROOT, sf, DDIR, fn);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];

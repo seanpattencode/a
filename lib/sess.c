@@ -93,7 +93,13 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
      FILE*p=popen(cm,"r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
-    {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",0};
+    {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",
+        "a m main\tm","a m new\tm","a m archive\tm","a m archive turn\tm","a m archive undo\tm","a m restart\tm","a m edit\tm",
+        "a m agent claude\tm","a m agent codex\tm","a m agent gemini\tm",
+        "a m model opus\tm","a m model sonnet\tm","a m model haiku\tm","a m model gpt-5\tm","a m model gpt-5.5\tm",
+        "a m model gemini-2.5-flash\tm","a m model gemini-2.5-pro\tm","a m model gemini-3-pro-preview\tm",
+        "a m effort low\tm","a m effort medium\tm","a m effort high\tm","a m effort max\tm","a m effort xhigh\tm",
+        "a m tier default\tm","a m tier fast\tm","a m tier flex\tm",0};
     for(int i=0;acts[i]&&n<2048;i++)lines[n++]=(char*)acts[i];}
     if(!n){puts("Empty cache");free(raw);return 1;}
     qsort(lines,(size_t)n,sizeof*lines,ln_cmp);
