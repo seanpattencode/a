@@ -355,7 +355,7 @@ static int m_reinit(const char *fn) {
     snprintf(c,B,"tmux respawn-pane -k -t :.0 'a v %s/m/%s'",AROOT,fn); (void)!system(c);
     snprintf(c,B,"%s/m_pid",DDIR); char *p=readf(c,NULL); if(p) kill(atoi(p),SIGUSR1); free(p); return 0;
 }
-static int m_restart(void){char p[P];snprintf(p,P,"%s/m_file",DDIR);char*fp=readf(p,NULL);char fn[64]="m.txt";if(fp&&*fp){fp[strcspn(fp,"\n")]=0;snprintf(fn,64,"%s",fp);}free(fp);return m_reinit(fn);}
+static int m_restart(void){CWD(cd);char c[B];snprintf(c,B,"tmux respawn-window -k -c '%s' 'a m'",cd);(void)!system(c);return 0;}
 static int m_main(void){return m_reinit("m.txt");}
 static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agent",AROOT);mkdirp(ad);time_t t=time(NULL);char fn[64];strftime(fn,64,"agent/%Y-%m-%d_%H-%M-%S.txt",localtime(&t));return m_reinit(fn);}
 
@@ -390,6 +390,7 @@ static int cmd_m(int c, char **v) {
     signal(SIGINT, m_sint);
     { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
     { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); }
+    snprintf(b,B,"[ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(gh repo clone m 2>/dev/null||gh repo create m --private --clone);};cd %1$s/m&&git pull --rebase -q 2>/dev/null",AROOT);(void)!system(b);
     char fnb[128]="m.txt";const char *fn=c>2?v[2]:fnb;
     if(c<=2){char cm[B];snprintf(cm,B,"cd %s/m 2>/dev/null && ls -t m.txt agent/*.txt 2>/dev/null|head -1",AROOT);
       FILE*pp=popen(cm,"r");if(pp){char bb[128];if(fgets(bb,128,pp)){bb[strcspn(bb,"\n")]=0;if(*bb)snprintf(fnb,128,"%s",bb);}pclose(pp);}}
@@ -397,9 +398,7 @@ static int cmd_m(int c, char **v) {
     snprintf(spf, P, "%s/m/sysprompt.txt", AROOT);
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
     setenv("M_IN", "1", 1);
-    snprintf(b, B, "[ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(gh repo clone m 2>/dev/null||gh repo create m --private --clone);};"
-                   "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
-                   "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
+    snprintf(b, B, "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
                    "$S -b 'a v %2$s';"
                    "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%4$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %3$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
