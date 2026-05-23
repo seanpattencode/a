@@ -217,6 +217,7 @@ static int cmd_m_panel(int c, char **v) {
             while (read(0,&mc,1)==1 && mc!=';') btn = btn*10+(mc-'0');
             while (read(0,&mc,1)==1 && mc!=';') mx = mx*10+(mc-'0');
             while (read(0,&mc,1)==1 && mc!='M' && mc!='m') my = my*10+(mc-'0');
+            if (mc=='M'&&(btn==64||btn==65)) { sel=(sel+(btn==65?1:nb-1))%nb; continue; }
             if (mc!='M' || btn!=0) continue;
             int gx = mx-1, gy = my-1;
             for (int i = 0; i < nb; i++) if (gy==br[i] && gx>=bx[i] && gx<bx[i]+bw[i]) { hit=sel=i; break; }
