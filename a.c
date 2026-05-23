@@ -522,9 +522,10 @@ static int cmd_tmux(int c,char**v){if(c>2){execvp("tmux",v+1);return 1;}if(!gete
 static int cmd_adb(int c,char**v){
     if(c>2&&!strcmp(v[2],"setup"))return system(ADBSEL
       "p=$(cat ~/.ssh/id_*.pub 2>/dev/null|head -1);[ -z \"$p\" ]&&{ echo no pubkey;exit 1;};"
-      "echo \"$p\">/tmp/_pk;$A push /tmp/_pk /sdcard/pk.txt >/dev/null||exit 1;rm /tmp/_pk;"
-      "printf 'mkdir -p ~/.ssh\\ncat /sdcard/pk.txt>~/.ssh/authorized_keys\\nchmod 600 ~/.ssh/authorized_keys\\nsshd\\necho A_OK\\n'>/tmp/_s.sh;"
-      "$A push /tmp/_s.sh /sdcard/_a.sh >/dev/null;rm /tmp/_s.sh;"
+      "t=${TMPDIR:-/tmp};[ -w \"$t\" ]||t=${PREFIX:-$HOME}/tmp;mkdir -p \"$t\";pk=$t/_pk;sc=$t/_s.sh;"
+      "echo \"$p\">\"$pk\";$A push \"$pk\" /sdcard/pk.txt >/dev/null||exit 1;rm \"$pk\";"
+      "printf 'mkdir -p ~/.ssh\\ncat /sdcard/pk.txt>~/.ssh/authorized_keys\\nchmod 600 ~/.ssh/authorized_keys\\nsshd\\necho A_OK\\n'>\"$sc\";"
+      "$A push \"$sc\" /sdcard/_a.sh >/dev/null;rm \"$sc\";"
       "$A shell '/system/bin/device_config put activity_manager max_phantom_processes 2147483647' 2>/dev/null;"
       "$A shell 'settings put global settings_enable_monitor_phantom_procs false' 2>/dev/null;"
       "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null;sleep 2;"
