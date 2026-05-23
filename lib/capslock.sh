@@ -89,7 +89,7 @@ AHK
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB command "$ABIN/a-launch"
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB binding '<Hyper>a'
     ok "CapsLock+a → a i (or a ui if running)"
-    sudo apt install -y keyd >/dev/null 2>&1 && printf '[ids]\n*\n\n[main]\nrightshift = overloadt(shift, C-pagedown, 200)\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift = Ctrl+PageDown (tmux next-window / Chrome next-tab)" || warn "keyd skipped" ;;
+    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nrightshift = overloadt(shift, C-pagedown, 200)\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift = Ctrl+PageDown (tmux next-window / Chrome next-tab)" || warn "keyd skipped" ;;
 darwin*)
     if [[ -d /Applications/Hammerspoon.app ]]; then  # Macs already on Hammerspoon — keep old method
     mkdir -p ~/.hammerspoon
