@@ -15,7 +15,7 @@ static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
     if(getenv("TMUX"))execlp("tmux","tmux",w?"select-window":"switch-client","-t",w?w:TMS,(char*)NULL);
-    if(w){char t[256];tm_t(w,t);execlp("tmux","tmux","new-session","-t",TMS,"-s",g,";","select-window","-t",t,(char*)NULL);}
+    if(w)execlp("tmux","tmux","new-session","-t",TMS,"-s",g,";","select-window","-t",w,(char*)NULL);
     execlp("tmux","tmux","new-session","-t",TMS,"-s",g,(char*)NULL);}
 static void tm_rename(const char*n){char c[160];snprintf(c,160,"tmux rename-window '%s'",n);(void)!system(c);}
 static int tm_new(const char *w, const char *wd, const char *cmd) {
