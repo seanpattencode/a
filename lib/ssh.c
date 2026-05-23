@@ -194,7 +194,7 @@ static int cmd_ssh(int argc,char**argv){
         int tot=0;size_t dl=strlen(DEV);
         for(int i=0;i<nh;i++){
             if(!strncmp(H[i].name,DEV,dl))continue;
-            char cm[B];snprintf(cm,B,"a ssh %s;exec bash",H[i].name);
+            char cm[B];snprintf(cm,B,"a ssh %s",H[i].name);
             tm_new(H[i].name,HOME,cm);tot++;}
         printf("→ %d ssh window%s in a: session\n",tot,tot==1?"":"s");fflush(stdout);
         tm_go(NULL);return 0;}
