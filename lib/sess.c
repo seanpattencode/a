@@ -185,6 +185,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             int hs=0,cl=(int)strlen(cmd);
             for(int i=0;i<n;i++)if(!strncmp(lines[i],cmd,(size_t)cl)&&lines[i][cl]==' '){hs=1;break;}
             if(hs){snprintf(prefix,256,"%s ",cmd);buf[0]=0;blen=0;sel=0;printf("\033[J");continue;}
+            if(m_mode){char cs[512];snprintf(cs,512,"a %s >/dev/null 2>&1",cmd);(void)!system(cs);
+                sel=0;buf[0]=0;blen=0;prefix[0]=0;(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
             IRST;
             if(dexists(cmd)){char tf[P];snprintf(tf,P,"%s/cd_target",DDIR);writef(tf,cmd);return 0;}
             {int wo=!strncmp(cmd,"open ",5)?5:!strncmp(cmd,"web ",4)?4:0;
