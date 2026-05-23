@@ -375,6 +375,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/serve.c"
 #include "lib/tok.c"
 #include "lib/debloat.c"
+#include "lib/v.c"
 #include "lib/m.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
@@ -621,7 +622,7 @@ static const cmd_t CMDS[] = {
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
     {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},
     {"uninstall",cmd_uninstall},{"update",cmd_update},
-    {"vm",cmd_vm},
+    {"v",cmd_v},{"vm",cmd_vm},
     {"w",cmd_w},{"watch",cmd_watch},{"web",cmd_web},{"work",cmd_w},
     {"x",cmd_x},
 };
