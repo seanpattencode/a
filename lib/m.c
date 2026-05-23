@@ -16,7 +16,7 @@ static void m_status(const char *msg) {
     time_t t = time(NULL); struct tm *tm = localtime(&t);
     snprintf(p, P, "%s/m_status", DDIR);
     snprintf(l, 256, "[%02d:%02d:%02d] %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, msg);
-    mm_w(p, l, "a");
+    mm_w(p, l, "w");
 }
 
 static void m_commit(const char *tag) {
@@ -167,9 +167,12 @@ static int cmd_m_panel(int c, char **v) {
         if(ph<=5) sel=0;
         write(1, "\033[2J\033[H", 7); nb = 0;
         printf("\033[%dmtok %ldk/%s\033[0m ",pct>=80?31:pct>=50?33:32,tot/1000,lim>=1000000?"1M":"200k");
-        if (gg) printf("gemini --yolo --output-format stream-json -m %s\033[K",cm);
-        else if (xx) printf("codex exec --json -m %s -c model_reasoning_effort=\"%s\"%s%s%s --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox\033[K",cm,cf,strcmp(ct,"default")?" -c service_tier=\"":"",strcmp(ct,"default")?ct:"",strcmp(ct,"default")?"\"":"");
-        else printf("claude -p --model %s --effort %s --tools \"\" +sysprompt+settings\033[K",cm,cf);
+        if (gg) printf("gemini -m %s",cm);
+        else if (xx) printf("codex -m %s eff=%s%s%s",cm,cf,strcmp(ct,"default")?" tier=":"",strcmp(ct,"default")?ct:"");
+        else printf("claude -m %s eff=%s",cm,cf);
+        {char sp[P];snprintf(sp,P,"%s/m_status",DDIR);char*s=readf(sp,NULL);
+         if(s){s[strcspn(s,"\n")]=0;if(*s)printf(" │ %s",s);free(s);}}
+        printf("\033[K");
         {const char*lbl=ph>5?"[-] collapse $ tmux resize-pane -t \"$TMUX_PANE\" -y 2":"[+] expand $ tmux resize-pane -t \"$TMUX_PANE\" -y 15";
          printf("\033[2;1H\033[%dm%s",sel==nb?7:1,lbl); int ll=(int)strlen(lbl);
          for(int i=ll;i<cw;i++)putchar(' '); printf("\033[0m");
@@ -379,7 +382,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "main")) return m_main();
     if (c > 2 && !strcmp(v[2], "new")) return m_new();
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
-    char b[B], sf[P], ss[P], spf[P], pty[64] = "";
+    char b[B], sf[P], spf[P], pty[64] = "";
     CWD(w); struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
     snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
     if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b); tm_go(sn); return 0; }
@@ -391,19 +394,16 @@ static int cmd_m(int c, char **v) {
     if(c<=2){char cm[B];snprintf(cm,B,"cd %s/m 2>/dev/null && ls -t m.txt agent/*.txt 2>/dev/null|head -1",AROOT);
       FILE*pp=popen(cm,"r");if(pp){char bb[128];if(fgets(bb,128,pp)){bb[strcspn(bb,"\n")]=0;if(*bb)snprintf(fnb,128,"%s",bb);}pclose(pp);}}
     snprintf(sf, P, "%s/m/%s", AROOT, fn);
-    snprintf(ss, P, "%s/m_status", DDIR);
     snprintf(spf, P, "%s/m/sysprompt.txt", AROOT);
     if (!fexists(spf)) mm_w(spf, "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.\n", "w");
-    mm_w(ss, "", "w");
     setenv("M_IN", "1", 1);
     snprintf(b, B, "[ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(gh repo clone m 2>/dev/null||gh repo create m --private --clone);};"
                    "(cd %1$s/m && git pull --rebase -q 2>/dev/null) & "
                    "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
                    "$S -b 'a v %2$s';"
-                   "$S -l 3 'tail -Fn 50 %3$s';"
-                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%5$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %4$s/m_pty;"
+                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%4$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %3$s/m_pty;"
                    "$S -l 2 -P -F '#{pane_id}' 'a m panel'",
-             AROOT, sf, ss, DDIR, fn);
+             AROOT, sf, DDIR, fn);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];
     snprintf(pf,P,"%s/m_panel",DDIR); mm_w(pf,pty,"w");
