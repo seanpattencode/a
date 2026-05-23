@@ -94,19 +94,23 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",
-        "a m main\tm","a m new\tm","a m archive\tm","a m archive turn\tm","a m archive undo\tm","a m restart\tm","a m edit\tm",
-        "a m agent claude\tm","a m agent codex\tm","a m agent gemini\tm",
-        "a m model opus\tm","a m model sonnet\tm","a m model haiku\tm","a m model gpt-5\tm","a m model gpt-5.5\tm",
-        "a m model gemini-2.5-flash\tm","a m model gemini-2.5-pro\tm","a m model gemini-3-pro-preview\tm",
-        "a m effort low\tm","a m effort medium\tm","a m effort high\tm","a m effort max\tm","a m effort xhigh\tm",
-        "a m tier default\tm","a m tier fast\tm","a m tier flex\tm",0};
+        "m main\tm\topen main m.txt","m new\tm\tnew agent file in agent/","m archive\tm\tarchive whole m.txt + push","m archive turn\tm\ttrim last turn","m archive undo\tm\trevert last archive","m restart\tm\tkill+respawn window (reload layout)","m edit\tm\topen m.txt in e",
+        "m agent claude\tm\tswitch to Claude","m agent codex\tm\tswitch to Codex (GPT)","m agent gemini\tm\tswitch to Gemini",
+        "m model opus\tm\tClaude Opus (1M ctx, deepest)","m model sonnet\tm\tClaude Sonnet (fast/cheap)","m model haiku\tm\tClaude Haiku (fastest)","m model gpt-5\tm\tCodex GPT-5","m model gpt-5.5\tm\tCodex GPT-5.5",
+        "m model gemini-2.5-flash\tm\tGemini Flash","m model gemini-2.5-pro\tm\tGemini Pro","m model gemini-3-pro-preview\tm\tGemini 3 Pro preview",
+        "m effort low\tm\tlow reasoning effort","m effort medium\tm\tmedium effort","m effort high\tm\thigh effort","m effort max\tm\tmax (Claude only)","m effort xhigh\tm\txhigh (Codex only)",
+        "m tier default\tm\tdefault tier","m tier fast\tm\tpriority/fast tier","m tier flex\tm\tflex tier (cheap, slow)",0};
     for(int i=0;acts[i]&&n<2048;i++)lines[n++]=(char*)acts[i];}
     if(!n){puts("Empty cache");free(raw);return 1;}
     qsort(lines,(size_t)n,sizeof*lines,ln_cmp);
     {char*f=getenv("A_FILT_TAG"),*t;int j=0;
-    if(f){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))&&strstr(f,t+1))lines[j++]=lines[i];n=j;}}
+    if(f){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))){
+        char tg[64];char*t2=strchr(t+1,'\t');size_t tl=t2?(size_t)(t2-t-1):strlen(t+1);
+        if(tl>63)tl=63;memcpy(tg,t+1,tl);tg[tl]=0;
+        if(strstr(f,tg))lines[j++]=lines[i];}n=j;}}
+    int m_mode=0;{char*f=getenv("A_FILT_TAG");if(f&&!strcmp(f,"m"))m_mode=1;}
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
-    struct winsize ws;ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-3:10;
+    struct winsize ws;ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
@@ -126,13 +130,27 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         int top=sel>=maxshow?sel-maxshow+1:0, show=nm-top<maxshow?nm-top:maxshow;
         {char fb[B*4];int fl=0;
         #define FP(f,...) fl+=snprintf(fb+fl,fl<B*4?(size_t)(B*4-fl):0,f,##__VA_ARGS__)
-        FP("\033[H\033[?25l%s> %s\033[K\n",prefix,buf);
+        FP("\033[H\033[?25l");
+        if(m_mode){load_cfg();const char*cm=cfget("m_model");if(!*cm)cm="opus";
+            const char*cg=cfget("m_agent");if(!*cg)cg="claude";
+            const char*cf=cfget("m_effort");if(!*cf)cf="low";
+            struct stat st;long tot=0;char hp[P];
+            snprintf(hp,P,"%s/m/m.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
+            snprintf(hp,P,"%s/local/a_cat.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
+            snprintf(hp,P,"%s/m/i.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
+            snprintf(hp,P,"%s/m_status",DDIR);char*ms=readf(hp,NULL);
+            if(ms)ms[strcspn(ms,"\n")]=0;
+            FP("\033[36mtok %ldk %s -m %s eff=%s%s%s\033[0m\033[K\n",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
+            free(ms);}
+        FP("%s> %s\033[K\n",prefix,buf);
         if(!nm&&blen){FP("%s \033[35ma c \"%s\"\033[0m\033[K\n",sel==0?" >":"  ",buf);
             FP("%s \033[36mGoogle: %s\033[0m\033[K\n",sel==1?" >":"  ",buf);}
-        for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t');int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]),tl=t?(int)strlen(t+1):0;
-            if(ml>W-7-tl)ml=W-7-tl;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j]);
-            if(t)FP("\033[%dG\033[90m%s\033[0m",W-tl,t+1);FP("\n");}
-        FP("\033[J\033[1;%dH\033[?25h",plen+blen+3);
+        for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
+            int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
+            char*desc=t2?t2+1:(t?t+1:"");int dl=(int)strlen(desc);
+            if(ml>W-7-dl)ml=W-7-dl;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j]);
+            if(*desc)FP("\033[%dG\033[90m%s\033[0m",W-dl,desc);FP("\n");}
+        FP("\033[J\033[%d;%dH\033[?25h",m_mode?2:1,plen+blen+3);
         #undef FP
         (void)!write(STDOUT_FILENO,fb,(size_t)fl);}
         char ch; if(read(0,&ch,1)!=1) break;
