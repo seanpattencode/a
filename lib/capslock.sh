@@ -67,7 +67,10 @@ AHK
         ok "WSL: right shift = Ctrl+PageDown"
         exit 0
     fi
-    # Capslock → Hyper
+    # keyd (right shift → Ctrl+PageDown) — first, doesn't need DBUS
+    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nrightshift = overloadt(shift, C-pagedown, 200)\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift = Ctrl+PageDown" || warn "keyd skipped"
+    # GNOME bits — skip silently if no DBUS session
+    command -v gsettings >/dev/null && gsettings list-schemas >/dev/null 2>&1 || { info "no GNOME session — skipping capslock/Hyper bindings"; exit 0; }
     OPTS=$(gsettings get org.gnome.desktop.input-sources xkb-options 2>/dev/null)
     if [[ "$OPTS" != *"caps:hyper"* ]]; then
         if [[ "$OPTS" == "@as []" || "$OPTS" == "[]" ]]; then OPTS="['caps:hyper']"
@@ -75,10 +78,8 @@ AHK
         gsettings set org.gnome.desktop.input-sources xkb-options "$OPTS"
         ok "capslock → Hyper"
     else info "capslock already Hyper"; fi
-    # Unbind GNOME Super+a (conflicts since Hyper=Super on mod4)
     gsettings set org.gnome.shell.keybindings toggle-application-view "[]" 2>/dev/null
     info "unbound Super+a (app view) to avoid conflict"
-    # Hyper+a → launcher
     EX=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null)
     if [[ "$EX" != *"a-launch"* ]]; then
         if [[ "$EX" == "@as []" || "$EX" == "[]" ]]; then EX="['$KB']"
@@ -88,8 +89,7 @@ AHK
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB name 'a launch'
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB command "$ABIN/a-launch"
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB binding '<Hyper>a'
-    ok "CapsLock+a → a i (or a ui if running)"
-    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nrightshift = overloadt(shift, C-pagedown, 200)\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift = Ctrl+PageDown (tmux next-window / Chrome next-tab)" || warn "keyd skipped" ;;
+    ok "CapsLock+a → a i (or a ui if running)" ;;
 darwin*)
     if [[ -d /Applications/Hammerspoon.app ]]; then  # Macs already on Hammerspoon — keep old method
     mkdir -p ~/.hammerspoon
