@@ -164,9 +164,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     while(read(0,&mc,1)==1&&mc!=';')mb=mb*10+mc-'0';
                     while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
-                    if(mc=='M'){if(!mb){int ci=my-2+top;if(ci>=0&&ci<nm){sel=ci;do_pick=1;}}
+                    if(mc=='M'){if(!mb){int ci=my-(m_mode?3:2)+top;if(ci>=0&&ci<nm){sel=ci;do_pick=1;}}
                     else if(mb==64&&sel>0)sel--;else if(mb==65&&sel<nm-1)sel++;}}
-            } else if(prefix[0]){prefix[0]=0;buf[0]=0;blen=0;sel=0;} else break;
+            } else if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;} else break;
         } else if(ch=='\t'){int mx=nm?nm-1:blen?1:0;if(sel<mx)sel++;}
         else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;}
         else if(ch=='\r'||ch=='\n'){if(!nm&&blen){IRST;
@@ -174,7 +174,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             else{char u[512];snprintf(u,512,"https://google.com/search?q=%s",buf);
                 for(char*p=u;*p;p++)if(*p==' ')*p='+';bg_exec(OPENER,u);}
             return 0;}do_pick=1;}
-        else if(ch==3||ch==4)break;
+        else if(ch==3){if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
+        else if(ch==4)break;
         else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
         if(do_pick&&nm){char*m=fm[sel],cmd[256];
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
