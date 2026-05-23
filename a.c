@@ -273,6 +273,8 @@ install)
         if [[ "$ur" != *a-git* ]]; then rm -rf "$SROOT"; gh repo clone seanpattencode/a-git "$SROOT" 2>/dev/null&&ok "adata/git re-cloned"
         else git -C "$SROOT" pull --ff-only -q 2>/dev/null&&ok "adata/git synced"||ok "adata/git"; fi
     fi
+    # tame adata/git repacks: freeze >200m base pack + no reactive maintenance (HDD repack-storm fix)
+    [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;ok "adata/git tuned";}
     if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'a-gdrive'; then
         _DEV=$(cat "$D/adata/local/.device" 2>/dev/null || hostname)
         _BDIR="$D/adata/backup/$_DEV"; mkdir -p "$_BDIR"
