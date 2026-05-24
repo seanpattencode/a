@@ -405,8 +405,8 @@ static int cmd_m(int c, char **v) {
     setenv("M_IN", "1", 1);
     snprintf(b, B, "S=\"tmux split-window -t $TMUX_PANE -e M_IN=1 -dv\";"
                    "$S -b 'a v %2$s';"
-                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%4$s -dv -l 7 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %3$s/m_pty;"
-                   "$S -l 8 -P -F '#{pane_id}' 'A_FILT_TAG=m a i'",
+                   "tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%4$s -dv -l 3 -P -F '#{pane_id}' 'cd %1$s/m;exec bash' > %3$s/m_pty;"
+                   "$S -l 14 -P -F '#{pane_id}' 'A_FILT_TAG=m a i'",
              AROOT, sf, DDIR, fn);
     pcmd(b, pty, 64); pty[strcspn(pty, "\n")] = 0;
     char pf[P];

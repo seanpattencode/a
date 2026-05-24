@@ -151,7 +151,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 FP("\033[36m%.*s\033[0m\033[K\n",ch,hl+p);
                 p+=ch?ch:1;
             }while(p<hll);}
-        FP("%s> %s\033[K\n",prefix,buf);
+        if(!blen&&!plen)FP("> \033[90mtype to filter, click/Enter to run\033[0m\033[K\n");
+        else FP("%s> %s\033[K\n",prefix,buf);
         if(!nm&&blen){FP("%s \033[35ma c \"%s\"\033[0m\033[K\n",sel==0?" >":"  ",buf);
             FP("%s \033[36mGoogle: %s\033[0m\033[K\n",sel==1?" >":"  ",buf);}
         for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
