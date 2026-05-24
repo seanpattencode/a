@@ -14,15 +14,16 @@ static int tm_has(const char *w) {
 static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
-    if(getenv("TMUX"))execlp("tmux","tmux",w?"select-window":"switch-client","-t",w?w:TMS,(char*)NULL);
+    if(getenv("TMUX")){char c[256];snprintf(c,256,"tmux new-session -d -t "TMS" -s %s 2>/dev/null;exec tmux switch-client -t %s%s%s",g,g,w?":":"",w?w:"");
+        execl("/bin/sh","sh","-c",c,(char*)0);}
     if(w)execlp("tmux","tmux","new-session","-t",TMS,"-s",g,";","select-window","-t",w,(char*)NULL);
     execlp("tmux","tmux","new-session","-t",TMS,"-s",g,(char*)NULL);}
 static void tm_rename(const char*n){char c[160];snprintf(c,160,"tmux rename-window '%s'",n);(void)!system(c);}
 static int tm_new(const char *w, const char *wd, const char *cmd) {
     tm_ensure_sess();if(tm_has(w))return 1;char c[B*2],ev[P+16]="";
     const char*xa=getenv("A_CTX");if(xa&&xa[0])snprintf(ev,sizeof(ev),"-e A_CTX='%s' ",xa);
-    if(cmd&&*cmd)snprintf(c,sizeof(c),"tmux new-window %s-t '"TMS":' -n '%s' -c '%s' '%s'",ev,w,wd,cmd);
-    else snprintf(c,sizeof(c),"tmux new-window %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
+    if(cmd&&*cmd)snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s' '%s'",ev,w,wd,cmd);
+    else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
     return system(c);
 }
 static void tm_sk(const char*w,const char*s,int l){char t[256];tm_t(w,t);pid_t p=fork();
