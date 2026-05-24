@@ -31,8 +31,7 @@ static int cmd_v(int c,char**v){
         size_t bl=(size_t)sprintf(b,"\033[H\033[2J"),p=top;int rr=0;
         while(p<sz&&rr<H){int col=0;
             while(p<sz&&m[p]!='\n'&&col<W){b[bl++]=m[p++];col++;}
-            while(p<sz&&m[p]!='\n')p++;
-            if(p<sz)p++;
+            if(p<sz&&m[p]=='\n')p++;
             b[bl++]='\r';b[bl++]='\n';rr++;}
         (void)!write(1,b,bl);
         fd_set fs;FD_ZERO(&fs);FD_SET(0,&fs);int mx=ifd>0?ifd:0;
