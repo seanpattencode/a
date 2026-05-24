@@ -311,12 +311,12 @@ static int m_archive(int c, char **v) {
         size_t tl; char *txt = readf(mp, &tl);
         if (!txt) { printf("not found: %s\n", mp); return 1; }
         char *last_um=NULL, *prev_um=NULL, *p=txt;
-        char *aend = strstr(txt, "## a-loaded-end\n"); const char *start = aend?aend:txt;
-        while ((p = strstr(p+1, "\n## user\n")) && p < txt + tl) {
-            if (p+1 < start) continue;
+        char *aend = strstr(txt, "## a-loaded-end\n");
+        while ((p = strstr(p+1, "\n## user\n"))) {
+            if (aend && p+1 < aend) continue;
             prev_um = last_um; last_um = p + 1;
         }
-        if (!prev_um || !last_um || prev_um == last_um) { puts("no completed turn to archive"); free(txt); return 0; }
+        if (!prev_um) { puts("no completed turn to archive"); free(txt); return 0; }
         int r = m_arch_cut(mp, txt, tl, prev_um, last_um, "turn"); free(txt); return r;
     }
     if (c == 3 || (c == 4 && strstr(v[3], ".txt"))) {
