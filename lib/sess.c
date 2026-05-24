@@ -1,3 +1,4 @@
+#include <poll.h>
 static int cmd_sess(int argc, char **argv) {
     init_db(); load_cfg(); load_proj(); load_apps(); load_sess();
     const char *key = argv[1];
@@ -127,21 +128,28 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             fm[nm++]=lines[i];
         }
         {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
-        int top=sel>=maxshow?sel-maxshow+1:0, show=nm-top<maxshow?nm-top:maxshow;
-        {char fb[B*4];int fl=0;
-        #define FP(f,...) fl+=snprintf(fb+fl,fl<B*4?(size_t)(B*4-fl):0,f,##__VA_ARGS__)
-        FP("\033[H\033[?25l");
+        int hdr_rows=0;char hl[2048];int hll=0,Wc=ws.ws_col?ws.ws_col:80;
         if(m_mode){load_cfg();const char*cm=cfget("m_model");if(!*cm)cm="opus";
             const char*cg=cfget("m_agent");if(!*cg)cg="claude";
             const char*cf=cfget("m_effort");if(!*cf)cf="low";
             struct stat st;long tot=0;char hp[P];
-            snprintf(hp,P,"%s/m/m.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
+            snprintf(hp,P,"%s/m/m.txt",SDIR);if(!stat(hp,&st))tot+=st.st_size;
             snprintf(hp,P,"%s/local/a_cat.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
-            snprintf(hp,P,"%s/m/i.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
+            snprintf(hp,P,"%s/m/i.txt",SDIR);if(!stat(hp,&st))tot+=st.st_size;
             snprintf(hp,P,"%s/m_status",DDIR);char*ms=readf(hp,NULL);
             if(ms)ms[strcspn(ms,"\n")]=0;
-            FP("\033[36mtok %ldk %s -m %s eff=%s%s%s\033[0m\033[K\n",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
-            free(ms);}
+            hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
+            free(ms); hdr_rows=hll>0?(hll+Wc-1)/Wc:1;}
+        int em=m_mode?(ws.ws_row>hdr_rows+3?ws.ws_row-hdr_rows-3:1):maxshow;
+        int top=sel>=em?sel-em+1:0, show=nm-top<em?nm-top:em;
+        {char fb[B*4];int fl=0;
+        #define FP(f,...) fl+=snprintf(fb+fl,fl<B*4?(size_t)(B*4-fl):0,f,##__VA_ARGS__)
+        FP("\033[H\033[?25l");
+        if(m_mode){int p=0;
+            do{int ch=(hll-p)>Wc?Wc:(hll-p);
+                FP("\033[36m%.*s\033[0m\033[K\n",ch,hl+p);
+                p+=ch?ch:1;
+            }while(p<hll);}
         FP("%s> %s\033[K\n",prefix,buf);
         if(!nm&&blen){FP("%s \033[35ma c \"%s\"\033[0m\033[K\n",sel==0?" >":"  ",buf);
             FP("%s \033[36mGoogle: %s\033[0m\033[K\n",sel==1?" >":"  ",buf);}
@@ -150,10 +158,13 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             char*desc=t2?t2+1:(t?t+1:"");int dl=(int)strlen(desc);
             if(ml>W-7-dl)ml=W-7-dl;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%s\033[0m",W-dl,desc);FP("\n");}
-        FP("\033[J\033[%d;%dH\033[?25h",m_mode?2:1,plen+blen+3);
+        FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+1):1,plen+blen+3);
         #undef FP
         (void)!write(STDOUT_FILENO,fb,(size_t)fl);}
-        char ch; if(read(0,&ch,1)!=1) break;
+        char ch;
+        if(m_mode){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,250);
+            if(pr==0)continue; if(pr<0)break;}
+        if(read(0,&ch,1)!=1) break;
         int do_pick=0;
         if(ch=='\x1b'){int av;usleep(50000);ioctl(0,FIONREAD,&av);if(!av)break;
             char seq[2];if(read(0,seq,1)!=1)break;
@@ -186,7 +197,11 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             for(int i=0;i<n;i++)if(!strncmp(lines[i],cmd,(size_t)cl)&&lines[i][cl]==' '){hs=1;break;}
             if(hs){snprintf(prefix,256,"%s ",cmd);buf[0]=0;blen=0;sel=0;printf("\033[J");continue;}
             if(m_mode){char cs[512];snprintf(cs,512,"a %s >/dev/null 2>&1",cmd);(void)!system(cs);
-                sel=0;buf[0]=0;blen=0;prefix[0]=0;(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
+                sel=0;buf[0]=0;blen=0;
+                if(!strncmp(cmd,"m agent ",8))snprintf(prefix,256,"m effort ");
+                else if(!strncmp(cmd,"m effort ",9))snprintf(prefix,256,"m model ");
+                else prefix[0]=0;
+                (void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
             IRST;
             if(dexists(cmd)){char tf[P];snprintf(tf,P,"%s/cd_target",DDIR);writef(tf,cmd);return 0;}
             {int wo=!strncmp(cmd,"open ",5)?5:!strncmp(cmd,"web ",4)?4:0;
