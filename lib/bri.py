@@ -259,8 +259,27 @@ def _mon():
     if os.path.exists(LOG): print(f'bri.log  {os.path.getsize(LOG)/1024:.0f}KB')
     print(f'/poll    active long-poll holds: {max(0, len(run(["lsof","-iTCP:1234","-sTCP:ESTABLISHED"]).split(chr(10)))-2)}')
 
+# DON'T USE. Firefox+bri-ext is strictly better for automation: no CSP fights,
+# no per-Chrome-version flag whack-a-mole, sideloadable unsigned extensions.
+# Kept so you don't have to import 30k tokens of agui to poke Chrome.
+# Requires: chrome --remote-debugging-port=9222 --remote-allow-origins='*'
+def cdp(method, params=None, _s=[None, 0]):
+    if _s[0] is None:
+        import websocket, urllib.request as u
+        _s[0] = websocket.create_connection(json.loads(u.urlopen('http://127.0.0.1:9222/json').read())[0]['webSocketDebuggerUrl'])
+    _s[1] += 1; i = _s[1]
+    _s[0].send(json.dumps({'id':i,'method':method,'params':params or {}}))
+    while (r := json.loads(_s[0].recv())).get('id') != i: pass
+    return r.get('result', {})
+
 def client(args):
     a = args[0]
+    if a == 'cdp':
+        if len(args) < 2: print("bri cdp <url> | bri cdp eval <js>  (suffer-mode: needs chrome --remote-debugging-port=9222 --remote-allow-origins='*')"); return
+        if args[1] == 'eval' and len(args) > 2:
+            print(cdp('Runtime.evaluate', {'expression': ' '.join(args[2:]), 'returnByValue': True}).get('result', {}).get('value'))
+        else: cdp('Page.navigate', {'url': args[1]}); print(f'nav: {args[1]}')
+        return
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
     if a == 'mon':     _mon(); return
     if a == 'deploy':  # zero-click rebuild+install of bri-ext + Firefox restart

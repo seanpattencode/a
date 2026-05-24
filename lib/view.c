@@ -151,14 +151,3 @@ static int cmd_gui(int argc,char**argv){AB;perf_disarm();
         vcdp(js,o,B);printf("%s\n",o);return 0;}
     printf("unknown: a gui %s\n",s);return 1;}
 
-static int cmd_web(int argc,char**argv){AB;perf_disarm();
-    char c[B],args[B]="";
-    for(int i=2;i<argc;i++){int l=(int)strlen(args);snprintf(args+l,(size_t)(B-l),"%s%s",l?" ":"",argv[i]);}
-    snprintf(c,B,"python3 %s/lib/agui.py %s",SDIR,args);
-    if(!isatty(0))return system(c);
-    tm_ensure_conf();
-    char wn[64];time_t tt=time(NULL);struct tm*lt=localtime(&tt);
-    snprintf(wn,64,"web-%02d%02d%02d",lt->tm_hour,lt->tm_min,lt->tm_sec);
-    CWD(wd);char wc[B*2];snprintf(wc,B*2,"%s;echo;echo \"[done] press enter\";read",c);
-    if(tm_new(wn,wd,wc))return system(c);
-    tm_go(wn);return 0;}

@@ -627,7 +627,7 @@ static const cmd_t CMDS[] = {
     {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},
     {"uninstall",cmd_uninstall},{"update",cmd_update},
     {"v",cmd_v},{"vm",cmd_vm},
-    {"w",cmd_w},{"watch",cmd_watch},{"web",cmd_web},{"work",cmd_w},
+    {"w",cmd_w},{"watch",cmd_watch},{"work",cmd_w},
     {"x",cmd_x},
 };
 #define NCMDS (sizeof(CMDS)/sizeof(*CMDS))
