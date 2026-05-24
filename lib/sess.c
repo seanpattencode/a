@@ -111,13 +111,14 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(strstr(f,tg))lines[j++]=lines[i];}n=j;}}
     int m_mode=0;{char*f=getenv("A_FILT_TAG");if(f&&!strcmp(f,"m"))m_mode=1;}
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
-    struct winsize ws;ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
+    struct winsize ws;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
     char buf[256]="";int blen=0,sel=0;char prefix[256]="";
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
     while (1) {
+        ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
         for (int i=0;i<n&&nm<2048;i++) {
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
@@ -166,7 +167,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(pr==0)continue; if(pr<0)break;}
         if(read(0,&ch,1)!=1) break;
         int do_pick=0;
-        if(ch=='\x1b'){int av;usleep(50000);ioctl(0,FIONREAD,&av);if(!av)break;
+        if(ch=='\x1b'){int av;usleep(50000);ioctl(0,FIONREAD,&av);
+            if(!av){if(m_mode){prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
             char seq[2];if(read(0,seq,1)!=1)break;
             if(seq[0]=='['){if(read(0,seq+1,1)!=1)break;
                 if(seq[1]=='A'){if(sel>0)sel--;}
@@ -177,7 +179,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
                     if(mc=='M'){if(!mb){int ci=my-(m_mode?3:2)+top;if(ci>=0&&ci<nm){sel=ci;do_pick=1;}}
                     else if(mb==64&&sel>0)sel--;else if(mb==65&&sel<nm-1)sel++;}}
-            } else if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;} else break;
+            } else if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;} else if(!m_mode)break;
         } else if(ch=='\t'){int mx=nm?nm-1:blen?1:0;if(sel<mx)sel++;}
         else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;}
         else if(ch=='\r'||ch=='\n'){if(!nm&&blen){IRST;
