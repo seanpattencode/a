@@ -1,5 +1,5 @@
 #!/bin/bash
-# a set capslock on|off — remap capslock+a to launch a i or a ui
+# a keys on|off — caps→summon, right-shift→tmux next-window (mac: CGEventTap subprocess)
 set -e
 D="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; ACTION="${1:-on}"; ABIN="${D%%/adata/worktrees/*}/adata/local"
 G='\033[32m' Y='\033[33m' C='\033[36m' R='\033[0m'
@@ -29,28 +29,18 @@ if [[ "$ACTION" == "off" ]]; then
     exit 0
 fi
 
-# === ON ===
-# Write launcher script
-cat > "$ABIN/a-launch" << 'LAUNCH'
+case "$OSTYPE" in
+linux*)
+    cat > "$ABIN/a-launch" << 'LAUNCH'
 #!/bin/sh
 ABIN="$(dirname "$0")"
 [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ] && exit 0
-if curl -s -o /dev/null http://a.local:1111 2>/dev/null; then
-    xdg-open "http://a.local:1111" >/dev/null 2>&1 &
-else
-    for T in ptyxis gnome-terminal alacritty foot xterm; do command -v "$T" >/dev/null 2>&1 && break; done
-    case "$T" in
-        ptyxis|gnome-terminal) "$T" -- "$ABIN/a" i ;;
-        alacritty) "$T" -e "$ABIN/a" i ;;
-        foot) "$T" "$ABIN/a" i ;;
-        *) xterm -e "$ABIN/a" i ;;
-    esac
+if curl -s -o /dev/null http://a.local:1111 2>/dev/null; then xdg-open "http://a.local:1111" >/dev/null 2>&1 &
+else for T in ptyxis gnome-terminal alacritty foot xterm; do command -v "$T" >/dev/null 2>&1 && break; done
+    case "$T" in ptyxis|gnome-terminal) "$T" -- "$ABIN/a" i ;; alacritty) "$T" -e "$ABIN/a" i ;; foot) "$T" "$ABIN/a" i ;; *) xterm -e "$ABIN/a" i ;; esac
 fi
 LAUNCH
-chmod +x "$ABIN/a-launch"; ok "wrote $ABIN/a-launch"
-
-case "$OSTYPE" in
-linux*)
+    chmod +x "$ABIN/a-launch"
     if grep -qi microsoft /proc/version 2>/dev/null; then
         WU=$(powershell.exe -NoProfile -Command 'echo $env:USERNAME'|tr -d '\r\n ')
         SU="/mnt/c/Users/$WU/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
@@ -91,59 +81,34 @@ AHK
     gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB binding '<Hyper>a'
     ok "CapsLock+a → a i (or a ui if running)" ;;
 darwin*)
-    if [[ -d /Applications/Hammerspoon.app ]]; then  # Macs already on Hammerspoon — keep old method
-    mkdir -p ~/.hammerspoon
-    cat > ~/.hammerspoon/init.lua << 'LUA'
-local t,c,et=0,false,hs.eventtap.event.types
-hs.eventtap.new({et.flagsChanged},function(e)
-  if e:getKeyCode()==60 then
-    if e:getFlags().shift then t=hs.timer.secondsSinceEpoch();c=true
-    elseif c and hs.timer.secondsSinceEpoch()-t<.3 then hs.eventtap.keyStroke({"ctrl"},"pagedown",0);c=false end end end):start()
-hs.eventtap.new({et.keyDown},function() c=false end):start()
-LUA
-    killall Hammerspoon 2>/dev/null||true; sleep 1; open -a Hammerspoon
-    ok "Hammerspoon → right shift = Ctrl+PageDown"
-    info "GRANT: System Settings → Privacy & Security → Accessibility → enable Hammerspoon"
-    else
+    pgrep -x Hammerspoon >/dev/null && { killall Hammerspoon 2>/dev/null; rm -f ~/.hammerspoon/init.lua; info "stopped Hammerspoon"; }
     command -v swiftc >/dev/null || { warn "need Command Line Tools: xcode-select --install"; exit 1; }
     printf '#!/bin/sh\nexec "%s/a" i\n' "$ABIN" > "$ABIN/a-summon.command"; chmod +x "$ABIN/a-summon.command"
     cat > "$ABIN/a-keys.swift" << 'SWIFT'
 import ApplicationServices
 import Foundation
-func run(_ a: [String]) { let p = Process(); p.executableURL = URL(fileURLWithPath: a[0]); p.arguments = Array(a.dropFirst()); try? p.run() }
-run(["/usr/bin/hidutil", "property", "--set", "{\"UserKeyMapping\":[{\"HIDKeyboardModifierMappingSrc\":0x700000039,\"HIDKeyboardModifierMappingDst\":0x70000006D}]}"])
-_ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
-let summon = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
-var t = 0.0, cand = false
-let mask = (1 << CGEventType.flagsChanged.rawValue) | (1 << CGEventType.keyDown.rawValue)
-let cb: CGEventTapCallBack = { _, type, e, _ in
-  let kc = e.getIntegerValueField(.keyboardEventKeycode)
-  if type == .keyDown {
-    cand = false
-    if kc == 79 && e.getIntegerValueField(.keyboardEventAutorepeat) == 0 { run(["/usr/bin/open", summon]) }
-  } else if kc == 60 {
-    if e.flags.contains(.maskShift) { t = Date().timeIntervalSince1970; cand = true }
-    else if cand && Date().timeIntervalSince1970 - t < 0.3 { for d in [true,false] { let e = CGEvent(keyboardEventSource: nil, virtualKey: 0x79, keyDown: d); e?.flags = .maskControl; e?.post(tap: .cghidEventTap) }; cand = false } }
+func run(_ a:[String]){let p=Process();p.executableURL=URL(fileURLWithPath:a[0]);p.arguments=Array(a.dropFirst());try? p.run()}
+run(["/usr/bin/hidutil","property","--set","{\"UserKeyMapping\":[{\"HIDKeyboardModifierMappingSrc\":0x700000039,\"HIDKeyboardModifierMappingDst\":0x70000006D}]}"])
+_ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue():true] as CFDictionary)
+let a=CommandLine.arguments, tmux=a.count>1 ? a[1]:"tmux", summon=a.count>2 ? a[2]:""
+var t=0.0, cand=false
+let cb:CGEventTapCallBack={_,type,e,_ in
+  let kc=e.getIntegerValueField(.keyboardEventKeycode)
+  if type == .keyDown { cand=false; if kc==79 && e.getIntegerValueField(.keyboardEventAutorepeat)==0 {run(["/usr/bin/open",summon])} }
+  else if kc==60 {
+    if e.flags.contains(.maskShift) {t=Date().timeIntervalSince1970; cand=true}
+    else if cand && Date().timeIntervalSince1970-t<0.3 {run([tmux,"next-window"]); cand=false} }
   return Unmanaged.passUnretained(e) }
-guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
-    options: .listenOnly, eventsOfInterest: CGEventMask(mask), callback: cb, userInfo: nil) else { exit(1) }
-CFRunLoopAddSource(CFRunLoopGetCurrent(), CFMachPortCreateRunLoopSource(nil, tap, 0), .commonModes)
-CGEvent.tapEnable(tap: tap, enable: true)
-CFRunLoopRun()
+let m=CGEventMask((1<<CGEventType.flagsChanged.rawValue)|(1<<CGEventType.keyDown.rawValue))
+guard let tap=CGEvent.tapCreate(tap:.cgSessionEventTap,place:.headInsertEventTap,options:.listenOnly,eventsOfInterest:m,callback:cb,userInfo:nil) else {exit(1)}
+CFRunLoopAddSource(CFRunLoopGetCurrent(),CFMachPortCreateRunLoopSource(nil,tap,0),.commonModes)
+CGEvent.tapEnable(tap:tap,enable:true); CFRunLoopRun()
 SWIFT
-    [ -x "$ABIN/a-keys" ] || swiftc "$ABIN/a-keys.swift" -o "$ABIN/a-keys" || { warn "swiftc failed"; exit 1; }
+    swiftc "$ABIN/a-keys.swift" -o "$ABIN/a-keys" || { warn "swiftc failed"; exit 1; }
     PL=~/Library/LaunchAgents/a-keys.plist
-    cat > "$PL" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>a-keys</string>
-<key>ProgramArguments</key><array><string>$ABIN/a-keys</string><string>$ABIN/a-summon.command</string></array>
-<key>RunAtLoad</key><true/></dict></plist>
-PLIST
-    launchctl unload "$PL" 2>/dev/null||true; launchctl load "$PL"
-    ok "a-keys → caps lock summons a · right shift = Ctrl+PageDown"
-    info "GRANT: System Settings → Privacy & Security → Accessibility → enable a-keys, then re-run: a capslock"
-    fi ;;
+    printf '<plist version="1.0"><dict><key>Label</key><string>a-keys</string><key>ProgramArguments</key><array><string>%s/a-keys</string><string>%s</string><string>%s/a-summon.command</string></array><key>RunAtLoad</key><true/></dict></plist>\n' "$ABIN" "$(command -v tmux)" "$ABIN" > "$PL"
+    launchctl unload "$PL" 2>/dev/null||:; launchctl load "$PL"
+    ok "a-keys → caps→summon · right-shift→next-window"
+    info "GRANT: System Settings → Accessibility → remove old a-keys, then 'a keys' to re-prompt" ;;
 *)  warn "unsupported OS — run $ABIN/a-launch manually" ;;
 esac
