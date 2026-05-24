@@ -422,9 +422,7 @@ class Home : Activity() {
     private lateinit var bmp: Bitmap
     private lateinit var v: View
     private val la by lazy { getSystemService(Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps }
-    private var sc: List<android.content.pm.ShortcutInfo>? = null
-    private var dx = 0f; private var dy = 0f
-    private val lpr = Runnable { if (sc == null) peek() }
+    private val SCF = android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
     private external fun nResize(w: Int, h: Int)
     private external fun nFont(id: Int, data: IntArray)
     private external fun nApps(names: Array<String>, pkgs: Array<String>, low: Array<String>, counts: IntArray, pinned: BooleanArray)
@@ -437,23 +435,6 @@ class Home : Activity() {
     private external fun nTop(): Int
     private external fun nCnt(i: Int, c: Int)
     private external fun nPin(i: Int)
-    private external fun nPeek(x: Float, y: Float): Int
-
-    private fun peek() {
-        val idx = nPeek(dx, dy) - 1; if (idx < 0) return
-        val pkg = nPkg(idx) ?: return
-        try {
-            val q = android.content.pm.LauncherApps.ShortcutQuery().setPackage(pkg).setQueryFlags(android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
-            val sl = la.getShortcuts(q, android.os.Process.myUserHandle()) ?: return
-            if (sl.isEmpty()) return
-            sc = sl
-            val names = Array(sl.size) { sl[it].shortLabel?.toString() ?: sl[it].id }
-            nApps(names, names, Array(sl.size) { names[it].lowercase() }, IntArray(sl.size), BooleanArray(sl.size))
-            nTouch(android.view.MotionEvent.ACTION_CANCEL and 0xFF, 0f, 0f)
-            v.invalidate()
-        } catch (e: Exception) {}
-    }
-    override fun onBackPressed() { if (sc != null) { sc = null; sendApps(cache.readText()); v.invalidate() } else super.onBackPressed() }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
@@ -472,13 +453,9 @@ class Home : Activity() {
                 c.drawBitmap(bmp, 0f, 0f, null)
             }
             override fun onTouchEvent(e: MotionEvent): Boolean {
-                val a = e.action and 0xFF
-                if (a == MotionEvent.ACTION_DOWN) { dx = e.x; dy = e.y; h.postDelayed(lpr, 500) }
-                else if (a == MotionEvent.ACTION_MOVE) { if (Math.abs(e.x - dx) > 50 || Math.abs(e.y - dy) > 50) h.removeCallbacks(lpr) }
-                else h.removeCallbacks(lpr)
-                val r = nTouch(a, e.x, e.y)
+                val r = nTouch(e.action and 0xFF, e.x, e.y)
                 when {
-                    r > 0 -> { val s = sc; if (s != null && r-1 < s.size) { try { la.startShortcut(s[r-1], null, null) } catch (_: Exception) {}; sc = null; sendApps(cache.readText()) } else launch(r - 1) }
+                    r > 0 -> launch(r - 1)
                     r == -1 -> nQuery()?.let { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(it)))) }
                     r == -2 -> nPkg(nTop())?.let { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$it"))) }
                     r == -3 -> { val i = nTop(); nPkg(i)?.let { p -> nPin(i); if (!pins.remove(p)) pins.add(p); ex.execute { db.execSQL("DELETE FROM pin WHERE p=?", arrayOf(p)); if (p in pins) db.execSQL("INSERT INTO pin VALUES(?)", arrayOf(p)) } } }
@@ -514,6 +491,10 @@ class Home : Activity() {
 
     private fun launch(i: Int) {
         nPkg(i)?.let { pkg ->
+            if (pkg.startsWith("~~")) { val p = pkg.substring(2).split("|", limit=2); if (p.size==2) try {
+                val q = android.content.pm.LauncherApps.ShortcutQuery().setPackage(p[0]).setShortcutIds(listOf(p[1])).setQueryFlags(SCF)
+                la.getShortcuts(q, android.os.Process.myUserHandle())?.firstOrNull()?.let { la.startShortcut(it, null, null) }
+            } catch (e: Exception) {} ; return }
             if (pkg.startsWith("~")) { try { startActivity(Intent(pkg.substring(1)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) {} ; return }
             val c = (cnt[pkg] ?: 0) + 1; cnt[pkg] = c; nCnt(i, c)
             ex.execute { db.execSQL("INSERT OR REPLACE INTO f VALUES(?,?)", arrayOf(pkg, c)) }
@@ -522,8 +503,12 @@ class Home : Activity() {
     }
 
     private fun scan() {
-        val pm = packageManager
-        val real = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0).map { it.loadLabel(pm).toString() to it.activityInfo.packageName }
+        val pm = packageManager; val me = android.os.Process.myUserHandle()
+        val real = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0).flatMap { ri ->
+            val lbl = ri.loadLabel(pm).toString(); val pk = ri.activityInfo.packageName
+            val sc = try { la.getShortcuts(android.content.pm.LauncherApps.ShortcutQuery().setPackage(pk).setQueryFlags(SCF), me) ?: emptyList() } catch (e: Exception) { emptyList() }
+            listOf(lbl to pk) + sc.map { (lbl + " > " + (it.shortLabel?.toString() ?: it.id)) to ("~~" + pk + "|" + it.id) }
+        }
         val sys = android.provider.Settings::class.java.fields.filter { it.name.startsWith("ACTION_") && it.type == String::class.java }.mapNotNull { f ->
             val a = try { f.get(null) as String } catch (e: Exception) { return@mapNotNull null }
             if (pm.resolveActivity(Intent(a), 0) == null) return@mapNotNull null
@@ -688,7 +673,7 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
             if (A[idx].pin) { buf[0] = '*'; buf[1] = ' '; off = 2; }
             strncpy(buf+off, A[idx].n, NM); buf[off+NM-1] = 0;
             { uint32_t nc = i==0 ? 0xFFFF00 : 0xFFFFFF;
-              if (A[idx].p[0]=='~') { int nw=(int)strlen(buf)*F[0].cw, tw=13*F[1].cw, sx=(W-nw-20-tw)/2; if (sx<0) sx=0;
+              if (A[idx].p[0]=='~' && A[idx].p[1]!='~') { int nw=(int)strlen(buf)*F[0].cw, tw=13*F[1].cw, sx=(W-nw-20-tw)/2; if (sx<0) sx=0;
                 drawstr((uint32_t*)p, stride, &F[0], buf, sx, y+rh/2-F[0].ch/2, nc);
                 drawstr((uint32_t*)p, stride, &F[1], "settings menu", sx+nw+20, y+rh/2-F[1].ch/2, 0x808080); }
               else drawcenter((uint32_t*)p, stride, &F[0], buf, y+rh/2-F[0].ch/2, nc); }
@@ -711,7 +696,7 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
 }
 
 JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
-    int ky = H - H * 52 / 100, lh = ky - 70, rh = 120;
+    int ky = H - H * 52 / 100, lh = ky - 70, rh = 120; float edge = W * 0.15f;
     switch (act) {
     case 0:
         if (y >= ky) {
@@ -725,21 +710,16 @@ JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
                 else if (ql < 63) Q[ql++] = ch;
                 dofilter();
             }
-        } else if (y < lh) { drag = 1; ly = y; ty = y; sv = 0; }
-        break;
-    case 1: case 3:
-        pressed = -1;
-        if (drag) { drag = 0; float d = y - ty;
-            if (d*d < 400) { float edge = W * 0.2f;
-                if (x > edge && x < W - edge) { int i = (int)((lh - ty + scr) / rh); if (i >= 0 && i < nf) return flt[i]+1; }
-                if (nf == 0 && ql > 0) return -1;
-            }
+        } else if (y < lh) {
+            if (x < edge || x > W - edge) { drag = 1; ly = y; ty = y; sv = 0; }
+            else { int i = (int)((lh - y + scr) / rh);
+                if (i >= 0 && i < nf) return flt[i]+1;
+                if (nf == 0 && ql > 0) return -1; }
         } break;
-    case 2:
-        if (drag) { sv = y - ly; scr += (int)(y - ly); ly = y;
+    case 1: case 3: pressed = -1; drag = 0; break;
+    case 2: if (drag) { sv = y - ly; scr += (int)(y - ly); ly = y;
             int mx = nf * rh - lh; if (mx < 0) mx = 0;
-            if (scr < 0) scr = 0; if (scr > mx) scr = mx;
-        } break;
+            if (scr < 0) scr = 0; if (scr > mx) scr = mx; } break;
     }
     return 0;
 }
@@ -751,7 +731,6 @@ JF(jstring, nQuery)(JNIEnv* e, jclass c) { char b[65]; memcpy(b, Q, ql); b[ql] =
 JF(jint, nTop)(JNIEnv* e, jclass c) { return nf > 0 ? flt[0] : -1; }
 JF(void, nCnt)(JNIEnv* e, jclass c, jint i, jint v) { if (i >= 0 && i < na) { A[i].c = v; dosort(); dofilter(); } }
 JF(void, nPin)(JNIEnv* e, jclass c, jint i) { if (i >= 0 && i < na) { A[i].pin = !A[i].pin; dosort(); dofilter(); } }
-JF(jint, nPeek)(JNIEnv* e, jclass c, jfloat x, jfloat y) { int ky=H-H*52/100, lh=ky-70, rh=120; if (y>=lh||y<0) return 0; float ed=W*0.2f; if (x<=ed||x>=W-ed) return 0; int i=(int)((lh-y+scr)/rh); return (i>=0&&i<nf)?flt[i]+1:0; }
 '''
 TXML=r'''<?xml version="1.0" encoding="utf-8"?>
 <resources>
