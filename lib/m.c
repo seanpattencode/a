@@ -406,26 +406,19 @@ static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agent",SDIR);mkdirp(ad);ti
 
 static void m_set(const char *k,const char *v){char ck[32];snprintf(ck,32,"m_%s",k);cfset(ck,v);
   if(!strcmp(k,"agent")){cfset("m_model",strstr(v,"codex")?"gpt-5.5":strstr(v,"gemini")?"gemini-2.5-flash":!strcmp(v,"api")?"claude-opus-4-5":"opus");cfset("m_effort",strstr(v,"codex")?"xhigh":"low");}}
-/* agent-aware option lists */
-static const char *m_models(const char *a){return strstr(a,"codex")?"gpt-5 gpt-5.5":strstr(a,"gemini")?"gemini-2.5-flash gemini-2.5-pro gemini-3-pro-preview":!strcmp(a,"api")?"claude-opus-4-5 claude-sonnet-4-6 claude-haiku-4-5":"opus sonnet haiku";}
-static const char *m_efforts(const char *a){return strstr(a,"codex")?"low medium high xhigh":"low medium high max";}
-/* live-filter picker: filter text + matching list, redraw on each key. Up/Down move sel, Enter picks, Esc cancels. */
-static int m_pick(const char *cat,const char *opts,char *out,size_t osz){
-    char it[16][48]; int n=0;
-    for(const char *p=opts;*p&&n<16;){const char *e=strchr(p,' ');size_t l=e?(size_t)(e-p):strlen(p);
-        if(l>=48)l=47;memcpy(it[n],p,l);it[n++][l]=0;if(!e)break;p=e+1;}
-    /* pre-scroll so subsequent renders don't drift the anchor */
-    int rsv=n+2; for(int i=0;i<rsv;i++)write(1,"\n",1); printf("\033[%dA",rsv);
+/* live-filter picker: items[] array of n strings. Up/Down/Enter pick, Esc/BSpace-on-empty cancel. */
+static int m_pick(const char *cat,const char *const *items,int n,char *out,size_t osz){
+    int rsv=n+2; if(rsv>20)rsv=20; for(int i=0;i<rsv;i++)write(1,"\n",1); printf("\033[%dA",rsv);
     write(1,"\033[s",3);
     char f[48]=""; int fl=0,sel=0;
     for(;;){
-        int fm[16],nf=0;
-        for(int i=0;i<n;i++) if(!fl||strcasestr(it[i],f)) fm[nf++]=i;
+        int fm[64],nf=0;
+        for(int i=0;i<n&&nf<64;i++) if(!fl||strcasestr(items[i],f)) fm[nf++]=i;
         if(sel>=nf)sel=nf?nf-1:0; if(sel<0)sel=0;
         write(1,"\033[u\033[J",6);
         printf("\033[36m%s:\033[0m %s\n",cat,f);
-        for(int i=0;i<nf&&i<10;i++)
-            printf("  %s%s%s\n",i==sel?"\033[7m> ":"  ",it[fm[i]],i==sel?"\033[0m":"");
+        for(int i=0;i<nf&&i<rsv-1;i++)
+            printf("  %s%s%s\n",i==sel?"\033[7m> ":"  ",items[fm[i]],i==sel?"\033[0m":"");
         printf("\033[u\033[%dC",(int)strlen(cat)+2+fl); fflush(stdout);
         unsigned char c; if(read(0,&c,1)!=1){write(1,"\033[u\033[J",6);return -1;}
         if(getenv("M_DEBUG_KEYS"))fprintf(stderr,"[k 0x%02x %d]\r\n",c,c);
@@ -440,7 +433,7 @@ static int m_pick(const char *cat,const char *opts,char *out,size_t osz){
         if(c==3){write(1,"\033[u\033[J",6);return -1;}                         /* Ctrl-C → cancel all */
         if(c==9){write(1,"\033[u\033[J",6);return 0;}                          /* Tab → skip step */
         if(c==21){f[0]=0;fl=0;sel=0;continue;}                                 /* Ctrl-U → clear filter */
-        if(c=='\r'||c=='\n'){if(!nf)continue; write(1,"\033[u\033[J",6); snprintf(out,osz,"%s",it[fm[sel]]); return 1;}
+        if(c=='\r'||c=='\n'){if(!nf)continue; write(1,"\033[u\033[J",6); snprintf(out,osz,"%s",items[fm[sel]]); return 1;}
         if(c==127||c==8||c==0xff){if(fl){f[--fl]=0; sel=0;} else {write(1,"\033[u\033[J",6); return -1;}}  /* BSpace (DEL/^H/0xff) on empty → cancel all */
         else if(c>=' '&&c<127&&fl<47){f[fl++]=(char)c;f[fl]=0;sel=0;}
     }
@@ -470,19 +463,25 @@ static size_t m_read_line(char *buf,size_t sz){
     tcsetattr(0,TCSANOW,&o);
     return bl;
 }
-/* Nested menu: agent → model → effort → (codex)tier. Each step live-filtered. */
+/* Flat menu of all m subcommands. Type to filter (e.g. 'restart'), Enter runs `a m <pick>`. */
 static void m_menu(void){
+    static const char *const ops[]={
+        "agent claude","agent codex","agent gemini","agent api",
+        "model opus","model sonnet","model haiku",
+        "model gpt-5","model gpt-5.5",
+        "model gemini-2.5-flash","model gemini-2.5-pro","model gemini-3-pro-preview",
+        "model claude-opus-4-5","model claude-sonnet-4-6","model claude-haiku-4-5",
+        "effort low","effort medium","effort high","effort max","effort xhigh",
+        "tier default","tier fast","tier flex",
+        "main","new","restart","reset","edit","panel",
+        "archive","archive turn","archive undo","archive hist"};
+    int n=(int)(sizeof ops/sizeof *ops);
     struct termios o,r; tcgetattr(0,&o); r=o; r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
     tcsetattr(0,TCSANOW,&r);
-    char v[64]; load_cfg(); int rc;
-    const char *ca=cfget("m_agent"); char ag[32]; snprintf(ag,32,"%s",*ca?ca:"claude");
-    #define PK(cat,opts,after) rc=m_pick(cat,opts,v,64); if(rc<0)goto _done; if(rc>0){m_set(cat,v); after;}
-    PK("agent","claude codex gemini api",snprintf(ag,32,"%s",v))
-    PK("model",m_models(ag),(void)0)
-    PK("effort",m_efforts(ag),(void)0)
-    if(strstr(ag,"codex")){PK("tier","default fast flex",(void)0)}
-    #undef PK
-    _done: tcsetattr(0,TCSANOW,&o);
+    char v[128]={0};
+    int rc=m_pick("cmd",ops,n,v,sizeof v);
+    tcsetattr(0,TCSANOW,&o);
+    if(rc>0){char shc[256]; snprintf(shc,256,"a m %s 2>&1",v); (void)!system(shc);}
 }
 static int m_reset(void) {
     char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",DDIR);
