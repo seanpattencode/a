@@ -132,9 +132,11 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
             char tf[P]; snprintf(tf,P,"%s/m_api.py",TMP); writef(tf,api_src);
             char x[B]; snprintf(x,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|M_MODEL='%s' python3 '%s'",md,tf);
             execlp("sh","sh","-c",x,(char*)0); }
-        else if (is_gemini) { char g[B];
-            snprintf(g,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|gemini -p '' --skip-trust --approval-mode plan -o stream-json -m '%s'",md);
-            execlp("sh","sh","-c",g,(char*)0); }
+        else if (is_gemini) { /* gemini cli phased out for antigravity; antigravity has no good single-output mode yet */
+            char g[B]; snprintf(g,B,"echo 'gemini disabled — gemini cli being phased out for antigravity, which has no good single-output mode yet'>&2; exit 1");
+            execlp("sh","sh","-c",g,(char*)0);
+            /* original: snprintf(g,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|gemini -p '' --skip-trust --approval-mode plan -o stream-json -m '%s'",md); */
+        }
         else if (is_codex) { char x[B],t[80]="";
             if (has_tier) snprintf(t,80," -c 'service_tier=\"%s\"'",tier);
             snprintf(x,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --disable shell_tool --disable unified_exec --disable tool_search --disable tool_suggest -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
@@ -435,8 +437,12 @@ static int m_pick(const char *cat,const char *const *items,int n,char *out,size_
         if(sel>=nf)sel=nf?nf-1:0; if(sel<0)sel=0;
         CLR();
         printf("\033[36m%s:\033[0m %s",cat,f);                                 /* filter row, no trailing \n */
-        for(int i=0;i<nf&&i<rsv-1;i++)
-            printf("\n  %s%s%s",i==sel?"\033[7m> ":"  ",items[fm[i]],i==sel?"\033[0m":"");
+        for(int i=0;i<nf&&i<rsv-1;i++){
+            const char *it=items[fm[i]]; const char *t=strchr(it,'\t');
+            int cl=t?(int)(t-it):(int)strlen(it);
+            printf("\n  %s%.*s%s",i==sel?"\033[7m> ":"  ",cl,it,i==sel?"\033[0m":"");
+            if(t)printf("  \033[90m%s\033[0m",t+1);                              /* desc in grey */
+        }
         printf("\033[%d;%dH",top,(int)strlen(cat)+3+fl); fflush(stdout);       /* cursor back to filter, no scroll */
         unsigned char c; if(read(0,&c,1)!=1){CLR();return -1;}
         if(getenv("M_DEBUG_KEYS"))fprintf(stderr,"[k 0x%02x %d]\r\n",c,c);
@@ -497,22 +503,48 @@ static int m_step(const char *cat,const char *const *items,int n,char *out,size_
     tcsetattr(0,TCSANOW,&r); out[0]=0;
     int rc=m_pick(cat,items,n,out,osz);
     tcsetattr(0,TCSANOW,&o);
-    if(rc>0){char shc[256]; snprintf(shc,256,"a m %s 2>&1",out); (void)!system(shc); return 1;}
+    if(rc>0){char *t=strchr(out,'\t'); if(t)*t=0; char shc[256]; snprintf(shc,256,"a m %s 2>&1",out); (void)!system(shc); return 1;}
     return 0;
 }
 /* Flat menu of all m subcommands. Picking 'agent X' drops into nested model→effort→(codex)tier
  * flow with agent-narrowed options; picking anything else runs as a one-shot. */
 static void m_menu(void){
+    /* "cmd\tdesc" — desc shown in grey by m_pick, stripped by m_step before exec.
+     * gemini cli commented out: being phased out for antigravity, no single-output mode yet. */
     static const char *const ops[]={
-        "new","main","restart","reset","edit","panel",                    /* common ops up top */
-        "agent claude","agent codex","agent gemini","agent api",
-        "model opus","model sonnet","model haiku",
-        "model gpt-5","model gpt-5.5",
-        "model gemini-2.5-flash","model gemini-2.5-pro","model gemini-3-pro-preview",
-        "model claude-opus-4-5","model claude-sonnet-4-6","model claude-haiku-4-5",
-        "effort low","effort medium","effort high","effort max","effort xhigh",
-        "tier default","tier fast","tier flex",
-        "archive","archive turn","archive undo","archive hist"};
+        "new\tnew chat, fresh file",
+        "main\topen main m.txt",
+        "restart\trespawn this window",
+        "edit\topen file in e",
+        "panel\trich panel UI",
+        "reset\tclear bash pty",
+        "set\t★ MULTI: clear → single",
+        "set claude:opus codex:gpt-5.5\t★ MULTI: opus + gpt-5.5",
+        "set claude:haiku codex:gpt-5.5\t★ MULTI: haiku + gpt-5.5",
+        "set claude:opus claude:sonnet\t★ MULTI: opus + sonnet",
+        "agent claude\tswitch single → claude",
+        "agent codex\tswitch single → codex",
+        "agent api\tswitch single → api",
+        "model opus\tclaude opus (smartest)",
+        "model sonnet\tclaude sonnet (balanced)",
+        "model haiku\tclaude haiku (fastest)",
+        "model gpt-5\tcodex gpt-5",
+        "model gpt-5.5\tcodex gpt-5.5",
+        "model claude-opus-4-5\tapi claude opus",
+        "model claude-sonnet-4-6\tapi claude sonnet",
+        "model claude-haiku-4-5\tapi claude haiku",
+        "effort low\tfast cheap",
+        "effort medium\tbalanced",
+        "effort high\tdeeper",
+        "effort max\tmax (claude)",
+        "effort xhigh\tmax (codex)",
+        "tier default\tdefault speed",
+        "tier fast\tpriority lane",
+        "tier flex\tcheap slow",
+        "archive\trotate full conversation",
+        "archive turn\ttrim last turn",
+        "archive undo\trevert archive",
+        "archive hist\tlist archives"};
     char v[128];
     if(!m_step("cmd",ops,(int)(sizeof ops/sizeof *ops),v,sizeof v))return;
     if(strncmp(v,"agent ",6))return;
@@ -541,8 +573,8 @@ static int cmd_m(int c, char **v) {
         else{snprintf(p,P,"%s/m_file",DDIR); f=readf(p,NULL); if(f&&*f){f[strcspn(f,"\n")]=0;snprintf(fn,64,"%s",f);} free(f);}
         char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb --nofold --tail %s'",SDIR,fn); return system(cc); }
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
-    if (c > 3 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort")||!strcmp(v[2],"tier")||!strcmp(v[2],"set"))) {
-        load_cfg(); m_set(v[2],v[3]); return 0;}
+    if (c > 2 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort")||!strcmp(v[2],"tier")||!strcmp(v[2],"set"))) {
+        char val[256]=""; if(c>3)ajoin(val,256,c,v,3); load_cfg(); m_set(v[2],val); return 0;}
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
         if(p){p[strcspn(p,"\n")]=0; char hc[128],hb[16]={0}; snprintf(hc,128,"tmux display -p -t %s '#{pane_height}'",p); pcmd(hc,hb,16);
@@ -593,9 +625,14 @@ static int cmd_m(int c, char **v) {
         { char sp[P]; snprintf(sp,P,"%s/m_status",DDIR); char *s=readf(sp,NULL);
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
-        { const char *ag=cfget("m_agent"),*md=cfget("m_model"),*ef=cfget("m_effort"),*ti=cfget("m_tier");
-          printf("\n\033[1m%s\033[0m  \033[36m%s·%s·%s%s%s\033[0m  \033[90m/=menu\033[0m",fn,*ag?ag:"claude",*md?md:"opus",*ef?ef:"low",
-                 *ti&&strcmp(ti,"default")?"·":"",*ti&&strcmp(ti,"default")?ti:""); fflush(stdout); }
+        { const char *ms=cfget("m_set");
+          if(ms&&*ms){
+            printf("\n\033[1m%s\033[0m  \033[1;35m★MULTI\033[0m \033[35m%s\033[0m  \033[90m/=menu\033[0m",fn,ms);
+          } else {
+            const char *ag=cfget("m_agent"),*md=cfget("m_model"),*ef=cfget("m_effort"),*ti=cfget("m_tier");
+            printf("\n\033[1m%s\033[0m  \033[36msingle %s·%s·%s%s%s\033[0m  \033[90m/=menu (★set… for multi)\033[0m",fn,*ag?ag:"claude",*md?md:"opus",*ef?ef:"low",
+                   *ti&&strcmp(ti,"default")?"·":"",*ti&&strcmp(ti,"default")?ti:"");
+          } fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
           /* async pull: inotify fires re-render when new content lands. No local race because
