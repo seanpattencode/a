@@ -154,9 +154,7 @@ static void _ws_term(int c,const char*target){
     pid_t p=fork();
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",0);
-        const char*tb=getenv("TMUX_BIN");const char*tx=tb?tb:"tmux";
-        if(target&&target[0]){char t[128];snprintf(t,128,"a:%s",target);
-            execlp(tx,"tmux","attach-session","-t",t,(char*)0);}
+        if(target&&target[0])execlp("a","a","tmux",target,(char*)0);
         else execlp("a","a","tmux",(char*)0);
         char*b[]={"bash","-l",NULL};execvp("bash",b);
         char*cc[]={"sh","-l",NULL};execvp("sh",cc);execl("/system/bin/sh","sh",(char*)0);_exit(1);}

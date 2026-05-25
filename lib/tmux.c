@@ -2,7 +2,8 @@
 #define TMS "a"
 #define ACAT "a cat"
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
-    (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");}
+    (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");
+    (void)!system("tmux list-clients -t '"TMS"' -F'#{client_pid} #{client_tty}' 2>/dev/null|while read p t;do g='"TMS"'-$p;tmux has-session -t \"$g\" 2>/dev/null||tmux new-session -d -t '"TMS"' -s \"$g\" 2>/dev/null;tmux switch-client -c \"$t\" -t \"$g\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
     tm_gc();
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
@@ -14,10 +15,9 @@ static int tm_has(const char *w) {
 static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
-    if(getenv("TMUX")){char c[256];snprintf(c,256,"tmux new-session -d -t "TMS" -s %s 2>/dev/null;exec tmux switch-client -t %s%s%s",g,g,w?":":"",w?w:"");
-        execl("/bin/sh","sh","-c",c,(char*)0);}
-    if(w)execlp("tmux","tmux","new-session","-t",TMS,"-s",g,";","select-window","-t",w,(char*)NULL);
-    execlp("tmux","tmux","new-session","-t",TMS,"-s",g,(char*)NULL);}
+    char c[B];const char*op=getenv("TMUX")?"switch-client":"attach-session";
+    snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
+    execl("/bin/sh","sh","-c",c,(char*)0);}
 static void tm_rename(const char*n){char c[160];snprintf(c,160,"tmux rename-window '%s'",n);(void)!system(c);}
 static int tm_new(const char *w, const char *wd, const char *cmd) {
     tm_ensure_sess();if(tm_has(w))return 1;char c[B*2],ev[P+16]="";

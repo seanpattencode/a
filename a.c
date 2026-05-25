@@ -518,7 +518,7 @@ static int cmd_j(int c,char**v){
     tm_go(sn);
     return 0;}
 static int cmd_job(int c,char**v){return(c>2&&isdigit(*v[2]))?cmd_jobs(c,v):cmd_j(c,v);}
-static int cmd_tmux(int c,char**v){if(c>2){execvp("tmux",v+1);return 1;}if(!getenv("TMUX")){tm_go(NULL);return 0;}setenv("A_FILT_TAG","win pane quit",1);return cmd_i(c,v);}
+static int cmd_tmux(int c,char**v){if(!getenv("TMUX")){tm_go(c>2?v[2]:NULL);return 0;}if(c>2){execvp("tmux",v+1);return 1;}setenv("A_FILT_TAG","win pane quit",1);return cmd_i(c,v);}
 #define ADBSEL "S=${ANDROID_SERIAL:-};[ -z \"$S\" ]&&{ N=$(adb devices|awk '/\\tdevice$/{print $1}');n=$(printf %s \"$N\"|grep -c .);" \
     "case $n in 0)echo no device;exit 1;;1)S=$N;;*)printf %s \"$N\"|nl>&2;read -rp '# [1]: ' i </dev/tty||exit 130;S=$(printf %s \"$N\"|sed -n ${i:-1}p);[ -z \"$S\" ]&&{ echo invalid;exit 1;};;esac;};A=\"adb -s $S\";"
 static int cmd_adb(int c,char**v){
@@ -638,7 +638,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|m|done|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);
