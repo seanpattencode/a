@@ -463,7 +463,17 @@ static size_t m_read_line(char *buf,size_t sz){
     tcsetattr(0,TCSANOW,&o);
     return bl;
 }
-/* Flat menu of all m subcommands. Type to filter (e.g. 'restart'), Enter runs `a m <pick>`. */
+/* one pick → run via `a m <pick>`. Returns 1 if picked, 0 if cancelled. */
+static int m_step(const char *cat,const char *const *items,int n,char *out,size_t osz){
+    struct termios o,r; tcgetattr(0,&o); r=o; r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
+    tcsetattr(0,TCSANOW,&r); out[0]=0;
+    int rc=m_pick(cat,items,n,out,osz);
+    tcsetattr(0,TCSANOW,&o);
+    if(rc>0){char shc[256]; snprintf(shc,256,"a m %s 2>&1",out); (void)!system(shc); return 1;}
+    return 0;
+}
+/* Flat menu of all m subcommands. Picking 'agent X' drops into nested model→effort→(codex)tier
+ * flow with agent-narrowed options; picking anything else runs as a one-shot. */
 static void m_menu(void){
     static const char *const ops[]={
         "agent claude","agent codex","agent gemini","agent api",
@@ -475,13 +485,19 @@ static void m_menu(void){
         "tier default","tier fast","tier flex",
         "main","new","restart","reset","edit","panel",
         "archive","archive turn","archive undo","archive hist"};
-    int n=(int)(sizeof ops/sizeof *ops);
-    struct termios o,r; tcgetattr(0,&o); r=o; r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
-    tcsetattr(0,TCSANOW,&r);
-    char v[128]={0};
-    int rc=m_pick("cmd",ops,n,v,sizeof v);
-    tcsetattr(0,TCSANOW,&o);
-    if(rc>0){char shc[256]; snprintf(shc,256,"a m %s 2>&1",v); (void)!system(shc);}
+    char v[128];
+    if(!m_step("cmd",ops,(int)(sizeof ops/sizeof *ops),v,sizeof v))return;
+    if(strncmp(v,"agent ",6))return;
+    const char *ag=v+6; int cdx=strstr(ag,"codex")!=0,gmn=strstr(ag,"gemini")!=0,api=!strcmp(ag,"api");
+    static const char *const M_CL[]={"model opus","model sonnet","model haiku"};
+    static const char *const M_CX[]={"model gpt-5","model gpt-5.5"};
+    static const char *const M_GM[]={"model gemini-2.5-flash","model gemini-2.5-pro","model gemini-3-pro-preview"};
+    static const char *const M_AP[]={"model claude-opus-4-5","model claude-sonnet-4-6","model claude-haiku-4-5"};
+    if(!m_step("model",cdx?M_CX:gmn?M_GM:api?M_AP:M_CL,cdx?2:3,v,sizeof v))return;
+    static const char *const E_CL[]={"effort low","effort medium","effort high","effort max"};
+    static const char *const E_CX[]={"effort low","effort medium","effort high","effort xhigh"};
+    if(!m_step("effort",cdx?E_CX:E_CL,4,v,sizeof v))return;
+    if(cdx){static const char *const T[]={"tier default","tier fast","tier flex"}; m_step("tier",T,3,v,sizeof v);}
 }
 static int m_reset(void) {
     char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",DDIR);
@@ -498,7 +514,7 @@ static int cmd_m(int c, char **v) {
         char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb --nofold --tail %s'",SDIR,fn); return system(cc); }
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 3 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort")||!strcmp(v[2],"tier"))) {
-        m_set(v[2],v[3]); return 0;}
+        load_cfg(); m_set(v[2],v[3]); return 0;}
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
         if(p){p[strcspn(p,"\n")]=0; char hc[128],hb[16]={0}; snprintf(hc,128,"tmux display -p -t %s '#{pane_height}'",p); pcmd(hc,hb,16);
