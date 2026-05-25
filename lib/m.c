@@ -25,15 +25,20 @@ static void m_status(const char *msg) {
 
 static void m_commit(const char *tag) {
     if (g_halt) return;
-    if (fork() == 0) {
-        char c[B];
-        snprintf(c, B,
-            "{ cd '%1$s/m' && git add -A && (git diff --cached --quiet || git commit -q -m '%2$s') && git push -q 2>/dev/null "
-            "&& printf '[%%s] git ✓ %2$s' \"$(date +%%H:%%M:%%S)\" > '%3$s/m_status'; } "
-            "|| printf '[%%s] git ✗ %2$s' \"$(date +%%H:%%M:%%S)\" > '%3$s/m_status'",
-            SDIR, tag, DDIR);
-        execlp("sh", "sh", "-c", c, NULL); _exit(127);
+    pid_t p = fork();
+    if (p == 0) { /* intermediate: fork grandchild then exit so init adopts it (no SIGCHLD on main needed) */
+        if (fork() == 0) {
+            char c[B];
+            snprintf(c, B,
+                "{ cd '%1$s/m' && git add -A && (git diff --cached --quiet || git commit -q -m '%2$s') && git push -q 2>/dev/null "
+                "&& printf '[%%s] git ✓ %2$s' \"$(date +%%H:%%M:%%S)\" > '%3$s/m_status'; } "
+                "|| printf '[%%s] git ✗ %2$s' \"$(date +%%H:%%M:%%S)\" > '%3$s/m_status'",
+                SDIR, tag, DDIR);
+            execlp("sh", "sh", "-c", c, NULL); _exit(127);
+        }
+        _exit(0);
     }
+    waitpid(p, NULL, 0); /* fast — intermediate exits immediately */
     char sm[32]; snprintf(sm, 32, "git sync %s", tag); m_status(sm);
 }
 
@@ -71,9 +76,11 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     a[0] = bash[0] = 0;
     int pp[2]; if (pipe(pp) < 0) return -1;
     load_cfg();
-    const char *ag = cfget("m_agent"); if (!*ag) ag = "claude";
+    /* env overrides allow parallel multi-provider: secondaries setenv before forking into this fn */
+    const char *ag_ov=getenv("M_AGENT_OVR"), *md_ov=getenv("M_MODEL_OVR");
+    const char *ag = (ag_ov&&*ag_ov)?ag_ov:cfget("m_agent"); if (!*ag) ag = "claude";
     int is_api = !strcmp(ag,"api"), is_codex = !is_api && strstr(ag,"codex")!=0, is_gemini = !is_api && strstr(ag,"gemini")!=0;
-    const char *md = cfget("m_model"); if (!*md) md = is_codex ? "gpt-5.5" : is_gemini ? "gemini-2.5-flash" : is_api ? "claude-opus-4-5" : "opus";
+    const char *md = (md_ov&&*md_ov)?md_ov:cfget("m_model"); if (!*md) md = is_codex ? "gpt-5.5" : is_gemini ? "gemini-2.5-flash" : is_api ? "claude-opus-4-5" : "opus";
     const char *ef = cfget("m_effort"); if (!*ef) ef = is_codex ? "xhigh" : "low";
     const char *tier = cfget("m_tier");
     int has_tier = is_codex && *tier && strcmp(tier,"default");
@@ -139,12 +146,14 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         _exit(127);
     }
     close(pp[1]); g_cp = cp;
-    FILE *fp = fdopen(pp[0], "r"), *of = fopen(sf, "a");
+    const char *out_path=getenv("M_OUT_PATH"); if(!out_path||!*out_path)out_path=sf;
+    int echo=!getenv("M_NOECHO");
+    FILE *fp = fdopen(pp[0], "r"), *of = fopen(out_path, "a");
     off_t start = ftello(of);
     char l[32768]; size_t al = 0, pl = 0, eo;
     while (fgets(l, sizeof l, fp)) {
         int stop = mm_delta(l, a, &al, sz, is_codex?1:is_gemini?2:0);
-        if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); (void)!write(1, a+pl, al-pl); pl = al; }
+        if (al > pl) { if (!pl) m_status("streaming"); fwrite(a + pl, 1, al - pl, of); fflush(of); if(echo)(void)!write(1, a+pl, al-pl); pl = al; }
         char *uh=strstr(a,"\n## user\n");
         if (uh || mm_extract(a, bash, bsz, &eo) > 0) { size_t cut=uh?(size_t)(uh-a):al;
             if (uh && cut<al) { a[cut]=0; al=cut; ftruncate(fileno(of),start+(off_t)cut); }
@@ -152,7 +161,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         if (stop) break;
     }
     fclose(fp); fclose(of); waitpid(cp, NULL, 0); g_cp = 0;
-    if (!pl) { char *e=readf(errp,NULL); if(e&&*e){char m[2048]; snprintf(m,2048,"\n## error (%s)\n%s\n",ag,e); mm_w(sf,m,"a");} free(e); }
+    if (!pl) { char *e=readf(errp,NULL); if(e&&*e){char m[2048]; snprintf(m,2048,"\n## error (%s)\n%s\n",ag,e); mm_w(out_path,m,"a");} free(e); }
     if (!bash[0]) mm_extract(a, bash, bsz, NULL);
     return 0;
 }
@@ -495,6 +504,7 @@ static int m_step(const char *cat,const char *const *items,int n,char *out,size_
  * flow with agent-narrowed options; picking anything else runs as a one-shot. */
 static void m_menu(void){
     static const char *const ops[]={
+        "new","main","restart","reset","edit","panel",                    /* common ops up top */
         "agent claude","agent codex","agent gemini","agent api",
         "model opus","model sonnet","model haiku",
         "model gpt-5","model gpt-5.5",
@@ -502,7 +512,6 @@ static void m_menu(void){
         "model claude-opus-4-5","model claude-sonnet-4-6","model claude-haiku-4-5",
         "effort low","effort medium","effort high","effort max","effort xhigh",
         "tier default","tier fast","tier flex",
-        "main","new","restart","reset","edit","panel",
         "archive","archive turn","archive undo","archive hist"};
     char v[128];
     if(!m_step("cmd",ops,(int)(sizeof ops/sizeof *ops),v,sizeof v))return;
@@ -532,7 +541,7 @@ static int cmd_m(int c, char **v) {
         else{snprintf(p,P,"%s/m_file",DDIR); f=readf(p,NULL); if(f&&*f){f[strcspn(f,"\n")]=0;snprintf(fn,64,"%s",f);} free(f);}
         char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb --nofold --tail %s'",SDIR,fn); return system(cc); }
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
-    if (c > 3 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort")||!strcmp(v[2],"tier"))) {
+    if (c > 3 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort")||!strcmp(v[2],"tier")||!strcmp(v[2],"set"))) {
         load_cfg(); m_set(v[2],v[3]); return 0;}
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
@@ -553,7 +562,7 @@ static int cmd_m(int c, char **v) {
     CWD(w); struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
     snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
     if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b); tm_go(sn); return 0; }
-    signal(SIGINT, m_sint); signal(SIGCHLD, SIG_IGN); /* auto-reap m_commit children */
+    signal(SIGINT, m_sint); /* m_commit double-forks → init reaps; secondary waitpid stays reliable */
     { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
     { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); }
     char fnb[128]="m.txt";const char *fn=c>2?v[2]:fnb;
@@ -603,7 +612,31 @@ static int cmd_m(int c, char **v) {
             mm_w(sf, "\n## assistant\n", "a");
             (void)!write(1,"\n## assistant\n",14);
             static char a[64*1024], bash[8*1024], ob[16*1024];
+            /* multi-provider: m_set "ag:md ag:md …", first=primary streams, rest=secondaries fork in parallel */
+            struct {char ag[32],md[32],tmp[P]; pid_t pid;} sec[8]; int nsec=0;
+            char prim_ag[32]="",prim_md[32]="";
+            { const char *ms=cfget("m_set"); if(ms&&*ms){char buf[256]; snprintf(buf,256,"%s",ms);
+                char *t=strtok(buf," "); int ix=0;
+                while(t){char *cl=strchr(t,':'); if(cl){*cl=0;
+                    if(ix==0){snprintf(prim_ag,32,"%s",t);snprintf(prim_md,32,"%s",cl+1);}
+                    else if(nsec<8){snprintf(sec[nsec].ag,32,"%s",t);snprintf(sec[nsec].md,32,"%s",cl+1);
+                        snprintf(sec[nsec].tmp,P,"%s/m_sec_%d_%d.txt",DDIR,(int)getpid(),nsec); nsec++;}
+                    ix++;} t=strtok(NULL," ");} } }
+            for(int s=0;s<nsec;s++){unlink(sec[s].tmp); pid_t w=fork();
+                if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1);
+                    setenv("M_OUT_PATH",sec[s].tmp,1); setenv("M_NOECHO","1",1);
+                    static char a2[64*1024],b2[8*1024]; mm_stream(sf,M_SYS,a2,sizeof a2,b2,sizeof b2); _exit(0);}
+                sec[s].pid=w;}
+            if(prim_ag[0]){setenv("M_AGENT_OVR",prim_ag,1);setenv("M_MODEL_OVR",prim_md,1);}
+            else{unsetenv("M_AGENT_OVR");unsetenv("M_MODEL_OVR");}
+            unsetenv("M_OUT_PATH"); unsetenv("M_NOECHO");
             if (mm_stream(sf, M_SYS, a, sizeof a, bash, sizeof bash) < 0) break;
+            if(nsec){m_status("waiting on secondaries");
+                for(int s=0;s<nsec;s++){waitpid(sec[s].pid,NULL,0);
+                    char *sc=readf(sec[s].tmp,NULL);
+                    if(sc&&*sc){char hdr[64]; snprintf(hdr,64,"\n## assistant [%s·%s]\n",sec[s].ag,sec[s].md);
+                        mm_w(sf,hdr,"a"); mm_w(sf,sc,"a"); free(sc);}
+                    unlink(sec[s].tmp);}}
             m_commit("a"); if (g_halt) break;
             if (!bash[0]) break;
             /* Lazy bash pty: pay tmux split cost once, only when a <cmd> actually runs. */
