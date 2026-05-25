@@ -444,17 +444,17 @@ static int m_pick(const char *cat,const char *opts,char *out,size_t osz){
         else if(c>=' '&&c<127&&fl<47){f[fl++]=(char)c;f[fl]=0;sel=0;}
     }
 }
-/* raw-mode line reader: handles BSpace (incl. on the prepended first char), bracketed paste, Ctrl-C cancel.
- * Needed because canonical-mode BSpace can't reach a char we ungetc'd into stdio (kernel never saw it). */
-static size_t m_read_line(char *buf,size_t sz,unsigned char first){
+static void m_menu(void);
+/* raw-mode line reader: handles BSpace on every char (incl first), bracketed paste, '/' as instant menu hotkey. */
+static size_t m_read_line(char *buf,size_t sz){
     struct termios o,r; tcgetattr(0,&o); r=o;
     r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
     tcsetattr(0,TCSANOW,&r);
     (void)!write(1,"\033[?2004h",8);
     size_t bl=0; int paste=0;
-    if(first>=32&&first<127){buf[bl++]=(char)first; write(1,&first,1);}
     while(bl<sz-1){
         unsigned char c; if(read(0,&c,1)!=1)break;
+        if(bl==0&&!paste&&c=='/'){m_menu();break;}
         if(c=='\r'||c=='\n'){if(paste){buf[bl++]='\n';write(1,"\n",1);continue;} write(1,"\n",1); break;}
         if(!paste&&(c==127||c==8||c==0xff)){if(bl){bl--; write(1,"\b \b",3);} continue;}
         if(!paste&&c==3){bl=0; write(1,"^C\n",3); break;}
@@ -549,15 +549,10 @@ static int cmd_m(int c, char **v) {
         if(_first){_first=0; tm_rename(sn);
           snprintf(b,B,"([ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(gh repo clone m 2>/dev/null||gh repo create m --private --clone);};cd %1$s/m&&git pull --rebase -q 2>/dev/null)&",SDIR);(void)!system(b);
           mm_w(pf,fn,"w"); }
-        /* peek 1 char raw: '/' opens menu; else feed it into m_read_line (raw line edit handles BSpace on all chars) */
-        static char m[65536]; size_t ml;
-        { struct termios o,r; tcgetattr(0,&o); r=o; r.c_lflag&=~(tcflag_t)(ICANON|ECHO); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
-          tcsetattr(0,TCSANOW,&r); unsigned char ch; ssize_t rn=read(0,&ch,1); tcsetattr(0,TCSANOW,&o);
-          if(rn<=0){if(g_rst){g_rst=0;goto _next;} if(!rn)goto _exit; goto _next;}
-          if(ch=='/'){m_menu();goto _next;}
-          if(ch=='\r'||ch=='\n')goto _next;
-          ml=m_read_line(m,sizeof m,ch);
-          if(!ml){if(g_rst)g_rst=0; goto _next;} }
+        /* chat input — '/' inside m_read_line opens menu directly, no peek-then-pass-back seam */
+        static char m[65536]; size_t ml=m_read_line(m,sizeof m);
+        if(g_rst){g_rst=0;continue;}
+        if(!ml)continue;
         m[ml]='\n';m[ml+1]=0;mm_w(sf, m, "a"); m_commit("u");
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
@@ -581,7 +576,6 @@ static int cmd_m(int c, char **v) {
             m_commit("t"); if (g_halt) break;
         }
         mm_w(sf, "\n## user\n", "a");
-        _next: ;
     }
-    _exit: return 0;
+    return 0;
 }
