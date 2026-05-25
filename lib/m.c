@@ -19,6 +19,7 @@ static void m_status(const char *msg) {
     snprintf(p, P, "%s/m_status", DDIR);
     snprintf(l, 256, "[%02d:%02d:%02d] %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, msg);
     mm_w(p, l, "w");
+    if(getenv("M_IN")&&strncmp(msg,"git ",4))fprintf(stderr,"\033[2m· %s\033[0m\n",msg);
 }
 
 static void m_commit(const char *tag) {
