@@ -160,7 +160,7 @@ static void _ws_term(int c,const char*target){
         const char*tb=getenv("TMUX_BIN");const char*tx=tb?tb:"tmux";
         if(target&&target[0]){char t[128];snprintf(t,128,"a:%s",target);
             execlp(tx,"tmux","attach-session","-t",t,(char*)0);}
-        execlp(tx,"tmux","new-session","-A","-s","main",(char*)0);
+        else execlp("a","a","tmux",(char*)0);
         char*b[]={"bash","-l",NULL};execvp("bash",b);
         char*cc[]={"sh","-l",NULL};execvp("sh",cc);execl("/system/bin/sh","sh",(char*)0);_exit(1);}
     close(s);
