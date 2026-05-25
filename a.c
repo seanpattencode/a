@@ -47,7 +47,7 @@ _shell_funcs() {
     for RC in "$HOME/.bashrc" "$HOME/.zshrc"; do
         touch "$RC" 2>/dev/null || { warn "can't write $RC (skip)"; continue; }
         grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
-        sed -i.bak '/^_ADD=/d;/^a() {/,/^}/d;/^aio() /d;/^ai() /d;/aios/d' "$RC";rm "$RC.bak"
+        sed -i.bak '/^_ADD=/d;/^a() {/,/^}/d;/^aio() /d;/^ai() /d;/aios/d;/a-tmux-env-fix/,+1d' "$RC";rm "$RC.bak"
         _R="${D%%/adata/worktrees/*}"; _R="${_R%%/adata/forks/*}"
         echo "_ADD=\"$_R/adata/local\"" >> "$RC"
         cat >> "$RC" << 'AFUNC'
@@ -63,6 +63,8 @@ a() {
 }
 aio() { a "$@"; }
 ai() { a "$@"; }
+# a-tmux-env-fix: pull live graphical env from tmux global (session may explicitly unset DISPLAY/WAYLAND_DISPLAY)
+[ -n "$TMUX" ] && [ -z "$WAYLAND_DISPLAY$DISPLAY" ] && eval "$(tmux show-environment -g 2>/dev/null|grep -E '^(WAYLAND_DISPLAY|DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR)='|sed 's/^/export /')"
 AFUNC
     done
     if [[ -d /data/data/com.termux ]]; then
