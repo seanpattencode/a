@@ -585,11 +585,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "new")) return m_new();
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     perf_disarm(); /* interactive: subcommands above stay perf-armed; the chat loop runs unbounded */
-    {char pf[P];snprintf(pf,P,"%s/m_pid",DDIR);char*pp=readf(pf,NULL);
-     if(pp){int pid=atoi(pp);free(pp);
-      if(pid>0&&kill(pid,0)==0){char cmd[B];
-       snprintf(cmd,B,"t=$(readlink /proc/%d/fd/0 2>/dev/null)&&p=$(tmux list-panes -aF '#{pane_tty} #{pane_id} #{session_name}:#{window_index}'|awk -v t=$t '$1==t{print $2,$3;exit}')&&[ -n \"$p\" ]&&{ set -- $p;tmux switch-client -t $2 2>/dev/null;tmux select-pane -t $1; }",pid);
-       if(!system(cmd)){fprintf(stderr,"a m: existing pid %d — switched\n",pid);return 0;}}}}
+    /* (existing-instance switch removed — flaky when pid lives but window died; just open fresh) */
     char b[B], sf[P], pty[64] = "";
     CWD(w); struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
     snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
