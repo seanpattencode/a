@@ -561,7 +561,9 @@ static int cmd_m(int c, char **v) {
     if(c<=2){char*sp=readf(pf,NULL);if(sp&&*sp){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
     snprintf(sf, P, "%s/m/%s", SDIR, fn);
     setenv("M_IN", "1", 1);
-    /* inotify watch on m.txt — m_read_line polls this + stdin; close_write wakes us for re-render */
+    /* first-ever launch: clone synchronously so render's sysprompt-rewrite doesn't race the clone checkout */
+    { char gp[P]; snprintf(gp,P,"%s/m/.git",SDIR);
+      if(!dexists(gp)){char ic[B]; snprintf(ic,B,"cd '%1$s'&&(U=$(gh repo view m --json url --jq .url 2>/dev/null) && git clone \"$U.git\" m 2>/dev/null || gh repo create m --private --clone)",SDIR); (void)!system(ic);} }
 #ifdef __linux__
     g_ifd = inotify_init1(IN_NONBLOCK|IN_CLOEXEC);
     if(g_ifd>=0) inotify_add_watch(g_ifd, sf, IN_CLOSE_WRITE);
@@ -587,8 +589,8 @@ static int cmd_m(int c, char **v) {
                  *ti&&strcmp(ti,"default")?"·":"",*ti&&strcmp(ti,"default")?ti:""); fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
-          /* git clone preferred: gh 2.87.3 on Termux injects a broken per-host credential helper at clone time. */
-          snprintf(b,B,"([ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(U=$(gh repo view m --json url --jq .url 2>/dev/null) && git clone \"$U.git\" m 2>/dev/null || gh repo create m --private --clone);};cd %1$s/m&&git pull --rebase -q 2>/dev/null)&",SDIR);(void)!system(b);
+          /* clone already done synchronously above; only background pull here for latest updates */
+          snprintf(b,B,"(cd %s/m&&git pull --rebase -q 2>/dev/null)&",SDIR);(void)!system(b);
           mm_w(pf,fn,"w"); }
         /* chat input — '/' inside m_read_line opens menu directly, no peek-then-pass-back seam */
         static char m[65536]; size_t ml=m_read_line(m,sizeof m);
