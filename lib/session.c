@@ -40,7 +40,8 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
             if(extra&&extra[0]){char ef[P];snprintf(ef,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(ef,extra);
                 snprintf(csuf+cl,(size_t)(512-cl)," \"$(cat '%s')\"",ef);}}
         else if(is_gemini)snprintf(csuf,512," --prompt-interactive \"$(cat '%s')\"",ctxf);
-        else if(is_codex)snprintf(csuf,512," \"$(cat '%s')\"",ctxf);
+        else if(is_codex&&extra&&extra[0]){char ef[P];snprintf(ef,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(ef,extra);
+            snprintf(csuf,512," \"$(cat '%s')\"",ef);}
     }
     /* claude reads ctxf via file flag; codex/gemini inline $(cat) — ARG_MAX caps ~128KB, can't fit codebase */
     char src_pfx[P+32]="";if(is_claude&&SRC_ON)snprintf(src_pfx,sizeof(src_pfx),"%s >>%s 2>/dev/null;",ACAT,ctxf);
