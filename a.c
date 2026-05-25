@@ -52,9 +52,8 @@ _shell_funcs() {
         echo "_ADD=\"$_R/adata/local\"" >> "$RC"
         cat >> "$RC" << 'AFUNC'
 a() {
-    local dd="$_ADD"
-    local d="${1/#\~/$HOME}"
-    [[ -d "$d" ]] && { echo "📂 $d"; cd "$d"; return; }
+    local dd="$_ADD" d
+    [[ "$1" == */* && -d "$1" ]] && { echo "📂 $1"; cd "$1"; return; }
     [[ "$1" == *.c && -f "$1" ]] && { sh "$@"; return; }
     [[ "$1" == *.py && -f "$1" ]] && { local py=python3 ev=1; [[ -n "$VIRTUAL_ENV" ]] && py="$VIRTUAL_ENV/bin/python" ev=0; [[ -x .venv/bin/python ]] && py=.venv/bin/python ev=0; local s=$(($(date +%s%N)/1000000)); if command -v uv &>/dev/null && [[ -f pyproject.toml || -f uv.lock ]]; then uv run python "$@"; ev=0; else $py "$@"; fi; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> $dd/timing.jsonl; [[ $r -ne 0 && $ev -ne 0 ]] && printf '  try: a c fix python env for this project\n'; return $r; }
     [[ "$1" == kill && "$2" == all || "$1" == killall ]] && { pkill -9 tmux 2>/dev/null; sleep 1; echo "✓"; return; }
