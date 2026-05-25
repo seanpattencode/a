@@ -9,6 +9,7 @@ static const char *M_SYS = "`a m` chat: emit <cmd>command</cmd> to run in pty (c
 static volatile pid_t g_cp = 0;
 static int g_halt = 0;
 static volatile sig_atomic_t g_rst = 0;
+static int g_ifd = -1;  /* inotify fd watching m.txt; -1 = no auto-refresh */
 static void m_sint(int s){(void)s;if(g_cp>0)kill(g_cp,SIGTERM);}
 static void m_usr1(int s){(void)s;g_rst=1;}
 static void mm_w(const char *p, const char *t, const char *m);
@@ -456,7 +457,16 @@ static size_t m_read_line(char *buf,size_t sz){
     (void)!write(1,"\033[?2004h",8);
     size_t bl=0; int paste=0;
     while(bl<sz-1){
-        unsigned char c; if(read(0,&c,1)!=1)break;
+        unsigned char c;
+        struct pollfd pfd[2]={{0,POLLIN,0},{g_ifd,POLLIN,0}};
+        int nfd=g_ifd>=0?2:1;
+        int pr=poll(pfd,(nfds_t)nfd,-1);
+        if(pr<0)break;  /* signal interrupt; cmd_m checks g_rst */
+        if(nfd>1&&(pfd[1].revents&POLLIN)){
+            char ib[4096]; while(read(g_ifd,ib,sizeof ib)>0){} /* drain events */
+            bl=0; break;  /* file changed → caller re-renders */
+        }
+        if(read(0,&c,1)!=1)break;
         if(bl==0&&!paste&&c=='/'){m_menu();break;}
         if(c=='\r'||c=='\n'){if(paste){buf[bl++]='\n';write(1,"\n",1);continue;} write(1,"\n",1); break;}
         if(!paste&&(c==127||c==8||c==0xff)){if(bl){bl--; write(1,"\b \b",3);} continue;}
@@ -551,9 +561,11 @@ static int cmd_m(int c, char **v) {
     if(c<=2){char*sp=readf(pf,NULL);if(sp&&*sp){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
     snprintf(sf, P, "%s/m/%s", SDIR, fn);
     setenv("M_IN", "1", 1);
-    /* watcher: SIGUSR1 us when m.txt changes (e.g. a m edit save) → wakes read, re-renders */
-    if(fork()==0){char wc[B];snprintf(wc,B,"while inotifywait -e close_write '%s' -q -q 2>/dev/null; do kill -USR1 %d 2>/dev/null||exit; done",sf,getppid());
-        execlp("sh","sh","-c",wc,(char*)0); _exit(127);}
+    /* inotify watch on m.txt — m_read_line polls this + stdin; close_write wakes us for re-render */
+#ifdef __linux__
+    g_ifd = inotify_init1(IN_NONBLOCK|IN_CLOEXEC);
+    if(g_ifd>=0) inotify_add_watch(g_ifd, sf, IN_CLOSE_WRITE);
+#endif
     int _first=1;
     for (;;) {
         g_halt = 0;

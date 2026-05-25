@@ -319,6 +319,10 @@ exit 0
 #include <sys/file.h>
 #include <ctype.h>
 #include <limits.h>
+#include <poll.h>
+#ifdef __linux__
+#include <sys/inotify.h>
+#endif
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
