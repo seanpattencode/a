@@ -4,6 +4,7 @@ static int cmd_sess(int argc, char **argv) {
     const char *key = argv[1];
     sess_t *s = find_sess(key);
     if (!s) return -1;  /* not a session key */
+    perf_disarm();  /* sessions exec into long-running TUIs; perf timer is for `a` itself */
     CWD(wd);
     const char *wda = argc > 2 ? argv[2] : NULL;
     /* If wda is a project number */
