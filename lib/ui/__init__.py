@@ -1,24 +1,17 @@
-import sys, os, subprocess as S, time, platform, shutil, shlex
+import sys, os, subprocess as S, time, platform
 from os.path import exists, isdir, join, dirname, expanduser
 
 PORT = 1111
-_LIB = dirname(dirname(os.path.realpath(__file__)))
-_uv = expanduser('~/.local/bin/uv')
-_UV = shutil.which('uv') or (_uv if os.access(_uv, os.X_OK) else None)
+_A = expanduser('~/.local/bin/a')
 _MAC = platform.system() == 'Darwin'
 _TERMUX = isdir('/data/data/com.termux')
 _r = lambda c: S.run(c, capture_output=True)
-_kill = lambda: _r(['pkill','-f','ui.ui_'])
+_kill = lambda: _r(['pkill','-f','a serve'])
 
 def _url(p): return f'http://localhost:{p}'
 
-def _cmd(m, p):
-    s = f'{_LIB}/ui/{m}.py'
-    if _UV: return [_UV, 'run', '--script', s, str(p)]
-    return [sys.executable, '-c', f"from ui.{m} import run;run({p})"]
-
-def _bg(m, p):
-    S.Popen(_cmd(m, p), start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL, env=os.environ|{'PYTHONPATH':_LIB})
+def _bg(p):
+    S.Popen([_A,'serve',str(p)], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL)
     time.sleep(0.3); import webbrowser; webbrowser.open(_url(p))
 
 def _plist(): return expanduser('~/Library/LaunchAgents/com.a.ui.plist')

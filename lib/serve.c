@@ -74,12 +74,9 @@ static int _tasks_build(char*h,int cap){
     return hl;
 }
 static void _html_gen(void){
-    /* read HTML template from ui_full.py */
-    char tf[P];snprintf(tf,P,"%s/lib/ui/ui_full.py",SDIR);
+    char tf[P];snprintf(tf,P,"%s/lib/ui_full.html",SDIR);
     char*src=readf(tf,NULL);if(!src)return;
-    char*s=strstr(src,"'''<!doctype");char*e=s?strstr(s+3,"'''"):NULL;
-    if(!s||!e){free(src);return;}
-    s+=3;*e=0;
+    char*s=src;
     /* build commands JSON from a i */
     char cmds[65536]="[]";
     {char out[65536];int pp[2];pipe(pp);pid_t ch=fork();
@@ -285,7 +282,6 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     (void)!system("for h in after-new-window after-rename-window after-kill-pane session-window-changed;do tmux set-hook -g $h 'run-shell -b \"echo x > /tmp/a_dash.fifo\"' 2>/dev/null;done");
     {const char*op=getenv("PATH")?:"";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
-    (void)!system("pkill -f 'ui.ui_full\\|ui_full.py' 2>/dev/null");usleep(200000);
     printf("> generating HTML...\n");_html_gen();
     if(!_shtml){puts("x HTML generation failed");return 1;}
     printf("+ %d bytes cached\n",_shlen);

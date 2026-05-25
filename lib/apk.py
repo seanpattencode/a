@@ -36,7 +36,7 @@ private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this
 override fun onBackPressed(){if(w.canGoBack())w.goBack() else super.onBackPressed()}
 override fun onResume(){super.onResume();boot()}
 private val nl by lazy{applicationInfo.nativeLibraryDir}
-private fun setup(){val ui=File(filesDir,"lib/ui");ui.mkdirs();val up=File(ui,"ui_full.py");if(!up.exists())assets.open("ui_full.py").use{i->up.outputStream().use{o->i.copyTo(o)}}
+private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");if(!up.exists())assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}
 val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.deleteRecursively();ti.mkdirs();val src=File(filesDir,"terminfo.src");if(!src.exists())assets.open("terminfo.src").use{i->src.outputStream().use{o->i.copyTo(o)}}
 ProcessBuilder("$nl/libtic.so","-o",ti.absolutePath,src.absolutePath).redirectErrorStream(true).redirectOutput(File(filesDir,"tic.log")).start().waitFor()}
 val bin=File(filesDir,"bin");bin.mkdirs();for(p in listOf("a" to "liba.so","tmux" to "libtmux.so","tic" to "libtic.so","dbclient" to "libssh.so","ssh" to "libsshwrap.so","sshpass" to "libsshwrap.so","rclone" to "librclone.so")){val l=File(bin,p.first);try{android.system.Os.remove(l.absolutePath)}catch(e:Exception){};try{android.system.Os.symlink("$nl/${p.second}",l.absolutePath)}catch(e:Exception){}}
@@ -1207,7 +1207,7 @@ def run():
             if "aarch64" not in S.run(["file",d],capture_output=True,text=True).stdout:sys.exit(f"x wrong arch: {s} → {d}")
             S.run(["patchelf","--page-size","16384",d],capture_output=True)
         shutil.copy("/tmp/dsrc/ncurses-6.4/misc/terminfo.src",f"{ad}/terminfo.src")
-        shutil.copy(R+"/lib/ui/ui_full.py",f"{ad}/ui_full.py")
+        shutil.copy(R+"/lib/ui_full.html",f"{ad}/ui_full.html")
         for sub in["ssh","workspace/projects","workspace/cmds"]:
             sd=R+"/adata/git/"+sub;dd=ad+"/git/"+sub;os.makedirs(dd,exist_ok=True)
             for f in glob.glob(sd+"/*.txt"):shutil.copy(f,dd+"/"+os.path.basename(f))
