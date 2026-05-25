@@ -669,7 +669,7 @@ int main(int argc, char **argv) {
     CWD(wd);
     alog(acmd, wd);
     const char *arg = argv[1];
-    if(strcmp(arg,"n")&&strcmp(arg,"note")&&strcmp(arg,"t")&&strcmp(arg,"task"))sync_bg();
+    /* per-cmd auto-sync removed: was sweeping working-tree changes (e.g. my/ lab work) into "sync" commits across adata. Notes/tasks still sync on their explicit write paths. */
 
     if (*arg && !arg[strspn(arg,"0123456789")]) { init_db(); return cmd_project_num(argc, argv, atoi(arg)); }
 

@@ -12,7 +12,7 @@ static void ensure_adata(void) {
         else{mkdirp(SROOT);snprintf(c,B,"git -C '%s' init -q&&git -C '%s' checkout -b main 2>/dev/null",SROOT,SROOT);
             (void)!system(c);puts("✓ Init adata/git (gh auth login for sync)");}
     }
-    char d[P];snprintf(d,P,"%s/my",SROOT);mkdir(d,0755);snprintf(d,P,"%s/my",SDIR);unlink(d);symlink("adata/git/my",d);
+    char d[P];snprintf(d,P,"%s/my",SROOT);mkdir(d,0755);
 }
 
 static void ensure_git_id(void) {
