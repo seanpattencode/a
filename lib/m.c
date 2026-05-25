@@ -513,6 +513,7 @@ static void m_menu(void){
      * gemini cli commented out: being phased out for antigravity, no single-output mode yet. */
     static const char *const ops[]={
         "new\tnew chat, fresh file",
+        "import\timport latest claude code chat",
         "main\topen main m.txt",
         "restart\trespawn this window",
         "edit\topen file in e",
@@ -559,6 +560,40 @@ static void m_menu(void){
     if(!m_step("effort",cdx?E_CX:E_CL,4,v,sizeof v))return;
     if(cdx){static const char *const T[]={"tier default","tier fast","tier flex"}; m_step("tier",T,3,v,sizeof v);}
 }
+/* import a Claude Code .jsonl transcript → fresh agent/<ts>-cc.txt, switch m_file, signal m */
+static int m_import(int c, char **v) {
+    static const char *py =
+"import json,sys,os,glob\n"
+"src=sys.argv[1] if len(sys.argv)>1 else None\n"
+"if not src:\n"
+" ps=sorted(glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')),key=os.path.getmtime)\n"
+" if not ps:sys.exit('no claude conversations found')\n"
+" src=ps[-1]\n"
+"sys.stdout.write('## system\\nimported from claude code: '+src+'\\n')\n"
+"for ln in open(src):\n"
+" try:e=json.loads(ln)\n"
+" except:continue\n"
+" m=e.get('message') or {};r=m.get('role');co=m.get('content')\n"
+" if r not in('user','assistant'):continue\n"
+" t=''\n"
+" if isinstance(co,str):t=co\n"
+" elif isinstance(co,list):t='\\n'.join(b.get('text','')for b in co if isinstance(b,dict)and b.get('type')=='text')\n"
+" if t.strip():sys.stdout.write('## %s\\n%s\\n'%(r,t))\n"
+"sys.stdout.write('## user\\n')\n";
+    char tf[P]; snprintf(tf,P,"%s/m_imp.py",TMP); writef(tf,py);
+    time_t t=time(NULL); char fn[64]; strftime(fn,64,"agent/%Y%m%d-%H%M%S-cc.txt",localtime(&t));
+    char outp[P]; snprintf(outp,P,"%s/m/%s",SDIR,fn);
+    char ad[P]; snprintf(ad,P,"%s/m/agent",SDIR); mkdirp(ad);
+    char cmd[B]; snprintf(cmd,B,"python3 '%s' %s > '%s'",tf,c>3?v[3]:"",outp);
+    if(system(cmd)){fprintf(stderr,"import failed\n"); return 1;}
+    char pf[P]; snprintf(pf,P,"%s/m_file",DDIR); writef(pf,fn);
+    printf("imported → %s (a m to open)\n",fn);
+    /* background commit so the imported file syncs to other devices */
+    snprintf(cmd,B,"(cd '%s/m'&&git add -A&&git commit -qm 'import %s'&&git push -q 2>/dev/null)&",SDIR,fn);(void)!system(cmd);
+    /* wake any running m so it picks up the new file via SIGUSR1 → re-render */
+    snprintf(pf,P,"%s/m_pid",DDIR); char *p=readf(pf,NULL); if(p&&*p)kill(atoi(p),SIGUSR1); free(p);
+    return 0;
+}
 static int m_reset(void) {
     char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",DDIR);
     char *p=readf(pf,NULL); if(!p||!*p){puts("no pty (a m not running here)");free(p);return 1;}
@@ -583,6 +618,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
     if (c > 2 && !strcmp(v[2], "main")) return m_main();
     if (c > 2 && !strcmp(v[2], "new")) return m_new();
+    if (c > 2 && !strcmp(v[2], "import")) return m_import(c, v);
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     perf_disarm(); /* interactive: subcommands above stay perf-armed; the chat loop runs unbounded */
     /* (existing-instance switch removed — flaky when pid lives but window died; just open fresh) */
