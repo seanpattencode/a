@@ -293,7 +293,7 @@ def client(args):
         here = os.path.dirname(os.path.abspath(__file__))
         extdir = os.path.join(here, 'bri-ext')
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi',
-                               f'{extdir}/manifest.json', f'{extdir}/content.js'])
+                               f'{extdir}/manifest.json', f'{extdir}/content.js', f'{extdir}/background.js'])
         # Prefer Nightly profile (active one); fall back to dev/release.
         cands = glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) \
               + glob.glob(os.path.expanduser('~/.mozilla/firefox/*default*'))
@@ -315,6 +315,26 @@ def client(args):
         elif a=='type':  j = {'id':1,'action':'type','sel':args[1],'text':args[2]}
         elif a=='keys':  j = {'id':1,'action':'keys','sel':args[1],'keys':args[2]}
         elif a=='url':   j = {'id':1,'action':'url'}
+        # NOT recommended — prefer text/html/url. PNG is lossy for any text-bearing
+        # page, heavy (200KB+), and requires a vision model to parse. Use only when
+        # the rendered pixels themselves are the artifact (canvas, layout bug, etc).
+        elif a=='screenshot':
+            import base64, time as _t
+            out = args[1] if len(args)>1 else f'/tmp/bri-{int(_t.time())}.png'
+            s = socket.socket(); s.connect(('127.0.0.1', CMD))
+            s.sendall(json.dumps({'id':1,'action':'screenshot'}).encode()+b'\n')
+            buf=b''
+            while True:
+                ch=s.recv(1<<16)
+                if not ch: break
+                buf+=ch
+            for line in buf.decode(errors='replace').splitlines():
+                try: v=json.loads(line).get('value','')
+                except Exception: continue
+                if v.startswith('data:image/'):
+                    open(out,'wb').write(base64.b64decode(v.split(',',1)[1]))
+                    print(out); return
+            sys.stderr.write('x no image returned (ext loaded? a bri deploy)\n'); sys.exit(1)
         else:
             sys.stderr.write("bri <url> | text [sel] | click <sel> | type <sel> <text> | keys <sel> <key> | url | deploy | restart | mon | '{json}'\n"
                 "  deploy:  rebuild lib/bri-ext xpi + restart Firefox\n"
@@ -339,6 +359,9 @@ MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
   type <sel> <s>   type into element (handles contenteditable)
   keys <sel> <k>   dispatch keydown/keyup (e.g. Enter)
   url              current URL
+  screenshot [p]   PNG of active tab → p (default /tmp/bri-<ts>.png)
+                   ! avoid if possible — prefer text/html/url (text is the
+                     artifact, PNG is lossy + heavy + needs a vision model)
   '{json}'         raw passthrough — full 9-action protocol
 first run: a bri serve   then: a bri deploy"""
 
