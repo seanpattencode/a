@@ -551,6 +551,9 @@ static int cmd_m(int c, char **v) {
     if(c<=2){char*sp=readf(pf,NULL);if(sp&&*sp){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
     snprintf(sf, P, "%s/m/%s", SDIR, fn);
     setenv("M_IN", "1", 1);
+    /* watcher: SIGUSR1 us when m.txt changes (e.g. a m edit save) → wakes read, re-renders */
+    if(fork()==0){char wc[B];snprintf(wc,B,"while inotifywait -e close_write '%s' -q -q 2>/dev/null; do kill -USR1 %d 2>/dev/null||exit; done",sf,getppid());
+        execlp("sh","sh","-c",wc,(char*)0); _exit(127);}
     int _first=1;
     for (;;) {
         g_halt = 0;
