@@ -587,7 +587,8 @@ static int cmd_m(int c, char **v) {
                  *ti&&strcmp(ti,"default")?"·":"",*ti&&strcmp(ti,"default")?ti:""); fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
-          snprintf(b,B,"([ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(gh repo clone m 2>/dev/null||gh repo create m --private --clone);};cd %1$s/m&&git pull --rebase -q 2>/dev/null)&",SDIR);(void)!system(b);
+          /* git clone preferred: gh 2.87.3 on Termux injects a broken per-host credential helper at clone time. */
+          snprintf(b,B,"([ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(U=$(gh repo view m --json url --jq .url 2>/dev/null) && git clone \"$U.git\" m 2>/dev/null || gh repo create m --private --clone);};cd %1$s/m&&git pull --rebase -q 2>/dev/null)&",SDIR);(void)!system(b);
           mm_w(pf,fn,"w"); }
         /* chat input — '/' inside m_read_line opens menu directly, no peek-then-pass-back seam */
         static char m[65536]; size_t ml=m_read_line(m,sizeof m);
