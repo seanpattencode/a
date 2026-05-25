@@ -426,18 +426,48 @@ static int m_pick(const char *cat,const char *opts,char *out,size_t osz){
         for(int i=0;i<nf&&i<10;i++)
             printf("  %s%s%s\n",i==sel?"\033[7m> ":"  ",it[fm[i]],i==sel?"\033[0m":"");
         printf("\033[u\033[%dC",(int)strlen(cat)+2+fl); fflush(stdout);
-        char c; if(read(0,&c,1)!=1){write(1,"\033[u\033[J",6);return -1;}
+        unsigned char c; if(read(0,&c,1)!=1){write(1,"\033[u\033[J",6);return -1;}
+        if(getenv("M_DEBUG_KEYS"))fprintf(stderr,"[k 0x%02x %d]\r\n",c,c);
         if(c==27){int av;usleep(20000);ioctl(0,FIONREAD,&av);
-            if(av>=2){char s[2];(void)!read(0,s,2);
-                if(s[0]=='['){if(s[1]=='A'){if(sel>0)sel--;continue;} if(s[1]=='B'){sel++;continue;}}}
-            write(1,"\033[u\033[J",6);return -1;}                          /* Esc → cancel all */
-        if(c==3){write(1,"\033[u\033[J",6);return -1;}                     /* Ctrl-C → cancel all */
-        if(c==9){write(1,"\033[u\033[J",6);return 0;}                      /* Tab → skip step */
-        if(c==21){f[0]=0;fl=0;sel=0;continue;}                             /* Ctrl-U → clear filter */
+            if(av>0){char s[5]; int rn2=(int)read(0,s,(size_t)(av>5?5:av));
+                if(rn2>=2&&s[0]=='['){
+                    if(s[1]=='A'){if(sel>0)sel--;continue;}
+                    if(s[1]=='B'){sel++;continue;}
+                    if(rn2>=3&&s[1]=='3'&&s[2]=='~'){if(fl)f[--fl]=0;sel=0;continue;} /* DEL forward = BSpace */
+                }}
+            write(1,"\033[u\033[J",6);return -1;}                              /* plain Esc → cancel all */
+        if(c==3){write(1,"\033[u\033[J",6);return -1;}                         /* Ctrl-C → cancel all */
+        if(c==9){write(1,"\033[u\033[J",6);return 0;}                          /* Tab → skip step */
+        if(c==21){f[0]=0;fl=0;sel=0;continue;}                                 /* Ctrl-U → clear filter */
         if(c=='\r'||c=='\n'){if(!nf)continue; write(1,"\033[u\033[J",6); snprintf(out,osz,"%s",it[fm[sel]]); return 1;}
-        if(c==127||c==8){if(fl){f[--fl]=0; sel=0;} else {write(1,"\033[u\033[J",6); return -1;}}  /* BSpace on empty → cancel all */
-        else if(c>=' '&&c<127&&fl<47){f[fl++]=c;f[fl]=0;sel=0;}
+        if(c==127||c==8||c==0xff){if(fl){f[--fl]=0; sel=0;} else {write(1,"\033[u\033[J",6); return -1;}}  /* BSpace (DEL/^H/0xff) on empty → cancel all */
+        else if(c>=' '&&c<127&&fl<47){f[fl++]=(char)c;f[fl]=0;sel=0;}
     }
+}
+/* raw-mode line reader: handles BSpace (incl. on the prepended first char), bracketed paste, Ctrl-C cancel.
+ * Needed because canonical-mode BSpace can't reach a char we ungetc'd into stdio (kernel never saw it). */
+static size_t m_read_line(char *buf,size_t sz,unsigned char first){
+    struct termios o,r; tcgetattr(0,&o); r=o;
+    r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
+    tcsetattr(0,TCSANOW,&r);
+    (void)!write(1,"\033[?2004h",8);
+    size_t bl=0; int paste=0;
+    if(first>=32&&first<127){buf[bl++]=(char)first; write(1,&first,1);}
+    while(bl<sz-1){
+        unsigned char c; if(read(0,&c,1)!=1)break;
+        if(c=='\r'||c=='\n'){if(paste){buf[bl++]='\n';write(1,"\n",1);continue;} write(1,"\n",1); break;}
+        if(!paste&&(c==127||c==8||c==0xff)){if(bl){bl--; write(1,"\b \b",3);} continue;}
+        if(!paste&&c==3){bl=0; write(1,"^C\n",3); break;}
+        if(c==27){int av;usleep(20000);ioctl(0,FIONREAD,&av);
+            if(av>0){char s[8]; int rn=(int)read(0,s,(size_t)(av>8?8:av));
+                if(rn>=5){if(!memcmp(s,"[200~",5)){paste=1;continue;} if(!memcmp(s,"[201~",5)){paste=0;continue;}}}
+            continue;}
+        if(c>=32){buf[bl++]=(char)c; if(!paste)write(1,&c,1);}
+    }
+    buf[bl]=0;
+    (void)!write(1,"\033[?2004l",8);
+    tcsetattr(0,TCSANOW,&o);
+    return bl;
 }
 /* Nested menu: agent → model → effort → (codex)tier. Each step live-filtered. */
 static void m_menu(void){
@@ -519,19 +549,16 @@ static int cmd_m(int c, char **v) {
         if(_first){_first=0; tm_rename(sn);
           snprintf(b,B,"([ -d %1$s/m/.git ]||{ rm -rf %1$s/m;cd %1$s&&(gh repo clone m 2>/dev/null||gh repo create m --private --clone);};cd %1$s/m&&git pull --rebase -q 2>/dev/null)&",SDIR);(void)!system(b);
           mm_w(pf,fn,"w"); }
-        /* peek 1 char raw: '/' spawns the a-i menu pane (m_mode: nested agent→effort→model picks) */
+        /* peek 1 char raw: '/' opens menu; else feed it into m_read_line (raw line edit handles BSpace on all chars) */
+        static char m[65536]; size_t ml;
         { struct termios o,r; tcgetattr(0,&o); r=o; r.c_lflag&=~(tcflag_t)(ICANON|ECHO); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
-          tcsetattr(0,TCSANOW,&r); char ch; ssize_t rn=read(0,&ch,1); tcsetattr(0,TCSANOW,&o);
-          if(rn<=0){if(g_rst){g_rst=0;continue;} if(!rn)break; continue;}
-          if(ch=='/'){m_menu();continue;}
-          (void)!write(1,&ch,1); ungetc(ch,stdin); }
-        (void)!write(1,"\x1b[?2004h",8);
-        static char m[65536];size_t ml=paste_line(m,sizeof m,stdin);
-        (void)!write(1,"\x1b[?2004l",8);
-        if(!ml){if(g_rst){g_rst=0;continue;} break;}
-        if(!m[0]) continue;
-        m[ml]='\n';m[ml+1]=0;mm_w(sf, m, "a");
-        m_commit("u");
+          tcsetattr(0,TCSANOW,&r); unsigned char ch; ssize_t rn=read(0,&ch,1); tcsetattr(0,TCSANOW,&o);
+          if(rn<=0){if(g_rst){g_rst=0;goto _next;} if(!rn)goto _exit; goto _next;}
+          if(ch=='/'){m_menu();goto _next;}
+          if(ch=='\r'||ch=='\n')goto _next;
+          ml=m_read_line(m,sizeof m,ch);
+          if(!ml){if(g_rst)g_rst=0; goto _next;} }
+        m[ml]='\n';m[ml+1]=0;mm_w(sf, m, "a"); m_commit("u");
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
             mm_w(sf, "\n## assistant\n", "a");
@@ -554,6 +581,7 @@ static int cmd_m(int c, char **v) {
             m_commit("t"); if (g_halt) break;
         }
         mm_w(sf, "\n## user\n", "a");
+        _next: ;
     }
-    return 0;
+    _exit: return 0;
 }
