@@ -26,7 +26,11 @@ static void m_commit(const char *tag) {
     if (g_halt) return;
     if (fork() == 0) {
         char c[B];
-        snprintf(c, B, "cd '%s/m' && git add -A && (git diff --cached --quiet || git commit -q -m '%s'); git push -q 2>/dev/null", SDIR, tag);
+        snprintf(c, B,
+            "{ cd '%1$s/m' && git add -A && (git diff --cached --quiet || git commit -q -m '%2$s') && git push -q 2>/dev/null "
+            "&& printf '[%%s] git ✓ %2$s' \"$(date +%%H:%%M:%%S)\" > '%3$s/m_status'; } "
+            "|| printf '[%%s] git ✗ %2$s' \"$(date +%%H:%%M:%%S)\" > '%3$s/m_status'",
+            SDIR, tag, DDIR);
         execlp("sh", "sh", "-c", c, NULL); _exit(127);
     }
     char sm[32]; snprintf(sm, 32, "git sync %s", tag); m_status(sm);
@@ -539,7 +543,7 @@ static int cmd_m(int c, char **v) {
     CWD(w); struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
     snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
     if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b); tm_go(sn); return 0; }
-    signal(SIGINT, m_sint);
+    signal(SIGINT, m_sint); signal(SIGCHLD, SIG_IGN); /* auto-reap m_commit children */
     { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
     { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); }
     char fnb[128]="m.txt";const char *fn=c>2?v[2]:fnb;
