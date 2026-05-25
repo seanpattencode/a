@@ -560,15 +560,11 @@ static void m_menu(void){
     if(!m_step("effort",cdx?E_CX:E_CL,4,v,sizeof v))return;
     if(cdx){static const char *const T[]={"tier default","tier fast","tier flex"}; m_step("tier",T,3,v,sizeof v);}
 }
-/* import a Claude Code .jsonl transcript → fresh agent/<ts>-cc.txt, switch m_file, signal m */
-static int m_import(int c, char **v) {
+/* convert one Claude Code .jsonl → fresh agent/<ts>-cc.txt, switch m_file, signal m */
+static int m_import_run(const char *src) {
     static const char *py =
-"import json,sys,os,glob\n"
-"src=sys.argv[1] if len(sys.argv)>1 else None\n"
-"if not src:\n"
-" ps=sorted(glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')),key=os.path.getmtime)\n"
-" if not ps:sys.exit('no claude conversations found')\n"
-" src=ps[-1]\n"
+"import json,sys,os\n"
+"src=sys.argv[1]\n"
 "sys.stdout.write('## system\\nimported from claude code: '+src+'\\n')\n"
 "for ln in open(src):\n"
 " try:e=json.loads(ln)\n"
@@ -584,15 +580,70 @@ static int m_import(int c, char **v) {
     time_t t=time(NULL); char fn[64]; strftime(fn,64,"agent/%Y%m%d-%H%M%S-cc.txt",localtime(&t));
     char outp[P]; snprintf(outp,P,"%s/m/%s",SDIR,fn);
     char ad[P]; snprintf(ad,P,"%s/m/agent",SDIR); mkdirp(ad);
-    char cmd[B]; snprintf(cmd,B,"python3 '%s' %s > '%s'",tf,c>3?v[3]:"",outp);
+    char cmd[B]; snprintf(cmd,B,"python3 '%s' '%s' > '%s'",tf,src,outp);
     if(system(cmd)){fprintf(stderr,"import failed\n"); return 1;}
     char pf[P]; snprintf(pf,P,"%s/m_file",DDIR); writef(pf,fn);
     printf("imported → %s (a m to open)\n",fn);
-    /* background commit so the imported file syncs to other devices */
     snprintf(cmd,B,"(cd '%s/m'&&git add -A&&git commit -qm 'import %s'&&git push -q 2>/dev/null)&",SDIR,fn);(void)!system(cmd);
-    /* wake any running m so it picks up the new file via SIGUSR1 → re-render */
     snprintf(pf,P,"%s/m_pid",DDIR); char *p=readf(pf,NULL); if(p&&*p)kill(atoi(p),SIGUSR1); free(p);
     return 0;
+}
+/* a m import → nested picker: source (claude) → conversation list → import */
+static int m_import(int c, char **v) {
+    if(c > 3) return m_import_run(v[3]);
+    /* source picker — auto-skip when only one; ready to add codex/gemini sources here */
+    static const char *const sources[] = {"claude code\tlocal CC transcripts"};
+    int nsrc = (int)(sizeof sources/sizeof *sources);
+    char src_pick[64] = "claude code";
+    if(nsrc > 1){
+        struct termios o,r; tcgetattr(0,&o); r=o;
+        r.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
+        tcsetattr(0,TCSANOW,&r);
+        int rc = m_pick("source",sources,nsrc,src_pick,sizeof src_pick);
+        tcsetattr(0,TCSANOW,&o);
+        if(rc <= 0) return 0;
+        char *t=strchr(src_pick,'\t'); if(t)*t=0;
+    }
+    /* list conversations for source — only claude code supported for now */
+    static const char *py_ls =
+"import json,glob,os,time\n"
+"ps=sorted(glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')),key=os.path.getmtime,reverse=True)\n"
+"for p in ps[:30]:\n"
+" mt=time.strftime('%m-%d %H:%M',time.localtime(os.path.getmtime(p)))\n"
+" first=''\n"
+" try:\n"
+"  for ln in open(p):\n"
+"   e=json.loads(ln);m=e.get('message')or{}\n"
+"   if m.get('role')=='user':\n"
+"    co=m.get('content','')\n"
+"    if isinstance(co,str):first=co[:50]\n"
+"    elif isinstance(co,list):\n"
+"     for b in co:\n"
+"      if isinstance(b,dict)and b.get('type')=='text':first=b.get('text','')[:50];break\n"
+"    break\n"
+" except:pass\n"
+" first=first.replace(chr(10),' ').replace(chr(9),' ')\n"
+" print(f'{mt}  {first}\\t{p}')\n";
+    char tf[P]; snprintf(tf,P,"%s/m_ls.py",TMP); writef(tf,py_ls);
+    char cmd[B]; snprintf(cmd,B,"python3 '%s'",tf);
+    static char buf[32768]; buf[0]=0; pcmd(cmd,buf,sizeof buf);
+    static char items_buf[32][384];
+    const char *items_ptr[32]; int n=0;
+    for(char *p=buf; *p && n<32; ){
+        char *nl=strchr(p,'\n'); if(nl)*nl=0;
+        if(*p){snprintf(items_buf[n],384,"%s",p); items_ptr[n]=items_buf[n]; n++;}
+        if(!nl) break; p=nl+1;
+    }
+    if(n==0){fprintf(stderr,"no claude code conversations found\n"); return 1;}
+    struct termios o,r; tcgetattr(0,&o); r=o;
+    r.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
+    tcsetattr(0,TCSANOW,&r);
+    char pick[384];
+    int rc = m_pick("conversation",items_ptr,n,pick,sizeof pick);
+    tcsetattr(0,TCSANOW,&o);
+    if(rc <= 0) return 0;
+    char *tab = strchr(pick,'\t'); if(!tab){fprintf(stderr,"bad pick\n"); return 1;}
+    return m_import_run(tab+1);
 }
 static int m_reset(void) {
     char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",DDIR);
