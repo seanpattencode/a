@@ -95,7 +95,7 @@ USERSCRIPT = r"""// ==UserScript==
   const dispatch = async (m) => {
     try {
       switch (m.action) {
-        case 'navigate': location.href = m.url; return {ok:true};
+        case 'navigate': top.location=m.url; return {ok:true};
         case 'click':    $(m.sel).click(); return {ok:true};
         case 'type':     { let e=$(m.sel);
                            if (!e.isContentEditable && e.tagName==='DIV')
@@ -216,7 +216,8 @@ def cmd_serve():
         if rid is not None: pending[rid] = queue.Queue()
         for q in list(pollers): q.put(msg)
         if rid is None:
-            c.send(f'sent to {len(pollers)} pollers\n'.encode())
+            hint = '' if pollers else '  → no FF client connected. install ext: a bri deploy   (or in FF: open http://127.0.0.1:1234/a.user.js with Tampermonkey)\n'
+            c.send(f'sent to {len(pollers)} pollers\n{hint}'.encode())
         else:
             out, end = [], time.time()+8
             while time.time() < end:
@@ -227,9 +228,12 @@ def cmd_serve():
         c.close()
 
 def main():
-    threading.Thread(target=cmd_serve, daemon=True).start()
     s = socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-    s.bind(('127.0.0.1',PORT)); s.listen(50); log(f'[*] http on :{PORT} | log: {LOG}')
+    try: s.bind(('127.0.0.1',PORT))
+    except OSError: log(f'[*] :{PORT} taken — bri already running, just restarting FF'); _ff_restart(); return
+    threading.Thread(target=cmd_serve, daemon=True).start()
+    s.listen(50); log(f'[*] http on :{PORT} | log: {LOG}')
+    _ff_restart()  # ensure FF visible on monitors (kills stale headless instance)
     while True:
         c,addr = s.accept()
         threading.Thread(target=handle, args=(c,addr), daemon=True).start()
@@ -237,13 +241,15 @@ def main():
 # Shortcut CLI: thin client that pushes JSON to a running bridge on :1235 and
 # prints the response. The raw '{json}' form remains the full API.
 def _ff_restart():
-    import subprocess
-    subprocess.run(['osascript','-e','tell application "Firefox Nightly" to quit'], stderr=subprocess.DEVNULL)
-    for _ in range(15):
-        if subprocess.run(['pgrep','-f','Firefox Nightly.app/Contents/MacOS/firefox$'], capture_output=True).returncode != 0: break
-        time.sleep(1)
-    time.sleep(0.5)
-    subprocess.Popen(['/Applications/Firefox Nightly.app/Contents/MacOS/firefox','-foreground'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Live wayland socket — process env may have stale wayland-0 from a dead session,
+    # leaving FF connected to nothing and invisible on monitors (looks headless).
+    import os, glob, subprocess
+    subprocess.run(['pkill','-9','-f','firefox-nightly'],stdout=-3,stderr=-3); time.sleep(1)
+    env = os.environ.copy(); xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
+    socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
+    if socks: env['WAYLAND_DISPLAY'] = socks[0]
+    env['MOZ_ENABLE_WAYLAND'] = '1'
+    subprocess.Popen(['firefox-nightly','http://127.0.0.1:1234/a.user.js'],env=env,stdout=-3,stderr=-3,start_new_session=True)
 
 def _mon():
     import subprocess, os
@@ -289,7 +295,8 @@ def client(args):
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi',
                                f'{extdir}/manifest.json', f'{extdir}/content.js'])
         # Prefer Nightly profile (active one); fall back to dev/release.
-        cands = glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*'))
+        cands = glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) \
+              + glob.glob(os.path.expanduser('~/.mozilla/firefox/*default*'))
         prof = [p for p in cands if 'nightly' in p.lower()] or \
                [p for p in cands if p.endswith('default-dev')] or \
                [p for p in cands if p.endswith('default-release')] or cands
@@ -321,7 +328,25 @@ def client(args):
     except OSError: sys.stderr.write("x bridge not running — start it: a bri\n"); sys.exit(1)
     s.sendall((msg+'\n').encode()); sys.stdout.write(s.recv(1<<20).decode())
 
+MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
+  serve            start bridge (:1234 http, :1235 cmd) + launch FF on monitor
+  deploy           rebuild lib/bri-ext xpi + install + restart FF (zero-click)
+  restart          quit + relaunch FF Nightly
+  mon              bri.py + FF CPU/RAM/tabs snapshot
+  <url>            navigate (http/https detected)
+  text [sel]       read body or selected element (sel default: body)
+  click <sel>      click element
+  type <sel> <s>   type into element (handles contenteditable)
+  keys <sel> <k>   dispatch keydown/keyup (e.g. Enter)
+  url              current URL
+  '{json}'         raw passthrough — full 9-action protocol
+first run: a bri serve   then: a bri deploy"""
+
 if __name__=='__main__':
     args = sys.argv[1:]
     if args and args[0] == 'bri': args = args[1:]  # `a bri …` passes cmd name as argv[1]
-    (client(args) if args else main())
+    if not args:
+        up = __import__('subprocess').run(['ss','-ltn','sport = :1234'],capture_output=True,text=True).stdout
+        print(f"[{'running' if ':1234' in up else 'stopped'}] :1234\n{MENU}")
+    elif args[0] == 'serve': main()
+    else: client(args)
