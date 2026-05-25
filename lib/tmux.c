@@ -22,6 +22,8 @@ static void tm_rename(const char*n){char c[160];snprintf(c,160,"tmux rename-wind
 static int tm_new(const char *w, const char *wd, const char *cmd) {
     tm_ensure_sess();if(tm_has(w))return 1;char c[B*2],ev[P+16]="";
     const char*xa=getenv("A_CTX");if(xa&&xa[0])snprintf(ev,sizeof(ev),"-e A_CTX='%s' ",xa);
+    if(getenv("TMUX")&&cmd&&*cmd){
+        snprintf(c,sizeof(c),"tmux split-window -vb -l 90%% %s-c '%s' '%s'",ev,wd,cmd);return system(c)?1:2;}
     if(cmd&&*cmd)snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s' '%s'",ev,w,wd,cmd);
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
     return system(c);
@@ -108,7 +110,7 @@ static void tm_ensure_conf(void) {
         "set -g status 2\n"
         "set -g status-right \"\"\n"
         "set -g status-format[0] \"#[align=left,bg=default,fg=colour231,nobold]#[range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange]#[align=right]#[range=user|aa] a #[norange] #[range=user|new] Pane #[norange] #[range=user|win] Win #[norange]#[range=user|x] X #[norange] #[range=user|close]Close#[norange] #[range=user|menu] ... #[norange] #[range=user|kbd]Kb#[norange] \"\n"
-        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#[fg=colour232,bg=colour231,bold] #I:#W #[bg=default fg=white nobold] #{W:#{?window_active,,#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] }}\"\n"
+        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#[fg=#000000,bg=#ffffff,bold] #I:#W #[bg=default fg=white nobold] #{W:#{?window_active,,#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] }}\"\n"
         "bind -n M-Right if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
         "bind -n M-Left if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl p #W\"' previous-window\n"
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
