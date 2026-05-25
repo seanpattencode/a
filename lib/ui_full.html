@@ -38,7 +38,6 @@ __MY__
   </form>
   <div id=nl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px">__NO__</div>
 </div>
-<div id=v_dc style="position:fixed;inset:0;background:#000;color:red;text-align:center;padding-top:45vh;display:none">not connected</div>
 <script>
 var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks'__MV__}, T, F, W;
 // perf: go() must stay <1ms. show() is DOM toggle only, no network. keep this instrumentation.
@@ -60,9 +59,9 @@ try{
   var sz=()=>ws(JSON.stringify({cols:T.cols,rows:T.rows}));
   function connect(){if(W&&W.readyState<2)return;
     W=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws');
-    W.onopen=()=>{v_dc.style.display='none';F.fit();sz()};
+    W.onopen=()=>{F.fit();sz()};
     W.onmessage=e=>T.write(e.data);
-    W.onerror=W.onclose=()=>{v_dc.style.display='';setTimeout(connect,1000)};
+    W.onerror=W.onclose=()=>setTimeout(connect,1000);
   }
   T.onData(ws);
   new ResizeObserver(()=>{F.fit();sz()}).observe(t);
