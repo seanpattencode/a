@@ -561,9 +561,11 @@ static int cmd_m(int c, char **v) {
     if(c<=2){char*sp=readf(pf,NULL);if(sp&&*sp){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
     snprintf(sf, P, "%s/m/%s", SDIR, fn);
     setenv("M_IN", "1", 1);
-    /* first-ever launch: clone synchronously so render's sysprompt-rewrite doesn't race the clone checkout */
+    /* SYNC clone (first launch) + SYNC pull (every launch) so local sysprompt-rewrite never collides
+     * with an in-flight checkout/pull. Without this, phone's pushes get overwritten locally and lost. */
     { char gp[P]; snprintf(gp,P,"%s/m/.git",SDIR);
-      if(!dexists(gp)){char ic[B]; snprintf(ic,B,"cd '%1$s'&&(U=$(gh repo view m --json url --jq .url 2>/dev/null) && git clone \"$U.git\" m 2>/dev/null || gh repo create m --private --clone)",SDIR); (void)!system(ic);} }
+      if(!dexists(gp)){char ic[B]; snprintf(ic,B,"cd '%1$s'&&(U=$(gh repo view m --json url --jq .url 2>/dev/null) && git clone \"$U.git\" m 2>/dev/null || gh repo create m --private --clone)",SDIR); (void)!system(ic);}
+      char pc[B]; snprintf(pc,B,"cd '%1$s/m'&&git pull --rebase -q 2>/dev/null",SDIR); (void)!system(pc); }
 #ifdef __linux__
     g_ifd = inotify_init1(IN_NONBLOCK|IN_CLOEXEC);
     if(g_ifd>=0) inotify_add_watch(g_ifd, sf, IN_CLOSE_WRITE);
@@ -585,12 +587,11 @@ static int cmd_m(int c, char **v) {
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
         { const char *ag=cfget("m_agent"),*md=cfget("m_model"),*ef=cfget("m_effort"),*ti=cfget("m_tier");
-          printf("\n\033[36m%s·%s·%s%s%s\033[0m  \033[90m/=menu\033[0m",*ag?ag:"claude",*md?md:"opus",*ef?ef:"low",
+          printf("\n\033[1m%s\033[0m  \033[36m%s·%s·%s%s%s\033[0m  \033[90m/=menu\033[0m",fn,*ag?ag:"claude",*md?md:"opus",*ef?ef:"low",
                  *ti&&strcmp(ti,"default")?"·":"",*ti&&strcmp(ti,"default")?ti:""); fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
-          /* clone already done synchronously above; only background pull here for latest updates */
-          snprintf(b,B,"(cd %s/m&&git pull --rebase -q 2>/dev/null)&",SDIR);(void)!system(b);
+          /* clone + pull already done synchronously at startup; nothing to do here */
           mm_w(pf,fn,"w"); }
         /* chat input — '/' inside m_read_line opens menu directly, no peek-then-pass-back seam */
         static char m[65536]; size_t ml=m_read_line(m,sizeof m);
