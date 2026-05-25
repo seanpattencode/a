@@ -406,37 +406,42 @@ static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agent",SDIR);mkdirp(ad);ti
 
 static void m_set(const char *k,const char *v){char ck[32];snprintf(ck,32,"m_%s",k);cfset(ck,v);
   if(!strcmp(k,"agent")){cfset("m_model",strstr(v,"codex")?"gpt-5.5":strstr(v,"gemini")?"gemini-2.5-flash":!strcmp(v,"api")?"claude-opus-4-5":"opus");cfset("m_effort",strstr(v,"codex")?"xhigh":"low");}}
-/* live-filter picker: items[] array of n strings. Up/Down/Enter pick, Esc/BSpace-on-empty cancel. */
+/* live-filter picker: anchors menu at bottom of pane via ABSOLUTE row positioning.
+ * \033[s/\033[u proved unreliable in tmux across scrolls — each arrow rendered below
+ * the previous, leaving stacked menus. Now we jump to a known absolute row each redraw. */
 static int m_pick(const char *cat,const char *const *items,int n,char *out,size_t osz){
-    int rsv=n+2; if(rsv>20)rsv=20; for(int i=0;i<rsv;i++)write(1,"\n",1); printf("\033[%dA",rsv);
-    write(1,"\033[s",3);
+    struct winsize ws; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row:24;
+    int rsv=n+2; if(rsv>rows-1)rsv=rows-1; if(rsv>20)rsv=20;
+    int top=rows-rsv+1;
+    #define CLR() printf("\033[%d;1H\033[J",top)
     char f[48]=""; int fl=0,sel=0;
     for(;;){
         int fm[64],nf=0;
         for(int i=0;i<n&&nf<64;i++) if(!fl||strcasestr(items[i],f)) fm[nf++]=i;
         if(sel>=nf)sel=nf?nf-1:0; if(sel<0)sel=0;
-        write(1,"\033[u\033[J",6);
-        printf("\033[36m%s:\033[0m %s\n",cat,f);
+        CLR();
+        printf("\033[36m%s:\033[0m %s",cat,f);                                 /* filter row, no trailing \n */
         for(int i=0;i<nf&&i<rsv-1;i++)
-            printf("  %s%s%s\n",i==sel?"\033[7m> ":"  ",items[fm[i]],i==sel?"\033[0m":"");
-        printf("\033[u\033[%dC",(int)strlen(cat)+2+fl); fflush(stdout);
-        unsigned char c; if(read(0,&c,1)!=1){write(1,"\033[u\033[J",6);return -1;}
+            printf("\n  %s%s%s",i==sel?"\033[7m> ":"  ",items[fm[i]],i==sel?"\033[0m":"");
+        printf("\033[%d;%dH",top,(int)strlen(cat)+3+fl); fflush(stdout);       /* cursor back to filter, no scroll */
+        unsigned char c; if(read(0,&c,1)!=1){CLR();return -1;}
         if(getenv("M_DEBUG_KEYS"))fprintf(stderr,"[k 0x%02x %d]\r\n",c,c);
         if(c==27){int av;usleep(20000);ioctl(0,FIONREAD,&av);
             if(av>0){char s[5]; int rn2=(int)read(0,s,(size_t)(av>5?5:av));
                 if(rn2>=2&&s[0]=='['){
                     if(s[1]=='A'){if(sel>0)sel--;continue;}
                     if(s[1]=='B'){sel++;continue;}
-                    if(rn2>=3&&s[1]=='3'&&s[2]=='~'){if(fl)f[--fl]=0;sel=0;continue;} /* DEL forward = BSpace */
+                    if(rn2>=3&&s[1]=='3'&&s[2]=='~'){if(fl)f[--fl]=0;sel=0;continue;}
                 }}
-            write(1,"\033[u\033[J",6);return -1;}                              /* plain Esc → cancel all */
-        if(c==3){write(1,"\033[u\033[J",6);return -1;}                         /* Ctrl-C → cancel all */
-        if(c==9){write(1,"\033[u\033[J",6);return 0;}                          /* Tab → skip step */
-        if(c==21){f[0]=0;fl=0;sel=0;continue;}                                 /* Ctrl-U → clear filter */
-        if(c=='\r'||c=='\n'){if(!nf)continue; write(1,"\033[u\033[J",6); snprintf(out,osz,"%s",items[fm[sel]]); return 1;}
-        if(c==127||c==8||c==0xff){if(fl){f[--fl]=0; sel=0;} else {write(1,"\033[u\033[J",6); return -1;}}  /* BSpace (DEL/^H/0xff) on empty → cancel all */
+            CLR();return -1;}
+        if(c==3){CLR();return -1;}
+        if(c==9){CLR();return 0;}
+        if(c==21){f[0]=0;fl=0;sel=0;continue;}
+        if(c=='\r'||c=='\n'){if(!nf)continue; CLR(); snprintf(out,osz,"%s",items[fm[sel]]); return 1;}
+        if(c==127||c==8||c==0xff){if(fl){f[--fl]=0; sel=0;} else {CLR(); return -1;}}
         else if(c>=' '&&c<127&&fl<47){f[fl++]=(char)c;f[fl]=0;sel=0;}
     }
+    #undef CLR
 }
 static void m_menu(void);
 /* raw-mode line reader: handles BSpace on every char (incl first), bracketed paste, '/' as instant menu hotkey. */
