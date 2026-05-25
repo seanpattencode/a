@@ -561,11 +561,9 @@ static int cmd_m(int c, char **v) {
     if(c<=2){char*sp=readf(pf,NULL);if(sp&&*sp){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
     snprintf(sf, P, "%s/m/%s", SDIR, fn);
     setenv("M_IN", "1", 1);
-    /* SYNC clone (first launch) + SYNC pull (every launch) so local sysprompt-rewrite never collides
-     * with an in-flight checkout/pull. Without this, phone's pushes get overwritten locally and lost. */
+    /* SYNC clone only on first ever launch (no .git yet). Pull is deferred to first-render block (async). */
     { char gp[P]; snprintf(gp,P,"%s/m/.git",SDIR);
-      if(!dexists(gp)){char ic[B]; snprintf(ic,B,"cd '%1$s'&&(U=$(gh repo view m --json url --jq .url 2>/dev/null) && git clone \"$U.git\" m 2>/dev/null || gh repo create m --private --clone)",SDIR); (void)!system(ic);}
-      char pc[B]; snprintf(pc,B,"cd '%1$s/m'&&git pull --rebase -q 2>/dev/null",SDIR); (void)!system(pc); }
+      if(!dexists(gp)){char ic[B]; snprintf(ic,B,"cd '%1$s'&&(U=$(gh repo view m --json url --jq .url 2>/dev/null) && git clone \"$U.git\" m 2>/dev/null || gh repo create m --private --clone)",SDIR); (void)!system(ic);} }
 #ifdef __linux__
     g_ifd = inotify_init1(IN_NONBLOCK|IN_CLOEXEC);
     if(g_ifd>=0) inotify_add_watch(g_ifd, sf, IN_CLOSE_WRITE);
@@ -573,16 +571,16 @@ static int cmd_m(int c, char **v) {
     int _first=1;
     for (;;) {
         g_halt = 0;
-        /* render: tail of m.txt sized to terminal rows; head-check sysprompt iff file fits */
-        { static char tb[16384]; char hdr[B]; snprintf(hdr,B,"## system\n%s\n",M_SYS); size_t hl=strlen(hdr),n=0;
+        /* render: tail of m.txt sized to terminal rows. Sysprompt is seeded ONLY into empty/new files
+         * (sz==0) — never modifies existing content, so a backgrounded git pull can fast-forward without
+         * fighting a local rewrite. Drifted sysprompt headers are preferred over data loss. */
+        { static char tb[16384]; size_t n=0;
           struct stat st; FILE *rf=fopen(sf,"r"); off_t sz=0;
           if(rf){fstat(fileno(rf),&st); sz=st.st_size; if(sz>16384)fseek(rf,sz-16384,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}
           struct winsize ws={0}; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row-2:22;
           char *o=tb+n; int nl=0; while(o>tb&&nl<rows){if(*--o=='\n')nl++;} if(o>tb)o++;
           (void)!write(1,"\033[2J\033[H",7); (void)!write(1,o,(size_t)(tb+n-o));
-          if(sz<16384&&(sz<(off_t)hl||memcmp(tb,hdr,hl))){
-            char *cur=readf(sf,NULL); char *us=cur?strstr(cur,"\n## user\n"):0; FILE *f=fopen(sf,"w");
-            if(f){fputs(hdr,f); fputs(us?us+1:"## user\n",f); fclose(f);} free(cur);} }
+          if(sz==0){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n## user\n",M_SYS); fclose(f);}} }
         { char sp[P]; snprintf(sp,P,"%s/m_status",DDIR); char *s=readf(sp,NULL);
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
@@ -591,7 +589,9 @@ static int cmd_m(int c, char **v) {
                  *ti&&strcmp(ti,"default")?"·":"",*ti&&strcmp(ti,"default")?ti:""); fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
-          /* clone + pull already done synchronously at startup; nothing to do here */
+          /* async pull: inotify fires re-render when new content lands. No local race because
+           * sysprompt-rewrite below only touches files where sz==0 (newly created), never existing ones. */
+          snprintf(b,B,"(cd %s/m&&git pull --rebase --autostash -q 2>/dev/null)&",SDIR);(void)!system(b);
           mm_w(pf,fn,"w"); }
         /* chat input — '/' inside m_read_line opens menu directly, no peek-then-pass-back seam */
         static char m[65536]; size_t ml=m_read_line(m,sizeof m);
