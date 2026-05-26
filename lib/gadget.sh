@@ -17,6 +17,11 @@ on)
   for f in hid.kbd hid.mouse ecm.usb0; do sudo ln -sf $G/functions/$f configs/c.1/; done
   ls /sys/class/udc|sudo tee UDC >/dev/null
   sleep 1; sudo ip addr add 192.168.7.1/24 dev usb0 2>/dev/null; sudo ip link set usb0 up 2>/dev/null
+  # configfs is RAM-only — gadget config is wiped on reboot. Install a one-shot
+  # systemd unit so the gadget comes back automatically and USB-C ssh works
+  # before network is up. Idempotent: only writes the unit once.
+  U=/etc/systemd/system/a-gadget.service
+  [ -f $U ]||{ printf "[Unit]\nAfter=network-pre.target\n[Service]\nType=oneshot\nExecStart=%s on\nRemainAfterExit=yes\n[Install]\nWantedBy=multi-user.target\n" "$(realpath "$0")"|sudo tee $U >/dev/null; sudo systemctl enable a-gadget 2>/dev/null; echo "+ systemd unit"; }
   echo "✓ kbd=/dev/hidg0 mouse=/dev/hidg1 eth=192.168.7.1 (windows static 192.168.7.2)"
   ;;
 off)
