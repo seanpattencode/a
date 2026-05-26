@@ -754,7 +754,9 @@ static int cmd_m(int c, char **v) {
         unsetenv("M_OUT_PATH"); unsetenv("M_NOECHO");
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
-            char hdr[80]; int hl=snprintf(hdr,80,prim_ag[0]?"\n## assistant [%s·%s·%s]\n":"\n## assistant\n",prim_ag,prim_md,_ef);
+            const char *_ag=prim_ag[0]?prim_ag:cfget("m_agent"); if(!*_ag)_ag="claude";
+            const char *_md=prim_md[0]?prim_md:cfget("m_model"); if(!*_md)_md="opus";
+            char hdr[80]; int hl=snprintf(hdr,80,"\n## assistant [%s·%s·%s]\n",_ag,_md,_ef);
             mm_w(sf,hdr,"a"); (void)!write(1,hdr,(size_t)hl);
             if (mm_stream(sf, M_SYS, a, sizeof a, bash, sizeof bash) < 0) break;
             if(i==0&&nsec){m_status("waiting on secondaries");
