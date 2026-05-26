@@ -445,13 +445,11 @@ static int m_pick(const char *cat,const char *const *items,int n,char *out,size_
         }
         printf("\033[%d;%dH",top,(int)strlen(cat)+3+fl); fflush(stdout);       /* cursor back to filter, no scroll */
         unsigned char c; if(read(0,&c,1)!=1){CLR();return -1;}
-        if(getenv("M_DEBUG_KEYS"))fprintf(stderr,"[k 0x%02x %d]\r\n",c,c);
-        if(c==27){int av;usleep(20000);ioctl(0,FIONREAD,&av);
-            if(av>0){char s[5]; int rn2=(int)read(0,s,(size_t)(av>5?5:av));
-                if(rn2>=2&&s[0]=='['){
+        if(c==27){int av; usleep(50000); ioctl(0,FIONREAD,&av);
+            if(av>=2){char s[2]; (void)!read(0,s,2);
+                if(s[0]=='['||s[0]=='O'){
                     if(s[1]=='A'){if(sel>0)sel--;continue;}
                     if(s[1]=='B'){sel++;continue;}
-                    if(rn2>=3&&s[1]=='3'&&s[2]=='~'){if(fl)f[--fl]=0;sel=0;continue;}
                 }}
             CLR();return -1;}
         if(c==3){CLR();return -1;}
@@ -590,40 +588,37 @@ static int m_import_run(const char *src) {
 }
 /* a m import → nested picker: source (claude) → conversation list → import */
 static int m_import(int c, char **v) {
+    perf_disarm(); /* interactive picker blocks on user input — disable the 1s subcmd perf timer */
     if(c > 3) return m_import_run(v[3]);
-    /* source picker — auto-skip when only one; ready to add codex/gemini sources here */
+    (void)!write(1,"\033[2J\033[H",7);
     static const char *const sources[] = {"claude code\tlocal CC transcripts"};
     int nsrc = (int)(sizeof sources/sizeof *sources);
-    char src_pick[64] = "claude code";
-    if(nsrc > 1){
-        struct termios o,r; tcgetattr(0,&o); r=o;
-        r.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
-        tcsetattr(0,TCSANOW,&r);
-        int rc = m_pick("source",sources,nsrc,src_pick,sizeof src_pick);
-        tcsetattr(0,TCSANOW,&o);
-        if(rc <= 0) return 0;
-        char *t=strchr(src_pick,'\t'); if(t)*t=0;
-    }
-    /* list conversations for source — only claude code supported for now */
+    char src_pick[64];
+    { struct termios o,r; tcgetattr(0,&o); r=o;
+      r.c_lflag &= ~(tcflag_t)(ICANON|ECHO|ISIG); r.c_cc[VMIN]=1; r.c_cc[VTIME]=0;
+      tcsetattr(0,TCSANOW,&r);
+      int rc = m_pick("import source",sources,nsrc,src_pick,sizeof src_pick);
+      tcsetattr(0,TCSANOW,&o);
+      if(rc <= 0) return 0;
+      char *t=strchr(src_pick,'\t'); if(t)*t=0; }
+    (void)!write(1,"\033[2J\033[H",7);
     static const char *py_ls =
-"import json,glob,os,time\n"
-"ps=sorted(glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')),key=os.path.getmtime,reverse=True)\n"
-"for p in ps[:30]:\n"
-" mt=time.strftime('%m-%d %H:%M',time.localtime(os.path.getmtime(p)))\n"
-" first=''\n"
+"import json,glob,os,time,re\n"
+"for p in sorted(glob.glob(os.path.expanduser('~/.claude/projects/*/*.jsonl')),key=os.path.getmtime,reverse=True)[:30]:\n"
+" s=''\n"
 " try:\n"
 "  for ln in open(p):\n"
-"   e=json.loads(ln);m=e.get('message')or{}\n"
-"   if m.get('role')=='user':\n"
-"    co=m.get('content','')\n"
-"    if isinstance(co,str):first=co[:50]\n"
-"    elif isinstance(co,list):\n"
-"     for b in co:\n"
-"      if isinstance(b,dict)and b.get('type')=='text':first=b.get('text','')[:50];break\n"
-"    break\n"
+"   try:e=json.loads(ln)\n"
+"   except:continue\n"
+"   m=e.get('message')or{}\n"
+"   if m.get('role')!='user':continue\n"
+"   co=m.get('content','')\n"
+"   t=co if isinstance(co,str) else next((b.get('text','')for b in co if isinstance(b,dict)and b.get('type')=='text'),'')\n"
+"   s=re.split(r'\\n## user\\n',t)[-1].strip()\n"
+"   if s and not s.startswith('<'):break\n"
 " except:pass\n"
-" first=first.replace(chr(10),' ').replace(chr(9),' ')\n"
-" print(f'{mt}  {first}\\t{p}')\n";
+" mt=time.strftime('%m-%d %H:%M',time.localtime(os.path.getmtime(p)))\n"
+" print(f'{mt} {os.path.basename(p)[:8]} · {s.replace(chr(10),chr(32))[:60]}\\t{p}')\n";
     char tf[P]; snprintf(tf,P,"%s/m_ls.py",TMP); writef(tf,py_ls);
     char cmd[B]; snprintf(cmd,B,"python3 '%s'",tf);
     static char buf[32768]; buf[0]=0; pcmd(cmd,buf,sizeof buf);
@@ -684,6 +679,7 @@ static int cmd_m(int c, char **v) {
     char pf[P]; snprintf(pf,P,"%s/m_file",DDIR);
     if(c<=2){char*sp=readf(pf,NULL);if(sp&&*sp){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
     snprintf(sf, P, "%s/m/%s", SDIR, fn);
+    mm_w(pf,fn,"w");
     setenv("M_IN", "1", 1);
     /* SYNC clone only on first ever launch (no .git yet). Pull is deferred to first-render block (async). */
     { char gp[P]; snprintf(gp,P,"%s/m/.git",SDIR);
@@ -695,6 +691,12 @@ static int cmd_m(int c, char **v) {
     int _first=1;
     for (;;) {
         g_halt = 0;
+        {char *sp=readf(pf,NULL); if(sp&&*sp){sp[strcspn(sp,"\n")]=0;
+          if(strcmp(sp,fn)){snprintf(fnb,128,"%s",sp); fn=fnb; snprintf(sf,P,"%s/m/%s",SDIR,fn);
+#ifdef __linux__
+            if(g_ifd>=0) inotify_add_watch(g_ifd,sf,IN_CLOSE_WRITE);
+#endif
+          }} free(sp);}
         /* render: tail of m.txt sized to terminal rows. Sysprompt is seeded ONLY into empty/new files
          * (sz==0) — never modifies existing content, so a backgrounded git pull can fast-forward without
          * fighting a local rewrite. Drifted sysprompt headers are preferred over data loss. */
@@ -718,10 +720,8 @@ static int cmd_m(int c, char **v) {
           } fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
-          /* async pull: inotify fires re-render when new content lands. No local race because
-           * sysprompt-rewrite below only touches files where sz==0 (newly created), never existing ones. */
-          snprintf(b,B,"(cd %s/m&&git pull --rebase --autostash -q 2>/dev/null)&",SDIR);(void)!system(b);
-          mm_w(pf,fn,"w"); }
+          /* async pull: inotify fires re-render when new content lands. */
+          snprintf(b,B,"(cd %s/m&&git pull --rebase --autostash -q 2>/dev/null)&",SDIR);(void)!system(b); }
         /* chat input — '/' inside m_read_line opens menu directly, no peek-then-pass-back seam */
         static char m[65536]; size_t ml=m_read_line(m,sizeof m);
         if(g_rst){g_rst=0;continue;}
