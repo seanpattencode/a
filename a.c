@@ -212,7 +212,7 @@ install)
             ok "tmux + node + gh + rclone" ;;
         debian)
             if [[ -n "$SUDO" ]]; then export DEBIAN_FRONTEND=noninteractive
-                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone tcc gcc cppcheck cbmc frama-c-base 2>/dev/null || true
+                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone tcc gcc cppcheck 2>/dev/null; $SUDO apt install -yqq cbmc frama-c-base 2>/dev/null || true
                 command -v gh &>/dev/null||{ curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg|$SUDO tee /etc/apt/keyrings/gh.gpg>/dev/null&&echo "deb [signed-by=/etc/apt/keyrings/gh.gpg] https://cli.github.com/packages stable main"|$SUDO tee /etc/apt/sources.list.d/gh.list>/dev/null&&$SUDO apt update -qq&&$SUDO apt install -yqq gh;}||true; ok "pkgs"
                 command -v infer &>/dev/null||{ V="v1.2.0";curl -sSL "https://github.com/facebook/infer/releases/download/$V/infer-linux-x86_64-$V.tar.xz"|tar -xJ -C /tmp/&&$SUDO mv "/tmp/infer-linux-x86_64-$V" /usr/local/lib/infer&&$SUDO ln -sf /usr/local/lib/infer/bin/infer /usr/local/bin/infer&&ok "infer"||warn "infer";}
             fi; install_node; [[ -z "$SUDO" ]] && { command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; } ;;
