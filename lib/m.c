@@ -421,7 +421,8 @@ static int m_main(void){return m_reinit("m.txt");}
 static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agent",SDIR);mkdirp(ad);time_t t=time(NULL);char fn[64];strftime(fn,64,"agent/%Y-%m-%d_%H-%M-%S.txt",localtime(&t));return m_reinit(fn);}
 
 static void m_set(const char *k,const char *v){char ck[32];snprintf(ck,32,"m_%s",k);cfset(ck,v);
-  if(!strcmp(k,"agent")){cfset("m_model",strstr(v,"codex")?"gpt-5.5":strstr(v,"gemini")?"gemini-2.5-flash":!strcmp(v,"api")?"claude-opus-4-5":"opus");cfset("m_effort",strstr(v,"codex")?"xhigh":"low");}}
+  if(!strcmp(k,"agent")){cfset("m_model",strstr(v,"codex")?"gpt-5.5":strstr(v,"gemini")?"gemini-2.5-flash":!strcmp(v,"api")?"claude-opus-4-5":"opus");cfset("m_effort",strstr(v,"codex")?"xhigh":"low");}
+  char p[P];snprintf(p,P,"%s/m_pid",DDIR);char *x=readf(p,NULL);if(x)kill(atoi(x),SIGUSR1);free(x);}
 /* live-filter picker: anchors menu at bottom of pane via ABSOLUTE row positioning.
  * \033[s/\033[u proved unreliable in tmux across scrolls — each arrow rendered below
  * the previous, leaving stacked menus. Now we jump to a known absolute row each redraw. */
@@ -710,14 +711,10 @@ static int cmd_m(int c, char **v) {
         { char sp[P]; snprintf(sp,P,"%s/m_status",DDIR); char *s=readf(sp,NULL);
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
-        { const char *ms=cfget("m_set");
-          if(ms&&*ms){
-            printf("\n\033[1m%s\033[0m  \033[1;35m★MULTI\033[0m \033[35m%s\033[0m  \033[90m/=menu\033[0m",fn,ms);
-          } else {
-            const char *ag=cfget("m_agent"),*md=cfget("m_model"),*ef=cfget("m_effort"),*ti=cfget("m_tier");
-            printf("\n\033[1m%s\033[0m  \033[36msingle %s·%s·%s%s%s\033[0m  \033[90m/=menu (★set… for multi)\033[0m",fn,*ag?ag:"claude",*md?md:"opus",*ef?ef:"low",
-                   *ti&&strcmp(ti,"default")?"·":"",*ti&&strcmp(ti,"default")?ti:"");
-          } fflush(stdout); }
+        { const char *ms=cfget("m_set"),*ag=cfget("m_agent"),*md=cfget("m_model"),*ef=cfget("m_effort");
+          if(ms&&*ms) printf("\n\033[1m%s\033[0m \033[7;1;35m MULTI \033[0m %s  \033[90m/=menu\033[0m",fn,ms);
+          else        printf("\n\033[1m%s\033[0m \033[7;36m SINGLE \033[0m %s·%s·%s  \033[90m/=menu (set for multi)\033[0m",fn,*ag?ag:"claude",*md?md:"opus",*ef?ef:"low");
+          fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
           /* async pull: inotify fires re-render when new content lands. */
