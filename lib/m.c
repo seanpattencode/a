@@ -172,7 +172,7 @@ static void mm_bash(const char *pty, const char *cmd, char *out, size_t sz) {
     (void)pty;
     char tp[P],sc[B*2]; snprintf(tp,P,"%s/m_transcript.log",DDIR);
     setenv("MMCMD",cmd,1);
-    snprintf(sc,B*2,"cd '%s/m'&&{ printf '\\n\\033[1;33m[%%s]$\\033[0m %%s\\n' \"$(date +%%T)\" \"$MMCMD\"|tee -a '%s';timeout 60 bash -c \"$MMCMD\" 2>&1|tee -a '%s'|tail -50|sed 's/^/    /'; }",SDIR,tp,tp);
+    snprintf(sc,B*2,"cd '%s/m'&&{ printf '\\n\\033[1;33m[%%s]$\\033[0m %%s\\n' \"$(date +%%T)\" \"$MMCMD\"|tee -a '%s';timeout 60 bash -c \"$MMCMD\" 2>&1|tee -a '%s'|perl -pe 's/\\e\\[[\\d;?<>=]*[A-Za-z@~]//g;s/\\e[()][AB012]//g;s/\\e[<=>]//g'|tail -50|sed 's/^/    /'; }",SDIR,tp,tp);
     pcmd(sc,out,sz);
 }
 
@@ -765,6 +765,8 @@ static int cmd_m(int c, char **v) {
               pcmd(sc,pty,64); pty[strcspn(pty,"\n")]=0;
               snprintf(pf,P,"%s/m_pty",DDIR); mm_w(pf,pty,"w"); }
             m_status("running");
+            {char th[64]; time_t tr=time(NULL); size_t hl=strftime(th,64,"\n## tool running %T\n",localtime(&tr));
+             mm_w(sf,th,"a"); (void)!write(1,th,hl);}
             mm_bash(pty, bash, ob, sizeof ob);
             char tb[20000]; time_t t = time(NULL);
             size_t n = strftime(tb, 64, "\n## tool output %FT%T\n", localtime(&t));
