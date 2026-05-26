@@ -712,7 +712,7 @@ static int cmd_m(int c, char **v) {
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
         { const char *ms=cfget("m_set"),*ag=cfget("m_agent"),*md=cfget("m_model"),*ef=cfget("m_effort");
-          if(ms&&*ms) printf("\n\033[1m%s\033[0m \033[7;1;35m MULTI \033[0m %s  \033[90m/=menu\033[0m",fn,ms);
+          if(ms&&*ms) printf("\n\033[1m%s\033[0m \033[7;1;35m MULTI \033[0m %s · %s  \033[90m/=menu\033[0m",fn,ms,*ef?ef:"low");
           else        printf("\n\033[1m%s\033[0m \033[7;36m SINGLE \033[0m %s·%s·%s  \033[90m/=menu (set for multi)\033[0m",fn,*ag?ag:"claude",*md?md:"opus",*ef?ef:"low");
           fflush(stdout); }
         write(1,"\n> ",3);
@@ -736,7 +736,8 @@ static int cmd_m(int c, char **v) {
                     else if(nsec<8){snprintf(sec[nsec].ag,32,"%s",t);snprintf(sec[nsec].md,32,"%s",cl+1);
                         snprintf(sec[nsec].tmp,P,"%s/m_sec_%d_%d.txt",DDIR,(int)getpid(),nsec); nsec++;}
                     ix++;} t=strtok(NULL," ");} } }
-            char hdr[64]; int hl=snprintf(hdr,64,prim_ag[0]?"\n## assistant [%s·%s]\n":"\n## assistant\n",prim_ag,prim_md);
+            const char *_ef=cfget("m_effort"); if(!*_ef)_ef="low";
+            char hdr[80]; int hl=snprintf(hdr,80,prim_ag[0]?"\n## assistant [%s·%s·%s]\n":"\n## assistant\n",prim_ag,prim_md,_ef);
             mm_w(sf,hdr,"a"); (void)!write(1,hdr,(size_t)hl);
             for(int s=0;s<nsec;s++){unlink(sec[s].tmp); pid_t w=fork();
                 if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1);
@@ -750,7 +751,7 @@ static int cmd_m(int c, char **v) {
             if(nsec){m_status("waiting on secondaries");
                 for(int s=0;s<nsec;s++){waitpid(sec[s].pid,NULL,0);
                     char *sc=readf(sec[s].tmp,NULL);
-                    if(sc&&*sc){char hdr[64]; snprintf(hdr,64,"\n## assistant [%s·%s]\n",sec[s].ag,sec[s].md);
+                    if(sc&&*sc){char hdr[80]; snprintf(hdr,80,"\n## assistant [%s·%s·%s]\n",sec[s].ag,sec[s].md,_ef);
                         mm_w(sf,hdr,"a"); mm_w(sf,sc,"a"); free(sc);}
                     unlink(sec[s].tmp);}}
             m_commit("a"); if (g_halt) break;
