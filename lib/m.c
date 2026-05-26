@@ -726,10 +726,7 @@ static int cmd_m(int c, char **v) {
         m[ml]='\n';m[ml+1]=0;mm_w(sf, m, "a"); m_commit("u");
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
-            mm_w(sf, "\n## assistant\n", "a");
-            (void)!write(1,"\n## assistant\n",14);
             static char a[64*1024], bash[8*1024], ob[16*1024];
-            /* multi-provider: m_set "ag:md ag:md …", first=primary streams, rest=secondaries fork in parallel */
             struct {char ag[32],md[32],tmp[P]; pid_t pid;} sec[8]; int nsec=0;
             char prim_ag[32]="",prim_md[32]="";
             { const char *ms=cfget("m_set"); if(ms&&*ms){char buf[256]; snprintf(buf,256,"%s",ms);
@@ -739,6 +736,8 @@ static int cmd_m(int c, char **v) {
                     else if(nsec<8){snprintf(sec[nsec].ag,32,"%s",t);snprintf(sec[nsec].md,32,"%s",cl+1);
                         snprintf(sec[nsec].tmp,P,"%s/m_sec_%d_%d.txt",DDIR,(int)getpid(),nsec); nsec++;}
                     ix++;} t=strtok(NULL," ");} } }
+            char hdr[64]; int hl=snprintf(hdr,64,prim_ag[0]?"\n## assistant [%s·%s]\n":"\n## assistant\n",prim_ag,prim_md);
+            mm_w(sf,hdr,"a"); (void)!write(1,hdr,(size_t)hl);
             for(int s=0;s<nsec;s++){unlink(sec[s].tmp); pid_t w=fork();
                 if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1);
                     setenv("M_OUT_PATH",sec[s].tmp,1); setenv("M_NOECHO","1",1);
