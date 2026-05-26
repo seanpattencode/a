@@ -698,24 +698,21 @@ static int cmd_m(int c, char **v) {
             if(g_ifd>=0) inotify_add_watch(g_ifd,sf,IN_CLOSE_WRITE);
 #endif
           }} free(sp);}
-        /* render: tail of m.txt sized to terminal rows. Sysprompt is seeded ONLY into empty/new files
-         * (sz==0) — never modifies existing content, so a backgrounded git pull can fast-forward without
-         * fighting a local rewrite. Drifted sysprompt headers are preferred over data loss. */
-        { static char tb[16384]; size_t n=0;
-          struct stat st; FILE *rf=fopen(sf,"r"); off_t sz=0;
-          if(rf){fstat(fileno(rf),&st); sz=st.st_size; if(sz>16384)fseek(rf,sz-16384,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}
-          struct winsize ws={0}; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row-2:22;
-          char *o=tb+n; int nl=0; while(o>tb&&nl<rows){if(*--o=='\n')nl++;} if(o>tb)o++;
+        /* render: full m.txt — tmux scrollback retains scrolled-off lines so chat history is reachable.
+         * Sysprompt seeded ONLY into empty files; never modifies existing content so git pull can fast-forward. */
+        { static char tb[262144]; size_t n=0; struct stat st;
+          FILE *rf=fopen(sf,"r");
+          if(rf){fstat(fileno(rf),&st); if(st.st_size>(off_t)sizeof tb)fseek(rf,st.st_size-(off_t)sizeof tb,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}
           (void)!write(1,"\033[2J\033[H",7);
           tb[n]=0;
-          for(char *e=tb+n;o<e;){char *nx=memchr(o,'\n',(size_t)(e-o));size_t l=nx?(size_t)(nx-o+1):(size_t)(e-o);
+          for(char *o=tb,*e=tb+n;o<e;){char *nx=memchr(o,'\n',(size_t)(e-o));size_t l=nx?(size_t)(nx-o+1):(size_t)(e-o);
             const char *col=NULL;
             if(l>=4&&!memcmp(o,"## ",3)){const char *t=o+3;
               col = !memcmp(t,"user",4)?"\033[36m":!memcmp(t,"assistant",9)?"\033[1;35m":NULL;}
             if(col){(void)!write(1,col,strlen(col));(void)!write(1,o,l);(void)!write(1,"\033[0m",4);}
             else (void)!write(1,o,l);
             o+=l;}
-          if(sz==0){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n## user\n",M_SYS); fclose(f);}} }
+          if(!n){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n## user\n",M_SYS); fclose(f);}} }
         { char sp[P]; snprintf(sp,P,"%s/m_status",DDIR); char *s=readf(sp,NULL);
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
