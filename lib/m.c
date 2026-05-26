@@ -706,7 +706,15 @@ static int cmd_m(int c, char **v) {
           if(rf){fstat(fileno(rf),&st); sz=st.st_size; if(sz>16384)fseek(rf,sz-16384,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}
           struct winsize ws={0}; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row-2:22;
           char *o=tb+n; int nl=0; while(o>tb&&nl<rows){if(*--o=='\n')nl++;} if(o>tb)o++;
-          (void)!write(1,"\033[2J\033[H",7); (void)!write(1,o,(size_t)(tb+n-o));
+          (void)!write(1,"\033[2J\033[H",7);
+          tb[n]=0;
+          for(char *e=tb+n;o<e;){char *nx=memchr(o,'\n',(size_t)(e-o));size_t l=nx?(size_t)(nx-o+1):(size_t)(e-o);
+            const char *col=NULL;
+            if(l>=4&&!memcmp(o,"## ",3)){const char *t=o+3;
+              col = !memcmp(t,"user",4)?"\033[36m":!memcmp(t,"assistant",9)?"\033[1;35m":NULL;}
+            if(col){(void)!write(1,col,strlen(col));(void)!write(1,o,l);(void)!write(1,"\033[0m",4);}
+            else (void)!write(1,o,l);
+            o+=l;}
           if(sz==0){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n## user\n",M_SYS); fclose(f);}} }
         { char sp[P]; snprintf(sp,P,"%s/m_status",DDIR); char *s=readf(sp,NULL);
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
@@ -724,35 +732,36 @@ static int cmd_m(int c, char **v) {
         if(g_rst){g_rst=0;continue;}
         if(!ml)continue;
         m[ml]='\n';m[ml+1]=0;mm_w(sf, m, "a"); m_commit("u");
+        static char a[64*1024], bash[8*1024], ob[16*1024];
+        struct {char ag[32],md[32],tmp[P]; pid_t pid;} sec[8]; int nsec=0;
+        char prim_ag[32]="",prim_md[32]="";
+        { const char *ms=cfget("m_set"); if(ms&&*ms){char buf[256]; snprintf(buf,256,"%s",ms);
+            char *t=strtok(buf," "); int ix=0;
+            while(t){char *cl=strchr(t,':'); if(cl){*cl=0;
+                if(ix==0){snprintf(prim_ag,32,"%s",t);snprintf(prim_md,32,"%s",cl+1);}
+                else if(nsec<8){snprintf(sec[nsec].ag,32,"%s",t);snprintf(sec[nsec].md,32,"%s",cl+1);
+                    snprintf(sec[nsec].tmp,P,"%s/m_sec_%d_%d.txt",DDIR,(int)getpid(),nsec); nsec++;}
+                ix++;} t=strtok(NULL," ");} } }
+        const char *_ef=cfget("m_effort"); if(!*_ef)_ef="low";
+        /* fork secondaries ONCE per user turn; they see initial state, respond once */
+        for(int s=0;s<nsec;s++){unlink(sec[s].tmp); pid_t w=fork();
+            if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1);
+                setenv("M_OUT_PATH",sec[s].tmp,1); setenv("M_NOECHO","1",1);
+                static char a2[64*1024],b2[8*1024]; mm_stream(sf,M_SYS,a2,sizeof a2,b2,sizeof b2); _exit(0);}
+            sec[s].pid=w;}
+        if(prim_ag[0]){setenv("M_AGENT_OVR",prim_ag,1);setenv("M_MODEL_OVR",prim_md,1);}
+        else{unsetenv("M_AGENT_OVR");unsetenv("M_MODEL_OVR");}
+        unsetenv("M_OUT_PATH"); unsetenv("M_NOECHO");
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
-            static char a[64*1024], bash[8*1024], ob[16*1024];
-            struct {char ag[32],md[32],tmp[P]; pid_t pid;} sec[8]; int nsec=0;
-            char prim_ag[32]="",prim_md[32]="";
-            { const char *ms=cfget("m_set"); if(ms&&*ms){char buf[256]; snprintf(buf,256,"%s",ms);
-                char *t=strtok(buf," "); int ix=0;
-                while(t){char *cl=strchr(t,':'); if(cl){*cl=0;
-                    if(ix==0){snprintf(prim_ag,32,"%s",t);snprintf(prim_md,32,"%s",cl+1);}
-                    else if(nsec<8){snprintf(sec[nsec].ag,32,"%s",t);snprintf(sec[nsec].md,32,"%s",cl+1);
-                        snprintf(sec[nsec].tmp,P,"%s/m_sec_%d_%d.txt",DDIR,(int)getpid(),nsec); nsec++;}
-                    ix++;} t=strtok(NULL," ");} } }
-            const char *_ef=cfget("m_effort"); if(!*_ef)_ef="low";
             char hdr[80]; int hl=snprintf(hdr,80,prim_ag[0]?"\n## assistant [%s·%s·%s]\n":"\n## assistant\n",prim_ag,prim_md,_ef);
             mm_w(sf,hdr,"a"); (void)!write(1,hdr,(size_t)hl);
-            for(int s=0;s<nsec;s++){unlink(sec[s].tmp); pid_t w=fork();
-                if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1);
-                    setenv("M_OUT_PATH",sec[s].tmp,1); setenv("M_NOECHO","1",1);
-                    static char a2[64*1024],b2[8*1024]; mm_stream(sf,M_SYS,a2,sizeof a2,b2,sizeof b2); _exit(0);}
-                sec[s].pid=w;}
-            if(prim_ag[0]){setenv("M_AGENT_OVR",prim_ag,1);setenv("M_MODEL_OVR",prim_md,1);}
-            else{unsetenv("M_AGENT_OVR");unsetenv("M_MODEL_OVR");}
-            unsetenv("M_OUT_PATH"); unsetenv("M_NOECHO");
             if (mm_stream(sf, M_SYS, a, sizeof a, bash, sizeof bash) < 0) break;
-            if(nsec){m_status("waiting on secondaries");
+            if(i==0&&nsec){m_status("waiting on secondaries");
                 for(int s=0;s<nsec;s++){waitpid(sec[s].pid,NULL,0);
                     char *sc=readf(sec[s].tmp,NULL);
-                    if(sc&&*sc){char hdr[80]; snprintf(hdr,80,"\n## assistant [%s·%s·%s]\n",sec[s].ag,sec[s].md,_ef);
-                        mm_w(sf,hdr,"a"); mm_w(sf,sc,"a"); free(sc);}
+                    if(sc&&*sc){char h2[80]; snprintf(h2,80,"\n## assistant [%s·%s·%s]\n",sec[s].ag,sec[s].md,_ef);
+                        mm_w(sf,h2,"a"); mm_w(sf,sc,"a"); free(sc);}
                     unlink(sec[s].tmp);}}
             m_commit("a"); if (g_halt) break;
             if (!bash[0]) break;
