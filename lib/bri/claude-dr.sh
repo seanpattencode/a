@@ -21,6 +21,9 @@ bri() { a bri "$@" 2>/dev/null; }
 firefox-nightly --new-tab "https://claude.ai/new" 2>/dev/null & disown
 sleep 6
 
+wtype -M ctrl -k 0 -m ctrl 2>/dev/null  # reset zoom to 100% so coords are stable across sway tile sizes
+sleep 1
+
 # 1. + menu + click Research's wide ancestor (chained in one eval — menu auto-
 #    dismisses between separate bri calls due to focus loss).
 bri "{\"id\":1,\"action\":\"eval\",\"code\":\"(async()=>{const p=document.querySelector('button[aria-label=\\\"Add files, connectors, and more\\\"]');if(!p)return'no plus';const pr=p.getBoundingClientRect();['pointerdown','mousedown','pointerup','mouseup','click'].forEach(t=>{const E=t.startsWith('pointer')?PointerEvent:MouseEvent;p.dispatchEvent(new E(t,{bubbles:true,cancelable:true,clientX:pr.x+pr.width/2,clientY:pr.y+pr.height/2,button:0,buttons:1,view:window,pointerType:'mouse',isPrimary:true}))});await new Promise(r=>setTimeout(r,800));const t=[...document.querySelectorAll('div[role=menuitemcheckbox]')].find(e=>(e.textContent||'').includes('Research'));if(!t)return'no research';const r=t.getBoundingClientRect();['pointerdown','mousedown','pointerup','mouseup','click'].forEach(s=>{const E=s.startsWith('pointer')?PointerEvent:MouseEvent;t.dispatchEvent(new E(s,{bubbles:true,cancelable:true,clientX:r.x+r.width/2,clientY:r.y+r.height/2,button:0,buttons:1,view:window,pointerType:'mouse',isPrimary:true}))});return'ok'})()\"}" >/dev/null

@@ -23,6 +23,9 @@ bri() { a bri "$@" 2>/dev/null; }
 firefox-nightly --new-tab "https://chatgpt.com/" 2>/dev/null & disown
 sleep 6
 
+wtype -M ctrl -k 0 -m ctrl 2>/dev/null  # reset zoom to 100% so coords are stable across sway tile sizes
+sleep 1
+
 # 1. + menu + click Deep research (chained — menu auto-dismisses on next sync call)
 bri "{\"id\":1,\"action\":\"eval\",\"code\":\"(async()=>{const p=document.querySelector('button[aria-label=\\\"Add files and more\\\"]');if(!p)return'no plus';const pr=p.getBoundingClientRect();const po={bubbles:true,cancelable:true,clientX:pr.x+pr.width/2,clientY:pr.y+pr.height/2,button:0,buttons:1,view:window,pointerType:'mouse',isPrimary:true};['pointerdown','mousedown','pointerup','mouseup','click'].forEach(t=>{const E=t.startsWith('pointer')?PointerEvent:MouseEvent;p.dispatchEvent(new E(t,po))});await new Promise(r=>setTimeout(r,800));const d=[...document.querySelectorAll('[role=menuitemradio]')].find(e=>(e.textContent||'').trim()==='Deep research');if(!d)return'no dr';const dr=d.getBoundingClientRect();const _do={bubbles:true,cancelable:true,clientX:dr.x+dr.width/2,clientY:dr.y+dr.height/2,button:0,buttons:1,view:window,pointerType:'mouse',isPrimary:true};['pointerdown','mousedown','pointerup','mouseup','click'].forEach(t=>{const E=t.startsWith('pointer')?PointerEvent:MouseEvent;d.dispatchEvent(new E(t,_do))});return'ok'})()\"}" >/dev/null
 sleep 2

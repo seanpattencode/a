@@ -23,6 +23,9 @@ bri() { a bri "$@" 2>/dev/null; }
 firefox-nightly --new-tab "https://gemini.google.com/app" 2>/dev/null & disown
 sleep 5
 
+wtype -M ctrl -k 0 -m ctrl 2>/dev/null  # reset zoom to 100% so coords are stable across sway tile sizes
+sleep 1
+
 # 2. open + menu
 bri click 'button[aria-label*="Upload"]' >/dev/null
 sleep 1
