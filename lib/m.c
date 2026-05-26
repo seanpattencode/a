@@ -665,7 +665,8 @@ static int cmd_m(int c, char **v) {
     char b[B], sf[P], pty[64] = "";
     CWD(w); struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
     snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
-    if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b); tm_go(sn); return 0; }
+    if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b);
+        (void)!system("tmux set -wg pane-scrollbars on 2>/dev/null"); tm_go(sn); return 0; }
     signal(SIGINT, m_sint); /* m_commit double-forks → init reaps; secondary waitpid stays reliable */
     { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
     { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); }
