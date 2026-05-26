@@ -705,7 +705,7 @@ int main(int argc, char **argv) {
     if(tm_has(arg)){tm_go(arg);return 0;}
     {char mf[P];
      for(int i=0;EXT[i];i++){snprintf(mf,P,"%s/my/%s%s",SROOT,arg,EXT[i]);
-      if(fexists(mf)){perf_disarm();char md[P];snprintf(md,P,"%s/my",SROOT);(void)!chdir(md);argv[1]=mf;return cmd_dir_file(argc,argv);}}}
+      if(fexists(mf)){char md[P];snprintf(md,P,"%s/my",SROOT);(void)!chdir(md);return run_lab(mf,argc,argv);}}}
     fprintf(stderr,"a: unknown '%s'\n",arg);
     return 1;
 }
