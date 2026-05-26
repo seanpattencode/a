@@ -288,12 +288,33 @@ def client(args):
         return
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
     if a == 'mon':     _mon(); return
+    if a.isdigit():  # `a bri <N>` opens the Nth recent research URL in default browser
+        import os, subprocess
+        p = os.path.expanduser('~/a/adata/git/urls.txt')
+        if not os.path.exists(p): print('no urls.txt'); return
+        ln = [l.strip() for l in open(p) if l.strip()][-4:]; n = int(a)
+        if not (1 <= n <= len(ln)): print(f'usage: a bri 1..{len(ln)}'); return
+        url = next((w for w in ln[n-1].split(' ') if w.startswith('http')), None)
+        if not url: print('no url in that entry'); return
+        subprocess.Popen(['xdg-open', url], stdout=-3, stderr=-3); print(f'+ {url}'); return
+    if a == 'tail':
+        # Record a session for an LLM to compile into automation. /tmp/bri.log
+        # is every cmd+response that passes the bridge — `tail -F` it into a
+        # timestamped (or named) file under adata/tmp/ while the user drives a
+        # workflow manually via `a bri <cmd>`. Then point an LLM at the file:
+        # "turn this into a replay script". The recording IS the ground truth.
+        import os, datetime as dt
+        d = os.path.expanduser('~/a/adata/tmp'); os.makedirs(d, exist_ok=True)
+        name = args[1] if len(args) > 1 else dt.datetime.now().strftime('%Y%m%d-%H%M%S')
+        f = f'{d}/bri-{name}.log'
+        print(f'+ recording → {f}\n  drive workflow in another shell with `a bri <cmd>` then Ctrl-C\n')
+        os.execvp('sh', ['sh', '-c', f'tail -F -n 0 {LOG} | tee {f!r}']); return
     if a == 'deploy':  # zero-click rebuild+install of bri-ext + Firefox restart
         import subprocess, shutil, os, glob
         here = os.path.dirname(os.path.abspath(__file__))
         extdir = os.path.join(here, 'bri-ext')
-        subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi',
-                               f'{extdir}/manifest.json', f'{extdir}/content.js', f'{extdir}/background.js'])
+        subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi']
+                              + [f for f in glob.glob(f'{extdir}/*') if not f.endswith('.xpi')])
         # Prefer Nightly profile (active one); fall back to dev/release.
         cands = glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) \
               + glob.glob(os.path.expanduser('~/.mozilla/firefox/*default*'))
@@ -353,6 +374,8 @@ MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
   deploy           rebuild lib/bri-ext xpi + install + restart FF (zero-click)
   restart          quit + relaunch FF Nightly
   mon              bri.py + FF CPU/RAM/tabs snapshot
+  tail [name]      record bridge traffic → adata/tmp/bri-<name>.log (Ctrl-C stops)
+  <N>              open Nth recent research URL (1..4) in default browser
   <url>            navigate (http/https detected)
   text [sel]       read body or selected element (sel default: body)
   click <sel>      click element
@@ -370,6 +393,24 @@ if __name__=='__main__':
     if args and args[0] == 'bri': args = args[1:]  # `a bri …` passes cmd name as argv[1]
     if not args:
         up = __import__('subprocess').run(['ss','-ltn','sport = :1234'],capture_output=True,text=True).stdout
-        print(f"[{'running' if ':1234' in up else 'stopped'}] :1234\n{MENU}")
+        print(f"[{'running' if ':1234' in up else 'stopped'}] :1234")
+        # Recent research URLs — gemini/chatgpt/claude DR sessions append here.
+        # Numbered → `a bri <N>` opens URL N. URL on its own line so terminals
+        # that auto-detect plain URLs make them clickable too.
+        try:
+            with open(__import__('os').path.expanduser('~/a/adata/git/urls.txt')) as f:
+                ln = [l.strip() for l in f if l.strip()][-4:]
+            if ln:
+                print("\nrecent research (a bri <N> opens):")
+                for i, l in enumerate(ln, 1):
+                    p = l.split(' ', 3)
+                    if len(p) < 3: continue
+                    is_url = p[2].startswith('http')
+                    shown = f'\033[4;36m{p[2]}\033[0m' if is_url else f'\033[33m({p[2]})\033[0m'
+                    note = p[3] if len(p)>=4 else ''
+                    print(f"  [{i}] {shown}")
+                    print(f"      {p[0]} {p[1]} — {note}")
+        except FileNotFoundError: pass
+        print(f"\n{MENU}")
     elif args[0] == 'serve': main()
     else: client(args)

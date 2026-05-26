@@ -4,8 +4,15 @@
   "version": "0.6",
   "description": "HTTP long-poll bridge for `a` automation. Interchangeable with the Tampermonkey userscript in lib/bri.py \u2014 pick either (or run both). Deps: Firefox Nightly + xpinstall.signatures.required=false in user.js. Wins vs userscript: extension-context fetch, eval works on chatgpt.com.",
   "permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "storage",
+    "notifications",
+    "tabs",
+    "activeTab"
   ],
+  "options_ui": {"page": "options.html"},
+  "browser_action": {"default_title": "bri-ext", "default_popup": "options.html", "default_icon": {"16":"icon16.png","48":"icon48.png"}},
+  "icons": {"16":"icon16.png","48":"icon48.png","128":"icon128.png"},
   "browser_specific_settings": {
     "gecko": {
       "id": "a-bridge@seanpatten",
@@ -13,6 +20,7 @@
     }
   },
   "background": {"scripts": ["background.js"]},
+  "chrome_url_overrides": {"newtab": "newtab.html"},
   "content_scripts": [
     {
       "matches": [
@@ -23,6 +31,11 @@
       ],
       "run_at": "document_end",
       "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["instant-preload.js"],
+      "run_at": "document_idle"
     }
   ]
 }
