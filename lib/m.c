@@ -705,7 +705,8 @@ static int cmd_m(int c, char **v) {
             if(col){(void)!write(1,col,strlen(col));(void)!write(1,o,l);(void)!write(1,"\033[0m",4);}
             else (void)!write(1,o,l);
             o+=l;}
-          if(!n){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n## user\n",M_SYS); fclose(f);}} }
+          if(!n){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n",M_SYS); fclose(f);}
+            char cm[B]; snprintf(cm,B,"(cd '%s'&&a cat 3 >>'%s';printf '\\n## user\\n'>>'%s')",SDIR,sf,sf); (void)!system(cm);} }
         { char sp[P]; snprintf(sp,P,"%s/m_status",DDIR); char *s=readf(sp,NULL);
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
