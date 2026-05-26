@@ -5,12 +5,12 @@
  * e --nosb: skip e's internal scrollbar — tmux pane-scrollbars handles vertical scroll, avoids fold-aware sb math
  * sysprompt: hardcoded M_SYS (m-only cmd contract). i.txt = single user-editable file, loaded by all agents. */
 
-static const char *M_SYS = "`a m` chat: emit <cmd>command</cmd> to run in pty (cwd=m). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.";
+static const char *M_SYS = "`a m` chat: emit <cmd>command</cmd> to run one-shot (cwd=m, 60s timeout). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.";
 static volatile pid_t g_cp = 0;
 static int g_halt = 0;
 static volatile sig_atomic_t g_rst = 0;
 static int g_ifd = -1;  /* inotify fd watching m.txt; -1 = no auto-refresh */
-static void m_sint(int s){(void)s;if(g_cp>0)kill(g_cp,SIGTERM);}
+static void m_sint(int s){(void)s;g_halt=1;if(g_cp>0)kill(g_cp,SIGTERM);}
 static void m_usr1(int s){(void)s;g_rst=1;}
 static void mm_w(const char *p, const char *t, const char *m);
 
@@ -169,14 +169,11 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
 }
 
 static void mm_bash(const char *pty, const char *cmd, char *out, size_t sz) {
-    char cn[B]; snprintf(cn, B, "%s\r", cmd);
-    pid_t p = fork();
-    if (!p) { execlp("tmux","tmux","send-keys","-t",pty,"-l",cn,(char*)0); _exit(127); }
-    waitpid(p, NULL, 0);
-    sleep(3);
-    char sc[B];
-    snprintf(sc, B, "tmux capture-pane -t '%s' -p -S -50|tail -30|sed 's/^/    /'", pty);
-    pcmd(sc, out, sz);
+    (void)pty;
+    char tp[P],sc[B*2]; snprintf(tp,P,"%s/m_transcript.log",DDIR);
+    setenv("MMCMD",cmd,1);
+    snprintf(sc,B*2,"cd '%s/m'&&{ printf '\\n\\033[1;33m[%%s]$\\033[0m %%s\\n' \"$(date +%%T)\" \"$MMCMD\"|tee -a '%s';timeout 60 bash -c \"$MMCMD\" 2>&1|tee -a '%s'|tail -50|sed 's/^/    /'; }",SDIR,tp,tp);
+    pcmd(sc,out,sz);
 }
 
 static void mm_w(const char *p, const char *t, const char *m) {
@@ -517,7 +514,7 @@ static void m_menu(void){
         "restart\trespawn this window",
         "edit\topen file in e",
         "panel\trich panel UI",
-        "reset\tclear bash pty",
+        "reset\tclear transcript",
         "set\t★ MULTI: clear → single",
         "set claude:opus codex:gpt-5.5\t★ MULTI: opus + gpt-5.5",
         "set claude:haiku codex:gpt-5.5\t★ MULTI: haiku + gpt-5.5",
@@ -642,11 +639,7 @@ static int m_import(int c, char **v) {
     return m_import_run(tab+1);
 }
 static int m_reset(void) {
-    char pf[P],c[B]; snprintf(pf,P,"%s/m_pty",DDIR);
-    char *p=readf(pf,NULL); if(!p||!*p){puts("no pty (a m not running here)");free(p);return 1;}
-    p[strcspn(p,"\n")]=0;
-    snprintf(c,B,"tmux send-keys -t '%1$s' C-c; tmux send-keys -t '%1$s' 'clear' Enter",p);
-    int r=system(c); free(p); return r;
+    char tp[P]; snprintf(tp,P,"%s/m_transcript.log",DDIR); mm_w(tp,"","w"); return 0;
 }
 
 static int cmd_m(int c, char **v) {
@@ -764,9 +757,9 @@ static int cmd_m(int c, char **v) {
                     unlink(sec[s].tmp);}}
             m_commit("a"); if (g_halt) break;
             if (!bash[0]) break;
-            /* Lazy bash pty: pay tmux split cost once, only when a <cmd> actually runs. */
-            if (!pty[0]) { char sc[B];
-              snprintf(sc,B,"tmux split-window -t $TMUX_PANE -e M_IN=1 -e M_FILE=%s -dv -l 7 -P -F '#{pane_id}' 'cd %s/m;exec bash'",fn,SDIR);
+            /* Lazy transcript viewer pane: one-shot exec, pane tails system-attested log (LLM can't fabricate). */
+            if (!pty[0]) { char tp[P],sc[B]; snprintf(tp,P,"%s/m_transcript.log",DDIR); mm_w(tp,"","w");
+              snprintf(sc,B,"tmux split-window -t $TMUX_PANE -dv -l 10 -P -F '#{pane_id}' 'exec tail -n 500 -f \"%s\"'",tp);
               pcmd(sc,pty,64); pty[strcspn(pty,"\n")]=0;
               snprintf(pf,P,"%s/m_pty",DDIR); mm_w(pf,pty,"w"); }
             m_status("running");
@@ -777,6 +770,7 @@ static int cmd_m(int c, char **v) {
             mm_w(sf, tb, "a"); (void)!write(1,tb,strlen(tb));
             m_commit("t"); if (g_halt) break;
         }
+        if(g_halt) mm_w(sf, "\n## interrupted\n", "a");
         mm_w(sf, "\n## user\n", "a");
     }
     return 0;
