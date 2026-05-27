@@ -50,13 +50,20 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     else snprintf(wcmd, sizeof(wcmd), "%s", cmd ? cmd : "");
     tm_ensure_conf();
     int r = tm_new(sn, wd, wcmd);
-    if (!r) {
-        if (ai) {
-            char c[B]; snprintf(c, B, "tmux split-window -v -t '%s:%s' -c '%s' 'sh -c \"ls;exec $SHELL\"'", TMS, sn, wd);
-            (void)!system(c);
-            snprintf(c, B, "tmux select-pane -t '%s:%s' -U", TMS, sn); (void)!system(c);
-        }
-        sess_log(sn, wd);
-    }
+    if (!r) sess_log(sn, wd);
     return r;
 }
+
+/* a resume [mins]  spawn one tmux window per claude session touched in window. default 60. */
+static int cmd_resume(int c,char**v){perf_disarm();
+    int mins=c>2?atoi(v[2]):60;if(mins<=0)mins=60;
+    if(!getenv("TMUX")){fputs("x need tmux\n",stderr);return 1;}
+    char sh[B*2];snprintf(sh,sizeof sh,
+      "n=0;for f in $(find %s/.claude/projects -name '*.jsonl' -mmin -%d 2>/dev/null);do "
+      "s=${f##*/};s=${s%%.jsonl};"
+      "w=$(grep -m1 -oE '\"cwd\":\"[^\"]+' \"$f\"|sed 's/.*\"cwd\":\"//');"
+      "[ -d \"$w\" ]||continue;"
+      "tmux new-window -d -n \"r-${w##*/}\" -c \"$w\" "
+      "\"claude --dangerously-skip-permissions --resume $s\"&&{ n=$((n+1));echo \"+ $w $s\" >&2; };"
+      "done;echo \"resumed $n in last %dm\" >&2",HOME,mins,mins);
+    return system(sh);}
