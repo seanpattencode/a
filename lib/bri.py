@@ -240,6 +240,22 @@ def main():
 
 # Shortcut CLI: thin client that pushes JSON to a running bridge on :1235 and
 # prints the response. The raw '{json}' form remains the full API.
+_MONP = lambda: __import__('os').path.expanduser('~/a/adata/local/bri_monitor.txt')
+def _ff_monitor(): import os; return open(_MONP()).read().strip() if os.path.exists(_MONP()) else ''
+def _ff_move(mon):
+    # Event-driven: subscribe to window events; on focus of firefox-nightly (window is mapped &
+    # selectable by then) move by con_id. "new" fires too early — selector hits "No matching node".
+    import os, glob, subprocess as sp
+    sock = os.environ.get('SWAYSOCK') or (sorted(glob.glob(f'/run/user/{os.getuid()}/sway-ipc.*.sock')) or [''])[0]
+    if not sock: return
+    p = sp.Popen(['swaymsg','-s',sock,'-m','-t','subscribe','["window"]'], stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
+    for ln in p.stdout:
+        try: ev = json.loads(ln)
+        except Exception: continue
+        c = ev.get('container') or {}
+        if ev.get('change')=='focus' and c.get('app_id')=='firefox-nightly' and c.get('id'):
+            sp.run(['swaymsg','-s',sock,f'[con_id={c["id"]}] move container to output {mon}'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
+            p.terminate(); return
 def _ff_restart():
     # Live wayland socket — process env may have stale wayland-0 from a dead session,
     # leaving FF connected to nothing and invisible on monitors (looks headless).
@@ -249,6 +265,10 @@ def _ff_restart():
     socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
     if socks: env['WAYLAND_DISPLAY'] = socks[0]
     env['MOZ_ENABLE_WAYLAND'] = '1'
+    m = _ff_monitor()
+    # fork (not thread) — subscribe must survive client process exit, before FF Popen so window::new isn't missed.
+    if m and os.fork() == 0:
+        os.setsid(); _ff_move(m); os._exit(0)
     subprocess.Popen(['firefox-nightly','http://127.0.0.1:1234/a.user.js'],env=env,stdout=-3,stderr=-3,start_new_session=True)
 
 def _mon():
@@ -288,6 +308,25 @@ def client(args):
         return
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
     if a == 'mon':     _mon(); return
+    if a == 'screen':
+        import os
+        p = _MONP(); os.makedirs(os.path.dirname(p), exist_ok=True)
+        if len(args) > 1:
+            v = '' if args[1] == '-' else args[1]
+            open(p,'w').write(v); print(f'monitor = {v or "(cleared)"}')
+            _ff_restart()
+        else:
+            cur = open(p).read().strip() if os.path.exists(p) else ''
+            print(f'current: {cur or "(none, default)"}')
+            import subprocess, glob, json as _j
+            sock = (sorted(glob.glob(f'/run/user/{os.getuid()}/sway-ipc.*.sock')) or [''])[0]
+            if sock:
+                r = subprocess.run(['swaymsg','-s',sock,'-t','get_outputs','--raw'],capture_output=True,text=True)
+                if r.returncode==0:
+                    for o in _j.loads(r.stdout):
+                        rc=o['rect']; print(f"  {o['name']:<10} {o.get('make','')[:10]:<10} {o.get('model','')[:18]:<18} pos=({rc['x']},{rc['y']}) {rc['width']}x{rc['height']}")
+            print('set: a bri screen <name>   clear: a bri screen -')
+        return
     if a.isdigit():  # `a bri <N>` opens the Nth recent research URL in default browser
         import os, subprocess
         p = os.path.expanduser('~/a/adata/git/urls.txt')
@@ -373,6 +412,7 @@ MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
   serve            start bridge (:1234 http, :1235 cmd) + launch FF on monitor
   deploy           rebuild lib/bri-ext xpi + install + restart FF (zero-click)
   restart          quit + relaunch FF Nightly
+  screen [name|-]  list outputs / pin FF to sway output (no arg=show, -=clear)
   mon              bri.py + FF CPU/RAM/tabs snapshot
   tail [name]      record bridge traffic → adata/tmp/bri-<name>.log (Ctrl-C stops)
   <N>              open Nth recent research URL (1..4) in default browser
