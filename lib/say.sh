@@ -45,6 +45,9 @@ if [ -d /data/data/com.termux ]; then
     exit $?
 fi
 D=$(mktemp -d); trap "rm -rf $D" EXIT
+# Ctrl-C: instantly kill the whole process group (uvx/python/ffmpeg/ffplay children)
+# so we don't wait for the next background gen to finish before exiting.
+trap 'kill -9 0 2>/dev/null' INT TERM
 T0=$(date +%s); log(){ printf '\033[%sm[+%ss] %s\033[0m\n' "$1" "$(($(date +%s)-T0))" "$2" >&2; }
 SHIFT(){ local r=$(python3 -c "print(2**($P/12))") SR=$1; [ "$P" = 0 ] && echo "" || echo "-af asetrate=$SR*$r,aresample=$SR,atempo=1/$r"; }
 gen(){ local f=$D/c_$1.wav
