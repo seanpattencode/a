@@ -1,7 +1,7 @@
 # /// script
 # dependencies = ["PyPDF2"]
 # ///
-import sys, subprocess, time, tempfile, os
+import sys, subprocess, time, tempfile, os, shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -164,7 +164,27 @@ if __name__ == "__main__":
     args = [a for a in sys.argv if not a.startswith("--")]
 
     if len(args) < 2:
-        cmd_list(); sys.exit(0)
+        # omnibox: bottom-anchored live filter over the book index. Enter = read selection.
+        IDX = ADATA / "git" / "books" / "index.txt"
+        rows = [l for l in (IDX.read_text().splitlines() if IDX.exists() else []) if l.strip()]
+        if not rows:
+            cmd_list(); print("\nno books indexed — try: a book add <file>"); sys.exit(0)
+        disp = []
+        for l in rows:
+            parts = l.split("\t")
+            name = parts[1] if len(parts) >= 2 else "?"
+            pos = (parts[4].strip() if len(parts) >= 5 else "") or "0"
+            disp.append(f"{name}\t{pos}")
+        if not shutil.which("fzf"):
+            for i, d in enumerate(disp): print(f"  {i}. {d.split(chr(9))[0]}  (pos {d.split(chr(9))[1]})")
+            try: pick = disp[int(input("# "))].split("\t")[0]
+            except: sys.exit(0)
+        else:
+            r = subprocess.run(["fzf","--height","40%","--reverse","--prompt","book> ","--with-nth","1","--delimiter","\t","--info","inline","--header","Enter=read  Esc=cancel"], input="\n".join(disp), capture_output=True, text=True)
+            if r.returncode != 0: sys.exit(0)
+            pick = r.stdout.strip().split("\t")[0]
+        sys.argv = sys.argv[:1] + ["read", pick]   # delegate to the read handler below
+        args = [a for a in sys.argv if not a.startswith("--")]
 
     cmd = args[1]
     if cmd == "list": cmd_list(show_all=True)
@@ -226,7 +246,45 @@ if __name__ == "__main__":
         split_pdf(book, nocache=nocache)
         print(f"Split into {book / 'pages'}/")
     elif cmd == "read":
-        # narrate book via the TTS APK on Android. resumes from /sdcard/Documents/book_pos_<name>.txt
+        # open book in `e` editor (read-only) at the saved character offset.
+        # exit position written back to adata/git/books/index.txt column 5.
+        import shutil
+        b = resolve_book(args[2] if len(args) > 2 else None); name = b.name
+        txt = b / "output" / "explained.txt"
+        if not txt.is_file():
+            src = b / "source.txt"
+            if src.is_file(): txt = src
+            else: print(f"no readable text in {b}"); sys.exit(1)
+        IDX = ADATA / "git" / "books" / "index.txt"
+        IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
+        pos = 0
+        lines = IDX.read_text().splitlines()
+        for i, l in enumerate(lines):
+            parts = l.split("\t")
+            if len(parts) >= 2 and parts[1] == name:
+                if len(parts) >= 5 and parts[4].strip().isdigit(): pos = int(parts[4])
+                break
+        pos_out = f"/tmp/book_pos_{name}.txt"
+        Path(pos_out).unlink(missing_ok=True)
+        if shutil.which("e"):
+            print(f">> reading {name} from offset {pos} ({txt})")
+            subprocess.run(["e", "-r", f"+{pos}", "--pos-out", pos_out, str(txt)])
+            new_pos = pos
+            try: new_pos = int(Path(pos_out).read_text().strip())
+            except Exception: pass
+            # write column 5 back, creating row if needed
+            updated = False
+            for i, l in enumerate(lines):
+                parts = l.split("\t")
+                if len(parts) >= 2 and parts[1] == name:
+                    while len(parts) < 5: parts.append("")
+                    parts[4] = str(new_pos)
+                    lines[i] = "\t".join(parts); updated = True; break
+            if updated:
+                IDX.write_text("\n".join(lines) + "\n")
+                print(f"+ position {pos} -> {new_pos} (saved to {IDX.name})")
+            sys.exit(0)
+        # APK fallback: narrate via the TTS APK on Android. resumes from /sdcard/Documents/book_pos_<name>.txt
         # large books are sent in ~150KB sessions; re-run to advance.
         import base64, re
         b = resolve_book(args[2] if len(args) > 2 else None); name = b.name
