@@ -8,7 +8,16 @@
 case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
     set -e; A="$HOME/a"
     [[ ! -t 0 ]] && { T="/tmp/_ainst$$.c"; curl -fsSL https://raw.githubusercontent.com/seanpattencode/a/main/a.c -o "$T"; exec sh "$T"; }
-    command -v git >/dev/null || { [[ "$OSTYPE" == darwin* ]] && { command -v brew &>/dev/null || { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; }; brew install git &>/dev/null; }; command -v git >/dev/null || { echo "Install git first"; exit 1; }; }
+    # bootstrap git: ARCHITECTURE #40 — `curl … | sh` must succeed on a bare OS with no prereqs.
+    # detect package manager and install. sudo is auto-applied where root is needed.
+    command -v git >/dev/null || { S=""; [ "$EUID" != 0 ] && command -v sudo >/dev/null && S="sudo"
+        if [[ "$OSTYPE" == darwin* ]]; then command -v brew &>/dev/null || { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; }; brew install git &>/dev/null
+        elif [ -f /data/data/com.termux/files/usr/bin/bash ]; then pkg install -y git
+        elif [ -f /etc/debian_version ]; then $S apt-get update -qq && $S apt-get install -y git
+        elif [ -f /etc/arch-release ]; then $S pacman -Sy --noconfirm git
+        elif [ -f /etc/fedora-release ]; then $S dnf install -y git
+        else echo "x unsupported OS — install git manually"; exit 1; fi
+        command -v git >/dev/null || { echo "x git install failed"; exit 1; }; }
     [ -d "$A/.git" ] && { echo "a already installed at $A"; git -C "$A" pull --ff-only --quiet 2>/dev/null || :; exec sh "$A/a.c" install; }
     git clone https://github.com/seanpattencode/a.git "$A" && exec sh "$A/a.c" install
     exit 1;; esac
@@ -276,6 +285,17 @@ install)
     fi
     # tame adata/git repacks: freeze >200m base pack + no reactive maintenance (HDD repack-storm fix)
     [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;ok "adata/git tuned";}
+    # extra user repos: adata/git/repos.txt — one "owner/name [target]" per line, '#' comments ok.
+    # rationale: `a clone` brings `a` itself, but the user's personal repos (updater, trading,
+    # research) don't ride along. manifest lives in adata so it syncs across the fleet → a new
+    # device's `a install` ends up with the same user repos. scope-bounded to git clone only;
+    # any per-repo setup lives inside that repo (run it via `a hub` or its own bootstrap).
+    [[ -f "$SROOT/repos.txt" ]]&&while IFS= read -r ln;do ln="${ln%%#*}";set -- $ln;[[ -z "$1" ]]&&continue
+        tgt="${2:-$HOME/${1##*/}}";tgt="${tgt/#\~/$HOME}";[[ -d "$tgt/.git" ]]&&continue
+        info "clone $1 -> $tgt"
+        { command -v gh &>/dev/null&&gh auth status &>/dev/null 2>&1&&gh repo clone "$1" "$tgt" 2>/dev/null; }||git clone "https://github.com/$1.git" "$tgt" 2>/dev/null
+        [[ -d "$tgt/.git" ]]&&ok "$1"||warn "$1"
+    done < "$SROOT/repos.txt"
     if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'a-gdrive'; then
         _DEV=$(cat "$D/adata/local/.device" 2>/dev/null || hostname)
         _BDIR="$D/adata/backup/$_DEV"; mkdir -p "$_BDIR"
@@ -539,6 +559,12 @@ static int cmd_adb(int c,char**v){
       "$A shell input keyevent 66;sleep 1;"  /* Enter to ensure fresh prompt */
       "$A shell input text 'sh%s/sdcard/_a.sh';$A shell input keyevent 66;sleep 3;echo '✓ sshd up, key installed'");
     if(c>2&&!strcmp(v[2],"ssh"))return system("for s in $(adb devices|awk '/\\tdevice$/{print$1}');do printf '\\033[36m→ %s\\033[0m ' \"$s\";adb -s \"$s\" shell 'am broadcast -n com.termux/.app.TermuxOpenReceiver -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH /data/data/com.termux/files/usr/bin/sshd --ez com.termux.RUN_COMMAND_BACKGROUND true' 2>&1|tail -1;done");
+    if(c>3&&!strcmp(v[2],"a")){perf_disarm();
+        char cmd[B]="";ajoin(cmd,B,c,v,3);
+        execl("/bin/sh","sh","-c",ADBSEL
+          "P=$($A shell pm path com.aios.a|sed -n 's|^package:||;s|/base.apk||p');[ -z \"$P\" ]&&{ echo x no apk;exit 1;};"
+          "N=$P/lib/arm64;F=/data/data/com.aios.a/files;"
+          "$A shell \"run-as com.aios.a sh -c 'export PATH=$F/bin:$N:/system/bin HOME=$F A_SDIR=$F TERMINFO=$F/terminfo TMUX_BIN=$N/libtmux.so TMUX_TMPDIR=$F; $N/liba.so $1'\"","a",cmd,(char*)0);_exit(127);}
     if(c>3&&!strcmp(v[2],"cmd")){perf_disarm();
         char cmd[B]="";ajoin(cmd,B,c,v,3);
         execl("/bin/sh","sh","-c",ADBSEL

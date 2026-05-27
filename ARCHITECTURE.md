@@ -56,6 +56,9 @@ Apps should use c wherever possible for speed including ui.
 
 35. Apps should immediately open to the most obvious and common use case and should open cold in milliseconds range time under 15 ms but ideally less to be useable for that
 
+## Bootstrap
+40. `a` install from any device with curl access must produce a fully working install end-to-end with no manual prereqs on the target. The installer auto-resolves: git (to clone), tmux (job substrate), ssh client+server (fleet reachability), agent CLIs (claude/codex/gemini — `a c/co/g` would otherwise be dead), and on Android the adb bridge. Detection is per-package-manager (apt/pacman/dnf/brew/pkg/termux pkg); if none match, install fails loudly with the missing item named, not silently dies. The fleet model is the reason: every device must be remotely reachable the moment `curl … | sh` returns, or the operator can't orchestrate it. Anything the user has to install by hand before `a` works is a bootstrap bug, not a documentation gap.
+
 Expected user interactions based on empirical practice, will change:
 36. The user will manage a fleet of devices from any one device to the others, trust is based on the user trusting their physical devices and connecting them into a fleet.
 37. The user will manage work in tmux windows as the easiest way to interact with pty sessions and a unified view through a ssh all is achived

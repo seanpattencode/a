@@ -51,8 +51,8 @@ w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(thi
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
-val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup","Read").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
+val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
@@ -121,6 +121,46 @@ override fun onResults(b:Bundle?){val r=b?.getStringArrayList(android.speech.Spe
 override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{msg=it;invalidate()}}
 override fun onError(c:Int){msg="err $c";invalidate()}
 override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(b:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(c:Int,b:Bundle?){}
+}
+class Rec(val a:Activity):android.view.View(a){
+private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
+private val pb=Paint().apply{color=-1;textSize=140f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
+private var msg="tap to record (FLAC 48kHz)"
+private val ex=java.util.concurrent.Executors.newSingleThreadExecutor()
+private val hh=Handler(Looper.getMainLooper())
+@Volatile private var stp=false
+private var rec:android.media.AudioRecord?=null;private var t0=0L
+private val tk=object:Runnable{override fun run(){if(rec!=null){val s=(System.currentTimeMillis()-t0)/1000;msg=String.format("%02d:%02d",s/60,s%60);invalidate();hh.postDelayed(this,500)}}}
+override fun onDraw(c:Canvas){if(rec!=null){c.drawColor(0xFFCC0000.toInt());c.drawText("TAP TO STOP",width/2f,height/2f-40f,pb);c.drawText(msg,width/2f,height/2f+100f,p)}else{c.drawColor(0xFF000000.toInt());c.drawText(msg,width/2f,height/2f,p)}}
+override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){if(rec==null)go() else stp=true};return true}
+@android.annotation.SuppressLint("MissingPermission")
+private fun go(){if(a.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1);msg="grant mic perm";invalidate();return}
+val SR=48000;val bs=android.media.AudioRecord.getMinBufferSize(SR,android.media.AudioFormat.CHANNEL_IN_MONO,android.media.AudioFormat.ENCODING_PCM_16BIT)*4
+try{rec=android.media.AudioRecord(android.media.MediaRecorder.AudioSource.MIC,SR,android.media.AudioFormat.CHANNEL_IN_MONO,android.media.AudioFormat.ENCODING_PCM_16BIT,bs);rec!!.startRecording()}catch(x:Exception){msg="err: ${x.message}";invalidate();return}
+t0=System.currentTimeMillis();stp=false;hh.post(tk)
+val dir=java.io.File(a.filesDir,"recordings");dir.mkdirs()
+val f=java.io.File(dir,"${java.text.SimpleDateFormat("yyyyMMdd-HHmmss").format(java.util.Date())}.flac")
+ex.submit{try{
+val enc=android.media.MediaCodec.createEncoderByType("audio/flac")
+val fmt=android.media.MediaFormat.createAudioFormat("audio/flac",SR,1)
+fmt.setInteger(android.media.MediaFormat.KEY_PCM_ENCODING,android.media.AudioFormat.ENCODING_PCM_16BIT)
+fmt.setInteger(android.media.MediaFormat.KEY_FLAC_COMPRESSION_LEVEL,5)
+enc.configure(fmt,null,null,android.media.MediaCodec.CONFIGURE_FLAG_ENCODE);enc.start()
+val out=java.io.FileOutputStream(f);out.write("fLaC".toByteArray())
+val bi=android.media.MediaCodec.BufferInfo();val buf=ByteArray(bs);var done=false
+while(!done){if(rec!=null){if(stp){rec!!.stop();rec!!.release();rec=null;val ii=enc.dequeueInputBuffer(10000);if(ii>=0)enc.queueInputBuffer(ii,0,0,0,android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)}else{val n=rec!!.read(buf,0,bs);if(n>0){val ii=enc.dequeueInputBuffer(10000);if(ii>=0){val ib=enc.getInputBuffer(ii)!!;ib.clear();ib.put(buf,0,n);enc.queueInputBuffer(ii,0,n,System.nanoTime()/1000,0)}}}}
+val oi=enc.dequeueOutputBuffer(bi,1000)
+if(oi==android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){val csd=enc.outputFormat.getByteBuffer("csd-0");if(csd!=null){val arr=ByteArray(csd.remaining());csd.get(arr);out.write(byteArrayOf(0x80.toByte(),0,0,arr.size.toByte()));out.write(arr)}}
+else if(oi>=0){val ob=enc.getOutputBuffer(oi)!!;val arr=ByteArray(bi.size);ob.position(bi.offset);ob.get(arr)
+if((bi.flags and android.media.MediaCodec.BUFFER_FLAG_CODEC_CONFIG)!=0){out.write(byteArrayOf(0x80.toByte(),0,0,arr.size.toByte()));out.write(arr)}else out.write(arr)
+enc.releaseOutputBuffer(oi,false);if((bi.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0)done=true}}
+enc.stop();enc.release();out.close()
+hh.post{msg="saving note...";invalidate()}
+val nl=a.applicationInfo.nativeLibraryDir
+ProcessBuilder("$nl/liba.so","n","rec: ${f.absolutePath}").apply{environment().apply{put("PATH","${a.filesDir}/bin:$nl:/system/bin");put("HOME",a.filesDir.absolutePath);put("A_SDIR",a.filesDir.absolutePath)};redirectErrorStream(true)}.start().waitFor()
+hh.post{msg="✓ saved ${f.name} → note";invalidate()}
+}catch(x:Exception){hh.post{msg="err: ${x.message}";invalidate()}}}
+}
 }
 class Rdr(c:android.content.Context):android.view.View(c){
 private val p=Paint().apply{color=-1;textSize=60f;isAntiAlias=true;typeface=Typeface.SERIF}
@@ -478,6 +518,7 @@ class Home : Activity() {
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        if (android.os.Build.VERSION.SDK_INT >= 29) getSystemService(android.app.role.RoleManager::class.java)?.let { rm -> if (rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME) && !rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) startActivityForResult(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME), 100) }
         db.rawQuery("SELECT p,c FROM f", null).use { while (it.moveToNext()) cnt[it.getString(0)] = it.getInt(1) }
         db.rawQuery("SELECT p FROM pin", null).use { while (it.moveToNext()) pins.add(it.getString(0)) }
         if (cache.exists()) sendApps(cache.readText())
@@ -497,6 +538,7 @@ class Home : Activity() {
                 when {
                     r > 0 -> launch(r - 1)
                     r == -1 -> nQuery()?.let { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(it)))) }
+                    r == -4 -> nQuery()?.let { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("market://search?q=" + android.net.Uri.encode(it)))) }
                     r == -2 -> nPkg(nTop())?.let { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$it"))) }
                     r == -3 -> { val i = nTop(); nPkg(i)?.let { p -> nPin(i); if (!pins.remove(p)) pins.add(p); ex.execute { db.execSQL("DELETE FROM pin WHERE p=?", arrayOf(p)); if (p in pins) db.execSQL("INSERT INTO pin VALUES(?)", arrayOf(p)) } } }
                 }
@@ -704,8 +746,10 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
 
     if (F[0].px) {
         if (nf == 0 && ql > 0) {
-            char buf[80] = "Google: "; memcpy(buf+8, Q, ql); buf[8+ql] = 0;
-            drawcenter((uint32_t*)p, stride, &F[0], buf, lh - rh + rh/2 - F[0].ch/2, 0xFFFF00);
+            static const char* LBL[2] = {"Google: ", "Play Store: "};
+            for (int j = 0; j < 2; j++) { char buf[80]; int l = (int)strlen(LBL[j]);
+                memcpy(buf, LBL[j], l); memcpy(buf+l, Q, ql); buf[l+ql] = 0;
+                drawcenter((uint32_t*)p, stride, &F[0], buf, lh - rh*(j+1) + rh/2 - F[0].ch/2, 0xFFFF00); }
         } else for (int i = 0; i < nf; i++) {
             int y = lh - rh * (i+1) + scr;
             if (y < -rh || y > lh) continue;
@@ -754,7 +798,7 @@ JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
             if (x < edge || x > W - edge) { drag = 1; ly = y; ty = y; sv = 0; }
             else { int i = (int)((lh - y + scr) / rh);
                 if (i >= 0 && i < nf) return flt[i]+1;
-                if (nf == 0 && ql > 0) return -1; }
+                if (nf == 0 && ql > 0) return i == 1 ? -4 : -1; }
         } break;
     case 1: case 3: pressed = -1; drag = 0; break;
     case 2: if (drag) { sv = y - ly; scr += (int)(y - ly); ly = y;
@@ -1272,8 +1316,7 @@ def run():
     if not serial:
         ds=devlist()
         if ds:serial=ds[0] if len(ds)==1 else pick(ds)
-    cpu=detect_cpu(serial) if serial else None
-    cf="-O3 -flto -Wl,-z,max-page-size=16384"+(f" -mcpu={cpu}" if cpu else "")
+    cf="-O3 -flto -Wl,-z,max-page-size=16384"
     if proj:
         if not os.path.exists(proj+"/gradlew"):sys.exit("x No gradlew in "+proj)
         lp=proj+"/local.properties"
