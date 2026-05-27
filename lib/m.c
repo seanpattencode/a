@@ -419,7 +419,7 @@ static int m_main(void){return m_reinit("m.txt");}
 static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agent",SDIR);mkdirp(ad);time_t t=time(NULL);char fn[64];strftime(fn,64,"agent/%Y-%m-%d_%H-%M-%S.txt",localtime(&t));return m_reinit(fn);}
 
 static void m_set(const char *k,const char *v){char ck[32];snprintf(ck,32,"m_%s",k);cfset(ck,v);
-  if(!strcmp(k,"agent")){cfset("m_model",strstr(v,"codex")?"gpt-5.5":strstr(v,"gemini")?"gemini-2.5-flash":!strcmp(v,"api")?"claude-opus-4-5":"opus");cfset("m_effort",strstr(v,"codex")?"xhigh":"low");}
+  if(!strcmp(k,"agent")){cfset("m_model",strstr(v,"codex")?"gpt-5.5":strstr(v,"gemini")?"gemini-2.5-flash":!strcmp(v,"api")?"claude-opus-4-5":"opus");cfset("m_effort",strstr(v,"codex")?"xhigh":"max");}
   char p[P];snprintf(p,P,"%s/m_pid",DDIR);char *x=readf(p,NULL);if(x)kill(atoi(x),SIGUSR1);free(x);}
 /* live-filter picker: anchors menu at bottom of pane via ABSOLUTE row positioning.
  * \033[s/\033[u proved unreliable in tmux across scrolls — each arrow rendered below
@@ -461,8 +461,17 @@ static int m_pick(const char *cat,const char *const *items,int n,char *out,size_
     #undef CLR
 }
 static void m_menu(void);
-/* a m resume: pick by mtime desc, open in NEW tmux window so existing m keeps its file. */
-static int m_resume(void){perf_disarm();(void)!write(1,"\033[2J\033[H",7);
+/* a m resume: pick by mtime desc, open in NEW tmux window so existing m keeps its file.
+ * Tab in picker = resume last 1hr. `a m resume <mins>` = resume all touched within window. */
+static int m_resume_t(int mins){char cmd[B];snprintf(cmd,B,"cd '%s/m'&&find m.txt agent -name '*.txt' -mmin -%d 2>/dev/null|sort",SDIR,mins);
+    static char buf[8192];pcmd(cmd,buf,sizeof buf);int ok=0;
+    for(char *p=buf;*p;){char *nl=strchr(p,'\n');if(nl)*nl=0;
+        if(*p){char sc[B];snprintf(sc,B,getenv("TMUX")?"tmux new-window -d 'a m %s'":"a m %s &",p);if(!system(sc))ok++;}
+        if(!nl)break;p=nl+1;}
+    fprintf(stderr,"resumed %d in last %dm\n",ok,mins);return ok?0:1;}
+static int m_resume(int c,char**v){perf_disarm();
+    if(c>3&&isdigit((unsigned char)*v[3]))return m_resume_t(atoi(v[3]));
+    (void)!write(1,"\033[2J\033[H",7);
     char cmd[B];snprintf(cmd,B,"cd '%s/m'&&ls -t m.txt agent/*.txt 2>/dev/null|head -30|while read f;do printf '%%s\\t%%s\\n' \"$f\" \"$(date -r \"$f\" '+%%m-%%d %%H:%%M' 2>/dev/null||stat -c %%y \"$f\"|cut -c1-16)\";done",SDIR);
     static char buf[32768];pcmd(cmd,buf,sizeof buf);
     static char ib[64][384];const char *ip[64];int n=0;
@@ -470,8 +479,10 @@ static int m_resume(void){perf_disarm();(void)!write(1,"\033[2J\033[H",7);
         if(*p){snprintf(ib[n],384,"%s",p);ip[n]=ib[n];n++;}if(!nl)break;p=nl+1;}
     if(!n){fprintf(stderr,"no sessions in %s/m\n",SDIR);return 1;}
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;
-    tcsetattr(0,TCSANOW,&r);char pick[384];int rc=m_pick("resume",ip,n,pick,sizeof pick);tcsetattr(0,TCSANOW,&o);
-    if(rc<=0)return 0;char *tab=strchr(pick,'\t');if(tab)*tab=0;
+    tcsetattr(0,TCSANOW,&r);char pick[384];int rc=m_pick("resume (Tab=last 1hr)",ip,n,pick,sizeof pick);tcsetattr(0,TCSANOW,&o);
+    if(rc==0)return m_resume_t(60);
+    if(rc<0)return 0;
+    char *tab=strchr(pick,'\t');if(tab)*tab=0;
     char sc[B];snprintf(sc,B,getenv("TMUX")?"tmux new-window 'a m %s'":"a m %s",pick);return system(sc);}
 /* raw-mode line reader: handles BSpace on every char (incl first), bracketed paste, '/' as instant menu hotkey. */
 static size_t m_read_line(char *buf,size_t sz){
@@ -522,7 +533,9 @@ static void m_menu(void){
      * gemini cli commented out: being phased out for antigravity, no single-output mode yet. */
     static const char *const ops[]={
         "new\tnew chat, fresh file",
-        "resume\tpick past session, new tmux window",
+        "resume\tpick past session, new tmux window  (Tab=last 1hr)",
+        "resume 60\tall touched in last 1hr, each in new window",
+        "resume 1440\tall touched in last 24hr, each in new window",
         "import\timport latest claude code chat",
         "main\topen main m.txt",
         "restart\trespawn this window",
@@ -533,42 +546,19 @@ static void m_menu(void){
         "set claude:opus codex:gpt-5.5\t★ MULTI: opus + gpt-5.5",
         "set claude:haiku codex:gpt-5.5\t★ MULTI: haiku + gpt-5.5",
         "set claude:opus claude:sonnet\t★ MULTI: opus + sonnet",
-        "agent claude\tswitch single → claude",
-        "agent codex\tswitch single → codex",
-        "agent api\tswitch single → api",
-        "model opus\tclaude opus (smartest)",
-        "model sonnet\tclaude sonnet (balanced)",
-        "model haiku\tclaude haiku (fastest)",
-        "model gpt-5\tcodex gpt-5",
-        "model gpt-5.5\tcodex gpt-5.5",
-        "model claude-opus-4-5\tapi claude opus",
-        "model claude-sonnet-4-6\tapi claude sonnet",
-        "model claude-haiku-4-5\tapi claude haiku",
-        "effort low\tfast cheap",
-        "effort medium\tbalanced",
-        "effort high\tdeeper",
-        "effort max\tmax (claude)",
-        "effort xhigh\tmax (codex)",
-        "tier default\tdefault speed",
-        "tier fast\tpriority lane",
-        "tier flex\tcheap slow",
+        "use claude opus max\tclaude · opus · max (smartest)",
+        "use claude sonnet max\tclaude · sonnet · max (balanced)",
+        "use claude haiku max\tclaude · haiku · max (fastest)",
+        "use codex gpt-5.5 xhigh\tcodex · gpt-5.5 · xhigh",
+        "use codex gpt-5 xhigh\tcodex · gpt-5 · xhigh",
+        "use api claude-opus-4-5 max\tapi · opus-4-5 · max",
+        "use api claude-sonnet-4-6 max\tapi · sonnet-4-6 · max",
+        "use api claude-haiku-4-5 max\tapi · haiku-4-5 · max",
         "archive\trotate full conversation",
         "archive turn\ttrim last turn",
         "archive undo\trevert archive",
         "archive hist\tlist archives"};
-    char v[128];
-    if(!m_step("cmd",ops,(int)(sizeof ops/sizeof *ops),v,sizeof v))return;
-    if(strncmp(v,"agent ",6))return;
-    const char *ag=v+6; int cdx=strstr(ag,"codex")!=0,gmn=strstr(ag,"gemini")!=0,api=!strcmp(ag,"api");
-    static const char *const M_CL[]={"model opus","model sonnet","model haiku"};
-    static const char *const M_CX[]={"model gpt-5","model gpt-5.5"};
-    static const char *const M_GM[]={"model gemini-2.5-flash","model gemini-2.5-pro","model gemini-3-pro-preview"};
-    static const char *const M_AP[]={"model claude-opus-4-5","model claude-sonnet-4-6","model claude-haiku-4-5"};
-    if(!m_step("model",cdx?M_CX:gmn?M_GM:api?M_AP:M_CL,cdx?2:3,v,sizeof v))return;
-    static const char *const E_CL[]={"effort low","effort medium","effort high","effort max"};
-    static const char *const E_CX[]={"effort low","effort medium","effort high","effort xhigh"};
-    if(!m_step("effort",cdx?E_CX:E_CL,4,v,sizeof v))return;
-    if(cdx){static const char *const T[]={"tier default","tier fast","tier flex"}; m_step("tier",T,3,v,sizeof v);}
+    char v[128]; m_step("cmd",ops,(int)(sizeof ops/sizeof *ops),v,sizeof v);
 }
 /* convert one Claude Code .jsonl → fresh agent/<ts>-cc.txt, switch m_file, signal m */
 static int m_import_run(const char *src) {
@@ -664,6 +654,8 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "archive")) return m_archive(c, v);
     if (c > 2 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort")||!strcmp(v[2],"tier")||!strcmp(v[2],"set"))) {
         char val[256]=""; if(c>3)ajoin(val,256,c,v,3); load_cfg(); m_set(v[2],val); return 0;}
+    if (c > 4 && !strcmp(v[2],"use")) { /* a m use AGENT MODEL EFFORT — single pick sets all three */
+        load_cfg(); cfset("m_set",""); m_set("agent",v[3]); cfset("m_model",v[4]); if(c>5)cfset("m_effort",v[5]); return 0;}
     if (c > 2 && !strcmp(v[2], "panel")) return cmd_m_panel(c, v);
     if (c > 2 && !strcmp(v[2], "p")) { char pf[P]; snprintf(pf,P,"%s/m_panel",DDIR); char*p=readf(pf,NULL);
         if(p){p[strcspn(p,"\n")]=0; char hc[128],hb[16]={0}; snprintf(hc,128,"tmux display -p -t %s '#{pane_height}'",p); pcmd(hc,hb,16);
@@ -672,7 +664,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
     if (c > 2 && !strcmp(v[2], "main")) return m_main();
     if (c > 2 && !strcmp(v[2], "new")) return m_new();
-    if (c > 2 && !strcmp(v[2], "resume")) return m_resume();
+    if (c > 2 && !strcmp(v[2], "resume")) return m_resume(c,v);
     if (c > 2 && !strcmp(v[2], "import")) return m_import(c, v);
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     perf_disarm(); /* interactive: subcommands above stay perf-armed; the chat loop runs unbounded */
