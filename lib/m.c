@@ -6,6 +6,7 @@
  * sysprompt: hardcoded M_SYS (m-only cmd contract). i.txt = single user-editable file, loaded by all agents. */
 
 static const char *M_SYS = "`a m` chat: emit <cmd>command</cmd> to run one-shot (cwd=m, 60s timeout). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.";
+#define MEF(ag) (strstr(ag,"codex")?"xhigh":"max")  /* per-agent max effort */
 static volatile pid_t g_cp = 0;
 static int g_halt = 0;
 static volatile sig_atomic_t g_rst = 0;
@@ -81,7 +82,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     const char *ag = (ag_ov&&*ag_ov)?ag_ov:cfget("m_agent"); if (!*ag) ag = "claude";
     int is_api = !strcmp(ag,"api"), is_codex = !is_api && strstr(ag,"codex")!=0, is_gemini = !is_api && strstr(ag,"gemini")!=0;
     const char *md = (md_ov&&*md_ov)?md_ov:cfget("m_model"); if (!*md) md = is_codex ? "gpt-5.5" : is_gemini ? "gemini-2.5-flash" : is_api ? "claude-opus-4-5" : "opus";
-    const char *ef = cfget("m_effort"); if (!*ef) ef = is_codex ? "xhigh" : "low";
+    const char *ef = getenv("M_EFFORT_OVR"); if(!ef||!*ef){ef=cfget("m_effort"); if(!*ef)ef=is_codex?"xhigh":"max";}
     const char *tier = cfget("m_tier");
     int has_tier = is_codex && *tier && strcmp(tier,"default");
     char errp[P]; snprintf(errp,P,"%s/m_err.log",DDIR);
@@ -142,7 +143,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
             snprintf(x,B,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --disable shell_tool --disable unified_exec --disable tool_search --disable tool_suggest -m '%s' -c 'model_reasoning_effort=\"%s\"'%s",md,ef,t);
             execlp("sh","sh","-c",x,(char*)0);
         } else { char x[B*2];
-            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\" --append-system-prompt-file <(cat %2$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %3$s/m/i.txt 2>/dev/null) --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,AROOT,SDIR);
+            snprintf(x,B*2,"awk '/^## a-loaded /{s=1;next} s&&/^## a-loaded-end$/{s=0;next} !s'|claude -p --output-format stream-json --include-partial-messages --verbose --tools '' --model '%s' --effort '%s' --system-prompt \"$1\" --append-system-prompt-file <(printf '## Loaded context (refreshed per LLM turn from disk):\\n- a_cat.txt: codebase snapshot (regen via `a cat 3`)\\n- i.txt: persistent identity. Modifications require explicit human approval only.\\n\\n## a_cat.txt:\\n'; cat %2$s/local/a_cat.txt 2>/dev/null; printf '\\n==> i.txt <==\\n'; cat %3$s/m/i.txt 2>/dev/null) --settings '{\"enabledPlugins\":{\"clangd-lsp@claude-plugins-official\":false}}'",md,ef,AROOT,SDIR);
             execlp("bash","bash","-c",x,"_",sp,(char*)0);
         }
         _exit(127);
@@ -543,6 +544,7 @@ static void m_menu(void){
         "panel\trich panel UI",
         "reset\tclear transcript",
         "set\t★ MULTI: clear → single",
+        "set claude:opus claude:sonnet claude:haiku codex:gpt-5.5 codex:gpt-5 api:claude-opus-4-5 api:claude-sonnet-4-6 api:claude-haiku-4-5\t★ MULTI: ALL 8 models",
         "set claude:opus codex:gpt-5.5\t★ MULTI: opus + gpt-5.5",
         "set claude:haiku codex:gpt-5.5\t★ MULTI: haiku + gpt-5.5",
         "set claude:opus claude:sonnet\t★ MULTI: opus + sonnet",
@@ -741,16 +743,16 @@ static int cmd_m(int c, char **v) {
                 else if(nsec<8){snprintf(sec[nsec].ag,32,"%s",t);snprintf(sec[nsec].md,32,"%s",cl+1);
                     snprintf(sec[nsec].tmp,P,"%s/m_sec_%d_%d.txt",DDIR,(int)getpid(),nsec); nsec++;}
                 ix++;} t=strtok(NULL," ");} } }
-        const char *_ef=cfget("m_effort"); if(!*_ef)_ef="low";
         /* fork secondaries ONCE per user turn; they see initial state, respond once */
         for(int s=0;s<nsec;s++){unlink(sec[s].tmp); pid_t w=fork();
-            if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1);
+            if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1); setenv("M_EFFORT_OVR",MEF(sec[s].ag),1);
                 setenv("M_OUT_PATH",sec[s].tmp,1); setenv("M_NOECHO","1",1);
                 static char a2[64*1024],b2[8*1024]; mm_stream(sf,M_SYS,a2,sizeof a2,b2,sizeof b2); _exit(0);}
             sec[s].pid=w;}
-        if(prim_ag[0]){setenv("M_AGENT_OVR",prim_ag,1);setenv("M_MODEL_OVR",prim_md,1);}
-        else{unsetenv("M_AGENT_OVR");unsetenv("M_MODEL_OVR");}
+        if(prim_ag[0]){setenv("M_AGENT_OVR",prim_ag,1);setenv("M_MODEL_OVR",prim_md,1);setenv("M_EFFORT_OVR",MEF(prim_ag),1);}
+        else{unsetenv("M_AGENT_OVR");unsetenv("M_MODEL_OVR");unsetenv("M_EFFORT_OVR");}
         unsetenv("M_OUT_PATH"); unsetenv("M_NOECHO");
+        const char *_ef=prim_ag[0]?MEF(prim_ag):cfget("m_effort"); if(!*_ef)_ef="max";
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
             const char *_ag=prim_ag[0]?prim_ag:cfget("m_agent"); if(!*_ag)_ag="claude";
@@ -761,7 +763,7 @@ static int cmd_m(int c, char **v) {
             if(i==0&&nsec){m_status("waiting on secondaries");
                 for(int s=0;s<nsec;s++){waitpid(sec[s].pid,NULL,0);
                     char *sc=readf(sec[s].tmp,NULL);
-                    if(sc&&*sc){char h2[80]; snprintf(h2,80,"\n## assistant [%s·%s·%s]\n",sec[s].ag,sec[s].md,_ef);
+                    if(sc&&*sc){char h2[80]; snprintf(h2,80,"\n## assistant [%s·%s·%s]\n",sec[s].ag,sec[s].md,MEF(sec[s].ag));
                         mm_w(sf,h2,"a"); mm_w(sf,sc,"a"); free(sc);}
                     unlink(sec[s].tmp);}}
             m_commit("a"); if (g_halt) break;
