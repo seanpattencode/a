@@ -1,6 +1,6 @@
 /* ── ssh ── */
 #define SMUX " -oControlMaster=auto -oControlPath=%%d/.ssh/a-%%C -oControlPersist=300"
-#define IP_CMD "(hostname -I 2>/dev/null||python3 -c 'import socket;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.connect((\"8.8.8.8\",80));print(s.getsockname()[0])' 2>/dev/null)|awk '{print $1;exit}'"
+#define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"
 static void ssh_parse(const char*h,char*hp,char*port){
     snprintf(hp,256,"%s",h);char*c=strrchr(hp,':');if(c){snprintf(port,8,"%s",c+1);*c=0;}else snprintf(port,8,"22");}
 static const char*ssh_scope(const char*ip){/* lan if RFC1918, else wan */
@@ -56,13 +56,14 @@ static int cmd_ssh(int argc,char**argv){
         for(int i=0;i<nh;i++){int s=!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-';
             printf("  %d. %s%s%s: %s%s\n",i,s?"\033[32m":"",H[i].name,s?" (self)\033[0m":"",H[i].host,H[i].pw[0]?" [pw]":"");}
         if(!nh)puts("  (none)");
-        puts("\n  a=add  l=all  f=self  b=start  x=stop  c=status  u=setup\n  k=key  h=auth  r=rm  w=pw  m=mv  i=info  o=os  p=ping");
+        puts("\n  d=default a=add l=all f=self b=start x=stop c=status u=setup k=key h=auth r=rm w=pw m=mv i=info o=os p=ping");
         if(!isatty(0))return 0;
         printf("\n> ");fflush(stdout);
         struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
         char ch;int rv=read(0,&ch,1);tcsetattr(0,TCSAFLUSH,&ot);
         if(rv!=1||ch=='\x1b'||ch==3){putchar('\n');return 0;}putchar('\n');
         if(ch>='0'&&ch-'0'<nh){execvp("a",(char*[]){"a","ssh",H[ch-'0'].name,NULL});}
+        if(ch=='d'||ch=='\r'){const char*d=cfget("default_ssh");if(*d)execvp("a",(char*[]){"a","ssh",(char*)d,NULL});}
         {static const char km[]="alfbxcukhrwmiop";static const char*kv[]={"add","all","self","start","stop","status","setup","key","auth","rm","pw","mv","info","os","ping"};
         for(int i=0;km[i];i++)if(ch==km[i]){execvp("a",(char*[]){"a","ssh",(char*)kv[i],NULL});}}
         printf("x %c\n",ch);return 1;}
@@ -215,7 +216,7 @@ static int cmd_ssh(int argc,char**argv){
     /* resolve host by # or name */
     int idx=-1;
     if(isdigit((unsigned char)*sub))idx=atoi(sub);
-    else{for(int i=0;i<nh;i++)if(!strcmp(H[i].name,sub)){idx=i;break;}}
+    else{for(int i=0;i<nh;i++)if(strstr(H[i].name,sub)){idx=i;break;}}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
     /* fast TCP probe; on fail switch to <name>-relay if it exists */
