@@ -183,9 +183,10 @@ static int cmd_done(int argc,char**argv){AB;
         if(sf){fputs("echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff\n",sf);
             if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';git --no-pager diff --stat -- %s\n",dl,dl);
             fputs("exec $SHELL\n",sf);fclose(sf);
-            const char*tp=getenv("TMUX_PANE");char c[P*2],tg[64]="",dp[64]="";
-            if(tp)snprintf(tg,64," -t %s",tp);
-            snprintf(c,P*2,"tmux split-window -v -l 70%%%s -P -F '#{pane_id}' 'sh %s' 2>/dev/null",tg,sp);pcmd(c,dp,64);dp[strcspn(dp,"\n")]=0;
+            char c[P*2],dp[64]="",bt[64]="";const char*tp=getenv("TMUX_PANE");
+            /* find bottom-most pane in THIS window ({bottom-right} resolves globally not per-window) */
+            if(tp){snprintf(c,P*2,"tmux list-panes -t %s -F '#{?pane_at_bottom,#{pane_id},}' 2>/dev/null|tr -d ' \\n'",tp);pcmd(c,bt,64);bt[strcspn(bt,"\n")]=0;}
+            snprintf(c,P*2,"tmux split-window -v -l 70%% -t '%s' -P -F '#{pane_id}' 'sh %s' 2>/dev/null",bt[0]?bt:(tp?tp:""),sp);pcmd(c,dp,64);dp[strcspn(dp,"\n")]=0;
             if(ts[0]&&dp[0]){char tp2[P];snprintf(tp2,P,"%s/a_test.sh",DDIR);FILE*tf=fopen(tp2,"w");
                 if(tf){fprintf(tf,"printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\nexec $SHELL\n",ts,ts);fclose(tf);
                     snprintf(c,P*2,"tmux split-window -v -t %s 'sh %s' 2>/dev/null",dp,tp2);(void)!system(c);}}}}
