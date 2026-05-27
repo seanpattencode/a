@@ -18,8 +18,7 @@ static void hub_load(void) {
 
 static void hub_save(hub_t *j) {
     char fn[P],buf[B];
-    struct timespec t;clock_gettime(CLOCK_REALTIME,&t);struct tm*tm=localtime(&t.tv_sec);
-    char ts[32];strftime(ts,32,"%Y%m%dT%H%M%S",tm);snprintf(fn,P,"%s/%s_%s.%09ld.txt",HD,j->n,ts,t.tv_nsec);
+    snprintf(fn,P,"%s/%s.txt",HD,j->n);
     int l=snprintf(buf,B,"Name: %s\nSchedule: %s\nPrompt: %s\nDevice: %s\nEnabled: %s\n",
         j->n,j->s,j->p,j->d,j->en?"true":"false");
     if(j->lr[0]) snprintf(buf+l,(size_t)(B-l),"Last-Run: %s\n",j->lr);
