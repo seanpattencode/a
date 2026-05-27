@@ -70,7 +70,7 @@ override fun onMeasure(ws:Int,hs:Int){val h=if(o)ms().size.coerceAtLeast(1)*200+
 class T(c:android.content.Context):android.view.View(c){
 private val h=Handler(Looper.getMainLooper())
 private var px:IntArray?=null
-private lateinit var bmp:Bitmap
+private var bmp:Bitmap?=null
 private var started=false
 private external fun nResize(w:Int,hh:Int)
 private external fun nFont(d:IntArray)
@@ -79,16 +79,15 @@ private external fun nTouch(a:Int,x:Float,y:Float)
 private external fun nStart(ld:String,fd:String)
 private external fun nStop()
 private external fun nDirty():Boolean
-private val tk=object:Runnable{override fun run(){if(::bmp.isInitialized&&nDirty())invalidate();h.postDelayed(this,16)}}
+private val tk=object:Runnable{override fun run(){if(bmp!=null&&nDirty())invalidate();h.postDelayed(this,16)}}
 override fun onAttachedToWindow(){super.onAttachedToWindow();h.post(tk)}
 override fun onDetachedFromWindow(){if(started)nStop();h.removeCallbacks(tk);super.onDetachedFromWindow()}
-override fun onSizeChanged(w:Int,hh:Int,ow:Int,oh:Int){
-if(::bmp.isInitialized)bmp.recycle()
-bmp=Bitmap.createBitmap(w,hh,Bitmap.Config.ARGB_8888)
-px=IntArray(w*hh);nResize(w,hh)
+override fun onSizeChanged(w:Int,h:Int,ow:Int,oh:Int){if(w*h<1)return
+bmp?.recycle();bmp=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
+px=IntArray(w*h);nResize(w,h)
 if(!started){nFont(atlas(56f));nStart(context.applicationInfo.nativeLibraryDir,context.filesDir.absolutePath);started=true}}
-override fun onDraw(c:Canvas){val a=px?:return;if(!::bmp.isInitialized)return
-nRender(a);bmp.setPixels(a,0,width,0,0,width,height);c.drawBitmap(bmp,0f,0f,null)}
+override fun onDraw(c:Canvas){val a=px?:return;val b=bmp?:return
+nRender(a);b.setPixels(a,0,width,0,0,width,height);c.drawBitmap(b,0f,0f,null)}
 override fun onTouchEvent(e:MotionEvent):Boolean{nTouch(e.action and 0xFF,e.x,e.y);invalidate();return true}
 private fun atlas(sz:Float):IntArray{
 val tf=try{Typeface.createFromAsset(context.assets,"mono.ttf")}catch(e:Exception){Typeface.MONOSPACE}
