@@ -225,6 +225,70 @@ if __name__ == "__main__":
         book = resolve_book(args[2] if len(args) > 2 else None)
         split_pdf(book, nocache=nocache)
         print(f"Split into {book / 'pages'}/")
+    elif cmd == "read":
+        # narrate book via the TTS APK on Android. resumes from /sdcard/Documents/book_pos_<name>.txt
+        # large books are sent in ~150KB sessions; re-run to advance.
+        import base64, re
+        b = resolve_book(args[2] if len(args) > 2 else None); name = b.name
+        txt = b / "output" / "explained.txt"
+        if txt.is_file(): text = txt.read_text()
+        else:
+            tx = sorted((b / "transcriptions").glob("*.txt"))
+            if not tx: print(f"no text content under {b}/output/ or {b}/transcriptions/"); sys.exit(1)
+            text = "\n\n".join(t.read_text() for t in tx)
+        on_phone = Path("/data/data/com.termux").is_dir()
+        pos_path = Path(f"/sdcard/Documents/book_pos_{name}.txt")
+        pos = 0
+        if on_phone and pos_path.is_file():
+            try: pos = int(pos_path.read_text().split("/")[0])
+            except: pos = 0
+        elif not on_phone:
+            r = subprocess.run(["adb","shell",f"cat {pos_path} 2>/dev/null"], capture_output=True, text=True)
+            try: pos = int(r.stdout.split("/")[0])
+            except: pos = 0
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        total = len(sentences)
+        if pos >= total: print(f"+ {name} fully read ({pos}/{total})"); sys.exit(0)
+        # push full text via file (debuggable APK + run-as bypasses scoped-storage); pass start=pos
+        import tempfile
+        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
+        tmp.write(text); tmp.close()
+        APK_FILE = "/data/data/com.spatten.ttsdumper/files/book.txt"
+        print(f">> {name}: full text {len(text)} chars, resume from sentence {pos}/{total}")
+        if on_phone:
+            subprocess.run(["cp", tmp.name, "/data/local/tmp/book.txt"], check=False)
+        else:
+            subprocess.run(["adb","push","-q",tmp.name,"/data/local/tmp/book.txt"], check=False)
+        sh = (lambda *xs: subprocess.run(list(xs), check=False)) if on_phone else (lambda *xs: subprocess.run(["adb","shell"] + list(xs), check=False))
+        sh("run-as", "com.spatten.ttsdumper", "mkdir", "-p", "files")
+        sh("run-as", "com.spatten.ttsdumper", "cp", "/data/local/tmp/book.txt", "files/book.txt")
+        sh("am","start","-n","com.spatten.ttsdumper/.HeadlessActivity",
+            "--es","file",APK_FILE, "--es","voice","en-gb-x-gbd-network",
+            "--ef","pitch","0.48", "--es","book",name, "--ei","start",str(pos))
+        Path(tmp.name).unlink(missing_ok=True)
+    elif cmd in ("push", "pull", "index"):
+        # cross-device library: rclone <-> a-gdrive:books/, line per book in adata/git/books/index.txt
+        IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
+        RC = "a-gdrive:books"
+        if cmd == "index":
+            txt = IDX.read_text()
+            subprocess.run(["column","-t","-s","\t"], input=txt, text=True) if txt.strip() else print(f"empty — try: a book push <name>")
+        elif cmd == "push":
+            b = resolve_book(args[2] if len(args) > 2 else None); name = b.name
+            # register first so the index reflects intent even if upload is slow/interrupted
+            existing = [l for l in IDX.read_text().splitlines() if l.startswith(f"{RC}/{name}\t")]
+            if not existing:
+                with open(IDX, "a") as f: f.write(f"{RC}/{name}\t{name}\t\t{time.strftime('%Y-%m-%d')}\n")
+                print(f"+ registered {name}")
+            print(f">> rclone copy {b} → {RC}/{name} (--transfers=20)")
+            subprocess.run(["rclone","copy",str(b),f"{RC}/{name}","--transfers=20","--progress"], check=False)
+        else:  # pull
+            if len(args) < 3: print("Usage: a book pull <substr>"); sys.exit(1)
+            q = args[2].lower(); m = next((l for l in IDX.read_text().splitlines() if q in l.lower()), None)
+            if not m: print(f"no match: {q}"); sys.exit(1)
+            src = m.split("\t")[0]; name = src.rsplit("/",1)[-1]
+            subprocess.run(["rclone","copy",src,str(DATA_DIR/name),"--progress"], check=False)
+            print(f"+ pulled {name} → {DATA_DIR/name}")
     else:
         p = DATA_DIR / cmd
         if p.is_dir() and list(p.glob("source.*")): cmd_show(cmd)

@@ -51,8 +51,8 @@ w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(thi
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
-val nv=T(this);val nt=N(this);val st=Stp(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
+val mb=S(this,listOf("Native","Web","Notes","Setup","Read").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
@@ -123,6 +123,47 @@ override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.Sp
 override fun onError(c:Int){msg="err $c";invalidate()}
 override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(b:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(c:Int,b:Bundle?){}
 }
+class Rdr(c:android.content.Context):android.view.View(c){
+private val p=Paint().apply{color=-1;textSize=60f;isAntiAlias=true;typeface=Typeface.SERIF}
+private val hp=Paint().apply{color=0xFFFFFF00.toInt();textSize=60f;isAntiAlias=true;typeface=Typeface.SERIF}
+private val pi=Paint().apply{color=0xFF888888.toInt();textSize=26f;isAntiAlias=true}
+private val bp=Paint().apply{color=0xFF222222.toInt()}
+private val tp=Paint().apply{color=0xFFFFFFFF.toInt();textSize=32f;textAlign=Paint.Align.CENTER;isAntiAlias=true}
+private var tts:android.speech.tts.TextToSpeech?=null
+private var sents:List<String> =listOf();private var spoken:Int =-1
+private external fun nInit(w:Int,h:Int,cpp:Int)
+private external fun nLoad(path:String,startPage:Int):Int
+private external fun nPage():String
+private external fun nTouch(act:Int,x:Float,y:Float):Int
+private external fun nGetPage():Int
+private external fun nGetTotal():Int
+companion object{init{try{System.loadLibrary("reader")}catch(e:Throwable){}}}
+override fun onSizeChanged(w:Int,h:Int,ow:Int,oh:Int){
+// average char width measured on a realistic sentence, not "M" which over-estimates
+val cw=p.measureText("the quick brown fox jumps over the lazy dog")/43f;val lh=p.fontSpacing
+val cpl=((w-80f)/cw).toInt();val lpp=((h-180f)/lh).toInt()
+nInit(w,h,cpl*lpp)
+val f=java.io.File(context.filesDir,"book.txt");if(f.exists())nLoad(f.absolutePath,0)}
+private fun sentencesOf(t:String):List<String> =t.split(Regex("(?<=[.!?])\\s+")).filter{it.isNotBlank()}
+override fun onDraw(c:Canvas){
+c.drawColor(0xFF000000.toInt())
+val t=nPage();sents=sentencesOf(t)
+val lh=p.fontSpacing;val mw=width-80f;var y=lh+40f;val btnY=height-110f
+for((si,s) in sents.withIndex()){val pp=if(si==spoken)hp else p;val ws=s.split(' ');var ln=StringBuilder()
+for(wd in ws){val test=if(ln.isEmpty())wd else "$ln $wd"
+if(pp.measureText(test)>mw&&ln.isNotEmpty()){if(y<btnY-lh)c.drawText(ln.toString(),40f,y,pp);y+=lh;ln=StringBuilder(wd)}else ln=StringBuilder(test)}
+if(ln.isNotEmpty()){if(y<btnY-lh)c.drawText(ln.toString(),40f,y,pp);y+=lh}
+y+=8f}
+c.drawRect(0f,btnY,width.toFloat(),height.toFloat(),bp)
+c.drawText("▶ speak page",width/2f,height-40f,tp)
+c.drawText("${nGetPage()+1}/${nGetTotal()}",40f,height-40f,pi)}
+private fun ensureTts(then:()->Unit){if(tts!=null){then();return}
+tts=android.speech.tts.TextToSpeech(context,android.speech.tts.TextToSpeech.OnInitListener{st->if(st==android.speech.tts.TextToSpeech.SUCCESS){val vs=tts!!.voices;if(vs!=null)for(v in vs)if(v.name=="en-gb-x-gbd-network"){tts!!.setVoice(v);break};tts!!.setPitch(0.48f)
+tts!!.setOnUtteranceProgressListener(object:android.speech.tts.UtteranceProgressListener(){override fun onStart(id:String){spoken=id.toInt();(context as Activity).runOnUiThread{invalidate()}};override fun onDone(id:String){};override fun onError(id:String){}});then()}})}
+private fun speakPage(){ensureTts{val ts=tts ?:return@ensureTts;ts.stop();for((i,s) in sents.withIndex()){val q=if(i==0)android.speech.tts.TextToSpeech.QUEUE_FLUSH else android.speech.tts.TextToSpeech.QUEUE_ADD;ts.speak(s,q,null,i.toString())}}}
+override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN&&e.y>height-110f){speakPage();return true}
+if(nTouch(e.action and 0xFF,e.x,e.y)!=0){spoken=-1;tts?.stop();invalidate()};return true}
+override fun onDetachedFromWindow(){super.onDetachedFromWindow();tts?.shutdown();tts=null}}
 '''
 NC=r'''#include <jni.h>
 #include <pthread.h>
@@ -1018,10 +1059,87 @@ JNIEXPORT jstring JNICALL Java_com_aios_a_NativeKB_getLabels(JNIEnv* e, jclass c
     buf[i] = 0; return (*e)->NewStringUTF(e, buf);
 }
 '''
+RDR_C=r'''// Reader - paginated text reader, kb-style native state + JNI bridges.
+#include <jni.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#define MAX_PAGES 65536
+static char* text = NULL; static int text_len = 0;
+static int page_off[MAX_PAGES]; static int n_pages = 0, cur = 0;
+static int W = 0, H = 0, chars_per_page = 4000;
+static void paginate(void) {
+    n_pages = 0;
+    if (!text || text_len <= 0) return;
+    int i = 0;
+    while (i < text_len && n_pages < MAX_PAGES) {
+        page_off[n_pages++] = i;
+        int target = i + chars_per_page;
+        if (target >= text_len) break;
+        // Prefer ending at sentence boundary near target to avoid mid-sentence visual cuts.
+        // Scan window [target-200, target] for ". " / "! " / "? " or "\n\n"; use latest hit.
+        int win = target - 200; if (win < i + 100) win = i + 100;
+        int cut = -1;
+        for (int j = target; j > win; j--) {
+            char c = text[j];
+            if (c == '\n' && j+1 < text_len && text[j+1] == '\n') { cut = j+2; break; }
+            if ((c == '.' || c == '!' || c == '?') && j+1 < text_len && isspace((unsigned char)text[j+1])) { cut = j+2; break; }
+        }
+        if (cut < 0) {
+            // fallback: any whitespace
+            cut = target;
+            while (cut > i && !isspace((unsigned char)text[cut])) cut--;
+            if (cut == i) cut = target;
+            while (cut < text_len && isspace((unsigned char)text[cut])) cut++;
+        }
+        i = cut;
+    }
+}
+#define RF(ret, name) JNIEXPORT ret JNICALL Java_com_aios_a_Rdr_##name
+RF(void, nInit)(JNIEnv* e, jclass c, jint w, jint h, jint cpp) { (void)e;(void)c; W=w; H=h; if(cpp>0) chars_per_page=cpp; paginate(); if(cur>=n_pages) cur = n_pages>0 ? n_pages-1 : 0; }
+RF(jint, nLoad)(JNIEnv* e, jclass c, jstring path, jint startPage) {
+    (void)c;
+    const char* p = (*e)->GetStringUTFChars(e, path, 0);
+    int fd = open(p, O_RDONLY);
+    (*e)->ReleaseStringUTFChars(e, path, p);
+    if (fd < 0) return 0;
+    struct stat st; if (fstat(fd, &st) < 0) { close(fd); return 0; }
+    if (text) munmap(text, text_len);
+    text = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (text == MAP_FAILED) { text=NULL; text_len=0; return 0; }
+    text_len = (int)st.st_size; paginate();
+    cur = (startPage>=0 && startPage<n_pages) ? startPage : 0;
+    return n_pages;
+}
+RF(jstring, nPage)(JNIEnv* e, jclass c) {
+    (void)c;
+    if (n_pages==0 || !text) return (*e)->NewStringUTF(e, "");
+    int s = page_off[cur], en = (cur+1<n_pages) ? page_off[cur+1] : text_len;
+    int len = en - s; if (len<=0) return (*e)->NewStringUTF(e, "");
+    static char* buf=NULL; static int buf_cap=0;
+    if (len+1>buf_cap) { free(buf); buf=malloc(len+1); buf_cap=len+1; }
+    memcpy(buf, text+s, len); buf[len]=0;
+    return (*e)->NewStringUTF(e, buf);
+}
+RF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
+    (void)e;(void)c;(void)y;
+    if (act != 0) return 0;
+    int prev = cur;
+    if (x < W/3.0f) { if (cur>0) cur--; } else { if (cur+1<n_pages) cur++; }
+    return cur != prev;
+}
+RF(jint, nGetPage)(JNIEnv* e, jclass c)  { (void)e;(void)c; return cur; }
+RF(jint, nGetTotal)(JNIEnv* e, jclass c) { (void)e;(void)c; return n_pages; }
+'''
 MXML=r'''<?xml version="1.0" encoding="utf-8"?>
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"/>
 '''
-CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\n'
+CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\nadd_library(reader SHARED reader.c)\ntarget_link_libraries(reader log)\n'
 MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/></application></manifest>'
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
 GS='pluginManagement{repositories{google();mavenCentral()};plugins{id("com.android.application") version "8.2.0";id("org.jetbrains.kotlin.android") version "1.9.22"}}\ndependencyResolutionManagement{repositories{google();mavenCentral()}}\ninclude(":app")\n'
@@ -1188,7 +1306,9 @@ def run():
             S.run(f"clang -shared {cf} -w -lm -o '{lso}' '{D}/launcher.c'&&patchelf --remove-rpath '{lso}'",shell=True,check=True)
             w(D+"/keyboard.c",KC);kso=sf+"/libkeyboard.so"
             S.run(f"clang -shared {cf} -w -o '{kso}' '{D}/keyboard.c'&&patchelf --remove-rpath '{kso}'",shell=True,check=True)
-        else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
+            w(D+"/reader.c",RDR_C);rso=sf+"/libreader.so"
+            S.run(f"clang -shared {cf} -w -o '{rso}' '{D}/reader.c'&&patchelf --remove-rpath '{rso}'",shell=True,check=True)
+        else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/reader.c",RDR_C);w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
         # Stage bundled bins + terminfo source (from a droid/droidtmux output)
         sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
