@@ -164,27 +164,48 @@ if __name__ == "__main__":
     args = [a for a in sys.argv if not a.startswith("--")]
 
     if len(args) < 2:
-        # omnibox: bottom-anchored live filter over the book index. Enter = read selection.
+        # omnibox: live filter over (1) books in index.txt, (2) the other subcommands.
+        # Selecting a book → read it. Selecting an action → prints its usage.
         IDX = ADATA / "git" / "books" / "index.txt"
         rows = [l for l in (IDX.read_text().splitlines() if IDX.exists() else []) if l.strip()]
-        if not rows:
-            cmd_list(); print("\nno books indexed — try: a book add <file>"); sys.exit(0)
-        disp = []
+        actions = [
+            ("a book add <file>",        "register a local file → upload to a-gdrive:books/, append to index.txt"),
+            ("a book push <name>",       "rclone copy adata/books/<name>/ to a-gdrive:books/<name>/"),
+            ("a book pull <substr>",     "rclone copy a-gdrive:books/<name>/ back to local adata/books/"),
+            ("a book read <name>",       "open in e -r at saved position; Ctrl-T speaks line; quit saves pos"),
+            ("a book index",             "print the books index (column-aligned)"),
+            ("a book transcribe <name>", "OCR PDF pages to text (calibre + claude)"),
+            ("a book translate <name>",  "translate pages to target language"),
+            ("a book explain <name>",    "annotate obscure terms in each page"),
+            ("a book chat <name>",       "interactive Q&A against the book's processed output"),
+            ("a book serve [start|stop]","calibre server on this device"),
+            ("a book sync",              "rclone bidirectional sync of adata/books/"),
+        ]
+        items = []
         for l in rows:
             parts = l.split("\t")
             name = parts[1] if len(parts) >= 2 else "?"
-            pos = (parts[4].strip() if len(parts) >= 5 else "") or "0"
-            disp.append(f"{name}\t{pos}")
+            pos  = (parts[4].strip() if len(parts) >= 5 else "") or "0"
+            items.append(f"📖 {name}\tpos {pos}\tread")
+        for label, desc in actions:
+            items.append(f"⚙  {label}\t{desc}\tact")
         if not shutil.which("fzf"):
-            for i, d in enumerate(disp): print(f"  {i}. {d.split(chr(9))[0]}  (pos {d.split(chr(9))[1]})")
-            try: pick = disp[int(input("# "))].split("\t")[0]
+            for i, it in enumerate(items):
+                cols = it.split("\t"); print(f"  {i:2}. {cols[0]:<40} {cols[1]}")
+            try: idx = int(input("# "))
             except: sys.exit(0)
+            cols = items[idx].split("\t")
         else:
-            r = subprocess.run(["fzf","--height","40%","--reverse","--prompt","book> ","--with-nth","1","--delimiter","\t","--info","inline","--header","Enter=read  Esc=cancel"], input="\n".join(disp), capture_output=True, text=True)
+            r = subprocess.run(["fzf","--height","60%","--reverse","--prompt","a book > ","--with-nth","1,2","--delimiter","\t","--info","inline",
+                "--header","books read on Enter; actions print usage. Esc cancels.","--ansi"],
+                input="\n".join(items), capture_output=True, text=True)
             if r.returncode != 0: sys.exit(0)
-            pick = r.stdout.strip().split("\t")[0]
-        sys.argv = sys.argv[:1] + ["read", pick]   # delegate to the read handler below
-        args = [a for a in sys.argv if not a.startswith("--")]
+            cols = r.stdout.strip().split("\t")
+        if cols[-1] == "read":
+            sys.argv = sys.argv[:1] + ["read", cols[0].lstrip("📖 ").strip()]
+            args = [a for a in sys.argv if not a.startswith("--")]
+        else:
+            print(cols[0].lstrip("⚙ ").strip()); print(f"  {cols[1]}"); sys.exit(0)
 
     cmd = args[1]
     if cmd == "list": cmd_list(show_all=True)
