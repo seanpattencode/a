@@ -79,8 +79,7 @@ static int cmd_config(int argc, char **argv) {
     if (argc > 3) {
         char val[B]=""; ajoin(val,B,argc,argv,3);
         if (!strcmp(val,"off")||!strcmp(val,"none")||!strcmp(val,"\"\"")||!strcmp(val,"''")) val[0]=0;
-        cfset(key, val);
-        load_cfg(); list_all(1, 1); tm_ensure_conf();
+        cfset(key, val); tm_ensure_conf();
         printf("✓ %s=%s\n", key, val[0] ? val : "(cleared)");
     } else printf("%s: %s\n", key, cfget(key));
     return 0;
@@ -110,7 +109,7 @@ static int cmd_prompt(int argc, char **argv) {
 static int cmd_add(int argc, char **argv) {
     init_db(); load_cfg();
     char *args[16]; int na = 0;
-    for (int i = 2; i < argc && na < 16; i++) if (strcmp(argv[i],"--global")) args[na++] = argv[i];
+    for (int i = 2; i < argc && na < 16; i++) args[na++] = argv[i];
     if (!na) { args[na++] = "."; }
     if (na >= 2 && !dexists(args[0])) {
         char *name=args[0], cmd[B]="";

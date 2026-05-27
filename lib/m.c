@@ -6,7 +6,6 @@
  * sysprompt: hardcoded M_SYS (m-only cmd contract). i.txt = single user-editable file, loaded by all agents. */
 
 static const char *M_SYS = "`a m` chat: emit <cmd>command</cmd> to run one-shot (cwd=m, 60s timeout). After </cmd>, STOP. Markdown ```bash/```sh blocks are for showing code only (NEVER executed). No Read/Write/Bash/LSP tools. Never emit ## user, ## assistant, ## tool output headers; markdown ## headings inside replies are fine.";
-#define MEF(ag) (strstr(ag,"codex")?"xhigh":"max")  /* per-agent max effort */
 static volatile pid_t g_cp = 0;
 static int g_halt = 0;
 static volatile sig_atomic_t g_rst = 0;
@@ -82,7 +81,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
     const char *ag = (ag_ov&&*ag_ov)?ag_ov:cfget("m_agent"); if (!*ag) ag = "claude";
     int is_api = !strcmp(ag,"api"), is_codex = !is_api && strstr(ag,"codex")!=0, is_gemini = !is_api && strstr(ag,"gemini")!=0;
     const char *md = (md_ov&&*md_ov)?md_ov:cfget("m_model"); if (!*md) md = is_codex ? "gpt-5.5" : is_gemini ? "gemini-2.5-flash" : is_api ? "claude-opus-4-5" : "opus";
-    const char *ef = getenv("M_EFFORT_OVR"); if(!ef||!*ef){ef=cfget("m_effort"); if(!*ef)ef=is_codex?"xhigh":"max";}
+    const char *ef = cfget("m_effort"); if (!*ef) ef = is_codex ? "xhigh" : "low";
     const char *tier = cfget("m_tier");
     int has_tier = is_codex && *tier && strcmp(tier,"default");
     char errp[P]; snprintf(errp,P,"%s/m_err.log",DDIR);
@@ -743,16 +742,16 @@ static int cmd_m(int c, char **v) {
                 else if(nsec<8){snprintf(sec[nsec].ag,32,"%s",t);snprintf(sec[nsec].md,32,"%s",cl+1);
                     snprintf(sec[nsec].tmp,P,"%s/m_sec_%d_%d.txt",DDIR,(int)getpid(),nsec); nsec++;}
                 ix++;} t=strtok(NULL," ");} } }
+        const char *_ef=cfget("m_effort"); if(!*_ef)_ef="low";
         /* fork secondaries ONCE per user turn; they see initial state, respond once */
         for(int s=0;s<nsec;s++){unlink(sec[s].tmp); pid_t w=fork();
-            if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1); setenv("M_EFFORT_OVR",MEF(sec[s].ag),1);
+            if(w==0){setenv("M_AGENT_OVR",sec[s].ag,1); setenv("M_MODEL_OVR",sec[s].md,1);
                 setenv("M_OUT_PATH",sec[s].tmp,1); setenv("M_NOECHO","1",1);
                 static char a2[64*1024],b2[8*1024]; mm_stream(sf,M_SYS,a2,sizeof a2,b2,sizeof b2); _exit(0);}
             sec[s].pid=w;}
-        if(prim_ag[0]){setenv("M_AGENT_OVR",prim_ag,1);setenv("M_MODEL_OVR",prim_md,1);setenv("M_EFFORT_OVR",MEF(prim_ag),1);}
-        else{unsetenv("M_AGENT_OVR");unsetenv("M_MODEL_OVR");unsetenv("M_EFFORT_OVR");}
+        if(prim_ag[0]){setenv("M_AGENT_OVR",prim_ag,1);setenv("M_MODEL_OVR",prim_md,1);}
+        else{unsetenv("M_AGENT_OVR");unsetenv("M_MODEL_OVR");}
         unsetenv("M_OUT_PATH"); unsetenv("M_NOECHO");
-        const char *_ef=prim_ag[0]?MEF(prim_ag):cfget("m_effort"); if(!*_ef)_ef="max";
         for (int i = 0; i < 10; i++) {
             m_status("thinking");
             const char *_ag=prim_ag[0]?prim_ag:cfget("m_agent"); if(!*_ag)_ag="claude";
@@ -763,7 +762,7 @@ static int cmd_m(int c, char **v) {
             if(i==0&&nsec){m_status("waiting on secondaries");
                 for(int s=0;s<nsec;s++){waitpid(sec[s].pid,NULL,0);
                     char *sc=readf(sec[s].tmp,NULL);
-                    if(sc&&*sc){char h2[80]; snprintf(h2,80,"\n## assistant [%s·%s·%s]\n",sec[s].ag,sec[s].md,MEF(sec[s].ag));
+                    if(sc&&*sc){char h2[80]; snprintf(h2,80,"\n## assistant [%s·%s·%s]\n",sec[s].ag,sec[s].md,_ef);
                         mm_w(sf,h2,"a"); mm_w(sf,sc,"a"); free(sc);}
                     unlink(sec[s].tmp);}}
             m_commit("a"); if (g_halt) break;

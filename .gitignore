@@ -30,6 +30,9 @@ __pycache__/
 # .gitignore makes the parent repo completely blind to it.
 adata/
 
+# Meta-agent: own gh repo, at root for easy access, blind to main repo
+/m/
+
 # C build artifacts
 *.o
 *.plist

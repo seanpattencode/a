@@ -110,7 +110,7 @@ static void tm_ensure_conf(void) {
         "set -g status 2\n"
         "set -g status-right \"\"\n"
         "set -g status-format[0] \"#[align=left,bg=default,fg=colour231,nobold]#[range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange]#[align=right]#[range=user|aa] a #[norange] #[range=user|new] Pane #[norange] #[range=user|win] Win #[norange]#[range=user|x] X #[norange] #[range=user|close]Close#[norange] #[range=user|menu] ... #[norange] #[range=user|kbd]Kb#[norange] \"\n"
-        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#[fg=#000000,bg=#ffffff,bold] #I:#W #[bg=default fg=white nobold] #{W:#{?window_active,,#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] }}\"\n"
+        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#[fg=white,bg=default,bold,overline,underline] #I:#W #[default,bg=default,fg=white,nobold] #{W:#{?window_active,,#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] }}\"\n"
         "bind -n M-Right if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
         "bind -n M-Left if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl p #W\"' previous-window\n"
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */

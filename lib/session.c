@@ -54,16 +54,20 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     return r;
 }
 
-/* a resume [mins]  spawn one tmux window per claude session touched in window. default 60. */
+/* a resume [mins]  spawn one tmux window per claude session + per `a m` chat touched in window. default 60. */
 static int cmd_resume(int c,char**v){perf_disarm();
     int mins=c>2?atoi(v[2]):60;if(mins<=0)mins=60;
     if(!getenv("TMUX")){fputs("x need tmux\n",stderr);return 1;}
-    char sh[B*2];snprintf(sh,sizeof sh,
+    char sh[B*4];snprintf(sh,sizeof sh,
       "n=0;for f in $(find %s/.claude/projects -name '*.jsonl' -mmin -%d 2>/dev/null);do "
       "s=${f##*/};s=${s%%.jsonl};"
       "w=$(grep -m1 -oE '\"cwd\":\"[^\"]+' \"$f\"|sed 's/.*\"cwd\":\"//');"
       "[ -d \"$w\" ]||continue;"
       "tmux new-window -d -n \"r-${w##*/}\" -c \"$w\" "
-      "\"claude --dangerously-skip-permissions --resume $s\"&&{ n=$((n+1));echo \"+ $w $s\" >&2; };"
-      "done;echo \"resumed $n in last %dm\" >&2",HOME,mins,mins);
+      "\"claude --dangerously-skip-permissions --resume $s\"&&{ n=$((n+1));echo \"+ claude $w $s\" >&2; };"
+      "done;"
+      "m=0;cd '%s/m' 2>/dev/null&&for f in $(find m.txt agent -name '*.txt' -mmin -%d 2>/dev/null|sort);do "
+      "tmux new-window -d \"a m $f\"&&{ m=$((m+1));echo \"+ m $f\" >&2; };"
+      "done;"
+      "echo \"resumed $n claude + $m m in last %dm\" >&2",HOME,mins,SDIR,mins,mins);
     return system(sh);}

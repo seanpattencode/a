@@ -22,6 +22,8 @@ firefox-nightly --new-tab "https://claude.ai/new" 2>/dev/null & disown
 sleep 6
 
 wtype -M ctrl -k 0 -m ctrl 2>/dev/null  # reset zoom to 100% so coords are stable across sway tile sizes
+
+. "$(dirname "$0")/_tm_check.sh"; tm_check "claude.ai" || exit 2
 sleep 1
 
 # 1. + menu + click Research's wide ancestor (chained in one eval — menu auto-

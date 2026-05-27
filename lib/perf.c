@@ -1,5 +1,5 @@
 static const char *BENCH_CMDS[] = {
-    "i","help","config","task","ls","add","agent","copy","done","docs",
+    "i","help","task","ls","add","agent","copy","done","docs",
     "hi","move","prompt","remove","repo","send","set","setup",
     "uninstall","watch",/* "x" kills tmux server, destroys active dev sessions */
     "e","kill","revert","deps","hub",
