@@ -172,7 +172,7 @@ static void mm_bash(const char *pty, const char *cmd, char *out, size_t sz) {
     (void)pty;
     char tp[P],sc[B*2]; snprintf(tp,P,"%s/m_transcript.log",DDIR);
     setenv("MMCMD",cmd,1);
-    snprintf(sc,B*2,"cd '%s/m'&&{ printf '\\n\\033[1;33m[%%s]$\\033[0m %%s\\n' \"$(date +%%T)\" \"$MMCMD\"|tee -a '%s';timeout 60 bash -c \"$MMCMD\" 2>&1|tee -a '%s'|perl -pe 's/\\e\\[[\\d;?<>=]*[A-Za-z@~]//g;s/\\e[()][AB012]//g;s/\\e[<=>]//g'|tail -50|sed 's/^/    /'; }",SDIR,tp,tp);
+    snprintf(sc,B*2,"cd '%s/m'&&{ printf '\\n\\033[1;33m[%%s]$\\033[0m %%s\\n' \"$(date +%%T)\" \"$MMCMD\"|tee -a '%s';setsid timeout -k 5 60 bash -c \"$MMCMD\" 2>&1|tee -a '%s'|perl -pe 's/\\e\\[[\\d;?<>=]*[A-Za-z@~]//g;s/\\e[()][AB012]//g;s/\\e[<=>]//g'|tail -50|sed 's/^/    /'; }",SDIR,tp,tp);
     pcmd(sc,out,sz);
 }
 
@@ -411,6 +411,7 @@ static int m_archive(int c, char **v) {
 
 static int m_reinit(const char *fn) {
     char c[P]; snprintf(c,P,"%s/m_file",DDIR); mm_w(c,fn,"w");
+    const char *e=getenv("M_PID"); if(e&&*e){kill(atoi(e),SIGUSR1); return 0;}
     snprintf(c,P,"%s/m_pid",DDIR); char *p=readf(c,NULL); if(p) kill(atoi(p),SIGUSR1); free(p); return 0;
 }
 static int m_restart(void){CWD(cd);char c[B];snprintf(c,B,"tmux respawn-window -k -c '%s' 'a m'",cd);(void)!system(c);return 0;}
@@ -669,7 +670,7 @@ static int cmd_m(int c, char **v) {
         (void)!system("tmux set -wg pane-scrollbars on 2>/dev/null"); tm_go(sn); return 0; }
     signal(SIGINT, m_sint); /* m_commit double-forks → init reaps; secondary waitpid stays reliable */
     { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
-    { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); }
+    { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); setenv("M_PID",pb,1); }
     char fnb[128]="m.txt";const char *fn=c>2?v[2]:fnb;
     char pf[P]; snprintf(pf,P,"%s/m_file",DDIR);
     if(c<=2){char*sp=readf(pf,NULL);if(sp&&*sp){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
@@ -692,11 +693,13 @@ static int cmd_m(int c, char **v) {
             if(g_ifd>=0) inotify_add_watch(g_ifd,sf,IN_CLOSE_WRITE);
 #endif
           }} free(sp);}
-        /* render: full m.txt — tmux scrollback retains scrolled-off lines so chat history is reachable.
-         * Sysprompt seeded ONLY into empty files; never modifies existing content so git pull can fast-forward. */
+        /* render m.txt; a_cat source goes to claude via --append-system-prompt-file (line 145), not in-file */
         { static char tb[262144]; size_t n=0; struct stat st;
           FILE *rf=fopen(sf,"r");
           if(rf){fstat(fileno(rf),&st); if(st.st_size>(off_t)sizeof tb)fseek(rf,st.st_size-(off_t)sizeof tb,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}
+          if(!n){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n",M_SYS); fclose(f);}
+            char cm[B]; snprintf(cm,B,"(cd '%s'&&a cat 3 >>'%s';printf '\\n## user\\n'>>'%s')",SDIR,sf,sf); (void)!system(cm);
+            rf=fopen(sf,"r"); if(rf){fstat(fileno(rf),&st); if(st.st_size>(off_t)sizeof tb)fseek(rf,st.st_size-(off_t)sizeof tb,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}}
           (void)!write(1,"\033[2J\033[H",7);
           tb[n]=0;
           for(char *o=tb,*e=tb+n;o<e;){char *nx=memchr(o,'\n',(size_t)(e-o));size_t l=nx?(size_t)(nx-o+1):(size_t)(e-o);
@@ -705,9 +708,7 @@ static int cmd_m(int c, char **v) {
               col = !memcmp(t,"user",4)?"\033[36m":!memcmp(t,"assistant",9)?"\033[1;35m":NULL;}
             if(col){(void)!write(1,col,strlen(col));(void)!write(1,o,l);(void)!write(1,"\033[0m",4);}
             else (void)!write(1,o,l);
-            o+=l;}
-          if(!n){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n",M_SYS); fclose(f);}
-            char cm[B]; snprintf(cm,B,"(cd '%s'&&a cat 3 >>'%s';printf '\\n## user\\n'>>'%s')",SDIR,sf,sf); (void)!system(cm);} }
+            o+=l;} }
         { char sp[P]; snprintf(sp,P,"%s/m_status",DDIR); char *s=readf(sp,NULL);
           if(s&&*s){s[strcspn(s,"\n")]=0; printf("\n[%s]",s);} free(s); }
         load_cfg();
@@ -759,11 +760,11 @@ static int cmd_m(int c, char **v) {
                     unlink(sec[s].tmp);}}
             m_commit("a"); if (g_halt) break;
             if (!bash[0]) break;
-            /* Lazy transcript viewer pane: one-shot exec, pane tails system-attested log (LLM can't fabricate). */
+            /* Lazy transcript viewer pane: one-shot exec, pane tails system-attested log (LLM can't fabricate).
+             * Debug via tmux send-keys to this m pane — there's only one input box so target is unambiguous. */
             if (!pty[0]) { char tp[P],sc[B]; snprintf(tp,P,"%s/m_transcript.log",DDIR); mm_w(tp,"","w");
               snprintf(sc,B,"tmux split-window -t $TMUX_PANE -dv -l 10 -P -F '#{pane_id}' 'exec tail -n 500 -f \"%s\"'",tp);
-              pcmd(sc,pty,64); pty[strcspn(pty,"\n")]=0;
-              snprintf(pf,P,"%s/m_pty",DDIR); mm_w(pf,pty,"w"); }
+              pcmd(sc,pty,64); pty[strcspn(pty,"\n")]=0; }
             m_status("running");
             {char th[64]; time_t tr=time(NULL); size_t hl=strftime(th,64,"\n## tool running %T\n",localtime(&tr));
              mm_w(sf,th,"a"); (void)!write(1,th,hl);}

@@ -235,9 +235,10 @@ static int cmd_ssh(int argc,char**argv){
             if(ts&&ts[0])snprintf(tx,256,"tmux attach -t %s 2>/dev/null||tmux new -A -s %s",ts,ts);
             else snprintf(tx,256,"tmux attach 2>/dev/null||tmux new -A -s a");
             snprintf(cs,B," 'bash -lc \"%s\" 2>/dev/null||exec bash -l'",tx);}
+        const char*tf=isatty(0)?"-tt":"-T";
         if(H[idx].jump[0]){char jhp[256],jport[8];ssh_parse(H[idx].jump,jhp,jport);
-            snprintf(opts,B,"-tt -oConnectTimeout=8 -oStrictHostKeyChecking=accept-new -oProxyCommand=\"sshpass -p '%s' ssh -W %%h:%%p -p %s -oStrictHostKeyChecking=accept-new '%s'\"",H[idx].jpw,jport,jhp);
-        }else snprintf(opts,B,"-tt -oConnectTimeout=2 -oStrictHostKeyChecking=accept-new");
+            snprintf(opts,B,"%s -oConnectTimeout=8 -oStrictHostKeyChecking=accept-new -oProxyCommand=\"sshpass -p '%s' ssh -W %%h:%%p -p %s -oStrictHostKeyChecking=accept-new '%s'\"",tf,H[idx].jpw,jport,jhp);
+        }else snprintf(opts,B,"%s -oConnectTimeout=2 -oStrictHostKeyChecking=accept-new",tf);
         int n=ssh_pre(c,(int)sizeof(c),H[idx].pw,opts,port,hp);
         n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),"%s",cs);
         if(!cs[0])printf("Connecting to %s...\n",H[idx].name);
