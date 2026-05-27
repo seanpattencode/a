@@ -273,9 +273,6 @@ static void _handle(int c){
         const char*bn=strrchr(SDIR,'/');bn=bn?bn+1:SDIR;
         char nm[64];int nl=snprintf(nm,64,"op-%s-%s",bn,pid);
         _sresp(c,200,"text/plain",nm,(size_t)nl);return;}
-    if(!strncmp(req,"GET /m ",7)){static const char M[]="{\"name\":\"a\",\"short_name\":\"a\",\"start_url\":\"/\",\"display\":\"standalone\",\"background_color\":\"#000\",\"theme_color\":\"#000\",\"icons\":[{\"src\":\"/i.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\"}]}";_sresp(c,200,"application/manifest+json",M,sizeof M-1);return;}
-    if(!strncmp(req,"GET /sw.js",10)){static const char S[]="self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());";_sresp(c,200,"application/javascript",S,sizeof S-1);return;}
-    if(!strncmp(req,"GET /i.svg",10)){static const char I[]="<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='#000'/><text x='96' y='140' text-anchor='middle' font-size='140' fill='#4af' font-family='monospace'>a</text></svg>";_sresp(c,200,"image/svg+xml",I,sizeof I-1);return;}
     _sresp(c,404,"text/plain","not found",9);
 }
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
