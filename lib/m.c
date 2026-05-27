@@ -461,6 +461,18 @@ static int m_pick(const char *cat,const char *const *items,int n,char *out,size_
     #undef CLR
 }
 static void m_menu(void);
+/* a m resume: pick by mtime desc, open in NEW tmux window so existing m keeps its file. */
+static int m_resume(void){perf_disarm();(void)!write(1,"\033[2J\033[H",7);
+    char cmd[B];snprintf(cmd,B,"cd '%s/m'&&ls -t m.txt agent/*.txt 2>/dev/null|head -30|while read f;do printf '%%s\\t%%s\\n' \"$f\" \"$(date -r \"$f\" '+%%m-%%d %%H:%%M' 2>/dev/null||stat -c %%y \"$f\"|cut -c1-16)\";done",SDIR);
+    static char buf[32768];pcmd(cmd,buf,sizeof buf);
+    static char ib[64][384];const char *ip[64];int n=0;
+    for(char *p=buf;*p&&n<64;){char *nl=strchr(p,'\n');if(nl)*nl=0;
+        if(*p){snprintf(ib[n],384,"%s",p);ip[n]=ib[n];n++;}if(!nl)break;p=nl+1;}
+    if(!n){fprintf(stderr,"no sessions in %s/m\n",SDIR);return 1;}
+    struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;
+    tcsetattr(0,TCSANOW,&r);char pick[384];int rc=m_pick("resume",ip,n,pick,sizeof pick);tcsetattr(0,TCSANOW,&o);
+    if(rc<=0)return 0;char *tab=strchr(pick,'\t');if(tab)*tab=0;
+    char sc[B];snprintf(sc,B,getenv("TMUX")?"tmux new-window 'a m %s'":"a m %s",pick);return system(sc);}
 /* raw-mode line reader: handles BSpace on every char (incl first), bracketed paste, '/' as instant menu hotkey. */
 static size_t m_read_line(char *buf,size_t sz){
     struct termios o,r; tcgetattr(0,&o); r=o;
@@ -510,6 +522,7 @@ static void m_menu(void){
      * gemini cli commented out: being phased out for antigravity, no single-output mode yet. */
     static const char *const ops[]={
         "new\tnew chat, fresh file",
+        "resume\tpick past session, new tmux window",
         "import\timport latest claude code chat",
         "main\topen main m.txt",
         "restart\trespawn this window",
@@ -659,6 +672,7 @@ static int cmd_m(int c, char **v) {
     if (c > 2 && !strcmp(v[2], "restart")) return m_restart();
     if (c > 2 && !strcmp(v[2], "main")) return m_main();
     if (c > 2 && !strcmp(v[2], "new")) return m_new();
+    if (c > 2 && !strcmp(v[2], "resume")) return m_resume();
     if (c > 2 && !strcmp(v[2], "import")) return m_import(c, v);
     if (getenv("M_IN")) { puts("already in a m (nested chat blocked) — use: a m archive | panel | reset"); return 1; }
     perf_disarm(); /* interactive: subcommands above stay perf-armed; the chat loop runs unbounded */
