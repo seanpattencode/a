@@ -184,7 +184,7 @@ static int cmd_update(int argc, char **argv) { AB;
     char c[B],oh[64]={0},nh[64]={0};
     snprintf(c,B,"git -C '%s' rev-parse HEAD 2>/dev/null",SDIR);pcmd(c,oh,64);oh[strcspn(oh,"\n")]=0;
     snprintf(c,B,"git -C '%s' pull --ff-only 2>/dev/null",SDIR);
-    if(system(c)!=0){puts("Diverged — rebasing...");snprintf(c,B,"git -C '%s' pull --rebase 2>/dev/null",SDIR);(void)!system(c);}
+    if(system(c)!=0){printf("Diverged — destroy local changes & hard-reset to origin? [y/N] ");fflush(stdout);if(getchar()!='y'){puts("Aborted");return 1;}snprintf(c,B,"cd '%s'&&git fetch -q&&git reset --hard @{u}&&git clean -fd",SDIR);(void)!system(c);}
     snprintf(c,B,"git -C '%s' rev-parse HEAD 2>/dev/null",SDIR);pcmd(c,nh,64);nh[strcspn(nh,"\n")]=0;
     int ch=strcmp(oh,nh)!=0;
     /* no-op: up to date + binary exists */
