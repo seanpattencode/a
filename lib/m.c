@@ -706,7 +706,7 @@ static int cmd_m(int c, char **v) {
           FILE *rf=fopen(sf,"r");
           if(rf){fstat(fileno(rf),&st); if(st.st_size>(off_t)sizeof tb)fseek(rf,st.st_size-(off_t)sizeof tb,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}
           if(!n){FILE *f=fopen(sf,"w"); if(f){fprintf(f,"## system\n%s\n",M_SYS); fclose(f);}
-            char cm[B]; snprintf(cm,B,"(cd '%s'&&a cat 3 >>'%s';printf '\\n## user\\n'>>'%s')",SDIR,sf,sf); (void)!system(cm);
+            char cm[B]; snprintf(cm,B,"f='%s';cd '%s'&&{ printf '## a-loaded context (refreshed per LLM turn from disk; visible here in tmux for human inspection; stripped from stdin by awk; LLM sees same content via --append-system-prompt-file):\\n- a_cat.txt: codebase snapshot (regen via `a cat 3`)\\n- i.txt: persistent identity. Modifications require explicit human approval only.\\n\\n## a_cat.txt:\\n';a cat 3;printf '\\n==> i.txt <==\\n';cat m/i.txt;printf '\\n## a-loaded-end\\n## user\\n'; } >>\"$f\"",sf,SDIR); (void)!system(cm);
             rf=fopen(sf,"r"); if(rf){fstat(fileno(rf),&st); if(st.st_size>(off_t)sizeof tb)fseek(rf,st.st_size-(off_t)sizeof tb,SEEK_SET); n=fread(tb,1,sizeof tb,rf); fclose(rf);}}
           (void)!write(1,"\033[2J\033[H",7);
           tb[n]=0;
