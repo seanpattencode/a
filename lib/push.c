@@ -1,16 +1,15 @@
-#define PUSHCMD "{ git push -u origin HEAD 2>&1||{ git pull --rebase origin HEAD 2>/dev/null&&git push -u origin HEAD 2>&1;}; }"
+#define PUSHCMD "{ git push -u origin HEAD 2>&1||{ git pull --rebase --autostash origin HEAD 2>/dev/null&&git push -u origin HEAD 2>&1;}; }"
 static int cmd_push(int argc, char **argv) { AB;
     char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
     if(argc>2&&!strcmp(argv[2],"-f")){
-        if(!git_in_repo(cwd)){puts("x not a git repo");return 1;}
-        char cp[P];commit_path(cp);char*cs=readf(cp,NULL);
-        if(!cs){puts("x no pending focused commit (run after a done)");return 1;}
-        char*nl=strchr(cs,'\n');if(!nl){free(cs);puts("x bad commit state");return 1;}
-        *nl=0;char*files=nl+1;files[strcspn(files,"\n")]=0;
-        char c[B*2];snprintf(c,B*2,"cd '%s'&&git add -- %s&&git commit -m \"%s\" -- %s&&" PUSHCMD,cwd,files,cs,files);
-        char out[B];pcmd(c,out,B);
-        if(strstr(out,"->")||strstr(out,"up-to-date")||strstr(out,"Everything")){unlink(cp);printf("✓ %s\n",cs);free(cs);return 0;}
-        printf("✗ push failed\n%s\n",out);free(cs);return 1;
+        char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
+        if(!nl){puts("x no .commit (after a done)");free(cs);return 1;}
+        *nl=0;char*f=nl+1;f[strcspn(f,"\n")]=0;char c[B*2],vo[B];
+        snprintf(c,B*2,"cd '%s'&&git add -- %s&&git commit -m \"%s\" -- %s&&" PUSHCMD,cwd,f,cs,f);pcmd(c,vo,B);
+        snprintf(c,B*2,"cd '%s'&&git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo https://github.com/$u/commit/$(git rev-parse --short HEAD);}",cwd);
+        pcmd(c,vo,B);vo[strcspn(vo,"\n")]=0;
+        if(vo[0]){unlink(cp);printf("✓ %s\n  github: %s\n",cs,vo);}else printf("✗ %s NOT on origin; re-push\n",cs);
+        free(cs);return vo[0]?0:1;
     }
     char msg[B]="";
     if(argc>2)ajoin(msg,B,argc,argv,2);
@@ -193,9 +192,8 @@ static int cmd_diff(int argc, char **argv) { AB;
         ti+=fs[j].al;td+=fs[j].dl;ta+=fs[j].ab;tb+=fs[j].db;}
     HR; if(ws)printf("%s: %d file%s, %+d lines, %+d tok (%+.3f%% of repo)\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4,(ta-tb)*100.0/ws);
     else printf("%s: %d file%s, %+d lines, %+d tok\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4);
-    if(!filt){char cp[P];commit_path(cp);char*cs=readf(cp,NULL);
-     if(cs){char*nl=strchr(cs,'\n');if(nl)*nl=0;
-        printf("\n\033[1;36mcommit:\033[0m %s\n\033[1;32mpush focused: a push -f\033[0m\n",cs);free(cs);}}
+    if(!filt){char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
+     if(nl){*nl=0;printf("\n\033[36mcommit:\033[0m %s \033[32m→ a push -f\033[0m\n",cs);}free(cs);}
     if(!fk&&!sel&&!filt) puts("\ndiff # = last #");
     return 0;
     #undef FS
