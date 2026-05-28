@@ -154,6 +154,7 @@ static void _ws_term(int c,const char*target){
     pid_t p=fork();
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",0);
+        if(target&&!strcmp(target,"cloudadd"))execlp("a","a","cloud",(char*)0);
         if(target&&target[0])execlp("a","a","tmux",target,(char*)0);
         else execlp("a","a","tmux",(char*)0);
         char*b[]={"bash","-l",NULL};execvp("bash",b);
@@ -171,12 +172,16 @@ static void _ws_term(int c,const char*target){
     kill(p,SIGHUP);close(m);waitpid(p,NULL,0);
 }
 static char*_cloud_html(void){
-    FILE*p=popen("for r in $(rclone listremotes);do a=$(rclone about \"$r\" 2>/dev/null);u=$(echo \"$a\"|awk '/^Used:/{print $2,$3}');t=$(echo \"$a\"|awk '/^Total:/{print $2,$3}');k=$(rclone config show \"${r%:}\"|grep -o '\"access_token\":\"[^\"]*\"'|head -1|cut -d'\"' -f4);e=$(curl -s 'https://www.googleapis.com/drive/v3/about?fields=user' -H \"Authorization: Bearer $k\"|grep -o '\"emailAddress\": *\"[^\"]*\"'|cut -d'\"' -f4);echo \"$r|$e|$u / $t\";done","r");
+    char cmd[P];snprintf(cmd,P,"sh '%s/lib/cloudls.sh'",SDIR);FILE*p=popen(cmd,"r");
     char rl[4096]={0};if(p){(void)!fread(rl,1,4095,p);pclose(p);}
     char*h=malloc(16384);int hl=snprintf(h,16384,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{display:block;text-decoration:none;color:inherit;cursor:pointer}a:hover div{background:#111}div{padding:14px;border-bottom:1px solid #222}.e{font-weight:600}.s{color:#888;font-size:13px}.o{display:inline-block;margin-top:8px;background:#1a73e8;color:#fff;border-radius:6px;padding:6px 12px;font-size:14px}</style><h3 style=color:#888>Cloud storage</h3>");
     for(char*l=rl,*nl;(nl=strchr(l,'\n'));l=nl+1){*nl=0;if(!*l)continue;
-        char*e=strchr(l,'|'),*s=e?strchr(e+1,'|'):0;if(e)*e++=0;if(s)*s++=0;
-        hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"https://drive.google.com/drive/u/0/?authuser=%s\" target=_blank><div><span class=e>%s</span><br><span class=s>%s</span><br><span class=o>Open Google Drive</span></div></a>",e?e:"",e?e:"",s?s:"");}
+        char*ty=strchr(l,'|'),*id=0,*s=0;if(ty)*ty++=0;if(ty)id=strchr(ty,'|');if(id)*id++=0;if(id)s=strchr(id,'|');if(s)*s++=0;
+        int icl=ty&&!strcmp(ty,"iclouddrive");char url[256];
+        if(icl)snprintf(url,256,"https://www.icloud.com/iclouddrive/");
+        else snprintf(url,256,"https://drive.google.com/drive/u/0/?authuser=%s",id&&*id?id:"");
+        hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"%s\" target=_blank><div><span class=e>%s</span><br><span class=s>%s</span><br><span class=o>%s</span></div></a>",url,id&&*id?id:l,s?s:"",icl?"Open iCloud Drive":"Open Google Drive");}
+    hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"/op?w=cloudadd\"><div><span class=o style=background:#34a853>+ Add cloud service</span></div></a>");
     return h;}
 static void _handle(int c){
     static char req[262144];int n=0;
@@ -264,7 +269,7 @@ static void _handle(int c){
             if(pf[0].revents&POLLIN){char b[4096];while(read(ifd,b,4096)>0){}DEMIT;}}
         close(ifd);close(c);_exit(0);}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
-        const char*qw=strstr(req,"?w=");int idx=qw?atoi(qw+3):-1;
+        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3]))?atoi(qw+3):-1;
         if(idx>=0){char tc[256];
             snprintf(tc,256,"p=$(tmux display-message -t a:%d -p '#{pane_pid}' 2>/dev/null);c=$(cat /proc/$p/task/$p/children 2>/dev/null|cut -d' ' -f1);[ -n \"$c\" ]&&cat /proc/$c/comm 2>/dev/null",idx);
             FILE*pp=popen(tc,"r");char nm[64]={0};
