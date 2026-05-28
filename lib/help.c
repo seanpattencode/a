@@ -184,9 +184,18 @@ static int cmd_done(int argc,char**argv){AB;
         snprintf(sp,P,"%s/a_done.sh",DDIR);FILE*sf=fopen(sp,"w");
         if(sf){fputs("echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff\n",sf);
             if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
-            if(ts[0])fprintf(sf,"echo;printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\n",ts,ts);
-            if(dl[0])fputs("echo;printf '\\033[1;32mpush these focused changes? [y] \\033[0m';read -rsn1 k </dev/tty;echo;[ \"$k\" = y ]&&a push -f\n",sf);
-            fputs("echo;printf '\\033[2mpress any key to close\\033[0m';read -rsn1 </dev/tty\n",sf);fclose(sf);
+            char vp[P];snprintf(vp,P,"%s/a_verify.sh",DDIR);
+            if(ts[0]){FILE*vf=fopen(vp,"w");if(vf){fprintf(vf,"printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\nexec ${SHELL:-bash}\n",ts,ts);fclose(vf);}}
+            if(ts[0])fprintf(sf,"echo;printf '\\033[1;33m=== [r] runs ===\\033[0m\\n  ';cat<<'A_DONE'\n%s\nA_DONE\n",ts);
+            else fputs("echo;printf '\\033[1;33m=== [r] runs ===\\033[0m \\033[2mno command to run\\033[0m\\n'\n",sf);
+            char m[256]="";int mo=0;
+            if(dl[0])mo+=snprintf(m+mo,(size_t)(256-mo),"\\033[1;32m[y]\\033[0m push  ");
+            if(ts[0])mo+=snprintf(m+mo,(size_t)(256-mo),"\\033[1;36m[r]\\033[0m run in tmux window  ");
+            snprintf(m+mo,(size_t)(256-mo),"\\033[2many key close\\033[0m");
+            fprintf(sf,"printf '%s ';read -rsn1 k </dev/tty;echo\n",m);
+            if(dl[0])fputs("[ \"$k\" = y ]&&{ a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sf);
+            if(ts[0])fprintf(sf,"[ \"$k\" = r ]&&tmux neww -n verify 'sh %s'\n",vp);
+            fclose(sf);
             char c[P*2];const char*tp=getenv("TMUX_PANE");
             /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */
             if(tp){snprintf(c,P*2,"tmux list-panes -t %s -F '#{pane_id}'|while read p;do [ \"$p\" != \"%s\" ]&&tmux kill-pane -t \"$p\" 2>/dev/null;done",tp,tp);(void)!system(c);}
