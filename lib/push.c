@@ -1,5 +1,17 @@
+#define PUSHCMD "{ git push -u origin HEAD 2>&1||{ git pull --rebase origin HEAD 2>/dev/null&&git push -u origin HEAD 2>&1;}; }"
 static int cmd_push(int argc, char **argv) { AB;
     char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
+    if(argc>2&&!strcmp(argv[2],"-f")){
+        if(!git_in_repo(cwd)){puts("x not a git repo");return 1;}
+        char cp[P];commit_path(cp);char*cs=readf(cp,NULL);
+        if(!cs){puts("x no pending focused commit (run after a done)");return 1;}
+        char*nl=strchr(cs,'\n');if(!nl){free(cs);puts("x bad commit state");return 1;}
+        *nl=0;char*files=nl+1;files[strcspn(files,"\n")]=0;
+        char c[B*2];snprintf(c,B*2,"cd '%s'&&git add -- %s&&git commit -m \"%s\" -- %s&&" PUSHCMD,cwd,files,cs,files);
+        char out[B];pcmd(c,out,B);
+        if(strstr(out,"->")||strstr(out,"up-to-date")||strstr(out,"Everything")){unlink(cp);printf("✓ %s\n",cs);free(cs);return 0;}
+        printf("✗ push failed\n%s\n",out);free(cs);return 1;
+    }
     char msg[B]="";
     if(argc>2)ajoin(msg,B,argc,argv,2);
     else snprintf(msg, B, "Update %s", bname(cwd));
@@ -39,7 +51,6 @@ static int cmd_push(int argc, char **argv) { AB;
     char ok[P],ef[P],c[B*2];struct stat st;
     snprintf(ok,P,"%s/logs/push.ok",DDIR);snprintf(ef,P,"%s/logs/push.err",DDIR);
     {char*e=readf(ef,NULL);if(e){unlink(ef);unlink(ok);printf("✗ %s\n",e);free(e);}}
-    #define PUSHCMD "{ git push -u origin HEAD 2>&1||{ git pull --rebase origin HEAD 2>/dev/null&&git push -u origin HEAD 2>&1;}; }"
     if (stat(ok, &st) == 0 && time(NULL) - st.st_mtime < 600) {
         snprintf(c,sizeof(c),"cd '%s'&&git add -A&&git commit -m \"%s\" --allow-empty 2>/dev/null&&"
             "{ " PUSHCMD "&&touch '%s'; }||echo fail>'%s'",cwd,msg,ok,ef);
@@ -106,7 +117,9 @@ static int cmd_pull(int argc, char **argv) { AB;
 }
 
 static int cmd_diff(int argc, char **argv) { AB;
-    const char *sel = argc > 2 ? argv[2] : NULL;
+    const char *sel = (argc>2&&strcmp(argv[2],"--"))?argv[2]:NULL;
+    char ps[B]="";for(int i=2;i<argc;i++)if(!strcmp(argv[i],"--")){int pl=snprintf(ps,B," --");for(int j=i+1;j<argc;j++)pl+=snprintf(ps+pl,(size_t)(B-pl)," '%s'",argv[j]);break;}
+    int filt=ps[0]!=0;
     /* Token history mode */
     if (sel && sel[0] >= '0' && sel[0] <= '9') {
         int n = atoi(sel); char c[256]; snprintf(c, 256, "git log -%d --pretty=%%H\\ %%cd\\ %%s --date=format:%%I:%%M%%p", n);
@@ -161,15 +174,15 @@ static int cmd_diff(int argc, char **argv) { AB;
         char tgt[256]; snprintf(tgt,256,"origin/%s",sel?sel:wt?"main":br);
         char ts[64]; pcmd("git log -1 --format=%cd --date=format:'%Y-%m-%d %I:%M:%S %p' 2>/dev/null",ts,64); ts[strcspn(ts,"\n")]=0;
         if(sel)printf("%s -> origin/%s\n",br,sel);else printf("%s\n%s -> %s\n%s\n",cwd,br,tgt,ts);
-        {char c[B];snprintf(c,B,"git diff '%s..HEAD' 2>/dev/null",tgt);DS(c);}
-        {char c[B];snprintf(c,B,"git diff HEAD 2>/dev/null");DS(c);}
-        char ut[B]; pcmd("git ls-files --others --exclude-standard 2>/dev/null",ut,B);
+        {char c[B];snprintf(c,B,"git diff '%s..HEAD' 2>/dev/null%s",tgt,ps);DS(c);}
+        {char c[B];snprintf(c,B,"git diff HEAD 2>/dev/null%s",ps);DS(c);}
+        char ut[B],uc[B];snprintf(uc,B,"git ls-files --others --exclude-standard 2>/dev/null%s",ps);pcmd(uc,ut,B);
         if(ut[0]){printf("\nUntracked:\n");char*p=ut;while(*p){char*e=strchr(p,'\n');if(e)*e=0;if(*p){
             printf("  \033[48;2;26;84;42m+ %s\033[0m\n",p);size_t sz;char*d=readf(p,&sz);
             if(d){int nl=1;for(size_t j=0;j<sz;j++)if(d[j]=='\n')nl++;FS(p);if(cf>=0){fs[cf].al=nl;fs[cf].ab=(int)sz;}free(d);}
         }if(e)p=e+1;else break;}}
         if(wt&&!nf){puts("No changes");return 0;}
-        {char c[B],o[32];snprintf(c,B,"git ls-tree -r -l '%s'|awk '{s+=$4}END{print s}'",tgt);pcmd(c,o,32);ws=atol(o);}
+        {char c[B],o[32];snprintf(c,B,"git ls-tree -r -l '%s' 2>/dev/null|awk '{s+=$4}END{print s}'",tgt);pcmd(c,o,32);ws=atol(o);}
     }
     for(int j=0;j<nf;j++){struct stat st;if(!stat(fs[j].name,&st))fs[j].sb=(int)st.st_size-fs[j].ab+fs[j].db;}
     if(!nf){puts("No changes");return 0;}
@@ -180,7 +193,10 @@ static int cmd_diff(int argc, char **argv) { AB;
         ti+=fs[j].al;td+=fs[j].dl;ta+=fs[j].ab;tb+=fs[j].db;}
     HR; if(ws)printf("%s: %d file%s, %+d lines, %+d tok (%+.3f%% of repo)\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4,(ta-tb)*100.0/ws);
     else printf("%s: %d file%s, %+d lines, %+d tok\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4);
-    if(!fk&&!sel) puts("\ndiff # = last #");
+    if(!filt){char cp[P];commit_path(cp);char*cs=readf(cp,NULL);
+     if(cs){char*nl=strchr(cs,'\n');if(nl)*nl=0;
+        printf("\n\033[1;36mcommit:\033[0m %s\n\033[1;32mpush focused: a push -f\033[0m\n",cs);free(cs);}}
+    if(!fk&&!sel&&!filt) puts("\ndiff # = last #");
     return 0;
     #undef FS
     #undef DS

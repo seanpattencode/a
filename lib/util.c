@@ -35,6 +35,9 @@ static void writef(const char *p, const char *data) {
     FILE *f = fopen(p, "w"); if (f) { fputs(data, f); fclose(f); }
 }
 
+/* per-cwd commit-suggestion state path: DDIR/commit_<escaped-cwd> (no work-repo pollution; scopes parallel jobs) */
+static void commit_path(char*o){CWD(w);int n=snprintf(o,P,"%s/commit_",DDIR);for(char*p=w;*p&&n<P-1;p++)o[n++]=*p=='/'?'_':*p;o[n]=0;}
+
 static int pcmd(const char *cmd, char *out, int sz) {
     if (out) out[0] = 0;
     FILE *f = popen(cmd, "r"); if (!f) return -1;
