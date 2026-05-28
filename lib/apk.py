@@ -52,7 +52,7 @@ webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:Console
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}},{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
