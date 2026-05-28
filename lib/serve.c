@@ -173,10 +173,10 @@ static void _ws_term(int c,const char*target){
 static char*_cloud_html(void){
     FILE*p=popen("for r in $(rclone listremotes);do a=$(rclone about \"$r\" 2>/dev/null);u=$(echo \"$a\"|awk '/^Used:/{print $2,$3}');t=$(echo \"$a\"|awk '/^Total:/{print $2,$3}');k=$(rclone config show \"${r%:}\"|grep -o '\"access_token\":\"[^\"]*\"'|head -1|cut -d'\"' -f4);e=$(curl -s 'https://www.googleapis.com/drive/v3/about?fields=user' -H \"Authorization: Bearer $k\"|grep -o '\"emailAddress\": *\"[^\"]*\"'|cut -d'\"' -f4);echo \"$r|$e|$u / $t\";done","r");
     char rl[4096]={0};if(p){(void)!fread(rl,1,4095,p);pclose(p);}
-    char*h=malloc(16384);int hl=snprintf(h,16384,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}div{padding:12px;border-bottom:1px solid #222}b{color:#4af}.s{color:#888;font-size:13px}</style><h3 style=color:#888>cloud remotes</h3>");
+    char*h=malloc(16384);int hl=snprintf(h,16384,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{display:block;text-decoration:none;color:inherit;cursor:pointer}a:hover div{background:#111}div{padding:14px;border-bottom:1px solid #222}.e{font-weight:600}.s{color:#888;font-size:13px}.o{display:inline-block;margin-top:8px;background:#1a73e8;color:#fff;border-radius:6px;padding:6px 12px;font-size:14px}</style><h3 style=color:#888>Cloud storage</h3>");
     for(char*l=rl,*nl;(nl=strchr(l,'\n'));l=nl+1){*nl=0;if(!*l)continue;
         char*e=strchr(l,'|'),*s=e?strchr(e+1,'|'):0;if(e)*e++=0;if(s)*s++=0;
-        hl+=snprintf(h+hl,(size_t)(16384-hl),"<div>\xe2\x98\x81 %s<br><b>%s</b> <span class=s>%s</span></div>",l,e?e:"",s?s:"");}
+        hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"https://drive.google.com/drive/u/0/?authuser=%s\" target=_blank><div><span class=e>%s</span><br><span class=s>%s</span><br><span class=o>Open Google Drive</span></div></a>",e?e:"",e?e:"",s?s:"");}
     return h;}
 static void _handle(int c){
     static char req[262144];int n=0;
