@@ -22,7 +22,7 @@ static int ssh_idx(const char*a,const void*H_,int nh){
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
-    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],path[P];}host_t;
+    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],path[P];}host_t;
     host_t H[32];int nh=0,arc=0;
     char paths[32][P];int np=listdir(dir,paths,32);
     for(int i=np-1;i>=0&&nh<32;i--){
@@ -35,6 +35,7 @@ static int cmd_ssh(int argc,char**argv){
         snprintf(H[nh].pw,256,"%s",p?p:"");
         snprintf(H[nh].jump,256,"%s",j?j:"");
         snprintf(H[nh].jpw,256,"%s",jp?jp:"");
+        {const char*fb=kvget(&kv,"Fallback");snprintf(H[nh].fb,128,"%s",fb?fb:"");}
         snprintf(H[nh].path,P,"%s",paths[i]);nh++;}
     const char*sub=argc>2?argv[2]:NULL;
     /* list */
@@ -219,10 +220,10 @@ static int cmd_ssh(int argc,char**argv){
     else{for(int i=0;i<nh;i++)if(strstr(H[i].name,sub)){idx=i;break;}}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
-    /* fast TCP probe; on fail switch to <name>-relay if it exists */
+    /* fast TCP probe; on fail switch to explicit Fallback entry (else <name>-relay) */
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
         snprintf(pb,B,"nc -z -w1 %s %s 2>/dev/null",ph,port);
-        if(system(pb)){char rn[160];snprintf(rn,160,"%s-relay",H[idx].name);
+        if(system(pb)){char rn[160];snprintf(rn,160,"%s",H[idx].fb[0]?H[idx].fb:"");if(!rn[0])snprintf(rn,160,"%s-relay",H[idx].name);
             for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){idx=i;ssh_parse(H[idx].host,hp,port);break;}}}
     if(!H[idx].pw[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");
