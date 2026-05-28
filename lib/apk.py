@@ -583,10 +583,10 @@ class Home : Activity() {
     override fun onResume() { super.onResume(); nResume(); if (::bmp.isInitialized) v.invalidate(); ex.execute { scan() } }
 
     private fun atlas(sz: Float): IntArray {
-        val p = Paint().apply { textSize = sz; color = -1; isAntiAlias = true; typeface = Typeface.MONOSPACE }
+        val p = Paint().apply { textSize = sz; color = -1; isAntiAlias = true; typeface = Typeface.MONOSPACE; textAlign = Paint.Align.CENTER }
         val cw = p.measureText("M").toInt() + 1; val ch = (-p.ascent() + p.descent()).toInt() + 1
         val b = Bitmap.createBitmap(cw * 95, ch, Bitmap.Config.ARGB_8888)
-        Canvas(b).let { c -> for (i in 0 until 95) c.drawText(((32+i).toChar()).toString(), (i*cw).toFloat(), -p.ascent(), p) }
+        Canvas(b).let { c -> for (i in 0 until 95) { c.save(); c.clipRect(i*cw, 0, (i+1)*cw, ch); c.drawText(((32+i).toChar()).toString(), (i*cw + cw/2).toFloat(), -p.ascent(), p); c.restore() } }
         val r = IntArray(2 + cw * 95 * ch); r[0] = cw; r[1] = ch
         b.getPixels(r, 2, cw * 95, 0, 0, cw * 95, ch); b.recycle(); return r
     }
