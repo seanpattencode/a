@@ -227,11 +227,14 @@ if(Build.VERSION.SDK_INT>=34)startForeground(1,nt,android.content.pm.ServiceInfo
 val s=(resources.displayMetrics.density*64).toInt();val px=IntArray(s*s);render(px,s,s)
 val bmp=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);bmp.setPixels(px,0,s,0,0,s,s)
 val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager
-fun mk(y:Int,tint:Int,act:()->Unit):View{val w=ImageView(this);w.setImageBitmap(bmp);if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP)
- w.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);act();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();true};else->false}}
- val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
- lp.gravity=Gravity.TOP or Gravity.START;lp.x=40;lp.y=y;wm.addView(w,lp);return w}
-vs=listOf(mk(300,0){cycle()},mk(300+s+24,0xFF1565C0.toInt()){dismiss()})}
+fun mk(dx:Int,tint:Int,lab:String,act:()->Unit):View{val ll=LinearLayout(this);ll.orientation=LinearLayout.VERTICAL;ll.gravity=Gravity.CENTER_HORIZONTAL
+ val w=ImageView(this);w.setImageBitmap(bmp);if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP)
+ val tv=TextView(this);tv.text=lab;tv.setTextColor(Color.WHITE);tv.textSize=11f;tv.gravity=Gravity.CENTER
+ ll.addView(w,LinearLayout.LayoutParams(s,s));ll.addView(tv)
+ ll.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);act();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();true};else->false}}
+ val lp=WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.WRAP_CONTENT,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
+ lp.gravity=Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL;lp.x=dx;lp.y=(resources.displayMetrics.density*8).toInt();wm.addView(ll,lp);return ll}
+vs=listOf(mk(-(s+24),0xFF1565C0.toInt(),"discard"){dismiss()},mk(0,0xFF2E7D32.toInt(),"home"){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(s+24,0,"swap"){cycle()})}
 override fun onDestroy(){super.onDestroy();val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager;vs.forEach{try{wm.removeView(it)}catch(e:Exception){}}}}
 '''
 NC=r'''#include <jni.h>
