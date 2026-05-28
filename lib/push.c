@@ -8,7 +8,7 @@ static int cmd_push(int argc, char **argv) { AB;
         snprintf(c,B*2,"cd '%s'&&git add -- %s&&git commit -m \"%s\" -- %s&&" PUSHCMD,cwd,f,cs,f);pcmd(c,vo,B);
         snprintf(c,B*2,"cd '%s'&&git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo https://github.com/$u/commit/$(git rev-parse --short HEAD);}",cwd);
         pcmd(c,vo,B);vo[strcspn(vo,"\n")]=0;
-        if(vo[0]){unlink(cp);printf("✓ %s\n  \033]8;;%s\033\\%s\033]8;;\033\\\n",cs,vo,vo);}else printf("✗ %s NOT on origin; re-push\n",cs);
+        if(vo[0]){unlink(cp);printf("✓ %s\n  github: %s\n",cs,vo);}else printf("✗ %s NOT on origin; re-push\n",cs);
         free(cs);return vo[0]?0:1;
     }
     char msg[B]="";
