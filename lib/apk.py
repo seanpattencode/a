@@ -52,7 +52,7 @@ webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:Console
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
@@ -203,6 +203,25 @@ private fun speakPage(){ensureTts{val ts=tts ?:return@ensureTts;ts.stop();for((i
 override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN&&e.y>height-110f){speakPage();return true}
 if(nTouch(e.action and 0xFF,e.x,e.y)!=0){spoken=-1;tts?.stop();invalidate()};return true}
 override fun onDetachedFromWindow(){super.onDetachedFromWindow();tts?.shutdown();tts=null}}
+class BubbleService:android.app.Service(){
+companion object{init{System.loadLibrary("bubble")}}
+external fun render(px:IntArray,w:Int,h:Int)
+private var v:View?=null;private var n=0
+override fun onBind(i:Intent?):IBinder?=null
+@android.annotation.SuppressLint("ClickableViewAccessibility")
+override fun onCreate(){super.onCreate()
+val ch="bub";val nm=getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(android.app.NotificationChannel(ch,"a",android.app.NotificationManager.IMPORTANCE_MIN))
+val nt=android.app.Notification.Builder(this,ch).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("a bubble").build()
+if(Build.VERSION.SDK_INT>=34)startForeground(1,nt,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(1,nt)
+val s=(resources.displayMetrics.density*64).toInt();val px=IntArray(s*s);render(px,s,s)
+val bmp=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);bmp.setPixels(px,0,s,0,0,s,s)
+val iv=ImageView(this);iv.setImageBitmap(bmp)
+iv.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{iv.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);Toast.makeText(this,"a #${++n}",Toast.LENGTH_SHORT).show();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{iv.clearColorFilter();true};else->false}}
+val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
+lp.gravity=Gravity.TOP or Gravity.START;lp.x=40;lp.y=300
+(getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(iv,lp);v=iv}
+override fun onDestroy(){super.onDestroy();v?.let{(getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)}}}
 '''
 NC=r'''#include <jni.h>
 #include <pthread.h>
@@ -1182,8 +1201,15 @@ RF(jint, nGetTotal)(JNIEnv* e, jclass c) { (void)e;(void)c; return n_pages; }
 MXML=r'''<?xml version="1.0" encoding="utf-8"?>
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"/>
 '''
-CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\nadd_library(reader SHARED reader.c)\ntarget_link_libraries(reader log)\n'
-MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/></application></manifest>'
+CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\nadd_library(reader SHARED reader.c)\ntarget_link_libraries(reader log)\nadd_library(bubble SHARED bubble.c)\ntarget_link_libraries(bubble log m)\n'
+BUB_C=r'''#include <jni.h>
+#include <math.h>
+JNIEXPORT void JNICALL Java_com_aios_a_BubbleService_render(JNIEnv*e,jobject o,jintArray a,jint w,jint h){
+ (void)o;jint*p=(*e)->GetIntArrayElements(e,a,NULL);float c=(float)w/2.0f,r=c-2;
+ for(int y=0;y<h;y++)for(int x=0;x<w;x++){float dx=(float)x-c,dy=(float)y-c;p[y*w+x]=sqrtf(dx*dx+dy*dy)<=r?(jint)0xFFFF2020:0;}
+ (*e)->ReleaseIntArrayElements(e,a,p,0);}
+'''
+MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><service android:name=".BubbleService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="bubble"/></service></application></manifest>'
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
 GS='pluginManagement{repositories{google();mavenCentral()};plugins{id("com.android.application") version "8.2.0";id("org.jetbrains.kotlin.android") version "1.9.22"}}\ndependencyResolutionManagement{repositories{google();mavenCentral()}}\ninclude(":app")\n'
 H=os.path.expanduser("~");IT=os.path.exists("/data/data/com.termux")
@@ -1350,7 +1376,9 @@ def run():
             S.run(f"clang -shared {cf} -w -o '{kso}' '{D}/keyboard.c'&&patchelf --remove-rpath '{kso}'",shell=True,check=True)
             w(D+"/reader.c",RDR_C);rso=sf+"/libreader.so"
             S.run(f"clang -shared {cf} -w -o '{rso}' '{D}/reader.c'&&patchelf --remove-rpath '{rso}'",shell=True,check=True)
-        else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/reader.c",RDR_C);w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
+            w(D+"/bubble.c",BUB_C);bso=sf+"/libbubble.so"
+            S.run(f"clang -shared {cf} -w -lm -o '{bso}' '{D}/bubble.c'&&patchelf --remove-rpath '{bso}'",shell=True,check=True)
+        else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/reader.c",RDR_C);w(D+"/app/src/main/cpp/bubble.c",BUB_C);w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
         # Stage bundled bins + terminfo source (from a droid/droidtmux output)
         sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
