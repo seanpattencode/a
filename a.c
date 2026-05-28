@@ -132,7 +132,7 @@ build) _PT=${EPOCHREALTIME/./}
     else
         _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
-    [[ "$ABIN" == */adata/local ]] && ln -sf "$ABIN/a" "$BIN/a"; _perf_chk build
+    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; [[ -d /data/data/com.termux/files/usr/bin ]]&&ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; }; _perf_chk build
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
         T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q $_QT"
@@ -150,7 +150,7 @@ build) _PT=${EPOCHREALTIME/./}
     ;;
 check) _PT=${EPOCHREALTIME/./}
     _abin; _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
-    [[ "$ABIN" == */adata/local ]] && ln -sf "$ABIN/a" "$BIN/a"
+    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; [[ -d /data/data/com.termux/files/usr/bin ]]&&ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; }
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
     _checkers
     if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] 2>/dev/null; exit 1
@@ -294,6 +294,8 @@ install)
     fi
     # tame adata/git repacks: freeze >200m base pack + no reactive maintenance (HDD repack-storm fix)
     [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;ok "adata/git tuned";}
+    # install synced fleet ssh key so `a ssh <host>` authenticates out-of-box (don't clobber an existing device key)
+    [[ -f "$SROOT/ssh/id_ed25519" && ! -f "$HOME/.ssh/id_ed25519" ]]&&{ mkdir -p "$HOME/.ssh";cp "$SROOT/ssh/id_ed25519" "$SROOT/ssh/id_ed25519.pub" "$HOME/.ssh/" 2>/dev/null;chmod 600 "$HOME/.ssh/id_ed25519";ok "fleet ssh key";}
     # extra user repos: adata/git/repos.txt — one "owner/name [target]" per line, '#' comments ok.
     # rationale: `a clone` brings `a` itself, but the user's personal repos (updater, trading,
     # research) don't ride along. manifest lives in adata so it syncs across the fleet → a new
