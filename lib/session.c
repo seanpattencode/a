@@ -54,20 +54,29 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     return r;
 }
 
-/* a resume [mins]  spawn one tmux window per claude session + per `a m` chat touched in window. default 60. */
+/* a resume [mins]  interactive menu of recent claude conversations; pick # to resume, <n>m to time-filter. */
 static int cmd_resume(int c,char**v){perf_disarm();
-    int mins=c>2?atoi(v[2]):60;if(mins<=0)mins=60;
     if(!getenv("TMUX")){fputs("x need tmux\n",stderr);return 1;}
-    char sh[B*4];snprintf(sh,sizeof sh,
-      "n=0;for f in $(find %s/.claude/projects -name '*.jsonl' -mmin -%d 2>/dev/null);do "
-      "s=${f##*/};s=${s%%.jsonl};"
-      "w=$(grep -m1 -oE '\"cwd\":\"[^\"]+' \"$f\"|sed 's/.*\"cwd\":\"//');"
-      "[ -d \"$w\" ]||continue;"
-      "tmux new-window -d -n \"r-${w##*/}\" -c \"$w\" "
-      "\"claude --dangerously-skip-permissions --resume $s\"&&{ n=$((n+1));echo \"+ claude $w $s\" >&2; };"
-      "done;"
-      "m=0;cd '%s/m' 2>/dev/null&&for f in $(find m.txt agent -name '*.txt' -mmin -%d 2>/dev/null|sort);do "
-      "tmux new-window -d \"a m $f\"&&{ m=$((m+1));echo \"+ m $f\" >&2; };"
-      "done;"
-      "echo \"resumed $n claude + $m m in last %dm\" >&2",HOME,mins,SDIR,mins,mins);
-    return system(sh);}
+    char m[16];snprintf(m,16,"%d",c>2?atoi(v[2]):0);setenv("A_RM",m,1);
+    return system(
+      "P=\"$HOME/.claude/projects\";mins=${A_RM:-0};sel=\"\";tmp=$(mktemp)\n"
+      "echo \"note: automated a m/scanner runs may bury real work in this list; use <n>m to narrow\"\n"
+      "while :;do\n"
+      " :>\"$tmp\";i=0;filt=\"\"\n"
+      " [ \"$mins\" -gt 0 ] 2>/dev/null&&filt=$(find \"$P\" -name '*.jsonl' -mmin -\"$mins\" 2>/dev/null)\n"
+      " echo\n"
+      " for f in $(ls -t \"$P\"/*/*.jsonl 2>/dev/null|head -40);do\n"
+      "  [ \"$mins\" -gt 0 ] 2>/dev/null&&{ case \"$filt\" in *\"$f\"*);;*)continue;;esac;}\n"
+      "  w=$(grep -m1 -oE '\"cwd\":\"[^\"]+' \"$f\"|sed 's/.*\"cwd\":\"//');[ -d \"$w\" ]||continue\n"
+      "  p=$(grep -m1 -oE '\"role\":\"user\",\"content\":\"[^\"]+' \"$f\"|sed 's/.*content\":\"//'|cut -c1-54)\n"
+      "  s=${f##*/};s=${s%.jsonl};i=$((i+1));echo \"$s|$w\">>\"$tmp\"\n"
+      "  printf '%2d) %-12s %s\\n' \"$i\" \"${w##*/}\" \"$p\"\n"
+      "  [ \"$i\" -ge 20 ]&&break\n"
+      " done\n"
+      " [ \"$i\" = 0 ]&&echo \"(none)\"\n"
+      " printf '# resume, <n>m filter, q quit: '\n"
+      " read -r x </dev/tty||break\n"
+      " case \"$x\" in ''|q)break;;*m)mins=${x%m};;*[!0-9]*);;*)[ \"$x\" -ge 1 ]&&[ \"$x\" -le \"$i\" ]&&{ sel=$(sed -n \"${x}p\" \"$tmp\");break;};;esac\n"
+      "done\n"
+      "rm -f \"$tmp\"\n"
+      "[ -n \"$sel\" ]&&{ s=${sel%%|*};w=${sel#*|};tmux new-window -n \"r-${w##*/}\" -c \"$w\" \"claude --dangerously-skip-permissions --resume $s\";}\n");}
