@@ -229,7 +229,13 @@ install)
             if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone github-cli tcc gcc cppcheck cbmc frama-c 2>/dev/null && ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi ;;
         fedora)
-            if [[ -n "$SUDO" ]]; then $SUDO dnf install -y clang tmux nodejs npm git python3-pip sshpass rclone gh tcc gcc cppcheck cbmc frama-c zstd 2>/dev/null && ok "pkgs"
+            # Two-step install: core (must succeed) then optional analyzers (best-effort).
+            # cbmc/frama-c on Fedora pull in 500+ pkgs (Coq/OCaml/etc) and OOM small VMs;
+            # tcc isn't in default Fedora repos. --skip-unavailable + --setopt=install_weak_deps=False
+            # keeps the optional step bounded. Without splitting, one missing pkg aborted the
+            # whole transaction and left node/zstd uninstalled.
+            if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd 2>/dev/null && ok "pkgs"
+                $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone tcc cppcheck cbmc frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
         termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass gh rclone cronie termux-services && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
@@ -274,7 +280,10 @@ install)
     "$BIN/a" ui on 2>/dev/null && ok "UI service (localhost:1111)" || :
     [[ ! -s "$HOME/.tmux.conf" ]] && "$BIN/a" config tmux_conf y 2>/dev/null && ok "tmux config (mouse enabled)" || :
     "$BIN/a" >/dev/null 2>&1 && ok "cache generated" || :
-    command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && read -p "Login? (y/n): " yn && [[ "$yn" =~ ^[Yy] ]] && gh auth login && gh auth setup-git; }; gh auth status &>/dev/null && ok "sync configured"; } || :
+    # 8s timeout on the gh-login prompt: ssh -tt forwards a tty so `[[ -t 0 ]]` is true even when
+    # no human is attached (curl|sh through automation, CI, agent-spawned bootstrap). Without the
+    # timeout, read blocks forever and eventually crashes the VM via stuck process.
+    command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && { read -t 8 -p "Login? (y/n) [8s]: " yn || yn=n; } && [[ "$yn" =~ ^[Yy] ]] && gh auth login && gh auth setup-git; }; gh auth status &>/dev/null && ok "sync configured"; } || :
     AROOT="$D/adata"; SROOT="$AROOT/git"
     if [[ ! -d "$SROOT/.git" ]]; then mkdir -p "$AROOT"
         { command -v gh &>/dev/null&&gh auth status &>/dev/null 2>&1&&gh repo clone seanpattencode/a-git "$SROOT" 2>/dev/null&&ok "adata/git cloned";}||{ git init -q "$SROOT" 2>/dev/null;ok "adata/git init";}
