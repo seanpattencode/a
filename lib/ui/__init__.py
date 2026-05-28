@@ -1,4 +1,4 @@
-import sys, os, subprocess as S, time, platform
+import sys, os, subprocess as S, time, platform, shlex
 from os.path import exists, isdir, join, dirname, expanduser
 
 PORT = 1111

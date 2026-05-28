@@ -170,6 +170,14 @@ static void _ws_term(int c,const char*target){
     }
     kill(p,SIGHUP);close(m);waitpid(p,NULL,0);
 }
+static char*_cloud_html(void){
+    FILE*p=popen("for r in $(rclone listremotes);do a=$(rclone about \"$r\" 2>/dev/null);u=$(echo \"$a\"|awk '/^Used:/{print $2,$3}');t=$(echo \"$a\"|awk '/^Total:/{print $2,$3}');k=$(rclone config show \"${r%:}\"|grep -o '\"access_token\":\"[^\"]*\"'|head -1|cut -d'\"' -f4);e=$(curl -s 'https://www.googleapis.com/drive/v3/about?fields=user' -H \"Authorization: Bearer $k\"|grep -o '\"emailAddress\": *\"[^\"]*\"'|cut -d'\"' -f4);echo \"$r|$e|$u / $t\";done","r");
+    char rl[4096]={0};if(p){(void)!fread(rl,1,4095,p);pclose(p);}
+    char*h=malloc(16384);int hl=snprintf(h,16384,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}div{padding:12px;border-bottom:1px solid #222}b{color:#4af}.s{color:#888;font-size:13px}</style><h3 style=color:#888>cloud remotes</h3>");
+    for(char*l=rl,*nl;(nl=strchr(l,'\n'));l=nl+1){*nl=0;if(!*l)continue;
+        char*e=strchr(l,'|'),*s=e?strchr(e+1,'|'):0;if(e)*e++=0;if(s)*s++=0;
+        hl+=snprintf(h+hl,(size_t)(16384-hl),"<div>\xe2\x98\x81 %s<br><b>%s</b> <span class=s>%s</span></div>",l,e?e:"",s?s:"");}
+    return h;}
 static void _handle(int c){
     static char req[262144];int n=0;
     while(n<262143){int r=(int)read(c,req+n,262143-n);if(r<=0)break;n+=r;req[n]=0;if(strstr(req,"\r\n\r\n"))break;}
@@ -266,6 +274,11 @@ static void _handle(int c){
                 _sresp(c,200,"text/html",NO,sizeof NO-1);return;}}
         static const char H[]="<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><link rel=stylesheet href=\"https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css\"><script src=\"https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js\"></script><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#t{height:100vh;width:100vw}</style><div id=t></div><script>var W=new URLSearchParams(location.search).get('w')||'',T=new Terminal({scrollback:10000,cursorBlink:true}),F=new FitAddon.FitAddon(),E=document.getElementById('t');T.loadAddon(F);T.open(E);var fit=()=>{try{F.fit();if(ws.readyState===1)ws.send(JSON.stringify({cols:T.cols,rows:T.rows}))}catch(e){}};var ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws'+(W?'?w='+encodeURIComponent(W):''));ws.onopen=()=>{F.fit();ws.send(JSON.stringify({cols:T.cols,rows:T.rows}));T.focus()};ws.onmessage=e=>T.write(e.data);T.onData(d=>ws.readyState===1&&ws.send(d));addEventListener('click',()=>T.focus());addEventListener('resize',fit);new ResizeObserver(fit).observe(E);requestAnimationFrame(()=>{F.fit();T.focus()})</script>";
         _sresp(c,200,"text/html",H,sizeof H-1);return;}
+    if(!strncmp(req,"GET /cloud",10)){
+        char cf[P];snprintf(cf,P,"%s/local/.cloud.html",AROOT);char*cached=readf(cf,NULL);
+        if(cached){if(!fork()){close(c);char*h=_cloud_html();writef(cf,h);free(h);_exit(0);}
+            _sresp(c,200,"text/html",cached,(int)strlen(cached));free(cached);return;}
+        char*h=_cloud_html();writef(cf,h);_sresp(c,200,"text/html",h,(int)strlen(h));free(h);return;}
     if(!strncmp(req,"POST /op/new",12)){
         char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 & echo $!",SDIR);
         FILE*p=popen(tc,"r");char pid[32]={0};
