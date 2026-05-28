@@ -207,14 +207,15 @@ override fun onDetachedFromWindow(){super.onDetachedFromWindow();tts?.shutdown()
 class BubbleService:android.app.Service(){
 companion object{init{System.loadLibrary("bubble")}}
 external fun render(px:IntArray,w:Int,h:Int)
-private var v:View?=null;private var apps:List<String> =emptyList();private var idx=1;private var last=0L
+private var vs:List<View> =emptyList()
 override fun onBind(i:Intent?):IBinder?=null
-private fun cycle(){val now=System.currentTimeMillis()
- if(now-last>3000L||apps.isEmpty()){apps=recent();idx=1};last=now;if(apps.isEmpty())return
- packageManager.getLaunchIntentForPackage(apps[idx++%apps.size])?.let{startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}}
-private fun recent():List<String>{val u=getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
- val e=System.currentTimeMillis();val s=u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST,e-86400000L,e)?:return emptyList()
- return s.sortedByDescending{it.lastTimeUsed}.map{it.packageName}.distinct().filter{it!=packageName&&packageManager.getLaunchIntentForPackage(it)!=null}}
+private fun queue()=getSharedPreferences("bub",0).getString("q","")!!.split("\n").filter{it.isNotEmpty()&&it!="com.android.settings"&&packageManager.getLaunchIntentForPackage(it)!=null}
+private fun fg():String?{val u=getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+ val e=System.currentTimeMillis();val s=u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST,e-86400000L,e)?:return null
+ return s.maxByOrNull{it.lastTimeUsed}?.packageName}
+private fun cycle(){val q=queue();if(q.isEmpty())return;val i=q.indexOf(fg())
+ packageManager.getLaunchIntentForPackage(q[(i+1)%q.size])?.let{startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}}
+private fun dismiss(){val q=ArrayList(queue());val i=q.indexOf(fg());if(i>=0){q.removeAt(i);getSharedPreferences("bub",0).edit().putString("q",q.joinToString("\n")).apply()};if(q.isNotEmpty())packageManager.getLaunchIntentForPackage(q[(if(i<0)0 else i)%q.size])?.let{startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}}
 @android.annotation.SuppressLint("ClickableViewAccessibility")
 override fun onCreate(){super.onCreate()
 val ch="bub";val nm=getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
@@ -223,12 +224,13 @@ val nt=android.app.Notification.Builder(this,ch).setSmallIcon(android.R.drawable
 if(Build.VERSION.SDK_INT>=34)startForeground(1,nt,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(1,nt)
 val s=(resources.displayMetrics.density*64).toInt();val px=IntArray(s*s);render(px,s,s)
 val bmp=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);bmp.setPixels(px,0,s,0,0,s,s)
-val iv=ImageView(this);iv.setImageBitmap(bmp)
-iv.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{iv.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);cycle();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{iv.clearColorFilter();true};else->false}}
-val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
-lp.gravity=Gravity.TOP or Gravity.START;lp.x=40;lp.y=300
-(getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(iv,lp);v=iv}
-override fun onDestroy(){super.onDestroy();v?.let{(getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)}}}
+val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager
+fun mk(y:Int,tint:Int,act:()->Unit):View{val w=ImageView(this);w.setImageBitmap(bmp);if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP)
+ w.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);act();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();true};else->false}}
+ val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
+ lp.gravity=Gravity.TOP or Gravity.START;lp.x=40;lp.y=y;wm.addView(w,lp);return w}
+vs=listOf(mk(300,0){cycle()},mk(300+s+24,0xFF1565C0.toInt()){dismiss()})}
+override fun onDestroy(){super.onDestroy();val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager;vs.forEach{try{wm.removeView(it)}catch(e:Exception){}}}}
 '''
 NC=r'''#include <jni.h>
 #include <pthread.h>
@@ -606,6 +608,7 @@ class Home : Activity() {
             if (pkg.startsWith("~")) { try { startActivity(Intent(pkg.substring(1)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) {} ; return }
             val c = (cnt[pkg] ?: 0) + 1; cnt[pkg] = c; nCnt(i, c)
             ex.execute { db.execSQL("INSERT OR REPLACE INTO f VALUES(?,?)", arrayOf(pkg, c)) }
+            getSharedPreferences("bub",0).let{p->val q=p.getString("q","")!!.split("\n").filter{it.isNotEmpty()};if(pkg !in q)p.edit().putString("q",(q+pkg).joinToString("\n")).apply()}
             packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
         }
     }
