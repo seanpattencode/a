@@ -186,7 +186,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
             if(ts[0])fprintf(sf,"echo;printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\n",ts,ts);
             if(dl[0])fputs("echo;printf '\\033[1;32mpush these focused changes? [y] \\033[0m';read -rsn1 k </dev/tty;echo;[ \"$k\" = y ]&&a push -f\n",sf);
-            fputs("exec ${SHELL:-bash}\n",sf);fclose(sf);
+            fputs("echo;printf '\\033[2mpress any key to close\\033[0m';read -rsn1 </dev/tty\n",sf);fclose(sf);
             char c[P*2];const char*tp=getenv("TMUX_PANE");
             /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */
             if(tp){snprintf(c,P*2,"tmux list-panes -t %s -F '#{pane_id}'|while read p;do [ \"$p\" != \"%s\" ]&&tmux kill-pane -t \"$p\" 2>/dev/null;done",tp,tp);(void)!system(c);}
