@@ -102,15 +102,17 @@ b.getPixels(r,2,cw*95,0,0,cw*95,ch);b.recycle();return r}
 class Stp(val a:Activity):android.view.View(a){
 private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
 private fun go(i:Intent?)=i?.let{a.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
-private val items=listOf(
-"Set as keyboard" to{go(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS))},
-"Set as launcher" to{go(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))},
-"Grant usage access" to{go(Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))},
-"Grant mic permission" to{a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1)},
-"Open Shizuku setup" to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))}
+private fun bubOn()=(a.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any{it.service.className==BubbleService::class.java.name}
+private val items=listOf<Pair<()->String,()->Unit>>(
+{"Set as keyboard"} to{go(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS))},
+{"Set as launcher"} to{go(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))},
+{"Grant usage access"} to{go(Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))},
+{"Grant mic permission"} to{a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1)},
+{"Open Shizuku setup"} to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))},
+{"Bubble "+(if(bubOn())"on" else "off")} to{val i=Intent(a,BubbleService::class.java);if(bubOn())a.stopService(i) else if(android.provider.Settings.canDrawOverlays(a))a.startService(i) else go(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:${a.packageName}")))}
 )
-override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt());for((i,e) in items.withIndex())c.drawText(e.first,width/2f,300f+i*140f,p)}
-override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){val idx=((e.y-240f)/140f).toInt();if(idx in items.indices)items[idx].second()};return true}
+override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt());for((i,e) in items.withIndex())c.drawText(e.first(),width/2f,300f+i*140f,p)}
+override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){val idx=((e.y-240f)/140f).toInt();if(idx in items.indices){items[idx].second();invalidate()}};return true}
 }
 class N(c:android.content.Context):android.view.View(c),android.speech.RecognitionListener{
 private val sr by lazy{android.speech.SpeechRecognizer.createSpeechRecognizer(c).apply{setRecognitionListener(this@N)}}
