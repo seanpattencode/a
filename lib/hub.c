@@ -51,6 +51,22 @@ static void hub_timer(hub_t *j, int on) {
     } else {
         snprintf(buf,B*2,"termux-job-scheduler --cancel --job-id %u 2>/dev/null;rm -f '%s'",jid,sf);
     }
+#elif defined(__APPLE__)
+    char la[P];snprintf(la,P,"%s/Library/LaunchAgents",HOME);mkdirp(la);
+    char pl[P];snprintf(pl,P,"%s/a-%s.plist",la,j->n);
+    if(on){
+        char when[256];int h,m;
+        if(strchr(j->s,'/')){int iv=atoi(strchr(j->s,'/')+1);if(iv<=0)iv=60;
+            snprintf(when,256,"<key>StartInterval</key><integer>%d</integer>",iv*60);}
+        else if(sscanf(j->s,"%d:%d",&h,&m)==2)
+            snprintf(when,256,"<key>StartCalendarInterval</key><dict><key>Hour</key><integer>%d</integer><key>Minute</key><integer>%d</integer></dict>",h,m);
+        else snprintf(when,256,"<key>StartInterval</key><integer>3600</integer>");
+        snprintf(buf,B*2,"<?xml version=\"1.0\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>Label</key><string>a-%s</string><key>ProgramArguments</key><array><string>/bin/bash</string><string>-lc</string><string>%s</string></array>%s<key>StandardOutPath</key><string>/tmp/a-%s.log</string><key>StandardErrorPath</key><string>/tmp/a-%s.log</string></dict></plist>",j->n,j->p,when,j->n,j->n);
+        writef(pl,buf);
+        snprintf(buf,B*2,"launchctl unload '%s' 2>/dev/null;launchctl load -w '%s' 2>&1",pl,pl);
+    } else {
+        snprintf(buf,B*2,"launchctl unload '%s' 2>/dev/null;rm -f '%s'",pl,pl);
+    }
 #else
     char sd[P]; snprintf(sd,P,"%s/.config/systemd/user",HOME); mkdirp(sd);
     if(on){
@@ -75,6 +91,8 @@ static char HUB_TL[B*4];
 static void hub_timers(void){
 #ifdef __ANDROID__
     pcmd("termux-job-scheduler -p 2>/dev/null",HUB_TL,sizeof(HUB_TL));
+#elif defined(__APPLE__)
+    pcmd("launchctl list 2>/dev/null",HUB_TL,sizeof(HUB_TL));
 #else
     pcmd("systemctl --user list-timers --all 2>/dev/null",HUB_TL,sizeof(HUB_TL));
 #endif
@@ -82,6 +100,8 @@ static void hub_timers(void){
 static int hub_on(hub_t*j){char p[96];
 #ifdef __ANDROID__
     snprintf(p,96,"Job %u:",hub_jid(j->n));
+#elif defined(__APPLE__)
+    snprintf(p,96,"a-%s",j->n);
 #else
     snprintf(p,96,"a-%s.timer",j->n);
 #endif
@@ -96,7 +116,7 @@ static hub_t *hub_find(const char *s) {
 /* MM-DD HH:MM of last trigger, local jobs only (systemctl is local) */
 static void hub_last(hub_t*j,char*out,int sz){out[0]=0;
     if(strcmp(j->d,DEV))return;
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(__APPLE__)
     char c[B],r[256];snprintf(c,B,"systemctl --user show a-%s.timer -p LastTriggerUSec --value 2>/dev/null",j->n);
     pcmd(c,r,256);r[strcspn(r,"\n")]=0;
     int yr,mo,da,hr,mn;char wk[16];
@@ -159,6 +179,8 @@ static int cmd_hub(int argc, char **argv) {
     if(!strcmp(sub,"sync")) {
 #ifdef __ANDROID__
         (void)!system("termux-job-scheduler --cancel-all 2>/dev/null");
+#elif defined(__APPLE__)
+        {char c[B];snprintf(c,B,"for p in %s/Library/LaunchAgents/a-*.plist;do [ -f \"$p\" ]&&{ launchctl unload \"$p\" 2>/dev/null;rm -f \"$p\";};done",HOME);(void)!system(c);}
 #else
         {char c[B];snprintf(c,B,
             "systemctl --user list-unit-files --type=timer --no-legend 2>/dev/null|awk '/^(a|aio)-/{print $1}'|xargs -r systemctl --user disable --now >/dev/null 2>&1;"
