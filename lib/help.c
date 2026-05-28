@@ -194,7 +194,7 @@ static int cmd_done(int argc,char**argv){AB;
             snprintf(m+mo,(size_t)(256-mo),"\\033[2many key close\\033[0m");
             fprintf(sf,"printf '%s ';read -rsn1 k </dev/tty;echo\n",m);
             if(dl[0])fputs("[ \"$k\" = y ]&&{ a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sf);
-            if(ts[0])fprintf(sf,"[ \"$k\" = r ]&&tmux neww -n verify 'sh %s'\n",vp);
+            if(ts[0])fprintf(sf,"[ \"$k\" = r ]&&tmux split-window -v 'sh %s'\n",vp);
             fclose(sf);
             char c[P*2];const char*tp=getenv("TMUX_PANE");
             /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */

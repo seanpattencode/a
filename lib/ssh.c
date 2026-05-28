@@ -248,6 +248,29 @@ static int cmd_ssh(int argc,char**argv){
         if(cmd[0])alarm(30);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 }
+/* sw <device> <prompt>: ssh-launch a claude job on a remote, report its window + reattach cmd.
+ * v1 simplest: reuses `a ssh` (auth/resolve) + `a j` (claude+context+tmux window). keep prompt quote-free. */
+static int cmd_swarm(int c,char**v){
+    if(c<4){char ex[128]="";
+        if(c==3)snprintf(ex,128,"%s",v[2]);
+        else{char gc[B];snprintf(gc,B,"grep -h '^Name:' %s/ssh/*.txt 2>/dev/null|sed 's/Name: //'|grep -v %s|head -1",SROOT,DEV);pcmd(gc,ex,128);ex[strcspn(ex,"\n")]=0;}
+        if(!ex[0])snprintf(ex,128,"<device>");
+        printf("\033[1ma sw %s \"summarize the last commit\"\033[0m\n",ex);
+        printf("  \033[2m→ ssh-launch a claude job on %s; prints its tmux window + reattach (a ssh %s)\033[0m\n",ex,ex);
+        if(!isatty(0))return 1;
+        printf("\n  press \033[1mr\033[0m to run it in a tmux window (watch + shell to verify), any key skips ");fflush(stdout);
+        raw_enter();int ch=raw_key();raw_exit();putchar('\n');
+        if(ch=='r'){char wc[B];snprintf(wc,B,"tmux split-window -v 'a sw %s \"summarize the last commit\";exec ${SHELL:-bash}'",ex);(void)!system(wc);}
+        return 1;}
+    char pr[B]="";ajoin(pr,B,c,v,3);
+    char cmd[B*2],out[B];
+    snprintf(cmd,B*2,"a ssh %s 'a j \"%s\" >/dev/null 2>&1;tmux lsw -t a -F \"#{window_index}:#{window_name}\" 2>/dev/null|grep :j-|tail -1' 2>&1",v[2],pr);
+    pcmd(cmd,out,B);out[strcspn(out,"\n")]=0;
+    int ok=out[0]>='0'&&out[0]<='9';
+    if(ok)printf("✓ %s launched, window %s\n  reattach: a ssh %s\n",v[2],out,v[2]);
+    else printf("x %s: %s\n",v[2],out[0]?out:"no job window made");
+    return!ok;
+}
 /* fl n|p <host>: advance remote a: window; if at end, advance local tmux */
 static int cmd_fl(int c,char**v){
     if(c<4)return 1;int n=*v[2]=='n';const char*w=n?"next-window":"previous-window";

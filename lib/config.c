@@ -87,21 +87,16 @@ static int cmd_config(int argc, char **argv) {
 
 static int cmd_prompt(int argc, char **argv) {
     char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
-    if(argc>2 && !strcmp(argv[2],"show")) {
+    char df[P]; snprintf(df,P,"%s/default.txt",d);
+    if(argc<3 || !strcmp(argv[2],"show")) {
         perf_disarm();CWD(wd);char tf[P];snprintf(tf,P,"/tmp/a_prompt_show_%d.txt",(int)getpid());
         write_prompt_file(tf,wd,argc>3?argv[3]:NULL);
-        char*c=readf(tf,NULL);if(c){fputs(c,stdout);free(c);}unlink(tf);return 0;
+        char*c=readf(tf,NULL);size_t n=0;if(c){n=strlen(c);fputs(c,stdout);free(c);}unlink(tf);
+        fprintf(stderr,"\n— %zu bytes sent as system prompt · edit: a prompt edit · web: a prompt web\n",n);return 0;
     }
-    if(argc>2 && !strcmp(argv[2],"edit")) {
-        char t[P]; snprintf(t,P,"%s/cd_target",DDIR); writef(t,d);
-        char c[B]; snprintf(c,B,"echo 'default.txt = session prepend' && ls '%s'",d); return system(c);
-    }
-    char val[B]="",df[P]; snprintf(df,P,"%s/default.txt",d);
-    if(argc>2)ajoin(val,B,argc,argv,2);
-    else { perf_disarm(); printf("%.80s\n%s\n <text>|edit|clear: ",dprompt(),d);
-        if(!fgets(val,B,stdin)||val[0]=='\n') return 0; val[strcspn(val,"\n")]=0;
-        if(!strcmp(val,"edit")){execlp("e","e",df,(char*)0);return 1;}
-    }
+    if(!strcmp(argv[2],"web")){perf_disarm();(void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/prompt");puts("✓ opening localhost:1111/prompt");return 0;}
+    if(!strcmp(argv[2],"edit")){execlp("e","e",df,(char*)0);execlp("vi","vi",df,(char*)0);return 1;}
+    char val[B]="";ajoin(val,B,argc,argv,2);
     if(!strcmp(val,"clear"))val[0]=0;
     writef(df,val); printf("✓ %s\n",val[0]?val:"(cleared)"); return 0;
 }
