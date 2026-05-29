@@ -116,7 +116,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
-    char buf[256]="";int blen=0,sel=0;char prefix[256]="";
+    char buf[256]="";int blen=0,sel=0,pnm=-1,rotate=0;char prefix[256]="";
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
@@ -129,6 +129,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 if(s[blen]<=' '&&!strncasecmp(s,buf,(size_t)blen)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
             fm[nm++]=lines[i];
         }
+        if(rotate){sel=nm==pnm?sel+1:0;rotate=0;}pnm=nm;
         {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
         int hdr_rows=0;char hl[2048];int hll=0,Wc=ws.ws_col?ws.ws_col:80;
         if(m_mode){load_cfg();const char*cm=cfget("m_model");if(!*cm)cm="opus";
@@ -137,7 +138,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             struct stat st;long tot=0;char hp[P];
             snprintf(hp,P,"%s/m/m.txt",SDIR);if(!stat(hp,&st))tot+=st.st_size;
             snprintf(hp,P,"%s/local/a_cat.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
-            snprintf(hp,P,"%s/m/i.txt",SDIR);if(!stat(hp,&st))tot+=st.st_size;
+            snprintf(hp,P,"%s/m/i.txt",SROOT);if(!stat(hp,&st))tot+=st.st_size;
             snprintf(hp,P,"%s/m_status",DDIR);char*ms=readf(hp,NULL);
             if(ms)ms[strcspn(ms,"\n")]=0;
             hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
@@ -191,7 +192,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             return 0;}do_pick=1;}
         else if(ch==3){if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
         else if(ch==4)break;
-        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
+        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;rotate=1;}}
         if(do_pick&&nm){char*m=fm[sel],cmd[256];
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
