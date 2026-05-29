@@ -70,19 +70,42 @@ override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION
 init{addView(v,FrameLayout.LayoutParams(-1,-1));addView(et,FrameLayout.LayoutParams(1,1));et.addTextChangedListener(object:android.text.TextWatcher{override fun afterTextChanged(s:android.text.Editable?){if(s?.contains('\n')==true){pick();return};val nm=ms().size;val len=s?.length?:0;sel=if(len>plen&&nm==pnm)sel+1 else 0;if(sel>=nm)sel=maxOf(0,nm-1);pnm=nm;plen=len;v.invalidate();requestLayout()};override fun beforeTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){};override fun onTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){}})}
 override fun onMeasure(ws:Int,hs:Int){val want=if(o)ms().size.coerceAtLeast(1)*200+20 else 140;val h=if(o&&MeasureSpec.getSize(hs)>0)minOf(want,MeasureSpec.getSize(hs)) else want;super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
 class Cap:Activity(){
+private val ACT="com.aios.a.CAP_RESULT"
+private var status:TextView?=null
+private val rcv=object:android.content.BroadcastReceiver(){override fun onReceive(c:Context,i:Intent){
+val ex=i.extras
+var b=ex?.getBundle("com.termux.execute.PLUGIN_RESULT_BUNDLE")?:ex?.getBundle("result")
+if(b==null)for(k in ex?.keySet()?:emptySet<String>()){val v=ex?.get(k);if(v is Bundle){b=v;break}}
+val o=(b?.getString("stdout")?:"")+(b?.getString("stderr")?:"")
+val w=Regex("window (\\S+)").find(o)?.groupValues?.get(1)
+runOnUiThread{status?.text=if(w!=null)"✓ sent → $w" else if(o.isNotBlank())"✓ sent: "+o.trim().takeLast(60) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
 private fun fire(t:String){if(t.isBlank())return
+status?.text="sending…"
 val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
-i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a sw ubuntu \"\$1\" >> ~/a_cap.log 2>&1","a",t))
+i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a sw ubuntu \"\$1\" 2>&1","a",t))
 i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
+i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
 override fun onCreate(b:Bundle?){super.onCreate(b)
-val e=EditText(this).apply{setBackgroundColor(0xFF000000.toInt());setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture";textSize=22f;setPadding(48,96,48,48);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
-setContentView(e);e.requestFocus()
+if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
+val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
+val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → ubuntu";textSize=22f;setPadding(48,96,48,24);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
+status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16)}
+val btn=Button(this).apply{text="→ termux (attach)";setOnClickListener{
+val ai=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
+ai.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
+ai.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a ssh ubuntu"))
+ai.putExtra("com.termux.RUN_COMMAND_BACKGROUND",false)
+ai.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION","0")
+try{startForegroundService(ai)}catch(e:Exception){try{startService(ai)}catch(e2:Exception){}}}}
+ll.addView(e,LinearLayout.LayoutParams(-1,-2));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(btn,LinearLayout.LayoutParams(-2,-2))
+setContentView(ll);e.requestFocus()
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-val go={fire(e.text.toString());e.setText("");finish()}
+val go={fire(e.text.toString());e.setText("")}
 e.setOnEditorActionListener{_,_,_->go();true}
-e.setOnKeyListener{_,k,ev->if(ev.action==android.view.KeyEvent.ACTION_DOWN&&k==android.view.KeyEvent.KEYCODE_ENTER){go();true}else false}}}
+e.setOnKeyListener{_,k,ev->if(ev.action==android.view.KeyEvent.ACTION_DOWN&&k==android.view.KeyEvent.KEYCODE_ENTER){go();true}else false}}
+override fun onDestroy(){try{unregisterReceiver(rcv)}catch(e:Exception){};super.onDestroy()}}
 class T(c:android.content.Context):android.view.View(c){
 private val h=Handler(Looper.getMainLooper())
 private var px:IntArray?=null
