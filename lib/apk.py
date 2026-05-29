@@ -52,7 +52,7 @@ webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:Console
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("Cap" to{startActivity(Intent(this,Cap::class.java))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
@@ -683,7 +683,7 @@ static int W, H;
 static struct { char n[NM]; char p[128]; char l[NM]; int c, pin; } A[NA];
 static int na, srt[NA], flt[NA], nf;
 static char Q[64];
-static int ql, scr, pressed, drag;
+static int ql, scr, pressed, drag, sel;
 static float sv, ly, ty;
 
 static const char* KR[] = {"1234567890","qwertyuiop","asdfghjkl","\x02zxcvbnm\b","\x01 \n"};
@@ -818,7 +818,7 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
             int idx = flt[i]; char buf[NM+3]; int off = 0;
             if (A[idx].pin) { buf[0] = '*'; buf[1] = ' '; off = 2; }
             strncpy(buf+off, A[idx].n, NM); buf[off+NM-1] = 0;
-            { uint32_t nc = i==0 ? 0xFFFF00 : 0xFFFFFF;
+            { uint32_t nc = i==sel ? 0xFFFF00 : 0xFFFFFF;
               if (A[idx].p[0]=='~' && A[idx].p[1]!='~') { int nw=(int)strlen(buf)*F[0].cw, tw=13*F[1].cw, sx=(W-nw-20-tw)/2; if (sx<0) sx=0;
                 drawstr((uint32_t*)p, stride, &F[0], buf, sx, y+rh/2-F[0].ch/2, nc);
                 drawstr((uint32_t*)p, stride, &F[1], "settings menu", sx+nw+20, y+rh/2-F[1].ch/2, 0x808080); }
@@ -848,13 +848,15 @@ JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
         if (y >= ky) {
             pressed = kbhit(x, y);
             if (pressed >= 0) {
-                char ch = kbchar(pressed);
+                char ch = kbchar(pressed); int pnf = nf, typed = 0;
                 if (ch == '\b') { if (ql > 0) ql--; }
-                else if (ch == '\n') { if (nf > 0) return flt[0]+1; if (ql > 0) return -1; }
+                else if (ch == '\n') { if (nf > 0) return flt[sel]+1; if (ql > 0) return -1; }
                 else if (ch == '\x01') { if (nf > 0) return -3; }
                 else if (ch == '\x02') { if (nf > 0) return -2; }
-                else if (ql < 63) Q[ql++] = ch;
+                else if (ql < 63) { Q[ql++] = ch; typed = 1; }
                 dofilter();
+                sel = typed && nf == pnf ? sel + 1 : 0;
+                if (sel >= nf) sel = nf ? nf - 1 : 0;
             }
         } else if (y < lh) {
             if (x < edge || x > W - edge) { drag = 1; ly = y; ty = y; sv = 0; }
@@ -871,10 +873,10 @@ JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
 }
 
 JF(jboolean, nAnim)(JNIEnv* e, jclass c) { return fabsf(sv) > 0.5f; }
-JF(void, nResume)(JNIEnv* e, jclass c) { ql = 0; scr = 0; pressed = -1; sv = 0; drag = 0; dofilter(); }
+JF(void, nResume)(JNIEnv* e, jclass c) { ql = 0; scr = 0; pressed = -1; sv = 0; drag = 0; sel = 0; dofilter(); }
 JF(jstring, nPkg)(JNIEnv* e, jclass c, jint i) { return (i >= 0 && i < na) ? (*e)->NewStringUTF(e, A[i].p) : NULL; }
 JF(jstring, nQuery)(JNIEnv* e, jclass c) { char b[65]; memcpy(b, Q, ql); b[ql] = 0; return (*e)->NewStringUTF(e, b); }
-JF(jint, nTop)(JNIEnv* e, jclass c) { return nf > 0 ? flt[0] : -1; }
+JF(jint, nTop)(JNIEnv* e, jclass c) { return nf > 0 ? flt[sel] : -1; }
 JF(void, nCnt)(JNIEnv* e, jclass c, jint i, jint v) { if (i >= 0 && i < na) { A[i].c = v; dosort(); dofilter(); } }
 JF(void, nPin)(JNIEnv* e, jclass c, jint i) { if (i >= 0 && i < na) { A[i].pin = !A[i].pin; dosort(); dofilter(); } }
 '''

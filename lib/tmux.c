@@ -52,9 +52,6 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     fprintf(f,"When work finished, run a done \"[<test>cmd</test>][<diff>files</diff>] msg\""
         " — split pane shows full diff, focused diff, runs test live as PTY."
         " a tools: a done a help a diff a push [msg] a note <text> a cat 2|3 a ssh\n");
-    if(SRC_ON){char ip[P];snprintf(ip,P,"%s/common/prompts/intro.txt",SROOT);
-        char*in=readf(ip,NULL);if(!in){const char*d="This is the code for a, the agent manager system you have been spawned from. You can use these tools and any other to acomplish your goal. User specific tools are in /adata/git/my. If you find an error in one of the /lib tools or /a, it is recommended to fix it on the spot to be shorter or the same length and send a pull request so all users may benefit from the fix. You can also use \"a task\" to help the user track deadlines for things which are in the future and can't be done in this session.";writef(ip,d);in=strdup(d);}
-        fprintf(f,"%s\n",in);free(in);}
     char af[P];snprintf(af,P,"%s/AGENTS.md",wd);
     char *amd=readf(af,NULL);if(amd){fprintf(f,"%s\n",amd);free(amd);}
     if(extra&&extra[0])fprintf(f,"\nTask: %s\n",extra);
