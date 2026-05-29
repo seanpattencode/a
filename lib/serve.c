@@ -115,10 +115,13 @@ static void _html_gen(void){
     #undef EMIT
     _shtml[_shlen]=0;free(src);
 }
-static void _sresp(int c,int code,const char*ct,const char*body,int bl){
-    char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-store\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl);
+static void _sresph(int c,int code,const char*ct,const char*body,int bl,const char*cache){
+    char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:%s\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl,cache);
     (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
 }
+/* static doc pages: NOT no-store, so the browser back/forward cache restores them instantly (0ms, no refetch) */
+static void _sresp(int c,int code,const char*ct,const char*body,int bl){_sresph(c,code,ct,body,bl,"no-store");}
+static void _sdoc(int c,const char*body,int bl){_sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
 static int _ws_upgrade(int c,const char*req){
     const char*k=strstr(req,"Sec-WebSocket-Key: ");if(!k)return 0;
     k+=19;char key[64];int i=0;while(k[i]&&k[i]!='\r'&&i<60){key[i]=k[i];i++;}
@@ -185,6 +188,7 @@ static char*_cloud_html(void){
     hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"/op?w=cloudadd\"><div><span class=o style=background:#34a853>+ Add cloud service</span></div></a>");
     hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"/op?w=cloudcp\"><div><span class=o style=background:#a142f4>Copy between clouds</span></div></a>");
     return h;}
+static char _rl[160];
 static void _handle(int c){
     static char req[262144];int n=0;
     while(n<262143){int r=(int)read(c,req+n,262143-n);if(r<=0)break;n+=r;req[n]=0;if(strstr(req,"\r\n\r\n"))break;}
@@ -193,7 +197,9 @@ static void _handle(int c){
     if(cl&&bb){int want=(int)(bb-req+4)+atoi(cl+15);
         while(n<want&&n<262143){int r=(int)read(c,req+n,want-n);if(r<=0)break;n+=r;}}
     req[n]=0;
+    {char*e=strchr(req,'\r');int L=e?(int)(e-req):0;if(L>159)L=159;memcpy(_rl,req,(size_t)L);_rl[L]=0;}
     int one=1;setsockopt(c,IPPROTO_TCP,TCP_NODELAY,&one,4);
+    /* new full-page route? add a GET handler below + one nav link in ui_full.html line 9 (<div id=wm>). docs auto-list via /docs. */
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
     if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
@@ -201,6 +207,34 @@ static void _handle(int c){
         if(qw){qw+=3;int i=0;while(qw[i]&&qw[i]!=' '&&qw[i]!='&'&&qw[i]!='\r'&&i<63){tgt[i]=qw[i];i++;}tgt[i]=0;}
         if(_ws_upgrade(c,req))_ws_term(c,tgt);return;}
     if(!strncmp(req,"GET /api/u-status",17)){_sresp(c,200,"application/json","{\"ok\":true}",11);return;}
+    if(!strncmp(req,"GET /doc",8)&&(req[8]=='?'||req[8]==' ')){
+        char rel[P]={0};const char*q=strstr(req,"?f=");
+        if(q){q+=3;int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){
+            if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}
+            else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;}
+        if(!rel[0]||strstr(rel,"..")){_sresp(c,400,"text/plain","? GET /doc?f=<path under adata/git>",36);return;}
+        char fp[P];snprintf(fp,P,"%s/%s",SROOT,rel);size_t fl=0;char*fd=readf(fp,&fl);
+        if(!fd){_sresp(c,404,"text/plain","not found",9);return;}
+        char*h=malloc(fl*6+1024);if(!h){free(fd);_sresp(c,500,"text/plain","oom",3);return;}
+        int hl=snprintf(h,1024,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b}textarea{width:100%%;height:100vh;box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:16px;font:13px/1.5 ui-monospace,monospace;resize:none;white-space:pre-wrap;word-break:break-word}</style><textarea spellcheck=false>",rel);
+        for(size_t i=0;i<fl;i++){char k=fd[i];
+            if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
+            else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
+            else h[hl++]=k;}
+        memcpy(h+hl,"</textarea>",11);hl+=11;
+        _sdoc(c,h,hl);free(fd);free(h);return;}
+    if(!strncmp(req,"GET /docs",9)){
+        /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
+        char*h=malloc(1<<18);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
+        int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:14px/1.6 ui-monospace,monospace}h3{color:#6cf;padding:12px 16px 4px;margin:0}a{display:block;color:#9cf;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style>");
+        const char*dirs[]={"mem","adocs"};
+        for(int k=0;k<2;k++){char dp[P];snprintf(dp,P,"%s/%s",SROOT,dirs[k]);
+            static char nm[2048][80];int n=0;DIR*d=opendir(dp);struct dirent*e;
+            while(d&&(e=readdir(d))&&n<2048){if(e->d_name[0]=='.')continue;snprintf(nm[n++],80,"%s",e->d_name);}if(d)closedir(d);
+            for(int i=1;i<n;i++){char t[80];snprintf(t,80,"%s",nm[i]);int j=i-1;while(j>=0&&strcmp(nm[j],t)>0){snprintf(nm[j+1],80,"%s",nm[j]);j--;}snprintf(nm[j+1],80,"%s",t);}
+            hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<h3>%s/</h3>",dirs[k]);
+            for(int i=0;i<n&&hl<(1<<18)-256;i++)hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<a href=\"/doc?f=%s/%s\">%s</a>",dirs[k],nm[i],nm[i]);}
+        _sdoc(c,h,hl);free(h);return;}
     if(!strncmp(req,"GET /prompt",11)){
         int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","err",3);return;}pid_t ch=fork();
         if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);(void)!chdir(SDIR);execlp("a","a","prompt","show",(char*)0);_exit(1);}
@@ -237,15 +271,17 @@ static void _handle(int c){
             else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
             else h[hl++]=k;}
         memcpy(h+hl,"</pre>",6);hl+=6;
-        _sresp(c,200,"text/html; charset=utf-8",h,hl);free(o);free(h);return;}
+        _sdoc(c,h,hl);free(o);free(h);return;}
     if(!strncmp(req,"GET /p",6)&&(req[6]==' '||req[6]=='\r'||req[6]=='?')){
         char out[B]="";int ol=0,pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","i",(char*)0);_exit(1);}
         close(pp[1]);{int r;while((r=(int)read(pp[0],out+ol,(size_t)(B-1-ol)))>0)ol+=r;}close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
-        char h[B*2];int hl=snprintf(h,sizeof h,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:18px system-ui;margin:16px}div{padding:10px;border-bottom:1px solid #222}</style>");
+        char h[B*2];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:18px system-ui;margin:16px}h3{color:#888;font-weight:400}.r{padding:10px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px}.o{color:#555;min-width:1.4em;text-align:right}.r b{flex:1;font-weight:400}button{background:#1a1a1a;color:#4af;border:1px solid #333;border-radius:6px;padding:7px 13px;font:inherit;cursor:pointer}</style><h3>projects</h3>");
         for(char*l=out;*l;){char*nl=strchr(l,'\n');if(nl)*nl=0;char*tab=strstr(l,"\tproject");
-            if(tab){*tab=0;hl+=snprintf(h+hl,(size_t)(sizeof h-(size_t)hl),"<div>%s</div>",l);}
+            if(tab){*tab=0;int i=atoi(l);char*nm=strchr(l,' ');nm=nm?nm+1:l;
+                hl+=snprintf(h+hl,(size_t)(sizeof h-(size_t)hl),"<div class=r><span class=o>%d</span><b>%s</b><button onclick='mv(%d,%d)'>↑</button><button onclick='mv(%d,%d)'>↓</button></div>",i,nm,i,i-1,i,i+1);}
             l=nl?nl+1:l+strlen(l);}
+        hl+=snprintf(h+hl,(size_t)(sizeof h-(size_t)hl),"<script>function mv(f,t){if(t<0)return;fetch('/api/omni',{method:'POST',body:'q=move '+f+' '+t}).then(()=>location.reload())}</script>");
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"POST /api/omni",14)||!strncmp(req,"POST /note",10)){
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
@@ -356,5 +392,12 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
     for(;;){int c=accept(fd,0,0);if(c<0)continue;
         struct timeval tv={2,0};setsockopt(c,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
-        if(!fork()){close(fd);_handle(c);close(c);_exit(0);}close(c);}
+        if(!fork()){close(fd);
+            struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
+            _handle(c);close(c);
+            clock_gettime(CLOCK_MONOTONIC,&t1);
+            double ms=(double)(t1.tv_sec-t0.tv_sec)*1e3+(double)(t1.tv_nsec-t0.tv_nsec)/1e6;
+            fprintf(stderr,"%7.3fms  %s\n",ms,_rl);
+            char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*lf=fopen(lg,"a");if(lf){fprintf(lf,"%.3f %s\n",ms,_rl);fclose(lf);}
+            _exit(0);}close(c);}
 }
