@@ -821,10 +821,11 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
             int idx = flt[i]; char buf[NM+3]; int off = 0;
             if (A[idx].pin) { buf[0] = '*'; buf[1] = ' '; off = 2; }
             strncpy(buf+off, A[idx].n, NM); buf[off+NM-1] = 0;
-            { uint32_t nc = i==sel ? 0xFFFF00 : 0xFFFFFF;
+            { uint32_t nc = i==sel ? 0x000000 : 0xFFFFFF;
+              if (i==sel) for (int yy=y<0?0:y; yy<y+rh && (unsigned)yy<(unsigned)H; yy++) for (int xx=0; xx<W; xx++) ((uint32_t*)p)[yy*stride+xx]=0xFFFFFFFF;
               if (A[idx].p[0]=='~' && A[idx].p[1]!='~') { int nw=(int)strlen(buf)*F[0].cw, tw=13*F[1].cw, sx=(W-nw-20-tw)/2; if (sx<0) sx=0;
                 drawstr((uint32_t*)p, stride, &F[0], buf, sx, y+rh/2-F[0].ch/2, nc);
-                drawstr((uint32_t*)p, stride, &F[1], "settings menu", sx+nw+20, y+rh/2-F[1].ch/2, 0x808080); }
+                drawstr((uint32_t*)p, stride, &F[1], "settings menu", sx+nw+20, y+rh/2-F[1].ch/2, i==sel?0x000000:0x808080); }
               else drawcenter((uint32_t*)p, stride, &F[0], buf, y+rh/2-F[0].ch/2, nc); }
         }
     }
