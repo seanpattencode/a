@@ -155,6 +155,7 @@ static void _ws_term(int c,const char*target){
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",0);
         if(target&&!strcmp(target,"cloudadd"))execlp("a","a","cloud",(char*)0);
+        if(target&&!strcmp(target,"cloudcp"))execlp("a","a","cloudcp",(char*)0);
         if(target&&target[0])execlp("a","a","tmux",target,(char*)0);
         else execlp("a","a","tmux",(char*)0);
         char*b[]={"bash","-l",NULL};execvp("bash",b);
@@ -182,6 +183,7 @@ static char*_cloud_html(void){
         else snprintf(url,256,"https://drive.google.com/drive/u/0/?authuser=%s",id&&*id?id:"");
         hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"%s\" target=_blank><div><span class=e>%s</span><br><span class=s>%s</span><br><span class=o>%s</span></div></a>",url,id&&*id?id:l,s?s:"",icl?"Open iCloud Drive":"Open Google Drive");}
     hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"/op?w=cloudadd\"><div><span class=o style=background:#34a853>+ Add cloud service</span></div></a>");
+    hl+=snprintf(h+hl,(size_t)(16384-hl),"<a href=\"/op?w=cloudcp\"><div><span class=o style=background:#a142f4>Copy between clouds</span></div></a>");
     return h;}
 static void _handle(int c){
     static char req[262144];int n=0;
