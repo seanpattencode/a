@@ -64,10 +64,11 @@ private fun ms()=et.text.toString().replace("\n","").lowercase().let{q->it.indic
 private fun cl(){o=false;imm.hideSoftInputFromWindow(et.windowToken,0);et.setText("");onCl();requestLayout();invalidate()}
 private fun sel(){val m=ms();if(m.isNotEmpty()){i=m[0];it[i].second()};cl()}
 private val v=object:android.view.View(a){
-override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());if(o){val m=ms();for((r,j) in m.withIndex()){p.color=if(r==0)0xFFFFFF00.toInt() else -1;cv.drawText(it[j].first,width/2f,height-r*200f-70f,p)}}else{p.color=-1;cv.drawText("≡ "+it[i].first,width/2f,85f,p)}}
-override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){if(o){val r=((height-e.y)/200).toInt();val m=ms();if(r in m.indices){i=m[r];it[i].second()};cl()}else{o=true;onOp();et.requestFocus();imm.showSoftInput(et,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);requestLayout();invalidate()}};return true}}
+private fun rowH(n:Int)=minOf(200f,(height-20f)/n.coerceAtLeast(1))
+override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());if(o){val m=ms();val rh=rowH(m.size);p.textSize=minOf(100f,rh*0.52f);for((r,j) in m.withIndex()){p.color=if(r==0)0xFFFFFF00.toInt() else -1;cv.drawText(it[j].first,width/2f,height-r*rh-rh*0.32f,p)}}else{p.textSize=100f;p.color=-1;cv.drawText("≡ "+it[i].first,width/2f,85f,p)}}
+override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){if(o){val m=ms();val r=((height-e.y)/rowH(m.size)).toInt();if(r in m.indices){i=m[r];it[i].second()};cl()}else{o=true;onOp();et.requestFocus();imm.showSoftInput(et,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);requestLayout();invalidate()}};return true}}
 init{addView(v,FrameLayout.LayoutParams(-1,-1));addView(et,FrameLayout.LayoutParams(1,1));et.addTextChangedListener(object:android.text.TextWatcher{override fun afterTextChanged(s:android.text.Editable?){if(s?.contains('\n')==true)sel() else{v.invalidate();requestLayout()}};override fun beforeTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){};override fun onTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){}});et.setOnEditorActionListener{_,_,_->sel();true};et.setOnKeyListener{_,k,e->if(e.action==android.view.KeyEvent.ACTION_DOWN&&k==android.view.KeyEvent.KEYCODE_ENTER){sel();true}else false}}
-override fun onMeasure(ws:Int,hs:Int){val h=if(o)ms().size.coerceAtLeast(1)*200+20 else 140;super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
+override fun onMeasure(ws:Int,hs:Int){val want=if(o)ms().size.coerceAtLeast(1)*200+20 else 140;val h=if(o&&MeasureSpec.getSize(hs)>0)minOf(want,MeasureSpec.getSize(hs)) else want;super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
 class Cap:Activity(){
 private fun fire(t:String){if(t.isBlank())return
 val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
@@ -262,8 +263,9 @@ fun mk(dx:Int,tint:Int,lab:String,act:()->Unit):View{val fl=FrameLayout(this)
  fl.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);act();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();true};else->false}}
  val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
  lp.gravity=Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL;lp.x=dx;lp.y=(resources.displayMetrics.density*6).toInt();wm.addView(fl,lp);return fl}
+fun sc(fwd:Boolean){val i=Sc.inst;if(i==null){android.widget.Toast.makeText(this,"Enable scroll access in Setup",android.widget.Toast.LENGTH_SHORT).show();startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}else i.scroll(fwd)}
 val g=s+16
-vs=listOf(mk(-2*g,0xFF1565C0.toInt(),"drop"){dismiss()},mk(-g,0xFF00ACC1.toInt(),"up"){Sc.inst?.scroll(false)},mk(0,0xFFFB8C00.toInt(),"down"){Sc.inst?.scroll(true)},mk(g,0xFF2E7D32.toInt(),"home"){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(2*g,0,"next"){cycle()})}
+vs=listOf(mk(-2*g,0xFF1565C0.toInt(),"drop"){dismiss()},mk(-g,0xFF00ACC1.toInt(),"up"){sc(false)},mk(0,0xFFFB8C00.toInt(),"down"){sc(true)},mk(g,0xFF2E7D32.toInt(),"home"){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(2*g,0,"next"){cycle()})}
 override fun onDestroy(){super.onDestroy();val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager;vs.forEach{try{wm.removeView(it)}catch(e:Exception){}}}}
 '''
 NC=r'''#include <jni.h>
