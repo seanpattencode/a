@@ -1,4 +1,9 @@
 /* ── ssh ── */
+/* Fleet note: Android/termux sshd is unreliable — it dies on sleep/battery, the
+   termux user (u0_aNNN) changes across reinstalls, and the app sandbox blocks a
+   fixed home. For Android phones in a fleet, prefer wireless adb from another
+   device (adb pair/connect over mDNS, then `adb shell`); ssh is supported but
+   secondary for Android. */
 #define SMUX " -oControlMaster=auto -oControlPath=%%d/.ssh/a-%%C -oControlPersist=300"
 #define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"
 static void ssh_parse(const char*h,char*hp,char*port){
