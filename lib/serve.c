@@ -201,20 +201,31 @@ static void _handle(int c){
     if(!strncmp(req,"GET /api/u-status",17)){_sresp(c,200,"application/json","{\"ok\":true}",11);return;}
     if(!strncmp(req,"GET /prompt",11)){
         int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","err",3);return;}pid_t ch=fork();
-        if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","prompt","show",(char*)0);_exit(1);}
+        if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);(void)!chdir(SDIR);execlp("a","a","prompt","show",(char*)0);_exit(1);}
         close(pp[1]);size_t cap=1<<19,ol=0;char*o=malloc(cap);
         if(o)for(int r;(r=(int)read(pp[0],o+ol,cap-1-ol))>0;){ol+=(size_t)r;
             if(ol+8192>cap){char*t=realloc(o,cap*=2);if(!t){free(o);o=NULL;break;}o=t;}}
         close(pp[0]);waitpid(ch,NULL,0);
         if(!o){_sresp(c,500,"text/plain","oom",3);return;}o[ol]=0;
-        char*h=malloc(ol*6+1024);if(!h){free(o);_sresp(c,500,"text/plain","oom",3);return;}
+        char*h=malloc(ol*6+2048);if(!h){free(o);_sresp(c,500,"text/plain","oom",3);return;}
         char cm[4096];int cl;size_t HL=strlen(HOME);
-        struct{const char*lbl,*fmt,*root;}CP[]={{"default.txt","%s/common/prompts/default.txt",SROOT},{"intro.txt","%s/common/prompts/intro.txt",SROOT},{"AGENTS.md","%s/AGENTS.md",SDIR},{"m/i.txt","%s/m/i.txt",SROOT},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT}};
-        cl=snprintf(cm,4096,"<div class=c><b>components</b> <span class=g>= lib/tmux.c write_prompt_file + a cat · generated inline: git-status line · a-done tools line · installed tools (ls $PATH)</span><br>");
-        for(int i=0;i<5;i++){char fp[P];snprintf(fp,P,CP[i].fmt,CP[i].root);struct stat st;long sz=stat(fp,&st)?-1:(long)st.st_size;const char*d=fp;if(!strncmp(d,HOME,HL)&&d[HL]=='/')d+=HL+1;cl+=snprintf(cm+cl,(size_t)(4096-cl),"<span class=k>%s</span> <span class=p>%s</span> %ldB<br>",CP[i].lbl,d,sz);}
+        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{"default.txt","%s/common/prompts/default.txt",SROOT,0,-1},{"intro.txt","%s/common/prompts/intro.txt",SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"m/i.txt","%s/m/i.txt",SROOT,"==> m/i.txt <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,-1}};
+        for(int i=0;i<6;i++){char key[160]={0};
+            if(CP[i].mk)snprintf(key,160,"%s",CP[i].mk);
+            else if(CP[i].fmt[0]){char fp[P];snprintf(fp,P,CP[i].fmt,CP[i].root);FILE*f=fopen(fp,"r");
+                if(f){char ln[160];while(fgets(ln,160,f)){ln[strcspn(ln,"\n")]=0;if((int)strlen(ln)>8){snprintf(key,160,"%s",ln);break;}}fclose(f);}}
+            if(key[0]){char*pq=strstr(o,key);if(pq)CP[i].off=(long)(pq-o);}}
+        cl=snprintf(cm,4096,"<div class=c><b>components</b> <span class=g>= write_prompt_file (lib/tmux.c) · click to jump · also inline: git-status, a-done line · codebase 'a cat' appended at runtime (dimmed)</span><br>");
+        for(int i=0;i<6;i++){char fp[P]="";if(CP[i].fmt[0])snprintf(fp,P,CP[i].fmt,CP[i].root);
+            struct stat st;long sz=fp[0]&&!stat(fp,&st)?(long)st.st_size:-1;
+            const char*d=fp[0]?fp:"(generated)";if(fp[0]&&!strncmp(d,HOME,HL)&&d[HL]=='/')d+=HL+1;
+            if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(4096-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ldB<br>",i,CP[i].lbl,d,sz);
+            else cl+=snprintf(cm+cl,(size_t)(4096-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ldB<br>",CP[i].lbl,d,sz);}
         cl+=snprintf(cm+cl,(size_t)(4096-cl),"</div>");
-        int hl=snprintf(h,(size_t)(ol*6+1024),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#6cf;padding:10px 16px;border-bottom:1px solid #222}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.7}.g{color:#888}.k{color:#6cf}.p{color:#9c9}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}</style><header><b>unified prompt</b> — sent to every agent (claude·codex·gemini·m) · %zu bytes</header>%s<pre>",ol,cm);
-        for(size_t i=0;i<ol;i++){char k=o[i];
+        int hl=snprintf(h,(size_t)(ol*6+2048),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#6cf;padding:8px 16px;border-bottom:1px solid #222;z-index:2}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.8}.g{color:#888}.k{color:#6cf;text-decoration:none}.k:hover{text-decoration:underline}.p{color:#9c9}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}pre span{scroll-margin-top:46px}</style><header><b>unified prompt</b> — every agent (claude·codex·gemini·m) · %zu bytes</header>%s<pre>",ol,cm);
+        for(size_t i=0;i<ol;i++){
+            for(int z=0;z<6;z++)if(CP[z].off==(long)i)hl+=snprintf(h+hl,40,"<span id=c%d></span>",z);
+            char k=o[i];
             if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
             else if(k=='>'){memcpy(h+hl,"&gt;",4);hl+=4;}
             else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}

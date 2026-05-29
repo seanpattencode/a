@@ -566,6 +566,7 @@ static int cmd_adb(int c,char**v){
       "$A push \"$sc\" /sdcard/_a.sh >/dev/null;rm \"$sc\";"
       "$A shell '/system/bin/device_config put activity_manager max_phantom_processes 2147483647' 2>/dev/null;"
       "$A shell 'settings put global settings_enable_monitor_phantom_procs false' 2>/dev/null;"
+      "$A shell dumpsys deviceidle whitelist +com.termux 2>/dev/null;"  /* battery-opt exempt: survive doze/OOM when backgrounded */
       "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null;sleep 2;"
       "$A shell input keyevent 66;sleep 1;"  /* Enter to ensure fresh prompt */
       "$A shell input text 'sh%s/sdcard/_a.sh';$A shell input keyevent 66;sleep 3;echo '✓ sshd up, key installed'");
@@ -665,7 +666,7 @@ static const cmd_t CMDS[] = {
     {"ref",cmd_ref},{"relay",cmd_relay},{"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
     {"set",cmd_set},{"settings",cmd_settings},{"setup",cmd_setup},
-    {"ssh",cmd_ssh},
+    {"ssh",cmd_ssh},{"sw",cmd_swarm},
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
     {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},
     {"uninstall",cmd_uninstall},{"update",cmd_update},
@@ -730,9 +731,9 @@ int main(int argc, char **argv) {
      if(strrchr(arg,'.')&&fexists(pf))RL
      for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
      init_db();load_cfg();load_sess();if(find_sess(arg))return cmd_sess(argc,argv);
-     DIR*ld;struct dirent*le;snprintf(pf,P,"%s/my",SDIR);ld=opendir(pf);
+     DIR*ld;struct dirent*le;snprintf(pf,P,"%s/my",SROOT);ld=opendir(pf);
      if(ld){while((le=readdir(ld))){if(le->d_name[0]=='.')continue;
-      for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s/%s%s",SDIR,le->d_name,arg,EXT[i]);
+      for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s/%s%s",SROOT,le->d_name,arg,EXT[i]);
        if(fexists(pf)){closedir(ld);RL}}}closedir(ld);}
      #undef RL
      }

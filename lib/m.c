@@ -25,10 +25,11 @@ static void m_commit(const char *tag) {
     /* commit + push synchronously (8s-bounded); confirm with the commit hash now on m/main */
     char c[B], out[256]="";
     snprintf(c, B,
-        "cd '%1$s/m'&&git add -A&&(git diff --cached --quiet||git commit -q -m '%2$s');"
-        "h=$(git rev-parse --short HEAD);timeout 8 git push -q 2>/dev/null"
-        "&&printf '✓ synced m/main @%%s (%2$s)' \"$h\"||printf '✗ @%%s (%2$s) NOT pushed' \"$h\"",
-        AROOT, tag);
+        "cd '%1$s'&&git add m&&(git diff --cached --quiet||git commit -q -m '%2$s');"
+        "h=$(git rev-parse --short HEAD);"
+        "{ timeout 8 git push -q 2>/dev/null||{ git pull --rebase --autostash -q 2>/dev/null&&timeout 8 git push -q 2>/dev/null;}; }"
+        "&&printf '✓ synced a-git @%%s (%2$s)' \"$h\"||printf '✗ @%%s (%2$s) NOT pushed' \"$h\"",
+        SROOT, tag);
     pcmd(c, out, 256); out[strcspn(out,"\n")]=0;
     m_status(out);
 }
@@ -79,7 +80,7 @@ static int mm_stream(const char *sf, const char *sp, char *a, size_t sz, char *b
         dup2(s, 0); dup2(pp[1], 1); dup2(d, 2);
         close(s); close(d); close(pp[0]); close(pp[1]);
         /* context injected fresh every call, uniformly for both providers */
-        char ctx[B]; snprintf(ctx,B,"cat '%1$s/local/a_cat.txt' 2>/dev/null;printf '\\n==> i.txt <==\\n';cat '%1$s/m/i.txt' 2>/dev/null;cat '%1$s/m/mem/'*.txt 2>/dev/null",AROOT);
+        char ctx[B]; snprintf(ctx,B,"cd '%2$s' 2>/dev/null;a prompt show 2>/dev/null;cat '%1$s/local/a_cat.txt' 2>/dev/null",AROOT,SDIR);
         char x[B*2];
         if (is_codex)
             snprintf(x,B*2,"{ printf '%%s\\n' \"$1\";%s;printf '\\n';cat; }|iconv -f UTF-8 -t UTF-8 -c|codex exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --disable shell_tool --disable unified_exec --disable tool_search --disable tool_suggest -m '%s' -c 'model_reasoning_effort=\"%s\"'",ctx,md,ef);
@@ -112,7 +113,7 @@ static void mm_bash(const char *pty, const char *cmd, char *out, size_t sz) {
     (void)pty;
     char tp[P],sc[B*2]; snprintf(tp,P,"%s/m_transcript.log",DDIR);
     setenv("MMCMD",cmd,1);
-    snprintf(sc,B*2,"cd '%s/m'&&{ printf '\\n\\033[1;33m[%%s]$\\033[0m %%s\\n' \"$(date +%%T)\" \"$MMCMD\"|tee -a '%s';setsid timeout -k 5 60 bash -c \"$MMCMD\" 2>&1|tee -a '%s'|perl -pe 's/\\e\\[[\\d;?<>=]*[A-Za-z@~]//g;s/\\e[()][AB012]//g;s/\\e[<=>]//g'|tail -50|sed 's/^/    /'; }",AROOT,tp,tp);
+    snprintf(sc,B*2,"cd '%s/m'&&{ printf '\\n\\033[1;33m[%%s]$\\033[0m %%s\\n' \"$(date +%%T)\" \"$MMCMD\"|tee -a '%s';setsid timeout -k 5 60 bash -c \"$MMCMD\" 2>&1|tee -a '%s'|perl -pe 's/\\e\\[[\\d;?<>=]*[A-Za-z@~]//g;s/\\e[()][AB012]//g;s/\\e[<=>]//g'|tail -50|sed 's/^/    /'; }",SROOT,tp,tp);
     pcmd(sc,out,sz);
 }
 
@@ -131,7 +132,7 @@ static int m_reinit(const char *fn) {
 }
 static int m_restart(void){CWD(cd);char c[B];snprintf(c,B,"tmux respawn-window -k -c '%s' 'a m'",cd);(void)!system(c);return 0;}
 static int m_main(void){return m_reinit("agents/main.txt");}
-static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agents",AROOT);mkdirp(ad);time_t t=time(NULL);char fn[64];strftime(fn,64,"agents/%Y-%m-%d_%H-%M-%S.txt",localtime(&t));return m_reinit(fn);}
+static int m_new(void){char ad[P];snprintf(ad,P,"%s/m/agents",SROOT);mkdirp(ad);time_t t=time(NULL);char fn[64];strftime(fn,64,"agents/%Y-%m-%d_%H-%M-%S.txt",localtime(&t));return m_reinit(fn);}
 
 static void m_set(const char *k,const char *v){char ck[32];snprintf(ck,32,"m_%s",k);cfset(ck,v);
   if(!strcmp(k,"agent")){cfset("m_model",m_dflt_model(v));cfset("m_effort",strstr(v,"codex")?"xhigh":"max");}
@@ -220,7 +221,7 @@ static void m_menu(void){
 }
 /* a m mem [name] — pick/create a flat memory .txt, edit in e; all mem/*.txt inject into every turn. */
 static int m_mem(int c,char**v){perf_disarm();
-    char rd[P];snprintf(rd,P,"%s/m/mem",AROOT);mkdirp(rd);
+    char rd[P];snprintf(rd,P,"%s/mem",SROOT);mkdirp(rd);
     char fn[64]="notes.txt";
     if(c>3)snprintf(fn,64,"%s%s",v[3],strstr(v[3],".txt")?"":".txt");
     else{char cmd[B];snprintf(cmd,B,"ls '%s' 2>/dev/null",rd);static char buf[8192];pcmd(cmd,buf,sizeof buf);
@@ -233,7 +234,7 @@ static int m_reset(void) {
 }
 
 static int cmd_m(int c, char **v) {
-    if (c>2&&!strcmp(v[2],"edit")) { char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb i.txt'",AROOT); return system(cc); }
+    if (c>2&&!strcmp(v[2],"edit")) { char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb i.txt'",SROOT); return system(cc); }
     if (c>2&&!strcmp(v[2],"mem")) return m_mem(c,v);
     if (c > 2 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort"))) {
         char val[256]=""; if(c>3)ajoin(val,256,c,v,3); load_cfg(); m_set(v[2],val); return 0;}
@@ -256,18 +257,16 @@ static int cmd_m(int c, char **v) {
     char fnb[128]="agents/main.txt"; const char *fn=fnb;
     if(c>2){snprintf(fnb,128,"agents/%s%s",v[2],strstr(v[2],".txt")?"":".txt");}
     else{char*sp=readf(pf,NULL);if(sp&&!strncmp(sp,"agents/",7)){sp[strcspn(sp,"\n")]=0;snprintf(fnb,128,"%s",sp);}free(sp);}
-    snprintf(sf, P, "%s/m/%s", AROOT, fn);
+    snprintf(sf, P, "%s/m/%s", SROOT, fn);
     mm_w(pf,fn,"w");
     setenv("M_IN", "1", 1);
-    /* m repo lives at adata/m. migrate legacy ~/a/m if present, else clone, on first launch. */
-    { char gp[P]; snprintf(gp,P,"%s/m/.git",AROOT);
-      if(!dexists(gp)){char ic[B]; snprintf(ic,B,"cd '%1$s'&&{ [ -d '%2$s/m/.git' ]&&mv '%2$s/m' m||{ U=$(gh repo view m --json url --jq .url 2>/dev/null)&&git clone \"$U.git\" m 2>/dev/null||gh repo create m --private --clone; }; }",AROOT,SDIR); (void)!system(ic);} }
-    { char ad[P]; snprintf(ad,P,"%s/m/agents",AROOT); mkdirp(ad); }
+    /* m now lives in a-git (adata/git/m); convos sync via the a-git repo, no separate repo. */
+    { char ad[P]; snprintf(ad,P,"%s/m/agents",SROOT); mkdirp(ad); }
     int _first=1, re=1;
     for (;;) {
         g_halt = 0;
         {char *sp=readf(pf,NULL); if(sp&&!strncmp(sp,"agents/",7)){sp[strcspn(sp,"\n")]=0;
-          if(strcmp(sp,fn)){re=1;snprintf(fnb,128,"%s",sp); fn=fnb; snprintf(sf,P,"%s/m/%s",AROOT,fn);
+          if(strcmp(sp,fn)){re=1;snprintf(fnb,128,"%s",sp); fn=fnb; snprintf(sf,P,"%s/m/%s",SROOT,fn);
           }} free(sp);}
         if(re){ static char tb[262144]; size_t n=m_tail(sf,tb,sizeof tb);
           if(!n){ mm_w(sf,"## user\n","w"); n=m_tail(sf,tb,sizeof tb); }
@@ -287,8 +286,8 @@ static int cmd_m(int c, char **v) {
           fflush(stdout); }
         write(1,"\n> ",3);
         if(_first){_first=0; tm_rename(sn);
-          /* refresh source cache (a repo) + pull the m repo (adata/m), async */
-          snprintf(b,B,"(cd '%s'&&a cat 3 >/dev/null 2>&1;git -C '%s/m' pull --rebase --autostash -q 2>/dev/null)&",SDIR,AROOT);(void)!system(b); }
+          /* refresh source cache (a repo) + pull a-git (carries m), async */
+          snprintf(b,B,"(cd '%s'&&a cat 3 >/dev/null 2>&1;git -C '%s' pull --rebase --autostash -q 2>/dev/null)&",SDIR,SROOT);(void)!system(b); }
         static char m[65536]; size_t ml=m_read_line(m,sizeof m);
         if(g_rst){g_rst=0;re=1;continue;}
         if(!ml){re=1;continue;}

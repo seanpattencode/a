@@ -221,7 +221,7 @@ def cmd_serve():
         else:
             out, end = [], time.time()+8
             while time.time() < end:
-                try: out.append(pending[rid].get(timeout=end-time.time()))
+                try: out.append(pending[rid].get(timeout=min(1.5,end-time.time()) if out else end-time.time()))
                 except Exception: break
             del pending[rid]
             c.send(('\n'.join(out) or '{"error":"no response"}').encode()+b'\n')

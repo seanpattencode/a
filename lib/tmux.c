@@ -58,7 +58,7 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     char af[P];snprintf(af,P,"%s/AGENTS.md",wd);
     char *amd=readf(af,NULL);if(amd){fprintf(f,"%s\n",amd);free(amd);}
     if(extra&&extra[0])fprintf(f,"\nTask: %s\n",extra);
-    {char ip[P];snprintf(ip,P,"%s/m/i.txt",SDIR);char *iv=readf(ip,NULL);
+    {char ip[P];snprintf(ip,P,"%s/m/i.txt",SROOT);char *iv=readf(ip,NULL);
      if(iv){fprintf(f,"\n==> m/i.txt <==\n%s\n",iv);free(iv);}}
     fprintf(f,"\nInstalled tools on this device:\n");
     FILE*tp=popen("ls $(echo \"$PATH\"|tr : ' ') 2>/dev/null|sort -u","r");
