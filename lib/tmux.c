@@ -80,7 +80,7 @@ static void tm_ensure_conf(void) {
     FILE *f = fopen(cpath, "w");
     if (!f) return;
     const char *cc = clip_cmd();
-    fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\n"
+    fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\nset -wgu pane-scrollbars\n"
         "set -g history-limit 1000000\n"
         "set -ga update-environment \"WAYLAND_DISPLAY\"\n"
         "set -ga update-environment \"SWAYSOCK\"\n"

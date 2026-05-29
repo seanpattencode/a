@@ -234,7 +234,7 @@ static int m_reset(void) {
 }
 
 static int cmd_m(int c, char **v) {
-    if (c>2&&!strcmp(v[2],"edit")) { char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/mem' 'exec e --nosb i.txt'",SROOT); return system(cc); }
+    if (c>2&&!strcmp(v[2],"edit")) { char cc[B]; snprintf(cc,B,"tmux split-window -fh -l 80%% -c '%s/mem' 'exec e --nosb i.txt'",SROOT); return system(cc); }
     if (c>2&&!strcmp(v[2],"mem")) return m_mem(c,v);
     if (c > 2 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort"))) {
         char val[256]=""; if(c>3)ajoin(val,256,c,v,3); load_cfg(); m_set(v[2],val); return 0;}
@@ -249,7 +249,7 @@ static int cmd_m(int c, char **v) {
     CWD(w); struct tm*tt=localtime(&(time_t){time(NULL)}); char sn[64];
     snprintf(sn,64,"m-%s-%02d%02d%02d",bname(w),tt->tm_hour,tt->tm_min,tt->tm_sec);
     if (!getenv("TMUX")) { ajoin(b,B,c,v,0); tm_new(sn,w,b);
-        (void)!system("tmux set -wg pane-scrollbars on 2>/dev/null"); tm_go(sn); return 0; }
+        tm_go(sn); return 0; }
     signal(SIGINT, m_sint);
     { struct sigaction sa; sa.sa_handler=m_usr1; sigemptyset(&sa.sa_mask); sa.sa_flags=0; sigaction(SIGUSR1,&sa,NULL); }
     { char pb[16]; snprintf(b,B,"%s/m_pid",DDIR); snprintf(pb,16,"%d",getpid()); mm_w(b,pb,"w"); setenv("M_PID",pb,1); }
