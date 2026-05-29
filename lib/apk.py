@@ -9,7 +9,8 @@ private const val U="http://127.0.0.1:1112/term"
 class M:Activity(){
 companion object{init{System.loadLibrary("anative")}}
 private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0
-private var wsOut:OutputStream?=null
+private var wsOut:OutputStream?=null;private var rt:LinearLayout?=null
+private fun bubOn()=(getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any{it.service.className=="com.aios.a.BubbleService"}
 private val wsExec=java.util.concurrent.Executors.newSingleThreadExecutor()
 private fun pg(s:String)=w.loadDataWithBaseURL(null,"<body style='font:18px monospace;padding:20px;background:#000;color:#0f0'>$s","text/html","utf-8",null)
 private fun jsEval(s:String)=h.post{w.evaluateJavascript(s,null)}
@@ -34,7 +35,7 @@ o.write(m);for(i in bs.indices)o.write(bs[i].toInt() xor m[i%4].toInt())
 wsOut?.write(o.toByteArray());wsOut?.flush()}catch(e:Exception){}}}
 private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this;this.readyState=0;this.send=function(d){A.wsSend(d+'')};this.close=function(){this.readyState=3};A.wsOpen(url)};window._wsOpen=function(){if(_w){_w.readyState=1;if(_w.onopen)_w.onopen()}};window._wsMsg=function(d){if(_w&&_w.onmessage)_w.onmessage({data:d})};window._wsClose=function(c){if(_w){_w.readyState=3;if(_w.onclose)_w.onclose({code:c,wasClean:false})}}})()"
 override fun onBackPressed(){if(w.canGoBack())w.goBack() else super.onBackPressed()}
-override fun onResume(){super.onResume();boot()}
+override fun onResume(){super.onResume();boot();rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0)}
 private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");if(!up.exists())assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}
 val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.deleteRecursively();ti.mkdirs();val src=File(filesDir,"terminfo.src");if(!src.exists())assets.open("terminfo.src").use{i->src.outputStream().use{o->i.copyTo(o)}}
@@ -53,7 +54,7 @@ webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:S
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
 val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
-val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
+val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false
 private val p=Paint().apply{textSize=100f;textAlign=Paint.Align.CENTER;typeface=Typeface.MONOSPACE;isAntiAlias=true}
@@ -562,6 +563,8 @@ class Home : Activity() {
     private var pins = mutableSetOf<String>()
     private lateinit var bmp: Bitmap
     private lateinit var v: View
+    private var wrap: android.widget.FrameLayout? = null
+    private fun bubOn() = (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any { it.service.className == "com.aios.a.BubbleService" }
     private val la by lazy { getSystemService(Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps }
     private val SCF = android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
     private external fun nResize(w: Int, h: Int)
@@ -609,11 +612,11 @@ class Home : Activity() {
             }
             override fun computeScroll() { if (nAnim()) { invalidate(); postInvalidateOnAnimation() } }
         }
-        setContentView(v)
+        wrap = android.widget.FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()); addView(v, android.widget.FrameLayout.LayoutParams(-1, -1)) }; setContentView(wrap)
         ex.execute { scan() }
     }
 
-    override fun onResume() { super.onResume(); nResume(); if (::bmp.isInitialized) v.invalidate(); ex.execute { scan() } }
+    override fun onResume() { super.onResume(); nResume(); wrap?.setPadding(0, 0, 0, if (bubOn()) (resources.displayMetrics.density * 52).toInt() else 0); if (::bmp.isInitialized) v.invalidate(); ex.execute { scan() } }
 
     private fun atlas(sz: Float): IntArray {
         val p = Paint().apply { textSize = sz; color = -1; isAntiAlias = true; typeface = Typeface.MONOSPACE; textAlign = Paint.Align.CENTER }
@@ -918,6 +921,7 @@ object NativeKB {
 
 class InstantNdkService : InputMethodService(), android.view.textservice.SpellCheckerSession.SpellCheckerSessionListener {
     private lateinit var kbView: NdkKeyboardView
+    private var root: android.widget.LinearLayout? = null
     private var sc: android.view.textservice.SpellCheckerSession? = null
     private var fix: String? = null; private var fixWord = ""; private var skip = ""
 
@@ -925,8 +929,11 @@ class InstantNdkService : InputMethodService(), android.view.textservice.SpellCh
     override fun onGetSuggestions(r: Array<out android.view.textservice.SuggestionsInfo>?) { r?.firstOrNull()?.let { if (it.suggestionsCount > 0) fix = it.getSuggestionAt(0) } }
     override fun onGetSentenceSuggestions(r: Array<out android.view.textservice.SentenceSuggestionsInfo>?) {}
 
-    override fun onCreateInputView(): View { sc = (getSystemService(android.content.Context.TEXT_SERVICES_MANAGER_SERVICE) as? android.view.textservice.TextServicesManager)?.newSpellCheckerSession(null, null, this, true); kbView = NdkKeyboardView(this); return kbView }
-    override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting); kbView.requestLayout(); fix = null; fixWord = ""; skip = "" }
+    override fun onCreateInputView(): View { sc = (getSystemService(android.content.Context.TEXT_SERVICES_MANAGER_SERVICE) as? android.view.textservice.TextServicesManager)?.newSpellCheckerSession(null, null, this, true); kbView = NdkKeyboardView(this); root = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF000000.toInt()); addView(kbView) }; return root!! }
+    override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting)
+        val bub = (getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any { it.service.className == "com.aios.a.BubbleService" }
+        root?.setPadding(0, 0, 0, if (bub) (resources.displayMetrics.density * 52).toInt() else 0)
+        kbView.requestLayout(); fix = null; fixWord = ""; skip = "" }
 
     fun sendChar(c: Char) = when (c) {
         '\b' -> currentInputConnection?.deleteSurroundingText(1, 0)
