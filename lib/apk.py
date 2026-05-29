@@ -109,6 +109,7 @@ private val items=listOf<Pair<()->String,()->Unit>>(
 {"Grant usage access"} to{go(Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))},
 {"Grant mic permission"} to{a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1)},
 {"Open Shizuku setup"} to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))},
+{"Enable scroll access"} to{go(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))},
 {"Bubble "+(if(bubOn())"on" else "off")} to{val i=Intent(a,BubbleService::class.java);if(bubOn())a.stopService(i) else if(android.provider.Settings.canDrawOverlays(a))a.startService(i) else go(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:${a.packageName}")))}
 )
 override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt());for((i,e) in items.withIndex())c.drawText(e.first(),width/2f,300f+i*140f,p)}
@@ -206,6 +207,18 @@ private fun speakPage(){ensureTts{val ts=tts ?:return@ensureTts;ts.stop();for((i
 override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN&&e.y>height-110f){speakPage();return true}
 if(nTouch(e.action and 0xFF,e.x,e.y)!=0){spoken=-1;tts?.stop();invalidate()};return true}
 override fun onDetachedFromWindow(){super.onDetachedFromWindow();tts?.shutdown();tts=null}}
+class Sc:android.accessibilityservice.AccessibilityService(){
+companion object{var inst:Sc?=null}
+override fun onServiceConnected(){inst=this}
+override fun onAccessibilityEvent(e:android.view.accessibility.AccessibilityEvent?){}
+override fun onInterrupt(){}
+override fun onDestroy(){inst=null;super.onDestroy()}
+private var bn:android.view.accessibility.AccessibilityNodeInfo?=null;private var ba=0
+private fun scan(n:android.view.accessibility.AccessibilityNodeInfo?){if(n==null)return;if(n.isScrollable){val r=android.graphics.Rect();n.getBoundsInScreen(r);val a=r.width()*r.height();if(a>ba){ba=a;bn=n}};for(i in 0 until n.childCount)scan(n.getChild(i))}
+fun scroll(fwd:Boolean){bn=null;ba=0;scan(rootInActiveWindow);val n=bn?:return
+ val pg=(if(fwd)android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_DOWN else android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_UP).id
+ if(!n.performAction(pg))n.performAction(if(fwd)android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)}
+}
 class BubbleService:android.app.Service(){
 companion object{init{System.loadLibrary("bubble")}}
 external fun render(px:IntArray,w:Int,h:Int)
@@ -227,11 +240,15 @@ if(Build.VERSION.SDK_INT>=34)startForeground(1,nt,android.content.pm.ServiceInfo
 val s=(resources.displayMetrics.density*40).toInt();val px=IntArray(s*s);render(px,s,s)
 val bmp=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);bmp.setPixels(px,0,s,0,0,s,s)
 val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager
-fun mk(dx:Int,tint:Int,act:()->Unit):View{val w=ImageView(this);w.setImageBitmap(bmp);if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP)
- w.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);act();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();true};else->false}}
+fun mk(dx:Int,tint:Int,lab:String,act:()->Unit):View{val fl=FrameLayout(this)
+ val w=ImageView(this);w.setImageBitmap(bmp);if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP)
+ val tv=TextView(this);tv.text=lab;tv.setTextColor(Color.WHITE);tv.textSize=10f;tv.gravity=Gravity.CENTER
+ fl.addView(w,FrameLayout.LayoutParams(s,s));fl.addView(tv,FrameLayout.LayoutParams(s,s))
+ fl.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);act();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();true};else->false}}
  val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
- lp.gravity=Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL;lp.x=dx;lp.y=(resources.displayMetrics.density*6).toInt();wm.addView(w,lp);return w}
-vs=listOf(mk(-(s+16),0xFF1565C0.toInt()){dismiss()},mk(0,0xFF2E7D32.toInt()){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(s+16,0){cycle()})}
+ lp.gravity=Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL;lp.x=dx;lp.y=(resources.displayMetrics.density*6).toInt();wm.addView(fl,lp);return fl}
+val g=s+16
+vs=listOf(mk(-2*g,0xFF1565C0.toInt(),"drop"){dismiss()},mk(-g,0xFF00ACC1.toInt(),"up"){Sc.inst?.scroll(false)},mk(0,0xFFFB8C00.toInt(),"down"){Sc.inst?.scroll(true)},mk(g,0xFF2E7D32.toInt(),"home"){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(2*g,0,"next"){cycle()})}
 override fun onDestroy(){super.onDestroy();val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager;vs.forEach{try{wm.removeView(it)}catch(e:Exception){}}}}
 '''
 NC=r'''#include <jni.h>
@@ -1221,8 +1238,9 @@ JNIEXPORT void JNICALL Java_com_aios_a_BubbleService_render(JNIEnv*e,jobject o,j
  for(int y=0;y<h;y++)for(int x=0;x<w;x++){float dx=(float)x-c,dy=(float)y-c;p[y*w+x]=sqrtf(dx*dx+dy*dy)<=r?(jint)0xFFFF2020:0;}
  (*e)->ReleaseIntArrayElements(e,a,p,0);}
 '''
-MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><service android:name=".BubbleService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="bubble"/></service></application></manifest>'
+MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><service android:name=".BubbleService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="bubble"/></service><service android:name=".Sc" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/acc"/></service></application></manifest>'
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
+ACC='<?xml version="1.0" encoding="utf-8"?><accessibility-service xmlns:android="http://schemas.android.com/apk/res/android" android:accessibilityEventTypes="typeWindowStateChanged" android:accessibilityFeedbackType="feedbackGeneric" android:canRetrieveWindowContent="true" android:accessibilityFlags="flagRetrieveInteractiveWindows"/>'
 GS='pluginManagement{repositories{google();mavenCentral()};plugins{id("com.android.application") version "8.2.0";id("org.jetbrains.kotlin.android") version "1.9.22"}}\ndependencyResolutionManagement{repositories{google();mavenCentral()}}\ninclude(":app")\n'
 H=os.path.expanduser("~");IT=os.path.exists("/data/data/com.termux")
 SDK="/data/data/com.termux/files/home/android-sdk" if IT else os.environ.get("ANDROID_HOME") or next((p for p in[H+"/Library/Android/sdk",H+"/Android/Sdk"] if os.path.isdir(p)),H+"/Android/Sdk")
@@ -1377,7 +1395,7 @@ def run():
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
         w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC)
         w(D+"/app/src/main/java/com/aios/a/Home.kt",HKT);w(D+"/app/src/main/res/values/styles.xml",TXML)
-        w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",MXML)
+        w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",MXML);w(D+"/app/src/main/res/xml/acc.xml",ACC)
         if IT:
             sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
             w(D+"/native.c",NC);so=sf+"/libanative.so"
