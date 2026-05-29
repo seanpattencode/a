@@ -269,9 +269,10 @@ static int cmd_swarm(int c,char**v){
         return 1;}
     char pr[B]="";ajoin(pr,B,c,v,3);
     char cmd[B*2],out[B];
-    snprintf(cmd,B*2,"a ssh %s 'a j \"%s\" >/dev/null 2>&1;tmux lsw -t a -F \"#{window_index}:#{window_name}\" 2>/dev/null|grep :j-|tail -1' 2>&1",v[2],pr);
+    /* newest j- window = highest window_id (tmux reuses window indexes, so tail-by-index reports a stale window) */
+    snprintf(cmd,B*2,"a ssh %s 'a j \"%s\">/dev/null 2>&1;tmux lsw -t a -F \"#{window_id} #{window_name}\" 2>/dev/null|grep \" j-\"|sort -t@ -k2 -n|tail -1|cut -d\" \" -f2' 2>&1",v[2],pr);
     pcmd(cmd,out,B);out[strcspn(out,"\n")]=0;
-    int ok=out[0]>='0'&&out[0]<='9';
+    int ok=!strncmp(out,"j-",2);
     if(ok)printf("✓ %s launched, window %s\n  reattach: a ssh %s\n",v[2],out,v[2]);
     else printf("x %s: %s\n",v[2],out[0]?out:"no job window made");
     return!ok;

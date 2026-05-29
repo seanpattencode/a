@@ -144,7 +144,7 @@ build) _PT=${EPOCHREALTIME/./}
         _checkers
         if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] >"$ABIN/.chk" 2>/dev/null
             [ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&printf '#!/bin/sh\nhead -80 %s/.chk;exit 1' "$ABIN">"$ABIN/a"&&chmod +x "$ABIN/a"
-        else $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-;rm -f "$ABIN/a.opt"
+        else $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
         fi
     ) >&- 2>&- &
     ;;
@@ -154,7 +154,7 @@ check) _PT=${EPOCHREALTIME/./}
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
     _checkers
     if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] 2>/dev/null; exit 1
-    else ok "all checkers passed"; _perf_chk check; $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-;rm -f "$ABIN/a.opt" & fi
+    else ok "all checkers passed"; _perf_chk check; $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt" & fi
     ;;
 analyze) _ensure_cc;_warn_flags
     $CC $WARN $_Q --analyze -Xanalyzer -analyzer-output=text -Xanalyzer -analyzer-checker=security,unix,nullability,optin.portability.UnixAPI -Xanalyzer -analyzer-disable-checker=security.insecureAPI.DeprecatedOrUnsafeBufferHandling "$D/a.c"
@@ -681,7 +681,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|clone|add|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|clone|add|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);
