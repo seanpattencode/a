@@ -89,17 +89,18 @@ i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.get
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
-val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}
-val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → ubuntu";textSize=22f;setPadding(48,96,48,24);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
+val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.BOTTOM;setBackgroundColor(0xFF000000.toInt())}
+val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → ubuntu";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
 status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16)}
-val btn=Button(this).apply{text="→ termux (attach)";setOnClickListener{
+val btn=Button(this).apply{text="→ termux";setOnClickListener{
 val ai=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 ai.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
 ai.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a ssh ubuntu"))
 ai.putExtra("com.termux.RUN_COMMAND_BACKGROUND",false)
 ai.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION","0")
 try{startForegroundService(ai)}catch(e:Exception){try{startService(ai)}catch(e2:Exception){}}}}
-ll.addView(e,LinearLayout.LayoutParams(-1,-2));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(btn,LinearLayout.LayoutParams(-2,-2))
+val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(e,LinearLayout.LayoutParams(0,-2,1f));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
+ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
 setContentView(ll);e.requestFocus()
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
 val go={fire(e.text.toString());e.setText("")}
