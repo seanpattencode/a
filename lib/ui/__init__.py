@@ -71,6 +71,10 @@ def run():
         else: print('No service manager (use a ui)'); sys.exit(1)
     elif a and a[0] == 'off':
         _svc_off(); _kill(); print('UI service off')
+    elif a and a[0] == 'reload':  # restart the managed service so it picks up a rebuilt binary; silent no-op if unmanaged
+        if _MAC: _r(['launchctl', 'kickstart', '-k', f'gui/{os.getuid()}/com.a.ui'])
+        elif _TERMUX: _r(['sv', 'restart', 'a-ui'])
+        elif _r(['systemctl', '--user', 'is-active', 'a-ui']).returncode == 0: _r(['systemctl', '--user', 'restart', 'a-ui'])
     else:
         p = int(a[0]) if a and a[0].isdigit() else PORT
         _kill(); _bg('ui_full', p)
