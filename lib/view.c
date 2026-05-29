@@ -1,7 +1,10 @@
 /* ── gui: visual interaction. Priority: terminal>key>uia>fan>CDP ──
    macOS: click/key require Accessibility permission or events silently fail.
    User must enable: System Settings → Privacy & Security → Accessibility → add Terminal.
-   LLM: if click() has no effect, tell user to grant Accessibility permission. */
+   LLM: if click() has no effect, tell user to grant Accessibility permission.
+   macOS shot: screencapture needs an Aqua session — fails ("could not create image from
+   display") from a background/SSH-launched tmux server; bounce via `open -a Terminal.app
+   <script>` (Launch Services runs it in the GUI session, output to a file). */
 static int vwsl(void){static int r=-1;if(r<0){char v[8];pcmd("grep -ci microsoft /proc/version 2>/dev/null",v,8);r=atoi(v)>0;}return r;}
 static int vps(const char*s,char*o,int n){writef("/mnt/c/tmp/v_cmd.ps1",s);
     return pcmd("powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/tmp/v_cmd.ps1",o,n);}
