@@ -212,7 +212,7 @@ static void _handle(int c){
         o[ol]=0;
         char*h=malloc(ol*6+2048);if(!h){free(o);_sresp(c,500,"text/plain","oom",3);return;}
         char cm[4096];int cl;size_t HL=strlen(HOME);
-        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{"default.txt","%s/common/prompts/default.txt",SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"m/i.txt","%s/m/i.txt",SROOT,"==> m/i.txt <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,cboff}};
+        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{"default.txt","%s/common/prompts/default.txt",SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"mem index","%s/mem/index.txt",SROOT,"==> mem index <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,cboff}};
         int N=5;
         for(int i=0;i<N;i++){if(CP[i].off>=0)continue;char key[160]={0};
             if(CP[i].mk)snprintf(key,160,"%s",CP[i].mk);

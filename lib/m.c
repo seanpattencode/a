@@ -234,7 +234,7 @@ static int m_reset(void) {
 }
 
 static int cmd_m(int c, char **v) {
-    if (c>2&&!strcmp(v[2],"edit")) { char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/m' 'exec e --nosb i.txt'",SROOT); return system(cc); }
+    if (c>2&&!strcmp(v[2],"edit")) { char cc[B]; snprintf(cc,B,"tmux set -w pane-scrollbars on;tmux split-window -fh -l 80%% -c '%s/mem' 'exec e --nosb i.txt'",SROOT); return system(cc); }
     if (c>2&&!strcmp(v[2],"mem")) return m_mem(c,v);
     if (c > 2 && (!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort"))) {
         char val[256]=""; if(c>3)ajoin(val,256,c,v,3); load_cfg(); m_set(v[2],val); return 0;}

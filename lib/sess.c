@@ -138,7 +138,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             struct stat st;long tot=0;char hp[P];
             snprintf(hp,P,"%s/m/m.txt",SDIR);if(!stat(hp,&st))tot+=st.st_size;
             snprintf(hp,P,"%s/local/a_cat.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
-            snprintf(hp,P,"%s/m/i.txt",SROOT);if(!stat(hp,&st))tot+=st.st_size;
+            snprintf(hp,P,"%s/mem/index.txt",SROOT);if(!stat(hp,&st))tot+=st.st_size;
             snprintf(hp,P,"%s/m_status",DDIR);char*ms=readf(hp,NULL);
             if(ms)ms[strcspn(ms,"\n")]=0;
             hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
