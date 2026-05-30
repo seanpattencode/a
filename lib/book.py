@@ -181,12 +181,11 @@ if __name__ == "__main__":
             ("a book serve [start|stop]","calibre server on this device"),
             ("a book sync",              "rclone bidirectional sync of adata/books/"),
         ]
+        pos_by = {p[1]: ((p[4].strip() if len(p) >= 5 else "") or "0") for l in rows for p in [l.split("\t")] if len(p) >= 2}
+        local = [d.name for d in DATA_DIR.iterdir() if d.is_dir()] if DATA_DIR.exists() else []
         items = []
-        for l in rows:
-            parts = l.split("\t")
-            name = parts[1] if len(parts) >= 2 else "?"
-            pos  = (parts[4].strip() if len(parts) >= 5 else "") or "0"
-            items.append(f"📖 {name}\topen book (pos {pos})\tread")
+        for name in sorted(set(pos_by) | set(local)):
+            items.append(f"📖 {name}\topen book (pos {pos_by.get(name, '0')})\tread")
             items.append(f"🧠 {name}\tload to claude\tchat")
         for label, desc in actions:
             items.append(f"⚙  {label}\t{desc}\tact")
@@ -196,8 +195,10 @@ if __name__ == "__main__":
             try: cols = items[int(input("# "))].split("\t")
             except: sys.exit(0)
         else:
-            r = subprocess.run(["fzf","--height","60%","--reverse","--prompt","a book > ","--with-nth","1,2","--delimiter","\t","--info","inline",
-                "--header","Enter selects. Esc cancels.","--ansi"],
+            prev = f'n=$(echo {{1}}|sed "s/^[^ ]* //"); head -c 4000 "{DATA_DIR}/$n/output/"*.txt 2>/dev/null||echo "(no text — a book transcribe $n)"'
+            r = subprocess.run(["fzf","--height","80%","--reverse","--prompt","a book > ","--with-nth","1,2","--delimiter","\t","--info","inline",
+                "--bind","left:up,right:down","--preview",prev,"--preview-window","right:50%:wrap",
+                "--header","←/→ flip books · Enter selects · Esc cancels","--ansi"],
                 input="\n".join(items), capture_output=True, text=True)
             if r.returncode != 0: sys.exit(0)
             cols = r.stdout.strip().split("\t")
@@ -252,13 +253,17 @@ if __name__ == "__main__":
         parts = [f"BOOK: {book.name}\n\n" + "\n\n".join(t.read_text() for t in txts)]
         for md in [ROOT / "AGENTS.md", ROOT / "IDEAS.md"]:
             if md.exists(): parts.append(f"\n\n--- {md.name} ---\n\n" + md.read_text())
-        for f in args[3:]:
+        rest = args[3:]; i = rest.index("-p") if "-p" in rest else len(rest)
+        ask = rest[i+1:] if i < len(rest) else None  # -p <question>: single-shot, print answer
+        for f in rest[:i]:
             p = Path(f)
             if p.exists(): parts.append(f"\n\n--- {p.name} ---\n\n" + p.read_text())
         if not sys.stdin.isatty(): parts.append("\n\n--- PIPED INPUT ---\n\n" + sys.stdin.read())
         tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', prefix='book_chat_', delete=False)
         tmp.write("\n".join(parts)); tmp.close()
-        print(f"Context: {os.path.getsize(tmp.name)} bytes from {len(txts)} outputs + extras")
+        print(f"Context: {os.path.getsize(tmp.name)} bytes from {len(txts)} outputs + extras", file=sys.stderr)
+        if ask is not None:
+            os.execvp("claude", ["claude", "-p", " ".join(ask), "--dangerously-skip-permissions", "--append-system-prompt-file", tmp.name])
         tty = os.open('/dev/tty', os.O_RDONLY)
         os.dup2(tty, 0); os.close(tty)
         os.execvp("claude", ["claude", "--dangerously-skip-permissions", "--append-system-prompt-file", tmp.name])
