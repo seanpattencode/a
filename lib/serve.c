@@ -122,6 +122,20 @@ static void _sresph(int c,int code,const char*ct,const char*body,int bl,const ch
 /* static doc pages: NOT no-store, so the browser back/forward cache restores them instantly (0ms, no refetch) */
 static void _sresp(int c,int code,const char*ct,const char*body,int bl){_sresph(c,code,ct,body,bl,"no-store");}
 static void _sdoc(int c,const char*body,int bl){_sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
+/* ?f=<path> → rel (urldecoded). returns 1 if valid (non-empty, no ..) */
+static int _docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f=");if(!q)return 0;q+=3;
+    int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;
+    return rel[0]&&!strstr(rel,"..");}
+/* editor page: form POST + save button + escaped textarea + optional saved-banner (zero JS) */
+static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*saved){
+    char*h=malloc(bl*6+2048);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
+    int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#6cf}button{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#6c6}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,rel,saved?saved:"");
+    for(size_t i=0;i<bl;i++){char k=body[i];
+        if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
+        else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
+        else h[hl++]=k;}
+    memcpy(h+hl,"</textarea></form>",18);hl+=18;
+    _sdoc(c,h,hl);free(h);}
 static int _ws_upgrade(int c,const char*req){
     const char*k=strstr(req,"Sec-WebSocket-Key: ");if(!k)return 0;
     k+=19;char key[64];int i=0;while(k[i]&&k[i]!='\r'&&i<60){key[i]=k[i];i++;}
@@ -174,6 +188,17 @@ static void _ws_term(int c,const char*target){
     }
     kill(p,SIGHUP);close(m);waitpid(p,NULL,0);
 }
+static void _ws_reload(int c){ /* dev hot-reload: relay a FIFO byte -> WS "reload"; 25s heartbeat keeps the MV3 worker alive */
+    int f=open("/tmp/a_extreload.fifo",O_RDWR|O_NONBLOCK);if(f<0)return;
+    struct pollfd pf[2]={{c,POLLIN,0},{f,POLLIN,0}};char b[64];
+    while(poll(pf,2,25000)>=0){
+        if(pf[0].revents&(POLLHUP|POLLERR))break;
+        if(pf[1].revents&POLLIN){if(read(f,b,64)>0)_ws_send(c,"reload",6);}
+        else if(pf[0].revents&POLLIN){if(_ws_recv(c,b,64)<0)break;}
+        else _ws_send(c,"ping",4);
+    }
+    close(f);
+}
 static char*_cloud_html(void){
     char cmd[P];snprintf(cmd,P,"sh '%s/lib/cloudls.sh'",SDIR);FILE*p=popen(cmd,"r");
     char rl[4096]={0};if(p){(void)!fread(rl,1,4095,p);pclose(p);}
@@ -209,27 +234,45 @@ static void _handle(int c){
         char tgt[64]={0};const char*qw=strstr(req,"?w=");
         if(qw){qw+=3;int i=0;while(qw[i]&&qw[i]!=' '&&qw[i]!='&'&&qw[i]!='\r'&&i<63){tgt[i]=qw[i];i++;}tgt[i]=0;}
         if(_ws_upgrade(c,req))_ws_term(c,tgt);return;}
+    if(!strncmp(req,"GET /extreload",14)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
+        if(_ws_upgrade(c,req))_ws_reload(c);return;}
     if(!strncmp(req,"GET /api/u-status",17)){_sresp(c,200,"application/json","{\"ok\":true}",11);return;}
     if(!strncmp(req,"GET /doc",8)&&(req[8]=='?'||req[8]==' ')){
-        char rel[P]={0};const char*q=strstr(req,"?f=");
-        if(q){q+=3;int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){
-            if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}
-            else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;}
-        if(!rel[0]||strstr(rel,"..")){_sresp(c,400,"text/plain","? GET /doc?f=<path under adata/git>",36);return;}
+        char rel[P];const char*m="? GET /doc?f=<path under adata/git>";
+        if(!_docrel(req,rel)){_sresp(c,400,"text/plain",m,(int)strlen(m));return;}
         char fp[P];snprintf(fp,P,"%s/%s",SROOT,rel);size_t fl=0;char*fd=readf(fp,&fl);
-        if(!fd){_sresp(c,404,"text/plain","not found",9);return;}
-        char*h=malloc(fl*6+1024);if(!h){free(fd);_sresp(c,500,"text/plain","oom",3);return;}
-        int hl=snprintf(h,1024,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b}textarea{width:100%%;height:100vh;box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:16px;font:13px/1.5 ui-monospace,monospace;resize:none;white-space:pre-wrap;word-break:break-word}</style><textarea spellcheck=false>",rel);
-        for(size_t i=0;i<fl;i++){char k=fd[i];
-            if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
-            else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
-            else h[hl++]=k;}
-        memcpy(h+hl,"</textarea>",11);hl+=11;
-        _sdoc(c,h,hl);free(fd);free(h);return;}
+        _docpage(c,rel,fd?fd:"",fl,NULL);free(fd);return;}   /* missing path -> blank editor; save creates it */
+    if(!strncmp(req,"POST /doc",9)){
+        char rel[P];if(!_docrel(req,rel)){_sresp(c,400,"text/plain","bad path",8);return;}
+        char*bd=strstr(req,"\r\n\r\n"),*clh=strstr(req,"Content-Length:");
+        if(!bd||!clh){_sresp(c,400,"text/plain","no body",7);return;}
+        bd+=4;int blen=atoi(clh+15);
+        if(blen>250000){_sresp(c,413,"text/plain","too big (>250KB) for editor save",32);return;}
+        char*ct=bd;if(blen>=2&&!strncmp(bd,"b=",2)){ct+=2;blen-=2;}              /* strip enctype=text/plain field name */
+        while(blen>0&&(ct[blen-1]=='\n'||ct[blen-1]=='\r'))blen--;              /* drop the trailing CRLF the form appends */
+        int w=0;for(int i=0;i<blen;i++)if(ct[i]!='\r')ct[w++]=ct[i];            /* CRLF -> LF */
+        char fp[P];snprintf(fp,P,"%s/%s",SROOT,rel);
+        FILE*wf=fopen(fp,"w");int ok=0;if(wf){fwrite(ct,1,(size_t)w,wf);ok=!ferror(wf);fclose(wf);}
+        char saved[512],gurl[B]="";
+        if(ok){
+            /* commit just this file to a-git, push (rebase-retry), then fetch + confirm on origin → github commit url */
+            char gc[B*2];snprintf(gc,B*2,"cd '%s'&&git add '%s'&&{ git diff --cached --quiet||git commit -q -m 'doc: %s';};"
+                "{ git push -q 2>/dev/null||{ git pull --rebase --autostash -q 2>/dev/null&&git push -q 2>/dev/null;}; };"
+                "git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo \"https://github.com/$u/commit/$(git rev-parse --short HEAD)\";}",SROOT,rel,rel);
+            pcmd(gc,gurl,B);gurl[strcspn(gurl,"\n")]=0;
+            char ts[16];time_t tt=time(0);strftime(ts,16,"%H:%M:%S",localtime(&tt));
+            const char*hash=strrchr(gurl,'/');hash=hash?hash+1:gurl;
+            if(gurl[0])snprintf(saved,512,"✓ saved %s · verified on origin · <a href=\"%s\" target=_blank style=color:#6cf>%s</a> <span style=color:#888>(private — sign in to view)</span>",ts,gurl,hash);
+            else snprintf(saved,512,"✓ saved %s locally · ✗ NOT pushed to origin",ts);
+        }else snprintf(saved,512,"✗ SAVE FAILED");
+        {char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*lf=fopen(lg,"a");
+            if(lf){if(!ok)fprintf(lf,"✗ FAIL write %s\n",rel);else if(gurl[0])fprintf(lf,"✓ saved %s · verified on origin · %s\n",rel,gurl);else fprintf(lf,"✓ saved %s LOCALLY (✗ not pushed to origin)\n",rel);fclose(lf);}}
+        size_t nl=0;char*nf=readf(fp,&nl);
+        _docpage(c,rel,nf?nf:ct,nf?nl:(size_t)w,saved);free(nf);return;}
     if(!strncmp(req,"GET /docs",9)){
         /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
         char*h=malloc(1<<18);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
-        int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:14px/1.6 ui-monospace,monospace}h3{color:#6cf;padding:12px 16px 4px;margin:0}a{display:block;color:#9cf;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style>");
+        int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:14px/1.6 ui-monospace,monospace}h3{color:#6cf;padding:12px 16px 4px;margin:0}a{display:block;color:#9cf;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style><a href=# onclick=\"var n=prompt('new adoc filename');if(n)location='/doc?f=adocs/'+n;return false\" style=color:#9f9>+ new adoc</a>");
         const char*dirs[]={"mem","adocs"};
         for(int k=0;k<2;k++){char dp[P];snprintf(dp,P,"%s/%s",SROOT,dirs[k]);
             static char nm[2048][80];int n=0;DIR*d=opendir(dp);struct dirent*e;
@@ -397,6 +440,7 @@ static void _handle(int c){
 }
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     mkfifo("/tmp/a_dash.fifo",0644);(void)!open("/tmp/a_dash.fifo",O_RDWR|O_NONBLOCK);
+    unlink("/tmp/a_extreload.fifo");mkfifo("/tmp/a_extreload.fifo",0644); /* ext hot-reload channel; left unopened so writes only land when a worker is reading */
     (void)!system("for h in after-new-window after-rename-window after-kill-pane session-window-changed;do tmux set-hook -g $h 'run-shell -b \"echo x > /tmp/a_dash.fifo\"' 2>/dev/null;done");
     {const char*op=getenv("PATH")?:"";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
