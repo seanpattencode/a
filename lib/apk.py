@@ -53,7 +53,7 @@ webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:Console
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("ubuntu" to{startActivity(Intent(this,Cap::class.java))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("homebox" to{startActivity(Intent(this,Cap::class.java))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false;var sel=0;var pnm=-1;var plen=0
@@ -69,6 +69,7 @@ override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());if(o){val m=ms()
 override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){if(o){val m=ms();val r=((height-e.y)/rowH(m.size)).toInt();if(r in m.indices){i=m[r];it[i].second()};cl()}else{o=true;sel=0;pnm=-1;plen=0;onOp();et.requestFocus();imm.showSoftInput(et,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);requestLayout();invalidate()}};return true}}
 init{addView(v,FrameLayout.LayoutParams(-1,-1));addView(et,FrameLayout.LayoutParams(1,1));et.addTextChangedListener(object:android.text.TextWatcher{override fun afterTextChanged(s:android.text.Editable?){if(s?.contains('\n')==true){pick();return};val nm=ms().size;val len=s?.length?:0;sel=if(len>plen&&nm==pnm)sel+1 else 0;if(sel>=nm)sel=maxOf(0,nm-1);pnm=nm;plen=len;v.invalidate();requestLayout()};override fun beforeTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){};override fun onTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){}})}
 override fun onMeasure(ws:Int,hs:Int){val want=if(o)ms().size.coerceAtLeast(1)*200+20 else 140;val h=if(o&&MeasureSpec.getSize(hs)>0)minOf(want,MeasureSpec.getSize(hs)) else want;super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
+// homebox = the user's primary ssh device — the main box they work on. Generic alias, not a specific host: each user points "homebox" at their default machine via an ssh entry named homebox. Cap fires captured thoughts to it (a sw homebox) and the button attaches (a ssh homebox).
 class Cap:Activity(){
 private val ACT="com.aios.a.CAP_RESULT"
 private var status:TextView?=null
@@ -78,26 +79,27 @@ var b=ex?.getBundle("com.termux.execute.PLUGIN_RESULT_BUNDLE")?:ex?.getBundle("r
 if(b==null)for(k in ex?.keySet()?:emptySet<String>()){val v=ex?.get(k);if(v is Bundle){b=v;break}}
 val o=(b?.getString("stdout")?:"")+(b?.getString("stderr")?:"")
 val w=Regex("window (\\S+)").find(o)?.groupValues?.get(1)
-runOnUiThread{status?.text=if(w!=null)"✓ sent → $w" else if(o.isNotBlank())"✓ sent: "+o.trim().takeLast(60) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
+runOnUiThread{status?.text=if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
 private fun fire(t:String){if(t.isBlank())return
 status?.text="sending…"
 val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
-i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a sw ubuntu \"\$1\" 2>&1","a",t))
+i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a sw homebox \"\$1\" 2>&1","a",t))
 i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
 i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
 val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.BOTTOM;setBackgroundColor(0xFF000000.toInt())}
-val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → ubuntu";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
+val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
 status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16)}
-val btn=Button(this).apply{text="→ termux";setOnClickListener{
+val btn=Button(this).apply{text="windows";setOnClickListener{
+status?.text="checking…"
 val ai=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 ai.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
-ai.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a ssh ubuntu"))
-ai.putExtra("com.termux.RUN_COMMAND_BACKGROUND",false)
-ai.putExtra("com.termux.RUN_COMMAND_SESSION_ACTION","0")
+ai.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a ssh homebox tmux list-windows -t a 2>&1|grep j-|sort -t@ -k2 -n|tail -1|cut -d' ' -f2|grep .||echo NONE"))
+ai.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
+ai.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this@Cap,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(ai)}catch(e:Exception){try{startService(ai)}catch(e2:Exception){}}}}
 val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(e,LinearLayout.LayoutParams(0,-2,1f));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
 ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
@@ -116,11 +118,14 @@ private external fun nResize(w:Int,hh:Int)
 private external fun nFont(d:IntArray)
 private external fun nRender(p:IntArray)
 private external fun nTouch(a:Int,x:Float,y:Float)
+private external fun nKey(d:Int)
 private external fun nStart(ld:String,fd:String)
 private external fun nStop()
 private external fun nDirty():Boolean
 private val tk=object:Runnable{override fun run(){if(bmp!=null&&nDirty())invalidate();h.postDelayed(this,16)}}
-override fun onAttachedToWindow(){super.onAttachedToWindow();h.post(tk)}
+init{isFocusable=true;isFocusableInTouchMode=true}
+override fun onAttachedToWindow(){super.onAttachedToWindow();h.post(tk);requestFocus()}
+override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{val d=when(k){android.view.KeyEvent.KEYCODE_DPAD_LEFT->0;android.view.KeyEvent.KEYCODE_DPAD_RIGHT->1;android.view.KeyEvent.KEYCODE_DPAD_UP->2;android.view.KeyEvent.KEYCODE_DPAD_DOWN->3;android.view.KeyEvent.KEYCODE_DPAD_CENTER,android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_BUTTON_A->4;else->return super.onKeyDown(k,e)};nKey(d);invalidate();return true}
 override fun onDetachedFromWindow(){if(started)nStop();h.removeCallbacks(tk);super.onDetachedFromWindow()}
 override fun onSizeChanged(w:Int,h:Int,ow:Int,oh:Int){if(w*h<1)return
 bmp?.recycle();bmp=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
@@ -334,7 +339,9 @@ static const char*KR[NROWS]={
  "zxcvbnm,\x08",
  "-=. \x09"};
 static float KB[60][4];
-static int nkeys,pressed=-1;
+static int nkeys,pressed=-1,selkey=0;
+static void kb_rc(int idx,int*pr,int*pc,int*pn){int c=0;for(int r=0;r<NROWS;r++){int n=(int)strlen(KR[r]);if(idx<c+n){*pr=r;*pc=idx-c;*pn=n;return;}c+=n;}*pr=*pc=0;*pn=(int)strlen(KR[0]);}
+static int kb_rs(int r){int c=0;for(int i=0;i<r;i++)c+=(int)strlen(KR[i]);return c;}
 static uint32_t PAL[16]={
  0xFF000000,0xFFCC0000,0xFF00CC00,0xFFCCCC00,0xFF2244CC,0xFFCC00CC,0xFF00CCCC,0xFFCCCCCC,
  0xFF666666,0xFFFF4444,0xFF44FF44,0xFFFFFF44,0xFF4488FF,0xFFFF44FF,0xFF44FFFF,0xFFFFFFFF};
@@ -494,8 +501,9 @@ JF(void,nRender)(JNIEnv*e,jclass c,jintArray arr){(void)c;
    int ix=(int)KB[i][0],iy=(int)KB[i][1],iw=(int)(KB[i][2]-KB[i][0]),ih=(int)(KB[i][3]-KB[i][1]);
    const char*lb=lbl(kch(i));int lw=(int)strlen(lb)*FN.cw;
    uint32_t col=(i==pressed)?0xFFFF3333:(ctrl_stk&&lb[0]=='C'&&lb[1]=='T')?0xFFFF8844:0xFFFFFFFF;
+   if(i==selkey)for(int dy=0;dy<ih;dy++)for(int dx=0;dx<iw;dx++){int fx=ix+dx,fy=iy+dy;if((unsigned)fx<(unsigned)W&&(unsigned)fy<(unsigned)H)((uint32_t*)p)[fy*stride+fx]=0xFF44FFAA;}
    int tx=ix+(iw-lw)/2,ty=iy+(ih-FN.ch)/2;
-   drawstr((uint32_t*)p,stride,&FN,lb,tx,ty,col);
+   drawstr((uint32_t*)p,stride,&FN,lb,tx,ty,i==selkey?0xFF000000:col);
   }
   if(gridh<H-(int)(H*0.40f)){/*ok*/}
  }
@@ -520,6 +528,13 @@ static void send_key(int kidx){
   else pty_w(&c,1);
  }}
 
+JF(void,nKey)(JNIEnv*e,jclass c,jint dir){(void)e;(void)c;
+ int r,col,n;kb_rc(selkey,&r,&col,&n);
+ if(dir==0&&col>0)selkey--;
+ else if(dir==1&&col<n-1)selkey++;
+ else if((dir==2&&r>0)||(dir==3&&r<NROWS-1)){int nr=r+(dir==3?1:-1),nn=(int)strlen(KR[nr]);selkey=kb_rs(nr)+(col<nn?col:nn-1);}
+ else if(dir==4)send_key(selkey);
+ dirty=1;}
 JF(void,nTouch)(JNIEnv*e,jclass c,jint act,jfloat x,jfloat y){(void)e;(void)c;
  switch(act){
  case 0:pressed=kbh(x,y);if(pressed>=0){send_key(pressed);dirty=1;}break;
@@ -1000,7 +1015,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     }}
     private val hz120 = object : android.view.Choreographer.FrameCallback { override fun doFrame(t: Long) { invalidate(0,0,1,1); android.view.Choreographer.getInstance().postFrameCallback(this) } }
 
-    private val toolbarH = 80f
+    private val toolbarH = 0f
     private var listening = false
     private fun startTranscription() {
         listening = true; invalidate()
@@ -1028,8 +1043,8 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (e.action == MotionEvent.ACTION_DOWN && e.y < toolbarH) { if (e.x > width - toolbarH * 1.5f) startTranscription(); return true }
         val c = NativeKB.onTouch(e.action, e.x, e.y - toolbarH)
+        if (e.action == MotionEvent.ACTION_DOWN && c == 3) { startTranscription(); return true }
         if (e.action == MotionEvent.ACTION_DOWN && c != 0) {
             svc.sendChar(c.toChar())
             handler.removeCallbacks(holdCheck)
@@ -1042,7 +1057,6 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
-        textPaint.textSize = 40f; val lbl = if (listening) "listening" else "mic"; canvas.drawText(lbl, width - (lbl.length * 14f + 24f), toolbarH * 0.7f, textPaint)
         canvas.save(); canvas.translate(0f, toolbarH)
         NativeKB.getBounds(bounds)
         val labels = NativeKB.getLabels()
@@ -1051,7 +1065,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
         val rowCount = NativeKB.getRowCount()
         val debugRed = prefs.getBoolean("debug_red", true)
         val hf = NativeKB.getHFudge()
-        val rowSizes = if (mode == 1) intArrayOf(10, 10, 8, 5) else intArrayOf(10, 10, 9, 9, 4)
+        val rowSizes = if (mode == 1) intArrayOf(11, 10, 8, 5) else intArrayOf(11, 10, 9, 9, 4)
         var row = 0; var inRow = 0
         for (i in labels.indices) {
             val b = i * 4
@@ -1060,7 +1074,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
             val isPressed = i == pressed
             if (isPressed && debugRed) canvas.drawRoundRect(bounds[b] - hf, bounds[b+1] + rf, bounds[b+2] + hf, bounds[b+3] + rf, 8f, 8f, pressPaint)
             else canvas.drawRoundRect(bounds[b]+4, bounds[b+1]+4, bounds[b+2]-4, bounds[b+3]-4, 8f, 8f, if (isPressed) pressPaint else keyPaint)
-            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; else -> ch.toString() }
+            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (listening) "●" else "🎤"; else -> ch.toString() }
             canvas.drawText(label, (bounds[b] + bounds[b+2]) / 2, (bounds[b+1] + bounds[b+3]) / 2 + 16, textPaint)
             inRow++; if (row < rowSizes.size && inRow >= rowSizes[row]) { row++; inRow = 0 }
         }
@@ -1117,8 +1131,8 @@ KC=r'''// Instant Keyboard - Native C implementation
 #include <string.h>
 #include <time.h>
 
-static const char* ABC[] = {"1234567890","qwertyuiop","asdfghjkl","\002zxcvbnm\b","\001 .\n"};
-static const char* SYM[] = {"1234567890","@#$_&-+()/","*\"':;!?\b","\001, .\n"};
+static const char* ABC[] = {"1234567890\003","qwertyuiop","asdfghjkl","\002zxcvbnm\b","\001 .\n"};
+static const char* SYM[] = {"1234567890\003","@#$_&-+()/","*\"':;!?\b","\001, .\n"};
 static int symMode = 0, shift = 0, pressedKey = -1, kbWidth, kbHeight;
 static float keyW, rowH, bounds[44][4], rowFudge[5] = {0}, hFudge = 0;
 static long pressTime = 0;
@@ -1136,7 +1150,7 @@ static void computeBounds() {
         for (int i = 0; i < n; i++) {
             float w = keyW, x = i * keyW;
             int rr = symMode ? r : r - 1; // row index for layout calc (skip num row logic)
-            if (!symMode && r == 0) { /* num row: simple */ }
+            if (r == 0) { float nkw = kbWidth/(float)n; w = nkw; x = i*nkw; } // num row: n keys (10 digits + mic) fill width
             else if (rr == 0) { /* qwerty row: simple */ }
             else if (rr == 1 && !symMode) x = keyW * 0.5f + i * keyW;
             else if (rr == 2) {
@@ -1417,8 +1431,10 @@ def qr_pair():
 def run():
     if "pair" in sys.argv[1:]:return shizuku_pair()
     if "pair-qr" in sys.argv[1:] or "qr" in sys.argv[1:]:return qr_pair()
-    proj=serial=None
+    AMAP={"arm":"armeabi-v7a","v7a":"armeabi-v7a","armeabi-v7a":"armeabi-v7a","arm64":"arm64-v8a","v8a":"arm64-v8a","arm64-v8a":"arm64-v8a"}
+    proj=serial=ABI=None
     for a in sys.argv[2:]:
+        if a in AMAP:ABI=AMAP[a];continue
         for p in [a,H+"/"+a,R+"/adata/git/my/"+a]:
             if os.path.isdir(p) and glob.glob(p+"/build.gradle*"):proj=os.path.abspath(p);break
         if proj:break
@@ -1426,6 +1442,14 @@ def run():
     if not serial:
         ds=devlist()
         if ds:serial=ds[0] if len(ds)==1 else pick(ds)
+    if not ABI:
+        pa=adb("shell","getprop","ro.product.cpu.abi",serial=serial).stdout.strip() if serial else ""
+        ABI=pa if pa in AMAP else "arm64-v8a"
+    TRIPLE={"arm64-v8a":"aarch64-linux-android","armeabi-v7a":"armv7a-linux-androideabi"}[ABI]
+    FARCH={"arm64-v8a":"aarch64","armeabi-v7a":"EABI"}[ABI]
+    sfx="" if ABI=="arm64-v8a" else "-"+ABI
+    SRCD,ADROID="/tmp/dsrc"+sfx,"/tmp/a-droid"+sfx
+    print(f"→ target ABI: {ABI}")
     cf="-O3 -flto -Wl,-z,max-page-size=16384"
     if proj:
         if not os.path.exists(proj+"/gradlew"):sys.exit("x No gradlew in "+proj)
@@ -1441,7 +1465,7 @@ def run():
             for line in open(bf):
                 if ("applicationId" in line or "namespace" in line) and '"' in line:pkg=line.split('"')[1];break
     else:
-        w(D+"/settings.gradle.kts",GS);w(D+"/app/build.gradle.kts",GB);w(D+"/local.properties",f"sdk.dir={SDK}\n")
+        w(D+"/settings.gradle.kts",GS);w(D+"/app/build.gradle.kts",GB.replace("arm64-v8a",ABI));w(D+"/local.properties",f"sdk.dir={SDK}\n")
         ks=f"{R}/adata/git/common/debug.keystore";hk=f"{H}/.android/debug.keystore"
         if not os.path.exists(ks) and os.path.exists(hk):shutil.copy(hk,ks);print(f"→ seeded {ks}")
         os.makedirs(f"{D}/app",exist_ok=True);shutil.copy(ks,f"{D}/app/debug.keystore")
@@ -1464,23 +1488,23 @@ def run():
             S.run(f"clang -shared {cf} -w -lm -o '{bso}' '{D}/bubble.c'&&patchelf --remove-rpath '{bso}'",shell=True,check=True)
         else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/reader.c",RDR_C);w(D+"/app/src/main/cpp/bubble.c",BUB_C);w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
         # Stage bundled bins + terminfo source (from a droid/droidtmux output)
-        sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
+        sf=D+"/app/src/main/jniLibs/"+ABI;os.makedirs(sf,exist_ok=True)
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
-        stage={"/tmp/a-droid":"liba.so","/tmp/dsrc/tmux-build-a/tmux":"libtmux.so","/tmp/dsrc/ncurses-6.4/progs/tic":"libtic.so"}
-        opt={"/tmp/dsrc/dropbear-2024.86/dbclient":"libssh.so","/tmp/ssh_wrap":"libsshwrap.so"}
+        stage={ADROID:"liba.so",f"{SRCD}/tmux-build-a/tmux":"libtmux.so",f"{SRCD}/ncurses-6.4/progs/tic":"libtic.so"}
+        opt={f"{SRCD}/dropbear-2024.86/dbclient":"libssh.so","/tmp/ssh_wrap":"libsshwrap.so"}
         srcmax=max((os.path.getmtime(p) for p in [f"{R}/a.c"]+glob.glob(f"{R}/lib/*.c")+glob.glob(f"{R}/lib/*.h")),default=0)
-        miss=[s for s in stage if not os.path.exists(s) or (s=="/tmp/a-droid" and os.path.getmtime(s)<srcmax)]
-        if "/tmp/a-droid" in miss:
-            cc=f"{_ND}/{_NV}/toolchains/llvm/prebuilt/{_NH}/bin/aarch64-linux-android29-clang"
-            S.check_call([cc,'-DSRC="/data/local/tmp"',"-w"]+cf.split()+["-o","/tmp/a-droid",f"{R}/a.c"])
-        if any("/tmp/dsrc" in s for s in miss):S.check_call(["a","droidtmux"])
+        miss=[s for s in stage if not os.path.exists(s) or (s==ADROID and os.path.getmtime(s)<srcmax)]
+        if ADROID in miss:
+            cc=f"{_ND}/{_NV}/toolchains/llvm/prebuilt/{_NH}/bin/{TRIPLE}29-clang"
+            S.check_call([cc,'-DSRC="/data/local/tmp"',"-w"]+cf.split()+["-o",ADROID,f"{R}/a.c"])
+        if any(SRCD in s for s in miss):S.check_call(["a","droidtmux"],env={**os.environ,"DABI":ABI,"DPUSH":"0"})
         miss=[s for s in stage if not os.path.exists(s)]
         if miss:sys.exit(f"x build failed: {miss}")
         for s,n in {**stage,**{k:v for k,v in opt.items() if os.path.exists(k)}}.items():
             d=f"{sf}/{n}";shutil.copy(s,d)
-            if "aarch64" not in S.run(["file",d],capture_output=True,text=True).stdout:sys.exit(f"x wrong arch: {s} → {d}")
+            if FARCH not in S.run(["file",d],capture_output=True,text=True).stdout:sys.exit(f"x wrong arch: {s} → {d}")
             S.run(["patchelf","--page-size","16384",d],capture_output=True)
-        shutil.copy("/tmp/dsrc/ncurses-6.4/misc/terminfo.src",f"{ad}/terminfo.src")
+        shutil.copy(f"{SRCD}/ncurses-6.4/misc/terminfo.src",f"{ad}/terminfo.src")
         shutil.copy(R+"/lib/ui_full.html",f"{ad}/ui_full.html")
         for sub in["ssh","workspace/projects","workspace/cmds"]:
             sd=R+"/adata/git/"+sub;dd=ad+"/git/"+sub;os.makedirs(dd,exist_ok=True)
