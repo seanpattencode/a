@@ -186,23 +186,23 @@ if __name__ == "__main__":
             parts = l.split("\t")
             name = parts[1] if len(parts) >= 2 else "?"
             pos  = (parts[4].strip() if len(parts) >= 5 else "") or "0"
-            items.append(f"📖 {name}\tpos {pos}\tread")
+            items.append(f"📖 {name}\topen book (pos {pos})\tread")
+            items.append(f"🧠 {name}\tload to claude\tchat")
         for label, desc in actions:
             items.append(f"⚙  {label}\t{desc}\tact")
         if not shutil.which("fzf"):
             for i, it in enumerate(items):
                 cols = it.split("\t"); print(f"  {i:2}. {cols[0]:<40} {cols[1]}")
-            try: idx = int(input("# "))
+            try: cols = items[int(input("# "))].split("\t")
             except: sys.exit(0)
-            cols = items[idx].split("\t")
         else:
             r = subprocess.run(["fzf","--height","60%","--reverse","--prompt","a book > ","--with-nth","1,2","--delimiter","\t","--info","inline",
-                "--header","books read on Enter; actions print usage. Esc cancels.","--ansi"],
+                "--header","Enter selects. Esc cancels.","--ansi"],
                 input="\n".join(items), capture_output=True, text=True)
             if r.returncode != 0: sys.exit(0)
             cols = r.stdout.strip().split("\t")
-        if cols[-1] == "read":
-            sys.argv = sys.argv[:1] + ["read", cols[0].lstrip("📖 ").strip()]
+        if cols[-1] in ("read", "chat"):
+            sys.argv = sys.argv[:1] + [cols[-1], cols[0].split(" ", 1)[1].strip()]
             args = [a for a in sys.argv if not a.startswith("--")]
         else:
             print(cols[0].lstrip("⚙ ").strip()); print(f"  {cols[1]}"); sys.exit(0)
