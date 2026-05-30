@@ -198,7 +198,7 @@ if __name__ == "__main__":
             try: cols = items[int(input("# "))].split("\t")
             except: sys.exit(0)
         else:
-            prev = f'head -c 4000 "{DATA_DIR}/{{2}}/output/"*.txt 2>/dev/null||echo "(no text — a book transcribe {{2}})"'
+            prev = f'head -c 4000 {DATA_DIR}/{{2}}/output/*.txt 2>/dev/null||echo no text yet'
             r = subprocess.run(["fzf","--height","80%","--reverse","--prompt","a book > ","--with-nth","1","--delimiter","\t","--info","inline",
                 "--bind","left:up,right:down","--preview",prev,"--preview-window","right:50%:wrap",
                 "--header","←/→ flip books · Enter selects · Esc cancels","--ansi"],
