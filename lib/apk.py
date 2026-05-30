@@ -34,7 +34,8 @@ when{bs.size<126->o.write(0x80 or bs.size);bs.size<65536->{o.write(0x80 or 126);
 o.write(m);for(i in bs.indices)o.write(bs[i].toInt() xor m[i%4].toInt())
 wsOut?.write(o.toByteArray());wsOut?.flush()}catch(e:Exception){}}}
 private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this;this.readyState=0;this.send=function(d){A.wsSend(d+'')};this.close=function(){this.readyState=3};A.wsOpen(url)};window._wsOpen=function(){if(_w){_w.readyState=1;if(_w.onopen)_w.onopen()}};window._wsMsg=function(d){if(_w&&_w.onmessage)_w.onmessage({data:d})};window._wsClose=function(c){if(_w){_w.readyState=3;if(_w.onclose)_w.onclose({code:c,wasClean:false})}}})()"
-override fun onBackPressed(){if(w.canGoBack())w.goBack() else super.onBackPressed()}
+private var openMenu:(()->Unit)?=null
+override fun onBackPressed(){val o=openMenu;if(w.visibility==View.VISIBLE&&w.canGoBack())w.goBack() else if(o!=null)o() else super.onBackPressed()}
 override fun onResume(){super.onResume();boot();rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0)}
 private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");if(!up.exists())assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}
@@ -55,17 +56,19 @@ override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
 val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("homebox" to{startActivity(Intent(this,Cap::class.java))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
-root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second()}}
-class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false;var sel=0;var pnm=-1;var plen=0
+root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second();nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};mb.post{mb.open()}}}
+class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false;var sel=0;var pnm=-1;var plen=0;var onLeave:(()->Unit)?=null
+fun open(){o=true;sel=0;pnm=-1;plen=0;onOp();isFocusable=true;requestFocus();requestLayout();invalidate()}
+override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{if(!o)return super.onKeyDown(k,e);val m=ms();when(k){android.view.KeyEvent.KEYCODE_DPAD_UP->sel=(sel+1).coerceAtMost(maxOf(0,m.size-1));android.view.KeyEvent.KEYCODE_DPAD_DOWN->if(sel<=0){cl();onLeave?.invoke()}else sel--;android.view.KeyEvent.KEYCODE_DPAD_CENTER,android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_BUTTON_A->{pick();onLeave?.invoke()};android.view.KeyEvent.KEYCODE_BACK->{cl();onLeave?.invoke()};else->return super.onKeyDown(k,e)};v.invalidate();return true}
 private val p=Paint().apply{textSize=100f;textAlign=Paint.Align.CENTER;typeface=Typeface.MONOSPACE;isAntiAlias=true}
 private val et=android.widget.EditText(a).apply{alpha=0f;background=null;inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE}
 private val imm by lazy{a.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager}
 private fun ms()=et.text.toString().replace("\n","").lowercase().let{q->it.indices.filter{j->it[j].first.lowercase().contains(q)}}
-private fun cl(){o=false;sel=0;pnm=-1;plen=0;imm.hideSoftInputFromWindow(et.windowToken,0);et.setText("");onCl();requestLayout();invalidate()}
+private fun cl(){o=false;sel=0;pnm=-1;plen=0;isFocusable=false;imm.hideSoftInputFromWindow(et.windowToken,0);et.setText("");onCl();requestLayout();invalidate()}
 private fun pick(){val m=ms();if(m.isNotEmpty()){i=m[sel.coerceIn(0,m.size-1)];it[i].second()};cl()}
 private val v=object:android.view.View(a){
 private fun rowH(n:Int)=minOf(200f,(height-20f)/n.coerceAtLeast(1))
-override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());if(o){val m=ms();val rh=rowH(m.size);val sc=sel.coerceIn(0,maxOf(0,m.size-1));p.textSize=minOf(100f,rh*0.52f);p.color=-1;for((r,j) in m.withIndex())cv.drawText((if(r==sc)"› " else "")+it[j].first,width/2f,height-r*rh-rh*0.32f,p)}else{p.textSize=100f;p.color=-1;cv.drawText("≡ "+it[i].first,width/2f,85f,p)}}
+override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());if(o){val m=ms();val rh=rowH(m.size);val sc=sel.coerceIn(0,maxOf(0,m.size-1));p.textSize=minOf(100f,rh*0.52f);for((r,j) in m.withIndex()){val yb=height-r*rh;if(r==sc){p.color=-1;cv.drawRect(0f,yb-rh,width.toFloat(),yb,p)};p.color=if(r==sc)0xFF000000.toInt() else -1;cv.drawText(it[j].first,width/2f,yb-rh*0.32f,p)}}else{p.textSize=100f;p.color=-1;cv.drawText("≡ "+it[i].first,width/2f,85f,p)}}
 override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){if(o){val m=ms();val r=((height-e.y)/rowH(m.size)).toInt();if(r in m.indices){i=m[r];it[i].second()};cl()}else{o=true;sel=0;pnm=-1;plen=0;onOp();et.requestFocus();imm.showSoftInput(et,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);requestLayout();invalidate()}};return true}}
 init{addView(v,FrameLayout.LayoutParams(-1,-1));addView(et,FrameLayout.LayoutParams(1,1));et.addTextChangedListener(object:android.text.TextWatcher{override fun afterTextChanged(s:android.text.Editable?){if(s?.contains('\n')==true){pick();return};val nm=ms().size;val len=s?.length?:0;sel=if(len>plen&&nm==pnm)sel+1 else 0;if(sel>=nm)sel=maxOf(0,nm-1);pnm=nm;plen=len;v.invalidate();requestLayout()};override fun beforeTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){};override fun onTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){}})}
 override fun onMeasure(ws:Int,hs:Int){val want=if(o)ms().size.coerceAtLeast(1)*200+20 else 140;val h=if(o&&MeasureSpec.getSize(hs)>0)minOf(want,MeasureSpec.getSize(hs)) else want;super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
@@ -118,14 +121,15 @@ private external fun nResize(w:Int,hh:Int)
 private external fun nFont(d:IntArray)
 private external fun nRender(p:IntArray)
 private external fun nTouch(a:Int,x:Float,y:Float)
-private external fun nKey(d:Int)
+private external fun nKey(d:Int):Int
+var onMenu:(()->Unit)?=null
 private external fun nStart(ld:String,fd:String)
 private external fun nStop()
 private external fun nDirty():Boolean
 private val tk=object:Runnable{override fun run(){if(bmp!=null&&nDirty())invalidate();h.postDelayed(this,16)}}
 init{isFocusable=true;isFocusableInTouchMode=true}
 override fun onAttachedToWindow(){super.onAttachedToWindow();h.post(tk);requestFocus()}
-override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{val d=when(k){android.view.KeyEvent.KEYCODE_DPAD_LEFT->0;android.view.KeyEvent.KEYCODE_DPAD_RIGHT->1;android.view.KeyEvent.KEYCODE_DPAD_UP->2;android.view.KeyEvent.KEYCODE_DPAD_DOWN->3;android.view.KeyEvent.KEYCODE_DPAD_CENTER,android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_BUTTON_A->4;else->return super.onKeyDown(k,e)};nKey(d);invalidate();return true}
+override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{val d=when(k){android.view.KeyEvent.KEYCODE_DPAD_LEFT->0;android.view.KeyEvent.KEYCODE_DPAD_RIGHT->1;android.view.KeyEvent.KEYCODE_DPAD_UP->2;android.view.KeyEvent.KEYCODE_DPAD_DOWN->3;android.view.KeyEvent.KEYCODE_DPAD_CENTER,android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_BUTTON_A->4;else->return super.onKeyDown(k,e)};if(nKey(d)==0){onMenu?.invoke();return true};invalidate();return true}
 override fun onDetachedFromWindow(){if(started)nStop();h.removeCallbacks(tk);super.onDetachedFromWindow()}
 override fun onSizeChanged(w:Int,h:Int,ow:Int,oh:Int){if(w*h<1)return
 bmp?.recycle();bmp=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888)
@@ -157,8 +161,11 @@ private val items=listOf<Pair<()->String,()->Unit>>(
 {"Enable scroll access"} to{go(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))},
 {"Bubble "+(if(bubOn())"on" else "off")} to{val i=Intent(a,BubbleService::class.java);if(bubOn()){a.getSharedPreferences("bub",0).edit().putBoolean("on",false).apply();a.stopService(i)} else if(android.provider.Settings.canDrawOverlays(a))a.startService(i) else go(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:${a.packageName}")))}
 )
-override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt());for((i,e) in items.withIndex())c.drawText(e.first(),width/2f,300f+i*140f,p)}
-override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){val idx=((e.y-240f)/140f).toInt();if(idx in items.indices){items[idx].second();invalidate()}};return true}
+private var sel=0
+init{isFocusable=true;isFocusableInTouchMode=true}
+override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt());for((i,e) in items.withIndex()){val y=300f+i*140f;if(i==sel){p.color=-1;c.drawRect(0f,y-78f,width.toFloat(),y+34f,p)};p.color=if(i==sel)0xFF000000.toInt() else -1;c.drawText(e.first(),width/2f,y,p)}}
+override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{when(k){android.view.KeyEvent.KEYCODE_DPAD_UP->sel=(sel-1).coerceAtLeast(0);android.view.KeyEvent.KEYCODE_DPAD_DOWN->sel=(sel+1).coerceAtMost(items.size-1);android.view.KeyEvent.KEYCODE_DPAD_CENTER,android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_BUTTON_A->items[sel].second();else->return super.onKeyDown(k,e)};invalidate();return true}
+override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){val idx=((e.y-240f)/140f).toInt();if(idx in items.indices){sel=idx;items[idx].second();invalidate()}};return true}
 }
 class N(c:android.content.Context):android.view.View(c),android.speech.RecognitionListener{
 private val sr by lazy{android.speech.SpeechRecognizer.createSpeechRecognizer(c).apply{setRecognitionListener(this@N)}}
@@ -501,7 +508,7 @@ JF(void,nRender)(JNIEnv*e,jclass c,jintArray arr){(void)c;
    int ix=(int)KB[i][0],iy=(int)KB[i][1],iw=(int)(KB[i][2]-KB[i][0]),ih=(int)(KB[i][3]-KB[i][1]);
    const char*lb=lbl(kch(i));int lw=(int)strlen(lb)*FN.cw;
    uint32_t col=(i==pressed)?0xFFFF3333:(ctrl_stk&&lb[0]=='C'&&lb[1]=='T')?0xFFFF8844:0xFFFFFFFF;
-   if(i==selkey)for(int dy=0;dy<ih;dy++)for(int dx=0;dx<iw;dx++){int fx=ix+dx,fy=iy+dy;if((unsigned)fx<(unsigned)W&&(unsigned)fy<(unsigned)H)((uint32_t*)p)[fy*stride+fx]=0xFF44FFAA;}
+   if(i==selkey)for(int dy=0;dy<ih;dy++)for(int dx=0;dx<iw;dx++){int fx=ix+dx,fy=iy+dy;if((unsigned)fx<(unsigned)W&&(unsigned)fy<(unsigned)H)((uint32_t*)p)[fy*stride+fx]=0xFFFFFFFF;}
    int tx=ix+(iw-lw)/2,ty=iy+(ih-FN.ch)/2;
    drawstr((uint32_t*)p,stride,&FN,lb,tx,ty,i==selkey?0xFF000000:col);
   }
@@ -528,13 +535,14 @@ static void send_key(int kidx){
   else pty_w(&c,1);
  }}
 
-JF(void,nKey)(JNIEnv*e,jclass c,jint dir){(void)e;(void)c;
+JF(jint,nKey)(JNIEnv*e,jclass c,jint dir){(void)e;(void)c;
  int r,col,n;kb_rc(selkey,&r,&col,&n);
+ if(dir==3&&r==NROWS-1)return 0;
  if(dir==0&&col>0)selkey--;
  else if(dir==1&&col<n-1)selkey++;
  else if((dir==2&&r>0)||(dir==3&&r<NROWS-1)){int nr=r+(dir==3?1:-1),nn=(int)strlen(KR[nr]);selkey=kb_rs(nr)+(col<nn?col:nn-1);}
  else if(dir==4)send_key(selkey);
- dirty=1;}
+ dirty=1;return 1;}
 JF(void,nTouch)(JNIEnv*e,jclass c,jint act,jfloat x,jfloat y){(void)e;(void)c;
  switch(act){
  case 0:pressed=kbh(x,y);if(pressed>=0){send_key(pressed);dirty=1;}break;
