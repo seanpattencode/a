@@ -174,7 +174,7 @@ static int cmd_done(int argc,char**argv){AB;
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
         FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}}
-    if(getenv("TMUX")){char ts[B]="",dl[B]="",sp[P];
+    if(getenv("TMUX")){char ts[B]="",dl[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);}}
         TAG(ts,"test");TAG(dl,"diff");
@@ -191,12 +191,14 @@ static int cmd_done(int argc,char**argv){AB;
             char m[256]="";int mo=0;
             if(dl[0])mo+=snprintf(m+mo,(size_t)(256-mo),"\\033[1;32m[y]\\033[0m push  ");
             if(ts[0])mo+=snprintf(m+mo,(size_t)(256-mo),"\\033[1;36m[r]\\033[0m run in tmux window  ");
+            mo+=snprintf(m+mo,(size_t)(256-mo),"\\033[1;35m[e]\\033[0m edit  ");
             snprintf(m+mo,(size_t)(256-mo),"\\033[2many key close\\033[0m");
             fprintf(sf,"printf '%s ';read -rsn1 k </dev/tty;echo\n",m);
             if(dl[0])fputs("[ \"$k\" = y ]&&{ a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sf);
             if(ts[0])fprintf(sf,"[ \"$k\" = r ]&&tmux split-window -v 'sh %s'\n",vp);
+            if(tp)fprintf(sf,"[ \"$k\" = e ]&&tmux select-pane -t '%s'\n",tp);
             fclose(sf);
-            char c[P*2];const char*tp=getenv("TMUX_PANE");
+            char c[P*2];
             /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */
             if(tp){snprintf(c,P*2,"tmux list-panes -t %s -F '#{pane_id}'|while read p;do [ \"$p\" != \"%s\" ]&&tmux kill-pane -t \"$p\" 2>/dev/null;done",tp,tp);(void)!system(c);}
             snprintf(c,P*2,"tmux split-window -v -l 70%% -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
