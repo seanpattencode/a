@@ -183,27 +183,30 @@ if __name__ == "__main__":
         ]
         pos_by = {p[1]: ((p[4].strip() if len(p) >= 5 else "") or "0") for l in rows for p in [l.split("\t")] if len(p) >= 2}
         local = [d.name for d in DATA_DIR.iterdir() if d.is_dir()] if DATA_DIR.exists() else []
+        W = 36  # fixed name column so the .ext lines up; longer titles get cut with …
         items = []
         for name in sorted(set(pos_by) | set(local)):
-            items.append(f"📖 {name}\topen book (pos {pos_by.get(name, '0')})\tread")
-            items.append(f"🧠 {name}\tload to claude\tchat")
+            src = next((DATA_DIR / name).glob("source.*"), None) if (DATA_DIR / name).is_dir() else None
+            ext = src.suffix[1:] if src else "?"
+            nm = name if len(name) <= W else name[:W-1] + "…"
+            items.append(f"📖 {nm:<{W}} .{ext:<5} open book (pos {pos_by.get(name, '0')})\t{name}\tread")
+            items.append(f"🧠 {nm:<{W}} .{ext:<5} load to claude\t{name}\tchat")
         for label, desc in actions:
             items.append(f"⚙  {label}\t{desc}\tact")
         if not shutil.which("fzf"):
-            for i, it in enumerate(items):
-                cols = it.split("\t"); print(f"  {i:2}. {cols[0]:<40} {cols[1]}")
+            for i, it in enumerate(items): print(f"  {i:2}. " + it.split("\t")[0])
             try: cols = items[int(input("# "))].split("\t")
             except: sys.exit(0)
         else:
-            prev = f'n=$(echo {{1}}|sed "s/^[^ ]* //"); head -c 4000 "{DATA_DIR}/$n/output/"*.txt 2>/dev/null||echo "(no text — a book transcribe $n)"'
-            r = subprocess.run(["fzf","--height","80%","--reverse","--prompt","a book > ","--with-nth","1,2","--delimiter","\t","--info","inline",
+            prev = f'head -c 4000 "{DATA_DIR}/{{2}}/output/"*.txt 2>/dev/null||echo "(no text — a book transcribe {{2}})"'
+            r = subprocess.run(["fzf","--height","80%","--reverse","--prompt","a book > ","--with-nth","1","--delimiter","\t","--info","inline",
                 "--bind","left:up,right:down","--preview",prev,"--preview-window","right:50%:wrap",
                 "--header","←/→ flip books · Enter selects · Esc cancels","--ansi"],
                 input="\n".join(items), capture_output=True, text=True)
             if r.returncode != 0: sys.exit(0)
             cols = r.stdout.strip().split("\t")
         if cols[-1] in ("read", "chat"):
-            sys.argv = sys.argv[:1] + [cols[-1], cols[0].split(" ", 1)[1].strip()]
+            sys.argv = sys.argv[:1] + [cols[-1], cols[1]]
             args = [a for a in sys.argv if not a.startswith("--")]
         else:
             print(cols[0].lstrip("⚙ ").strip()); print(f"  {cols[1]}"); sys.exit(0)
