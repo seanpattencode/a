@@ -283,7 +283,10 @@ if __name__ == "__main__":
         if not txt.is_file():
             src = b / "source.txt"
             if src.is_file(): txt = src
-            else: print(f"no readable text in {b}"); sys.exit(1)
+            else:  # no text yet — open the source (pdf/epub/docx) in the native app
+                f = next(b.glob("source.*"), None)
+                if not f: print(f"no file in {b}"); sys.exit(1)
+                subprocess.Popen(["open" if sys.platform=="darwin" else "xdg-open", str(f)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); sys.exit(0)
         IDX = ADATA / "git" / "books" / "index.txt"
         IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
         pos = 0
