@@ -136,6 +136,17 @@ static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*s
         else h[hl++]=k;}
     memcpy(h+hl,"</textarea></form>",18);hl+=18;
     _sdoc(c,h,hl);free(h);}
+/* recursive doc lister: one <a> per file, descends folders; display strips the section prefix (off) */
+static int _docls(char*h,int hl,const char*rel,int off){
+    char dp[P];snprintf(dp,P,"%s/%s",SROOT,rel);DIR*d=opendir(dp);if(!d)return hl;
+    struct dirent*e;char nm[256][96];int n=0;
+    while((e=readdir(d))&&n<256){if(e->d_name[0]=='.')continue;snprintf(nm[n++],96,"%s",e->d_name);}closedir(d);
+    for(int i=1;i<n;i++){char t[96];snprintf(t,96,"%s",nm[i]);int j=i-1;while(j>=0&&strcmp(nm[j],t)>0){snprintf(nm[j+1],96,"%s",nm[j]);j--;}snprintf(nm[j+1],96,"%s",t);}
+    for(int i=0;i<n&&hl<(1<<18)-512;i++){char r2[P];snprintf(r2,P,"%s/%s",rel,nm[i]);
+        char fp[P];snprintf(fp,P,"%s/%s",SROOT,r2);struct stat st;
+        if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=color:#778;padding:4px 16px>%s/</div>",r2+off);hl=_docls(h,hl,r2,(int)strlen(r2)+1);}
+        else hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<a href=\"/doc?f=%s\">%s</a>",r2,r2+off);}
+    return hl;}
 static int _ws_upgrade(int c,const char*req){
     const char*k=strstr(req,"Sec-WebSocket-Key: ");if(!k)return 0;
     k+=19;char key[64];int i=0;while(k[i]&&k[i]!='\r'&&i<60){key[i]=k[i];i++;}
@@ -252,6 +263,7 @@ static void _handle(int c){
         while(blen>0&&(ct[blen-1]=='\n'||ct[blen-1]=='\r'))blen--;              /* drop the trailing CRLF the form appends */
         int w=0;for(int i=0;i<blen;i++)if(ct[i]!='\r')ct[w++]=ct[i];            /* CRLF -> LF */
         char fp[P];snprintf(fp,P,"%s/%s",SROOT,rel);
+        {char*sl=strrchr(fp,'/');if(sl){*sl=0;mkdirp(fp);*sl='/';}}   /* create parent folders */
         FILE*wf=fopen(fp,"w");int ok=0;if(wf){fwrite(ct,1,(size_t)w,wf);ok=!ferror(wf);fclose(wf);}
         char saved[512],gurl[B]="";
         if(ok){
@@ -272,14 +284,10 @@ static void _handle(int c){
     if(!strncmp(req,"GET /docs",9)){
         /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
         char*h=malloc(1<<18);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
-        int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:14px/1.6 ui-monospace,monospace}h3{color:#6cf;padding:12px 16px 4px;margin:0}a{display:block;color:#9cf;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style><a href=# onclick=\"var n=prompt('new adoc filename');if(n)location='/doc?f=adocs/'+n;return false\" style=color:#9f9>+ new adoc</a>");
+        int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:14px/1.6 ui-monospace,monospace}h3{color:#6cf;padding:12px 16px 4px;margin:0}a{display:block;color:#9cf;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style><a href=# onclick=\"var n=prompt('new adoc filename');if(n)location='/doc?f=adocs/'+n;return false\" style=color:#9f9>+ new adoc</a> <a href=# onclick=\"var n=prompt('new folder name');if(n)fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q=docs mkdir '+encodeURIComponent(n)}).then(function(){location.reload()});return false\" style=color:#9cf>+ new folder</a>");
         const char*dirs[]={"mem","adocs"};
-        for(int k=0;k<2;k++){char dp[P];snprintf(dp,P,"%s/%s",SROOT,dirs[k]);
-            static char nm[2048][80];int n=0;DIR*d=opendir(dp);struct dirent*e;
-            while(d&&(e=readdir(d))&&n<2048){if(e->d_name[0]=='.')continue;snprintf(nm[n++],80,"%s",e->d_name);}if(d)closedir(d);
-            for(int i=1;i<n;i++){char t[80];snprintf(t,80,"%s",nm[i]);int j=i-1;while(j>=0&&strcmp(nm[j],t)>0){snprintf(nm[j+1],80,"%s",nm[j]);j--;}snprintf(nm[j+1],80,"%s",t);}
-            hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<h3>%s/</h3>",dirs[k]);
-            for(int i=0;i<n&&hl<(1<<18)-256;i++)hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<a href=\"/doc?f=%s/%s\">%s</a>",dirs[k],nm[i],nm[i]);}
+        for(int k=0;k<2;k++){hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<h3>%s/</h3>",dirs[k]);
+            hl=_docls(h,hl,dirs[k],(int)strlen(dirs[k])+1);}
         _sdoc(c,h,hl);free(h);return;}
     if(!strncmp(req,"GET /prompt",11)){
         int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","err",3);return;}pid_t ch=fork();

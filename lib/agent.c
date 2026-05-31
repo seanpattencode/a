@@ -2,18 +2,24 @@ static int cmd_review(int argc, char **argv) { (void)argc;(void)argv;
     (void)!system("gh pr list 2>/dev/null");
     char*v[]={"a","job",NULL};return cmd_jobs(2,v); }
 
+static void _doctree(const char*base,const char*rel){
+    char dp[P];snprintf(dp,P,"%s/%s",base,rel);DIR*d=opendir(dp);if(!d)return;
+    struct dirent*e;while((e=readdir(d))){if(e->d_name[0]=='.')continue;
+        char r2[P];snprintf(r2,P,"%s%s%s",rel,*rel?"/":"",e->d_name);
+        char fp[P];snprintf(fp,P,"%s/%s",base,r2);struct stat st;
+        if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){printf("%s/\n",r2);_doctree(base,r2);}else puts(r2);}
+    closedir(d);}
 static int cmd_docs(int argc, char **argv) {
     char dir[P]; snprintf(dir, P, "%s/adocs", SROOT); mkdirp(dir);
+    if (argc > 3 && !strcmp(argv[2],"mkdir")) { char f[P];snprintf(f,P,"%s/%s",dir,argv[3]);mkdirp(f);printf("+ %s/\n",argv[3]);return 0; }
     if (argc > 2) {
         char f[P]; snprintf(f, P, "%s/%s%s", dir, argv[2], strchr(argv[2],'.') ? "" : ".md");
+        char*sl=strrchr(f,'/');if(sl){*sl=0;mkdirp(f);*sl='/';}   /* folders: a docs sub/foo */
         int fd = open(f, O_CREAT|O_WRONLY|O_APPEND, 0644); if(fd>=0) close(fd);
         execlp("e", "e", f, (char*)NULL);
         return 0;
     }
-    /* List docs */
-    char paths[64][P]; int n = listdir(dir, paths, 64);
-    for (int i = 0; i < n; i++) printf("%d. %s\n", i+1, bname(paths[i]));
-    return 0;
+    _doctree(dir,"");return 0;
 }
 
 static int cmd_a_default(int c,char**v){
