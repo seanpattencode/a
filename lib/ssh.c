@@ -23,7 +23,7 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
 static int ssh_idx(const char*a,const void*H_,int nh){
     typedef struct{char name[128],host[256],pw[256],path[P];}ht;const ht*H=(const ht*)H_;
     if(isdigit((unsigned char)*a))return atoi(a);
-    for(int i=0;i<nh;i++)if(!strcmp(H[i].name,a))return i;return -1;}
+    for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,a))return i;return -1;}
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
@@ -222,7 +222,7 @@ static int cmd_ssh(int argc,char**argv){
     /* resolve host by # or name */
     int idx=-1;
     if(isdigit((unsigned char)*sub))idx=atoi(sub);
-    else{for(int i=0;i<nh;i++)if(strstr(H[i].name,sub)){idx=i;break;}}
+    else{for(int i=0;i<nh;i++)if(strcasestr(H[i].name,sub)){idx=i;break;}}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
     /* fast TCP probe; on fail switch to explicit Fallback entry (else <name>-relay) */
@@ -239,8 +239,8 @@ static int cmd_ssh(int argc,char**argv){
         for(int i=3;i<argc;i++){int l=(int)strlen(cmd);snprintf(cmd+l,(size_t)(B-l),"%s%s",l?" ":"",argv[i]);}
         if(cmd[0])snprintf(cs,B," 'bash -c '\"'\"'%sexport PATH=$HOME/.local/bin:$PATH; %s'\"'\"''",cd,cmd);
         else{const char*ts=getenv("A_TMUX_SESSION");char tx[256];
-            if(ts&&ts[0])snprintf(tx,256,"tmux attach -t %s 2>/dev/null||tmux new -A -s %s",ts,ts);
-            else snprintf(tx,256,"tmux attach 2>/dev/null||tmux new -A -s a");
+            if(ts&&ts[0])snprintf(tx,256,"tmux attach -t %s \\; refresh-client 2>/dev/null||tmux new -A -s %s",ts,ts);
+            else snprintf(tx,256,"tmux attach \\; refresh-client 2>/dev/null||tmux new -A -s a");
             snprintf(cs,B," 'bash -lc \"%s\" 2>/dev/null||exec bash -l'",tx);}
         const char*tf=isatty(0)?"-tt":"-T";
         if(H[idx].jump[0]){char jhp[256],jport[8];ssh_parse(H[idx].jump,jhp,jport);
