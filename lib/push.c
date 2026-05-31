@@ -187,12 +187,14 @@ static int cmd_diff(int argc, char **argv) { AB;
     for(int j=0;j<nf;j++){struct stat st;if(!stat(fs[j].name,&st))fs[j].sb=(int)st.st_size-fs[j].ab+fs[j].db;}
     if(!nf){puts("No changes");return 0;}
     int ti=0,td=0,ta=0,tb=0; printf("\n"); HR;
+    #define TC(x) ((x)>0?"\033[31m":(x)<0?"\033[32m":"")
     for(int j=0;j<nf;j++){int tk=(fs[j].ab-fs[j].db)/4,st=fs[j].sb/4;
-        if(st)printf("%s: +%d/-%d lines, %+d tok (%+.3f%% of file)\n",bname(fs[j].name),fs[j].al,fs[j].dl,tk,tk*100.0/st);
-        else printf("%s: +%d/-%d lines, %+d tok (new)\n",bname(fs[j].name),fs[j].al,fs[j].dl,tk);
+        if(st)printf("%s%s: +%d/-%d lines, %+d tok (%+.3f%% of file)\033[0m\n",TC(tk),bname(fs[j].name),fs[j].al,fs[j].dl,tk,tk*100.0/st);
+        else printf("%s%s: +%d/-%d lines, %+d tok (new)\033[0m\n",TC(tk),bname(fs[j].name),fs[j].al,fs[j].dl,tk);
         ti+=fs[j].al;td+=fs[j].dl;ta+=fs[j].ab;tb+=fs[j].db;}
-    HR; if(ws)printf("%s: %d file%s, %+d lines, %+d tok (%+.3f%% of repo)\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4,(ta-tb)*100.0/ws);
-    else printf("%s: %d file%s, %+d lines, %+d tok\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,(ta-tb)/4);
+    int nt=(ta-tb)/4; HR; if(ws)printf("%s%s: %d file%s, %+d lines, %+d tok (%+.3f%% of repo)\033[0m\n",TC(nt),fk?"fork":"net",nf,nf!=1?"s":"",ti-td,nt,(ta-tb)*100.0/ws);
+    else printf("%s%s: %d file%s, %+d lines, %+d tok\033[0m\n",TC(nt),fk?"fork":"net",nf,nf!=1?"s":"",ti-td,nt);
+    #undef TC
     if(!filt){char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
      if(nl){*nl=0;printf("\n\033[36mcommit:\033[0m %s \033[32m→ a push -f\033[0m\n",cs);}free(cs);}
     if(!fk&&!sel&&!filt) puts("\ndiff # = last #");
