@@ -44,6 +44,13 @@ Chat-UI recipe (proven on Gemini and Claude.ai):
   a bri keys  'div[contenteditable=true]' Enter
   sleep 8; a bri text '.font-claude-response'
 
+Read a signed-in app (Keep, etc.) — no API needed, just read the page:
+  a bri https://keep.google.com ; sleep 6
+  a bri text body    # whole rendered innerText in ONE call. Pinned notes are
+                     # the block between "Take a note…" and the "PINNED" label
+                     # (the label TRAILS the cards in innerText order — don't
+                     # assume header-precedes-content). Don't selector-poke (Notes).
+
 OAuth sign-in (e.g. "Continue with Google"):
   Some sign-in buttons live in shadow DOM or cross-origin Google Identity
   Services iframes (accounts.google.com/gsi/iframe/…) that aren't reachable
@@ -56,10 +63,15 @@ Notes:
 - Custom-element wrappers (rich-textarea, ms-textarea, …) need a CSS
   descendant combinator (`wrapper [contenteditable]`) to reach the inner
   <div contenteditable>. The bare wrapper has no working .value setter.
-- Each command gets one response per connected frame (main + iframes). For
-  body text the main frame's value is the longest; iframes return null/empty.
-- {action:"eval"} is CSP-blocked on Google domains and Claude.ai — use
-  text/click/type/keys/html instead; those go through DOM APIs, no eval.
+- Read, don't poke: reach for `bri text body` (or `html`) FIRST — one call
+  returns the whole rendered page; parse that. Selector-by-selector eval
+  probing is slow and fragile, and eval is CSP-blocked on Google domains +
+  Claude.ai anyway. text/click/type/keys/html use DOM APIs (no eval), so they
+  work everywhere; only narrow to a selector once you know the shape.
+- Each command gets one response per connected frame (main + iframes). Pick the
+  row whose src is your target origin — its value is longest. The noise rows
+  (ogs/gsi/clients6 proxies, accounts.google.com RotateCookiesPage → CSP
+  "EvalError"/"no response") are subframes, not failure; ignore them.
 Tail full event stream: tail -f /tmp/bri.log
 """
 import socket, threading, queue, json, sys, time
