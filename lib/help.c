@@ -188,7 +188,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(ts[0]){FILE*vf=fopen(vp,"w");if(vf){fprintf(vf,"printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\nexec ${SHELL:-bash}\n",ts,ts);fclose(vf);}}
             const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
-            if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\necho;printf '\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1|cut -c1-200|awk 'NR<=40;END{if(NR>40)printf\"\\033[2m...truncated %%d more lines, [r] re-runs full\\033[0m\\n\",NR-40}'\n",ts);
+            if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\necho;printf '\\033[1;36m=== test output (auto-run, truncated \\xc2\\xb7 [r] = full) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1|cut -c1-200|awk 'NR<=10;END{if(NR>10)printf\"\\033[2m...truncated %%d more lines, [r] re-runs full\\033[0m\\n\",NR-10}'\n",ts);
             else fputs("echo;printf '\\033[2mno test command\\033[0m\\n'\n",sf);
             fputs("while :;do\necho;printf '\\033[1;35m=== actions ===\\033[0m\\n'\n",sf);
             if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push -u origin HEAD\\033[0m\\n'\n",dl);
