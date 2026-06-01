@@ -186,28 +186,38 @@ static int cmd_done(int argc,char**argv){AB;
             if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
             char vp[P];snprintf(vp,P,"%s/a_verify.sh",DDIR);
             if(ts[0]){FILE*vf=fopen(vp,"w");if(vf){fprintf(vf,"printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\nexec ${SHELL:-bash}\n",ts,ts);fclose(vf);}}
+            char np[P];snprintf(np,P,"%s/a_next.sh",DDIR);
+            {FILE*nf=fopen(np,"w");if(nf){
+                fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking opus (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
+                if(ts[0])fprintf(nf," echo; echo '=== TEST CMD OUTPUT ==='; %s 2>&1;",ts);
+                fprintf(nf," echo; echo '=== TASK ==='; cat '%s/common/prompts/next.txt'; } | claude -p --dangerously-skip-permissions --model opus --effort \"$EF\" --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)'\necho\nexec ${SHELL:-bash}\n",SROOT);fclose(nf);}}
             const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
             if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\necho;printf '\\033[1;36m=== test output (auto-run, truncated \\xc2\\xb7 [r] = full) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1|cut -c1-200|awk 'NR<=10;END{if(NR>10)printf\"\\033[2m...truncated %%d more lines, [r] re-runs full\\033[0m\\n\",NR-10}'\n",ts);
             else fputs("echo;printf '\\033[2mno test command\\033[0m\\n'\n",sf);
-            fputs("while :;do\necho;printf '\\033[1;35m=== actions ===\\033[0m\\n'\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push -u origin HEAD\\033[0m\\n'\n",dl);
-            if(dl[0]&&tp)fprintf(sf,"printf '\\033[1;33m[p]\\033[0m tell agent:\\n     \\033[2m%s\\033[0m\\n'\n",PP);
-            if(tp)fputs("printf '\\033[1;33m[c]\\033[0m crunch the code\\n'\n",sf);
-            if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run full in split: %s\\n' \"$TS\"\n",sf);
-            fputs("printf '\\033[1;35m[e]\\033[0m talk to agent\\n'\n",sf);
-            fputs("printf '\\033[2many other key: close\\033[0m '\n",sf);
-            fputs("read -rsn1 k </dev/tty;echo\n",sf);
+            fputs("printf '\\033[?1000h\\033[?1006h' >/dev/tty\nwhile :;do\necho;printf '\\033[1;35m=== actions (tap or key) ===\\033[0m\\n'\n",sf);
+            fputs("printf '\\033[6n' >/dev/tty;IFS='[;' read -rsd R -a _p -t0.3 </dev/tty;MS=${_p[1]:-0};KEYS=()\n",sf);
+            if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push\\033[0m\\n';KEYS+=(y)\n",dl);
+            if(dl[0]&&tp)fputs("printf '\\033[1;33m[p]\\033[0m tell agent: push prompt\\n';KEYS+=(p)\n",sf);
+            if(tp)fputs("printf '\\033[1;33m[c]\\033[0m crunch the code\\n';KEYS+=(c)\n",sf);
+            if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run test in split\\n';KEYS+=(r)\n",sf);
+            fputs("printf '\\033[1;33m[n]\\033[0m suggest next step (opus)\\n';KEYS+=(n)\n",sf);
+            fputs("printf '\\033[1;33m[b]\\033[0m suggest next + book/effort\\n';KEYS+=(b)\n",sf);
+            if(tp)fputs("printf '\\033[1;35m[e]\\033[0m talk to agent\\n';KEYS+=(e)\n",sf);
+            fputs("printf '\\033[2mtap an option or press its key (other key=close)\\033[0m '\n",sf);
+            fputs("while :;do read -rsn1 k </dev/tty;[ \"$k\" != $'\\033' ]&&break;s='';while IFS= read -rsn1 -t0.2 _c </dev/tty;do s+=\"$_c\";[[ \"$_c\" == [Mm] ]]&&break;done;if [[ \"$s\" =~ ^\\[\\<([0-9]+)\\;[0-9]+\\;([0-9]+)M$ ]]&&[ \"${BASH_REMATCH[1]}\" -lt 64 ];then _i=$((BASH_REMATCH[2]-MS));if [ \"$_i\" -ge 0 ]&&[ \"$_i\" -lt ${#KEYS[@]} ];then k=${KEYS[_i]};break;fi;fi;done\necho\n",sf);
             if(dl[0])fputs("[ \"$k\" = y ]&&{ a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sf);
             if(dl[0]&&tp)fprintf(sf,"[ \"$k\" = p ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,PP,tp);
             if(tp)fprintf(sf,"[ \"$k\" = c ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,CR,tp);
             if(ts[0])fprintf(sf,"[ \"$k\" = r ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s'\n",vp);
+            fprintf(sf,"[ \"$k\" = n ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s'\n",np);
+            fprintf(sf,"[ \"$k\" = b ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s -i'\n",np);
             if(tp)fprintf(sf,"[ \"$k\" = e ]&&tmux select-pane -t '%s'\n",tp);
-            fputs("[ \"$k\" = r ]||break\ndone\n",sf);
+            fputs("case \"$k\" in r|n|b) ;; *) break;; esac\ndone\nprintf '\\033[?1000l\\033[?1006l' >/dev/tty\n",sf);
             fclose(sf);
             char c[P*2];
             /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */
-            if(tp){snprintf(c,P*2,"tmux list-panes -t %s -F '#{pane_id}'|while read p;do [ \"$p\" != \"%s\" ]&&tmux kill-pane -t \"$p\" 2>/dev/null;done",tp,tp);(void)!system(c);}
+            if(tp){snprintf(c,P*2,"tmux kill-pane -a -t '%s' 2>/dev/null",tp);(void)!system(c);}
             snprintf(c,P*2,"tmux split-window -v -l 70%% -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
     (void)!write(STDERR_FILENO,"\a",1);
     puts("✓ done");return 0;}
