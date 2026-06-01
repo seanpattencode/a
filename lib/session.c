@@ -45,8 +45,10 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     }
     /* claude reads ctxf via file flag; codex/gemini inline $(cat) — ARG_MAX caps ~128KB, can't fit codebase */
     char src_pfx[P+32]="";if(is_claude&&SRC_ON)snprintf(src_pfx,sizeof(src_pfx),"%s >>%s 2>/dev/null;",ACAT,ctxf);
+    /* claude prompts a per-dir trust check every run (no global off-switch, --dangerously-skip doesn't bypass); pre-accept it for the launch dir */
+    char tpfx[P+48]="";if(is_claude)snprintf(tpfx,sizeof(tpfx),"python3 \"%s/lib/trust.py\" 2>/dev/null;",SDIR);
     if (ai) snprintf(wcmd, sizeof(wcmd),
-        "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%stmux wait-for -S rdy-%s;for _ in 1 2 3;do %s%s&&exit;echo \"$(date) $? $(pwd)\">>%s/crashes.log;sleep 1;done;exec bash", src_pfx,sn,acmd,csuf,LOGDIR);
+        "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%s%stmux wait-for -S rdy-%s;for _ in 1 2 3;do %s%s&&exit;echo \"$(date) $? $(pwd)\">>%s/crashes.log;sleep 1;done;exec bash", tpfx,src_pfx,sn,acmd,csuf,LOGDIR);
     else snprintf(wcmd, sizeof(wcmd), "%s", cmd ? cmd : "");
     tm_ensure_conf();
     int r = tm_new(sn, wd, wcmd);
@@ -65,12 +67,13 @@ static int cmd_resume(int c,char**v){perf_disarm();
       " :>\"$tmp\";i=0;filt=\"\"\n"
       " [ \"$mins\" -gt 0 ] 2>/dev/null&&filt=$(find \"$P\" -name '*.jsonl' -mmin -\"$mins\" 2>/dev/null)\n"
       " echo\n"
-      " for f in $(ls -t \"$P\"/*/*.jsonl 2>/dev/null|head -40);do\n"
+      " for f in $(ls -t \"$P\"/*/*.jsonl 2>/dev/null|head -150);do\n"
       "  [ \"$mins\" -gt 0 ] 2>/dev/null&&{ case \"$filt\" in *\"$f\"*);;*)continue;;esac;}\n"
+      "  h=$(grep -c '\"role\":\"user\",\"content\":\"' \"$f\");[ \"$h\" -ge 2 ]||continue\n"
       "  w=$(grep -m1 -oE '\"cwd\":\"[^\"]+' \"$f\"|sed 's/.*\"cwd\":\"//');[ -d \"$w\" ]||continue\n"
-      "  p=$(grep -m1 -oE '\"role\":\"user\",\"content\":\"[^\"]+' \"$f\"|sed 's/.*content\":\"//'|cut -c1-54)\n"
+      "  p=$(grep -m1 -oE '\"role\":\"user\",\"content\":\"[^\"]+' \"$f\"|sed 's/.*content\":\"//'|cut -c1-50)\n"
       "  s=${f##*/};s=${s%.jsonl};i=$((i+1));echo \"$s|$w\">>\"$tmp\"\n"
-      "  printf '%2d) %-12s %s\\n' \"$i\" \"${w##*/}\" \"$p\"\n"
+      "  printf '%2d) %3dt %-12s %s\\n' \"$i\" \"$h\" \"${w##*/}\" \"$p\"\n"
       "  [ \"$i\" -ge 20 ]&&break\n"
       " done\n"
       " [ \"$i\" = 0 ]&&echo \"(none)\"\n"

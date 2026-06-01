@@ -195,15 +195,12 @@ static int cmd_ssh(int argc,char**argv){
             else printf("x %s\n",h->name);}
         return 0;}
 
-    /* fleet view: one local tmux window per host */
+    /* fleet view: ordered host windows, idx 90+, -k recreates */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){
         if(!getenv("TMUX")){char sn[32];snprintf(sn,32,"a-%d",(int)getpid());execlp("tmux","tmux","new-session","-s",sn,"a","ssh","all",(char*)NULL);}
-        int tot=0;size_t dl=strlen(DEV);
-        for(int i=0;i<nh;i++){
-            if(!strncmp(H[i].name,DEV,dl))continue;
-            char cm[B];snprintf(cm,B,"a ssh %s",H[i].name);
-            tm_new(H[i].name,HOME,cm);tot++;}
-        printf("→ %d ssh window%s in a: session\n",tot,tot==1?"":"s");fflush(stdout);
+        tm_ensure_sess();int tot=0;size_t dl=strlen(DEV);char cm[B];
+        for(int i=nh-1;i>=0;i--)if(strncmp(H[i].name,DEV,dl)){snprintf(cm,B,"tmux new-window -dk -t '"TMS":%d' -n '%s' -c '%s' 'a ssh %s'",90+tot++,H[i].name,HOME,H[i].name);(void)!system(cm);}
+        printf("→ %d windows\n",tot);fflush(stdout);
         tm_go(NULL);return 0;}
     /* all/broadcast — parallel */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
@@ -225,11 +222,16 @@ static int cmd_ssh(int argc,char**argv){
     else{for(int i=0;i<nh;i++)if(strcasestr(H[i].name,sub)){idx=i;break;}}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
-    /* fast TCP probe; on fail switch to explicit Fallback entry (else <name>-relay) */
+    /* fast TCP probe; on fail switch to: explicit Fallback, else the -wan sibling of a dead -lan, else <name>-relay */
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
         snprintf(pb,B,"nc -z -w1 %s %s 2>/dev/null",ph,port);
-        if(system(pb)){char rn[160];snprintf(rn,160,"%s",H[idx].fb[0]?H[idx].fb:"");if(!rn[0])snprintf(rn,160,"%s-relay",H[idx].name);
-            for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){idx=i;ssh_parse(H[idx].host,hp,port);break;}}}
+        if(system(pb)){int f=-1;
+            if(H[idx].fb[0])for(int i=0;i<nh;i++)if(!strcmp(H[i].name,H[idx].fb)){f=i;break;}
+            char*ls=strstr(H[idx].name,"-lan");size_t bl=ls&&!ls[4]?(size_t)(ls-H[idx].name):0;
+            if(f<0&&bl)for(int i=0;i<nh;i++){char*ws=strstr(H[i].name,"-wan");
+                if(ws&&!ws[4]&&(size_t)(ws-H[i].name)==bl&&!strncasecmp(H[i].name,H[idx].name,bl)){f=i;break;}}
+            if(f<0){char rn[160];snprintf(rn,160,"%s-relay",H[idx].name);for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){f=i;break;}}
+            if(f>=0){idx=f;ssh_parse(H[idx].host,hp,port);}}}
     if(!H[idx].pw[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");
         if(system(tc)){char pw[256];printf("Password for %s: ",H[idx].name);
