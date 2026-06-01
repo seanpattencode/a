@@ -48,7 +48,9 @@ static int cmd_sess(int argc, char **argv) {
         tm_go(sn);
         return 0;
     }
-    if (create_sess(sn, wd, s->cmd, xp) != 2) tm_go(sn);
+    if (create_sess(sn, wd, s->cmd, xp) != 2) { if(isatty(1))tm_go(sn);
+        else {char q[160],wi[16]="?";snprintf(q,160,"tmux list-windows -t '" TMS "' -f '#{==:#{window_name},%s}' -F '#{window_index}' 2>/dev/null",sn);pcmd(q,wi,16);wi[strcspn(wi,"\n")]=0;
+            printf("→ win %s · %s\n  tmux attach -t " TMS ":%s\n",wi[0]?wi:"?",sn,wi[0]?wi:sn);} }
     return 0;
 }
 
