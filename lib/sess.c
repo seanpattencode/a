@@ -118,7 +118,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
-    char buf[256]="";int blen=0,sel=0,pnm=-1,rotate=0;char prefix[256]="";
+    char buf[256]="";int blen=0,sel=0;char prefix[256]="",jstat[96]="";
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
@@ -131,7 +131,6 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 if(s[blen]<=' '&&!strncasecmp(s,buf,(size_t)blen)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
             fm[nm++]=lines[i];
         }
-        if(rotate){sel=nm==pnm?sel+1:0;rotate=0;}pnm=nm;
         {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
         int hdr_rows=0;char hl[2048];int hll=0,Wc=ws.ws_col?ws.ws_col:80;
         if(m_mode){load_cfg();const char*cm=cfget("m_model");if(!*cm)cm="opus";
@@ -155,9 +154,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 FP("\033[36m%.*s\033[0m\033[K\n",ch,hl+p);
                 p+=ch?ch:1;
             }while(p<hll);}
-        if(!blen&&!plen)FP("> \033[90mtype to filter, click/Enter to run\033[0m\033[K\n");
+        if(!blen&&!plen)FP("> \033[90m%s\033[0m\033[K\n",jstat[0]?jstat:"type to filter · type a prompt → Enter fires a claude win, keep typing to fire more");
         else FP("%s> %s\033[K\n",prefix,buf);
-        if(!nm&&blen){FP("%s \033[35ma c \"%s\"\033[0m\033[K\n",sel==0?" >":"  ",buf);
+        if(!nm&&blen){FP("%s \033[35msend \"%s\" → new claude win (stays for more)\033[0m\033[K\n",sel==0?" >":"  ",buf);
             FP("%s \033[36mGoogle: %s\033[0m\033[K\n",sel==1?" >":"  ",buf);}
         for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
@@ -187,14 +186,18 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             } else if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;} else if(!m_mode)break;
         } else if(ch=='\t'){int mx=nm?nm-1:blen?1:0;if(sel<mx)sel++;}
         else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;}
-        else if(ch=='\r'||ch=='\n'){if(!nm&&blen){IRST;
-            if(sel==0){char*args[]={"a","c",buf,NULL};execvp("a",args);}
-            else{char u[512];snprintf(u,512,"https://google.com/search?q=%s",buf);
+        else if(ch=='\r'||ch=='\n'){if(!nm&&blen){
+            if(sel==0){int pp[2];char ob[2048]="";  /* rapid fire: detached claude win, stay in TUI */
+                if(!pipe(pp)){if(!fork()){dup2(pp[1],1);dup2(pp[1],2);close(pp[0]);unsetenv("TMUX");execlp("a","a","j",buf,(char*)0);_exit(127);}
+                    close(pp[1]);int t=0,r;while(t<2047&&(r=(int)read(pp[0],ob+t,(size_t)(2047-t)))>0)t+=r;ob[t]=0;close(pp[0]);wait(0);}
+                char*w=strstr(ob,"→ tmux win");if(w){char*e=strchr(w,'\n');if(e)*e=0;}
+                snprintf(jstat,sizeof jstat,"%s",w?w:"+ sent");buf[0]=0;blen=0;sel=0;continue;}
+            IRST;{char u[512];snprintf(u,512,"https://google.com/search?q=%s",buf);
                 for(char*p=u;*p;p++)if(*p==' ')*p='+';bg_exec(OPENER,u);}
             return 0;}do_pick=1;}
         else if(ch==3){if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
         else if(ch==4)break;
-        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;rotate=1;}}
+        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
         if(do_pick&&nm){char*m=fm[sel],cmd[256];
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
