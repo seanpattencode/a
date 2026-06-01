@@ -490,7 +490,9 @@ static int cmd_cat(int c,char**v){perf_disarm();
         if(bin){fclose(cf);char ref[P];size_t rl=(size_t)snprintf(ref,P,"\n==> context doc: %s <==\n",FP);GA(ref,rl);}\
         else{rewind(cf);char hdr[300];size_t hl=(size_t)snprintf(hdr,300,"\n==> context: %s <==\n",HDR);\
              GA(hdr,hl);char ln2[512];while(fgets(ln2,512,cf)){size_t sl=strlen(ln2);GA(ln2,sl);}fclose(cf);}nf++;}}
-    {DIR*dd=opendir(ctd);if(dd){struct dirent*de;while((de=readdir(dd))){if(de->d_name[0]=='.')continue;
+    struct stat _cs;
+    if(!stat(ctd,&_cs)&&S_ISREG(_cs.st_mode))CTX_EMIT(ctd,bname(ctd))
+    else {DIR*dd=opendir(ctd);if(dd){struct dirent*de;while((de=readdir(dd))){if(de->d_name[0]=='.')continue;
         char fp2[P];snprintf(fp2,P,"%s/%s",ctd,de->d_name);
         struct stat st2;if(!stat(fp2,&st2)&&S_ISDIR(st2.st_mode)){DIR*sd=opendir(fp2);if(sd){struct dirent*se;while((se=readdir(sd))){if(se->d_name[0]=='.')continue;
             char sp[P],sh[260];snprintf(sp,P,"%s/%s",fp2,se->d_name);snprintf(sh,260,"%s/%s",de->d_name,se->d_name);CTX_EMIT(sp,sh);}closedir(sd);}continue;}
@@ -551,7 +553,9 @@ static int cmd_j(int c,char**v){
     char jcmd[B];jcmd_fill(jcmd,0,wd,pr[0]?pr:NULL);
     char sn[64];snprintf(sn,64,"j-%s-%ld",bname(wd),(long)getpid());
     if(!tm_new(sn,wd,jcmd))sess_log(sn,wd);
-    tm_go(sn);
+    {char q[160],wi[16]="?";snprintf(q,160,"tmux list-windows -t '" TMS "' -f '#{==:#{window_name},%s}' -F '#{window_index}' 2>/dev/null",sn);pcmd(q,wi,16);wi[strcspn(wi,"\n")]=0;printf("→ tmux win %s · %s\n",wi[0]?wi:"?",sn);}
+    fflush(stdout);  /* tm_go execs without flushing stdio — emit the report first */
+    if(isatty(1))tm_go(sn);  /* only switch to it when interactive; web/piped dispatch just creates + reports */
     return 0;}
 static int cmd_job(int c,char**v){return(c>2&&isdigit(*v[2]))?cmd_jobs(c,v):cmd_j(c,v);}
 static int cmd_tmux(int c,char**v){if(!getenv("TMUX")){tm_go(c>2?v[2]:NULL);return 0;}if(c>2){execvp("tmux",v+1);return 1;}setenv("A_FILT_TAG","win pane quit",1);return cmd_i(c,v);}
@@ -621,17 +625,30 @@ static int cmd_ref(int c,char**v){
         char op[P];snprintf(op,P,"%s/%s/output",bd,e->d_name);DIR*od=opendir(op);int has=0;
         if(od){struct dirent*f;while((f=readdir(od)))if(strstr(f->d_name,".txt")){has=1;break;}closedir(od);}
         if(has){snprintf(nm[n],128,"%s",e->d_name);snprintf(pa[n],P,"%s",op);n++;}else nb++;}if(dd)closedir(dd);}
-    if(c<3){for(int i=0;i<n;i++)printf("  %d. %s%s\n",i,nm[i],strstr(pa[i],"/books/")?" (book)":"");
+    int pmode=0;const char*sel=NULL;char q[B]="";int ql=0;
+    for(int i=2;i<c;i++){if(!strcmp(v[i],"-p")){pmode=1;continue;}if(!strcmp(v[i],"-n")){pmode=2;continue;}if(!sel)sel=v[i];else ql+=snprintf(q+ql,(size_t)(B-ql),"%s%s",ql?" ":"",v[i]);}
+    if(!sel){for(int i=0;i<n;i++)printf("  %d. %s%s\n",i,nm[i],strstr(pa[i],"/books/")?" (book)":"");
         if(nb)printf("  %d need: a book transcribe <name>\n",nb);
-        printf("\na ref <#|name>  add: mkdir %s/<name>/\n",d);return 0;}
-    const char*sel=v[2];int si=-1;char rp[P];
+        printf("\na ref <#|name> [-p question | -n next step]  add: mkdir %s/<name>/\n",d);
+        if(!isatty(0))return 0;
+        printf("select #: ");fflush(stdout);char ln[16];
+        if(!fgets(ln,16,stdin)||!isdigit((unsigned char)ln[0]))return 0;
+        static char sb[128];int x=atoi(ln);if(x<0||x>=n)return 0;snprintf(sb,128,"%s",nm[x]);sel=sb;}
+    int si=-1;char rp[P];
     if(strchr(sel,'/')&&realpath(sel,rp)){struct stat st;if(!stat(rp,&st)&&!S_ISDIR(st.st_mode)){char*s=strrchr(rp,'/');if(s)*s=0;}
         setenv("A_CTX",rp,1);printf("+ %s\n",rp);
         char*nv[]={v[0],(char*)"c",NULL};return cmd_sess(2,nv);}
     if(isdigit(*sel)){si=atoi(sel);if(si>=n){puts("x");return 1;}}
     else{for(int i=0;i<n;i++)if(!strcmp(nm[i],sel)){si=i;break;}}
     if(si<0){printf("x %s\n",sel);return 1;}
-    setenv("A_CTX",pa[si],1);printf("+ %s\n",nm[si]);
+    char cf[P];snprintf(cf,P,"%s/explained.txt",pa[si]);
+    if(!fexists(cf))snprintf(cf,P,"%s/transcript.txt",pa[si]);
+    const char*ctx=fexists(cf)?cf:pa[si];setenv("A_CTX",ctx,1);printf("+ %s%s\n",nm[si],pmode==2?" (-n next step)":pmode?" (-p)":"");
+    if(pmode){perf_disarm();char pp[P];
+        if(pmode==2)snprintf(pp,P,"echo; cat '%s/common/prompts/next.txt'",SROOT);
+        else{setenv("A_REFQ",q[0]?q:"In one paragraph, summarize the central idea.",1);snprintf(pp,P,"printf '\\n%%s\\n' \"$A_REFQ\"");}
+        char cmd[B*2];snprintf(cmd,B*2,"{ A_CTX='%s' a cat 2>/dev/null; %s; } | claude -p --dangerously-skip-permissions --model opus --effort max --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)';echo",ctx,pp);
+        return system(cmd);}
     char*nv[]={v[0],(char*)"c",NULL};return cmd_sess(2,nv);}
 static int cmd_tutorial(int c,char**v){(void)c;
     char*fv[]={v[0],"a","Guide 'a'. Use 'a help'+README.md, teach as needed. scream=most essential.",NULL};
