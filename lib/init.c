@@ -3,6 +3,10 @@ static void init_paths(void) {
     const char *h = getenv("HOME"); if (!h) h = "/tmp";
     snprintf(HOME, P, "%s", h);
     {const char*t=getenv("TMPDIR");snprintf(TMP,P,"%s",t&&*t?t:"/tmp");}
+#ifdef __APPLE__
+    /* non-interactive ssh PATH on macOS omits Homebrew, so tmux/brew tools aren't found. prepend them once. */
+    {const char*pe=getenv("PATH");if(!pe||!strstr(pe,"/opt/homebrew/bin")){char np[4096];snprintf(np,4096,"/opt/homebrew/bin:/usr/local/bin:%s",pe?pe:"/usr/bin:/bin");setenv("PATH",np,1);}}
+#endif
     char self[P]; ssize_t n = -1;
 #ifdef __APPLE__
     uint32_t sz = P - 1;
