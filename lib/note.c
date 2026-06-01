@@ -50,7 +50,7 @@ static int cmd_note(int argc, char **argv) {
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
     {char t[B]="";ajoin(t,B,argc,argv,2);
         note_save(dir,t);puts("✓");sync_pane(t);
-        snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);return 0;}
+        snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);sync_proof();return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
 typedef struct{char d[P],t[256],p[8];}Tk;

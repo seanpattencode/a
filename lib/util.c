@@ -62,13 +62,16 @@ static size_t paste_line(char *b, size_t sz, FILE *fp) {
         if((e=strstr(b,"\x1b[201~"))){*e=0;return (size_t)(e-b);}
         if(!paste&&bl&&b[bl-1]=='\n'){b[--bl]=0;return bl;}}
 }
-/* rapid input loop — call fn(line) for each line, empty line exits; bracketed paste = one note */
+/* rapid input loop — empty line OR ctrl-c exits (cleanly, so callers can run after); bracketed paste = one note */
+static void rapid_sig(int s){(void)s;}
 static void rapid(const char *prompt, void (*fn)(const char*)) {
     if (!isatty(STDIN_FILENO)) return; perf_disarm();
+    struct sigaction sa={0},old;sa.sa_handler=rapid_sig;sigaction(SIGINT,&sa,&old);/* no SA_RESTART: ctrl-c breaks the read */
     (void)!write(1,"\x1b[?2004h",8);
     static char b[65536];
     for(;;){fputs(prompt,stdout);fflush(stdout);if(!paste_line(b,sizeof b,stdin)||!*b)break;fn(b);}
-    (void)!write(1,"\x1b[?2004l",8);
+    (void)!write(1,"\x1b[?2004l\n",9);
+    sigaction(SIGINT,&old,NULL);
 }
 
 /* raw terminal helpers */
