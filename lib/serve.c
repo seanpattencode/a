@@ -104,7 +104,10 @@ static void _html_gen(void){
                 char tag[16];memcpy(tag,p+2,(size_t)(end-p-2));tag[end-p-2]=0;
                 if(!strcmp(tag,"CMDS")){EMIT(cmds,(int)strlen(cmds));}
                 else if(!strcmp(tag,"PO")){EMIT("<option value=\"\">~ (home)</option>",(int)strlen("<option value=\"\">~ (home)</option>"));}
-                else if(!strcmp(tag,"DO")){EMIT("<option value=\"\">local</option>",(int)strlen("<option value=\"\">local</option>"));}
+                else if(!strcmp(tag,"DO")){EMIT("<option value=\"\">local</option>",(int)strlen("<option value=\"\">local</option>"));
+                    char gc[B];snprintf(gc,B,"grep -h '^Name:' '%s/ssh/'*.txt 2>/dev/null|sed 's/Name: //'|sort -u",SROOT);
+                    FILE*df=popen(gc,"r");char dln[256];while(df&&fgets(dln,256,df)){dln[strcspn(dln,"\n")]=0;if(!dln[0])continue;
+                        char o[300];int ol=snprintf(o,300,"<option>%s</option>",dln);EMIT(o,ol);}if(df)pclose(df);}
                 else if(!strcmp(tag,"NO")){char*nb=malloc(131072);int nl2=_notes_build(nb,131072);EMIT(nb,nl2);free(nb);}
                 else if(!strcmp(tag,"TO")){char*tb=malloc(131072);int tl2=_tasks_build(tb,131072);EMIT(tb,tl2);free(tb);}
                 else if(!strcmp(tag,"JO")||!strcmp(tag,"MY")||!strcmp(tag,"MV")){/* empty */}
@@ -183,6 +186,9 @@ static void _ws_term(int c,const char*target){
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",0);
         if(target&&!strcmp(target,"cloudadd"))execlp("a","a","cloud",(char*)0);
+        if(target&&!strncmp(target,"ssh:",4)){char d2[160];snprintf(d2,160,"%s",target+4);char*cl=strchr(d2,':');
+            if(cl){*cl=0;char ses[192];snprintf(ses,192,"a:%s",cl+1);setenv("A_TMUX_SESSION",ses,1);}
+            execlp("a","a","ssh",d2,(char*)0);}
         if(target&&target[0])execlp("a","a","tmux",target,(char*)0);
         else execlp("a","a","tmux",(char*)0);
         char*b[]={"bash","-l",NULL};execvp("bash",b);
@@ -243,7 +249,9 @@ static void _handle(int c){
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
     if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
         char tgt[64]={0};const char*qw=strstr(req,"?w=");
-        if(qw){qw+=3;int i=0;while(qw[i]&&qw[i]!=' '&&qw[i]!='&'&&qw[i]!='\r'&&i<63){tgt[i]=qw[i];i++;}tgt[i]=0;}
+        if(qw){qw+=3;int j=0;for(int i=0;qw[i]&&qw[i]!=' '&&qw[i]!='&'&&qw[i]!='\r'&&j<63;i++){
+            if(qw[i]=='%'&&qw[i+1]&&qw[i+2]){char x[3]={qw[i+1],qw[i+2],0};tgt[j++]=(char)strtol(x,NULL,16);i+=2;}
+            else tgt[j++]=qw[i]=='+'?' ':qw[i];}tgt[j]=0;}
         if(_ws_upgrade(c,req))_ws_term(c,tgt);return;}
     if(!strncmp(req,"GET /extreload",14)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
         if(_ws_upgrade(c,req))_ws_reload(c);return;}
@@ -364,6 +372,14 @@ static void _handle(int c){
         else{char resp[16384];int rl=ol?snprintf(resp,16384,"<pre style=\"color:#fff\">%.*s</pre>",ol,out):0;
             _sresp(c,200,"text/html",resp,rl);}
         return;}
+    if(!strncmp(req,"POST /api/savep",15)){char buf[1024];buf[0]=0;
+        char*body=strstr(req,"\r\n\r\n");if(body){char*q=strstr(body+4,"q=");if(q){q+=2;int i=0;
+            for(;q[i]&&q[i]!='&'&&i<1023;i++){if(q[i]=='+')buf[i]=' ';
+                else if(q[i]=='%'&&q[i+1]&&q[i+2]){char x[3]={q[i+1],q[i+2],0};buf[i]=(char)strtol(x,NULL,16);q+=2;}
+                else buf[i]=q[i];}buf[i]=0;}}
+        char pf[P];snprintf(pf,P,"%s/prompts.log",SROOT);FILE*f=fopen(pf,"a");
+        if(f){time_t t=time(NULL);char ts[32];strftime(ts,32,"%Y-%m-%d %H:%M",localtime(&t));fprintf(f,"%s\t%s\n",ts,buf);fclose(f);}
+        _sresp(c,200,"text/plain",pf,(int)strlen(pf));return;}
     if(!strncmp(req,"POST /api/sync",14)){sync_bg();_sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
         int busy=fd>=0&&flock(fd,LOCK_EX|LOCK_NB)<0;if(fd>=0){if(!busy)flock(fd,LOCK_UN);close(fd);}
