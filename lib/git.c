@@ -33,7 +33,7 @@ static void sync_repo(void) {
     if(fd>=0&&flock(fd,LOCK_EX|LOCK_NB)){close(fd);return;}
     char c[B];
     snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
-        "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add -A;g commit -qm sync;"
+        "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add --sparse -A;g commit -qm sync;"
         "g pull --no-rebase --no-edit -q origin main;g push -q origin main;} >/dev/null 2>&1",SROOT);
     (void)!system(c);if(fd>=0)close(fd);
 }
@@ -46,7 +46,7 @@ static void sync_pane(const char *text){(void)text;sync_bg();}
 static void sync_proof(void){
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);if(fd>=0)flock(fd,LOCK_EX);
     char c[B],o[256];
-    snprintf(c,B,"D='%s';g(){ git -C \"$D\" \"$@\";};g add -A;g commit -qm sync >/dev/null 2>&1;"
+    snprintf(c,B,"D='%s';g(){ git -C \"$D\" \"$@\";};g add --sparse -A;g commit -qm sync >/dev/null 2>&1;"
         "g push -q origin main 2>/dev/null;h=$(g rev-parse --short HEAD 2>/dev/null);"
         "u=$(g remote get-url origin 2>/dev/null|sed 's#\\.git$##');"
         "[ -n \"$u\" ]&&echo \"$u/commit/$h\"||echo \"commit $h (local)\"",SROOT);
