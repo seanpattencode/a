@@ -113,7 +113,7 @@ try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Ex
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
 val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.BOTTOM;setBackgroundColor(0xFF000000.toInt())}
-val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint=if(intent?.getBooleanExtra("note",false)==true)"note → type, enter saves (shows url)" else "capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
+val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint=if(intent?.getBooleanExtra("note",false)==true)"note → type or 🎤, enter saves" else "capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
 status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16)}
 val btn=Button(this).apply{text="windows";setOnClickListener{
 status?.text="checking…"
@@ -123,7 +123,16 @@ ai.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a ssh homebox tmux 
 ai.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
 ai.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this@Cap,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(ai)}catch(e:Exception){try{startService(ai)}catch(e2:Exception){}}}}
-val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(e,LinearLayout.LayoutParams(0,-2,1f));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
+val mic=Button(this).apply{text="🎤";setOnClickListener{
+if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),7);return@setOnClickListener}
+status?.text="🎤 listening…";val sr=android.speech.SpeechRecognizer.createSpeechRecognizer(this@Cap)
+sr.setRecognitionListener(object:android.speech.RecognitionListener{
+override fun onResults(b:Bundle?){val t=b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull();sr.destroy();if(!t.isNullOrBlank())fire(t)}
+override fun onError(x:Int){status?.text="voice err $x";sr.destroy()}
+override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{status?.text="🎤 $it"}}
+override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(by:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}})
+sr.startListening(Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true))}}
+val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(e,LinearLayout.LayoutParams(0,-2,1f));row.addView(mic,LinearLayout.LayoutParams(-2,-2));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
 ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
 setContentView(ll);e.requestFocus()
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
