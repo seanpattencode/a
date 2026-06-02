@@ -100,8 +100,8 @@ var b=ex?.getBundle("com.termux.execute.PLUGIN_RESULT_BUNDLE")?:ex?.getBundle("r
 if(b==null)for(k in ex?.keySet()?:emptySet<String>()){val v=ex?.get(k);if(v is Bundle){b=v;break}}
 val o=(b?.getString("stdout")?:"")+(b?.getString("stderr")?:"")
 val w=Regex("window (\\S+)").find(o)?.groupValues?.get(1)
-val url=Regex("https://\\S+/commit/\\S+").find(o)?.value
-runOnUiThread{status?.text=if(url!=null)"✓ saved → $url" else if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
+val sline=o.lines().lastOrNull{it.trimStart().startsWith("saved")}?.trim()
+runOnUiThread{status?.text=if(sline!=null)sline else if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
 private fun fire(t:String){if(t.isBlank())return
 status?.text="sending…"
 val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
