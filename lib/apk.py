@@ -18,6 +18,8 @@ package com.aios.a
 import android.app.Activity;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*
 import java.io.File;import java.io.OutputStream;import java.net.Socket
 private const val U="http://127.0.0.1:1112/term"
+// All a-logic shells out to the termux `a` install (the device's real terminal); the APK is a UI caller. RUN_COMMAND also cold-starts termux if it crashed. arg passed as $1 (no injection).
+fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
 companion object{init{System.loadLibrary("anative")}}
 private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0
@@ -58,7 +60,7 @@ val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.de
 ProcessBuilder("$nl/libtic.so","-o",ti.absolutePath,src.absolutePath).redirectErrorStream(true).redirectOutput(File(filesDir,"tic.log")).start().waitFor()}
 val bin=File(filesDir,"bin");bin.mkdirs();for(p in listOf("a" to "liba.so","tmux" to "libtmux.so","tic" to "libtic.so","dbclient" to "libssh.so","ssh" to "libsshwrap.so","sshpass" to "libsshwrap.so","rclone" to "librclone.so")){val l=File(bin,p.first);try{android.system.Os.remove(l.absolutePath)}catch(e:Exception){};try{android.system.Os.symlink("$nl/${p.second}",l.absolutePath)}catch(e:Exception){}}
 for(sub in listOf("ssh","workspace/projects","workspace/cmds")){val sd=File(filesDir,"adata/git/$sub");sd.mkdirs();try{for(n in assets.list("git/$sub")?:emptyArray()){assets.open("git/$sub/$n").use{i->File(sd,n).outputStream().use{o->i.copyTo(o)}}}}catch(e:Exception){}}}
-private fun spawn(){val pb=ProcessBuilder("$nl/liba.so","serve","1112");pb.environment().apply{put("PATH","${filesDir}/bin:$nl:/system/bin");put("TMUX_BIN","$nl/libtmux.so");put("TIC_BIN","$nl/libtic.so");put("TMUX_TMPDIR",filesDir.absolutePath);put("TERMINFO","${filesDir}/terminfo");put("HOME",filesDir.absolutePath);put("A_SDIR",filesDir.absolutePath)};pb.redirectErrorStream(true);pb.redirectOutput(File(filesDir,"serve.log"));try{pb.start()}catch(x:Exception){pg("spawn failed: $x")}}
+private fun spawn(){txRun(this,"a serve 1112")}  // termux serves on shared loopback :1112; WebView (U) connects to it
 private fun boot(){setup();spawn();n=0;h.postDelayed({w.loadUrl(U)},1800)}
 private fun atlas(sz:Float):IntArray{val p=Paint().apply{textSize=sz;color=-1;isAntiAlias=true;typeface=Typeface.MONOSPACE};val cw=p.measureText("M").toInt()+1;val ch=(-p.ascent()+p.descent()).toInt()+1;val b=Bitmap.createBitmap(cw*95,ch,Bitmap.Config.ARGB_8888);Canvas(b).let{c->for(i in 0 until 95)c.drawText(((32+i).toChar()).toString(),(i*cw).toFloat(),-p.ascent(),p)};val r=IntArray(2+cw*95*ch);r[0]=cw;r[1]=ch;b.getPixels(r,2,cw*95,0,0,cw*95,ch);b.recycle();return r}
 @android.annotation.SuppressLint("ClickableViewAccessibility")
@@ -69,7 +71,7 @@ webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:Console
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("homebox" to{startActivity(Intent(this,Cap::class.java))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("Note" to{startActivity(Intent(this,Cap::class.java).putExtra("note",true))})+("homebox" to{startActivity(Intent(this,Cap::class.java))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second();nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->mb.navTo(nm)};if(!applyNav(intent))mb.post{mb.open()}}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false;var sel=0;var pnm=-1;var plen=0;var onLeave:(()->Unit)?=null
@@ -98,19 +100,20 @@ var b=ex?.getBundle("com.termux.execute.PLUGIN_RESULT_BUNDLE")?:ex?.getBundle("r
 if(b==null)for(k in ex?.keySet()?:emptySet<String>()){val v=ex?.get(k);if(v is Bundle){b=v;break}}
 val o=(b?.getString("stdout")?:"")+(b?.getString("stderr")?:"")
 val w=Regex("window (\\S+)").find(o)?.groupValues?.get(1)
-runOnUiThread{status?.text=if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
+val url=Regex("https://\\S+/commit/\\S+").find(o)?.value
+runOnUiThread{status?.text=if(url!=null)"✓ saved → $url" else if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
 private fun fire(t:String){if(t.isBlank())return
 status?.text="sending…"
 val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
-i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a sw homebox \"\$1\" 2>&1","a",t))
+i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c",if(intent?.getBooleanExtra("note",false)==true)"a n -u \"\$1\" 2>&1" else "a sw homebox \"\$1\" 2>&1","a",t))
 i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
 i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
 val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.BOTTOM;setBackgroundColor(0xFF000000.toInt())}
-val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
+val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint=if(intent?.getBooleanExtra("note",false)==true)"note → type, enter saves (shows url)" else "capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
 status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16)}
 val btn=Button(this).apply{text="windows";setOnClickListener{
 status?.text="checking…"
@@ -189,7 +192,7 @@ private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;i
 private var msg="tap to speak"
 override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());cv.drawText(msg,width/2f,height/2f,p)}
 override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){try{sr.cancel();val i=Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);msg="listening...";invalidate();sr.startListening(i)}catch(e:Exception){msg="err: ${e.message}";invalidate()}};return true}
-override fun onResults(b:Bundle?){val r=b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);if(r!=null&&r.isNotEmpty()){val t=r[0];try{val nl=context.applicationInfo.nativeLibraryDir;val pb=ProcessBuilder("$nl/liba.so","n",t);pb.environment().apply{put("PATH","${context.filesDir}/bin:$nl:/system/bin");put("HOME",context.filesDir.absolutePath);put("A_SDIR",context.filesDir.absolutePath)};pb.redirectErrorStream(true).start();msg="$t ✓"}catch(e:Exception){msg="$t ✗ ${e.message}"};invalidate()}}
+override fun onResults(b:Bundle?){val r=b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);if(r!=null&&r.isNotEmpty()){val t=r[0];try{txRun(context,"a n \"\$1\"",t);msg="$t ✓"}catch(e:Exception){msg="$t ✗ ${e.message}"};invalidate()}}
 override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{msg=it;invalidate()}}
 override fun onError(c:Int){msg="err $c";invalidate()}
 override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(b:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(c:Int,b:Bundle?){}
@@ -228,8 +231,7 @@ if((bi.flags and android.media.MediaCodec.BUFFER_FLAG_CODEC_CONFIG)!=0){out.writ
 enc.releaseOutputBuffer(oi,false);if((bi.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0)done=true}}
 enc.stop();enc.release();out.close()
 hh.post{msg="saving note...";invalidate()}
-val nl=a.applicationInfo.nativeLibraryDir
-ProcessBuilder("$nl/liba.so","n","rec: ${f.absolutePath}").apply{environment().apply{put("PATH","${a.filesDir}/bin:$nl:/system/bin");put("HOME",a.filesDir.absolutePath);put("A_SDIR",a.filesDir.absolutePath)};redirectErrorStream(true)}.start().waitFor()
+txRun(a,"a n \"\$1\"","rec: ${f.absolutePath}")
 hh.post{msg="✓ saved ${f.name} → note";invalidate()}
 }catch(x:Exception){hh.post{msg="err: ${x.message}";invalidate()}}}
 }

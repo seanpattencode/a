@@ -44,7 +44,6 @@ static void sync_bg(void) {
 static void sync_pane(const char *text){(void)text;sync_bg();}
 /* proof of save: block until any in-progress sync finishes, commit+push inline, print commit URL */
 static void sync_proof(void){
-    if(!isatty(STDIN_FILENO))return;
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);if(fd>=0)flock(fd,LOCK_EX);
     char c[B],o[256];
     snprintf(c,B,"D='%s';g(){ git -C \"$D\" \"$@\";};g add -A;g commit -qm sync >/dev/null 2>&1;"

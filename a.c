@@ -571,14 +571,16 @@ static int cmd_adb(int c,char**v){
       "p=$(cat ~/.ssh/id_*.pub 2>/dev/null|head -1);[ -z \"$p\" ]&&{ echo no pubkey;exit 1;};"
       "t=${TMPDIR:-/tmp};[ -w \"$t\" ]||t=${PREFIX:-$HOME}/tmp;mkdir -p \"$t\";pk=$t/_pk;sc=$t/_s.sh;"
       "echo \"$p\">\"$pk\";$A push \"$pk\" /sdcard/pk.txt >/dev/null||exit 1;rm \"$pk\";"
-      "printf 'mkdir -p ~/.ssh\\ncat /sdcard/pk.txt>~/.ssh/authorized_keys\\nchmod 600 ~/.ssh/authorized_keys\\nsshd\\necho A_OK\\n'>\"$sc\";"
+      "printf 'mkdir -p ~/.ssh\\ncat /sdcard/pk.txt>~/.ssh/authorized_keys\\nchmod 600 ~/.ssh/authorized_keys\\nsshd\\necho A_OK>/sdcard/.a_ok\\n'>\"$sc\";"
       "$A push \"$sc\" /sdcard/_a.sh >/dev/null;rm \"$sc\";"
       "$A shell '/system/bin/device_config put activity_manager max_phantom_processes 2147483647' 2>/dev/null;"
       "$A shell 'settings put global settings_enable_monitor_phantom_procs false' 2>/dev/null;"
       "$A shell dumpsys deviceidle whitelist +com.termux 2>/dev/null;"  /* battery-opt exempt: survive doze/OOM when backgrounded */
+      "$A shell rm -f /sdcard/.a_ok 2>/dev/null;"  /* marker: input lands in termux's FOREGROUND session; if it's in another (e.g. ssh) the cmd misses — verify, don't assume */
       "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null;sleep 2;"
-      "$A shell input keyevent 66;sleep 1;"  /* Enter to ensure fresh prompt */
-      "$A shell input text 'sh%s/sdcard/_a.sh';$A shell input keyevent 66;sleep 3;echo '✓ sshd up, key installed'");
+      "$A shell input keyevent 66;sleep 1;"
+      "$A shell input text 'sh%s/sdcard/_a.sh';$A shell input keyevent 66;sleep 3;"
+      "$A shell cat /sdcard/.a_ok 2>/dev/null|grep -q A_OK&&echo '✓ sshd up, key installed'||echo '! did not reach termux (foreground in another session? e.g. ssh) — exit to termux prompt, rerun: a adb setup'");
     if(c>2&&!strcmp(v[2],"ssh"))return system("for s in $(adb devices|awk '/\\tdevice$/{print$1}');do printf '\\033[36m→ %s\\033[0m ' \"$s\";adb -s \"$s\" shell 'am broadcast -n com.termux/.app.TermuxOpenReceiver -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH /data/data/com.termux/files/usr/bin/sshd --ez com.termux.RUN_COMMAND_BACKGROUND true' 2>&1|tail -1;done");
     if(c>3&&!strcmp(v[2],"a")){perf_disarm();
         char cmd[B]="";ajoin(cmd,B,c,v,3);

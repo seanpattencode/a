@@ -48,9 +48,11 @@ static int cmd_note(int argc, char **argv) {
         raw_exit();if(i>=n)puts("Done");return 0;}
     if(argc>2&&!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
+    if(argc>3&&!strcmp(argv[2],"-u")){perf_disarm();char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL (for non-tty callers e.g. the apk); disarm: push is network-slow */
+        note_save(dir,t);sync_proof();return 0;}
     {char t[B]="";ajoin(t,B,argc,argv,2);
         note_save(dir,t);puts("✓");sync_pane(t);
-        snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);sync_proof();return 0;}
+        snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);if(isatty(0))sync_proof();return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
 typedef struct{char d[P],t[256],p[8];}Tk;
