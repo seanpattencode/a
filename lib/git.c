@@ -47,9 +47,9 @@ static void sync_proof(void){
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);if(fd>=0)flock(fd,LOCK_EX);
     char c[B],o[256];
     snprintf(c,B,"D='%s';g(){ git -C \"$D\" \"$@\";};g add --sparse -A;g commit -qm sync >/dev/null 2>&1;"
-        "g push -q origin main 2>/dev/null;h=$(g rev-parse --short HEAD 2>/dev/null);"
-        "u=$(g remote get-url origin 2>/dev/null|sed 's#\\.git$##');"
-        "[ -n \"$u\" ]&&echo \"$u/commit/$h\"||echo \"commit $h (local)\"",SROOT);
+        "g pull --no-rebase --no-edit -q origin main >/dev/null 2>&1;"  /* merge origin first: bare push fails non-ff when another device advanced main → false proof */
+        "u=$(g remote get-url origin 2>/dev/null|sed 's#\\.git$##');h=$(g rev-parse --short HEAD 2>/dev/null);"
+        "g push -q origin main 2>/dev/null&&echo \"$u/commit/$h\"||echo \"commit $h (local, push pending)\"",SROOT);
     pcmd(c,o,256);o[strcspn(o,"\n")]=0;if(fd>=0)close(fd);
     printf("saved → %s\n",o);}
 static const char*sync_age(void){static char b[16];char p[P];
