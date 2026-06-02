@@ -81,7 +81,8 @@ static int fq_get(const char*s){int b=0,bl=0;
 static int ln_cmp(const void*a,const void*b){return fq_get(*(char*const*)b)-fq_get(*(char*const*)a);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
-    perf_disarm(); init_db();
+    perf_disarm(); init_db(); load_cfg();
+    CWD(cwd);
     char cache[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);
     size_t len;char*raw=readf(cache,&len);
     {struct stat c,s;char d[P];snprintf(d,P,"%s/ssh",SROOT);if(raw&&!stat(cache,&c)&&!stat(d,&s)&&s.st_mtime>c.st_mtime){free(raw);raw=0;}}
@@ -93,8 +94,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
     static char wb[32768];size_t wl=0;
-    {char cm[P];snprintf(cm,P,"cat '%s/web_cache.txt' 2>/dev/null;tmux list-windows -aF '#W\twin' 2>/dev/null",DDIR);
-     FILE*p=popen(cm,"r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
+    {FILE*p=popen("tmux list-windows -aF '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",
@@ -118,12 +118,14 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
-    char buf[256]="";int blen=0,sel=0;char prefix[256]="",jstat[96]="";
+    char buf[256]="";int blen=0,sel=0,cfgmode=0;char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="";
+    static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
-        for (int i=0;i<n&&nm<2048;i++) {
+        if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],buf))continue;fm[nm++]=(char*)ICFG[i];}}
+        else for (int i=0;i<n&&nm<2048;i++) {
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||!strncmp(lines[i],"web ",4)))continue;
             if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,buf);int ok=1;
@@ -131,7 +133,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 if(s[blen]<=' '&&!strncasecmp(s,buf,(size_t)blen)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
             fm[nm++]=lines[i];
         }
-        {int mx=nm?nm:blen?2:0;if(sel>=mx)sel=mx?mx-1:0;}
+        const char*ag=cfget("i_agent");if(!*ag)ag="claude";const char*ef=cfget("i_effort");if(!*ef)ef=strstr(ag,"codex")?"xhigh":"max";
+        int na=(lastwin[0]&&!cfgmode&&!blen&&!plen)?1:0,tot=nm+na;if(sel>=tot)sel=tot?tot-1:0;
         int hdr_rows=0;char hl[2048];int hll=0,Wc=ws.ws_col?ws.ws_col:80;
         if(m_mode){load_cfg();const char*cm=cfget("m_model");if(!*cm)cm="opus";
             const char*cg=cfget("m_agent");if(!*cg)cg="claude";
@@ -145,7 +148,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
             free(ms); hdr_rows=hll>0?(hll+Wc-1)/Wc:1;}
         int em=m_mode?(ws.ws_row>hdr_rows+3?ws.ws_row-hdr_rows-3:1):maxshow;
-        int top=sel>=em?sel-em+1:0, show=nm-top<em?nm-top:em;
+        int avail=em-na>0?em-na:1,ms=sel-na,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
+        int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
         {char fb[B*4];int fl=0;
         #define FP(f,...) fl+=snprintf(fb+fl,fl<B*4?(size_t)(B*4-fl):0,f,##__VA_ARGS__)
         FP("\033[H\033[?25l");
@@ -154,14 +158,18 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 FP("\033[36m%.*s\033[0m\033[K\n",ch,hl+p);
                 p+=ch?ch:1;
             }while(p<hll);}
-        if(!blen&&!plen)FP("> \033[90m%s\033[0m\033[K\n",jstat[0]?jstat:"type to filter · type a prompt → Enter fires a claude win, keep typing to fire more");
-        else FP("%s> %s\033[K\n",prefix,buf);
-        if(!nm&&blen){FP("%s \033[35msend \"%s\" → new claude win (stays for more)\033[0m\033[K\n",sel==0?" >":"  ",buf);
-            FP("%s \033[36mGoogle: %s\033[0m\033[K\n",sel==1?" >":"  ",buf);}
-        for(int i=0;i<show;i++){int j=top+i,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
+        if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
+        else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s\033[0m\033[K\n",jstat);
+        else if(!blen&&!plen)FP("> \033[90m↵ fires %s/%s win · ↑ pick · ^G config\033[0m\033[K\n",ag,ef);
+        else if(plen)FP("%s> %s\033[K\n",prefix,buf);
+        else{int W=ws.ws_col?ws.ws_col:80,mi=sel-na;FP("> %s\033[K\n",buf);
+            if(mi>=0&&mi<nm){char*m=fm[mi],*tb=strchr(m,'\t');FP("\033[90m↵ run: %.*s\033[0m\033[K\n",tb?(int)(tb-m):(int)strlen(m),m);}
+            else FP("\033[90m↵ new tmux win → %s eff=%s : \"%.*s\"\033[0m\033[K\n",ag,ef,W>44?W-44:20,buf);}
+        if(na)FP("%s \033[36m⮌ switch → win %s (just fired)\033[0m\033[K\n",sel==0?" >":"  ",lastidx);
+        for(int i=0;i<show;i++){int j=top+i,gj=j+na,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
             char*desc=t2?t2+1:(t?t+1:"");int dl=(int)strlen(desc);
-            if(ml>W-7-dl)ml=W-7-dl;FP("%s a %.*s\033[K",j==sel?" >":"  ",ml,fm[j]);
+            if(ml>W-7-dl)ml=W-7-dl;FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%s\033[0m",W-dl,desc);FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+1):1,plen+blen+3);
         #undef FP
@@ -172,33 +180,39 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(read(0,&ch,1)!=1) break;
         int do_pick=0;
         if(ch=='\x1b'){int av;usleep(50000);ioctl(0,FIONREAD,&av);
-            if(!av){if(m_mode){prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
+            if(!av){if(m_mode||prefix[0]||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
             char seq[2];if(read(0,seq,1)!=1)break;
             if(seq[0]=='['){if(read(0,seq+1,1)!=1)break;
                 if(seq[1]=='A'){if(sel>0)sel--;}
-                else if(seq[1]=='B'){int mx=nm?nm-1:blen?1:0;if(sel<mx)sel++;}
+                else if(seq[1]=='B'){if(sel<tot-1)sel++;}
                 else if(seq[1]=='<'){int mb=0,my=0;char mc;
                     while(read(0,&mc,1)==1&&mc!=';')mb=mb*10+mc-'0';
                     while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
-                    if(mc=='M'){if(!mb){int ci=my-(m_mode?3:2)+top;if(ci>=0&&ci<nm){sel=ci;do_pick=1;}}
-                    else if(mb==64&&sel>0)sel--;else if(mb==65&&sel<nm-1)sel++;}}
-            } else if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;} else if(!m_mode)break;
-        } else if(ch=='\t'){int mx=nm?nm-1:blen?1:0;if(sel<mx)sel++;}
+                    if(mc=='M'){if(!mb){int rr=my-(m_mode?3:2);if(na&&rr==0){sel=0;do_pick=1;}
+                        else{int ci=top+rr-na;if(ci>=0&&ci<nm){sel=ci+na;do_pick=1;}}}
+                    else if(mb==64&&sel>0){sel--;}else if(mb==65&&sel<tot-1){sel++;}}}
+            } else if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;} else if(!m_mode)break;
+        } else if(ch=='\t'){if(sel<tot-1)sel++;}
         else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;}
-        else if(ch=='\r'||ch=='\n'){if(!nm&&blen){
-            if(sel==0){int pp[2];char ob[2048]="";  /* rapid fire: detached claude win, stay in TUI */
-                if(!pipe(pp)){if(!fork()){dup2(pp[1],1);dup2(pp[1],2);close(pp[0]);unsetenv("TMUX");execlp("a","a","j",buf,(char*)0);_exit(127);}
-                    close(pp[1]);int t=0,r;while(t<2047&&(r=(int)read(pp[0],ob+t,(size_t)(2047-t)))>0)t+=r;ob[t]=0;close(pp[0]);wait(0);}
-                char*w=strstr(ob,"→ tmux win");if(w){char*e=strchr(w,'\n');if(e)*e=0;}
-                snprintf(jstat,sizeof jstat,"%s",w?w:"+ sent");buf[0]=0;blen=0;sel=0;continue;}
-            IRST;{char u[512];snprintf(u,512,"https://google.com/search?q=%s",buf);
-                for(char*p=u;*p;p++)if(*p==' ')*p='+';bg_exec(OPENER,u);}
-            return 0;}do_pick=1;}
-        else if(ch==3){if(prefix[0]||blen){prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
+        else if(ch=='\r'||ch=='\n')do_pick=1;
+        else if(ch==7&&!cfgmode){cfgmode=1;sel=0;buf[0]=0;blen=0;(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
+        else if(ch==3){if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
         else if(ch==4)break;
         else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
-        if(do_pick&&nm){char*m=fm[sel],cmd[256];
+        if(do_pick&&cfgmode&&nm&&sel<nm){char fld[16]="",val[32]="",ck[24];
+            sscanf(fm[sel],"%15s %31s",fld,val);snprintf(ck,24,"i_%s",fld);cfset(ck,val);load_cfg();
+            buf[0]=0;blen=0;sel=0;continue;}
+        if(do_pick&&!cfgmode&&!prefix[0]&&blen&&!nm){  /* no command matched → fire the prompt as a new agent win */
+            const char*ia=cfget("i_agent");if(!*ia)ia="claude";const char*ie=cfget("i_effort");if(!*ie)ie=strstr(ia,"codex")?"xhigh":"max";
+            char run[B+64],cm[B+256],wi[16]="?";
+            if(strstr(ia,"codex"))snprintf(run,sizeof run,"codex -c model_reasoning_effort=%s --dangerously-bypass-approvals-and-sandbox \"%s\"",ie,buf);
+            else snprintf(run,sizeof run,"claude --dangerously-skip-permissions --effort %s \"%s\"",ie,buf);
+            snprintf(cm,sizeof cm,"tmux new-window -dP -F '#{window_index} #{window_id}' -c '%s' '%s;exec bash'",cwd,run);
+            pcmd(cm,wi,16);sscanf(wi,"%7s %15s",lastidx,lastwin);
+            snprintf(jstat,sizeof jstat,"→ win %s · %s/%s",lastidx,ia,ie);buf[0]=0;blen=0;sel=-1;continue;}  /* sel=-1: nothing selected, so one ↓ lands on the switch row (no accidental switch) */
+        if(do_pick&&na&&sel==0){IRST;char c[64];snprintf(c,64,"tmux select-window -t %s",lastwin);(void)!system(c);return 0;}
+        if(do_pick&&nm&&sel>=na&&sel-na<nm){char*m=fm[sel-na],cmd[256];
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
             else{int cl=tab?(int)(tab-m):(int)strlen(m);snprintf(cmd,256,"%.*s",cl,m);}
@@ -206,7 +220,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             int hs=0,cl=(int)strlen(cmd);
             for(int i=0;i<n;i++)if(!strncmp(lines[i],cmd,(size_t)cl)&&lines[i][cl]==' '){hs=1;break;}
             if(hs){snprintf(prefix,256,"%s ",cmd);buf[0]=0;blen=0;sel=0;printf("\033[J");continue;}
-            if(m_mode){char cs[512];snprintf(cs,512,"a %s >/dev/null 2>&1",cmd);(void)!system(cs);
+            if(m_mode||!strncmp(cmd,"m model ",8)||!strncmp(cmd,"m agent ",8)||!strncmp(cmd,"m effort ",9)){char cs[512];snprintf(cs,512,"a %s >/dev/null 2>&1",cmd);(void)!system(cs);load_cfg();
                 sel=0;buf[0]=0;blen=0;
                 if(!strncmp(cmd,"m agent ",8))snprintf(prefix,256,"m effort ");
                 else if(!strncmp(cmd,"m effort ",9))snprintf(prefix,256,"m model ");
