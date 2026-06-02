@@ -85,8 +85,12 @@ tf.onsubmit=function(e){e.preventDefault();var t=tc.value.trim();if(!t)return;va
     tst.innerHTML=u?'✓ saved → <a href="'+u+'" target=_blank style="color:#6cf">'+u+'</a>':'✓ '+(h.replace(/<[^>]*>/g,'').trim()||'saved');
     tc.value='';tp.value='';fetch('/api/tasks').then(function(r){return r.text()}).then(function(x){tl.innerHTML=x})});};
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';ns.innerHTML='<span style="color:#fa0">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#4a4">saved → </span><a href="'+m[0]+'" target=_blank style="color:#4af">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#f44">save FAILED</span>'});};
-var _tg=0;document.addEventListener('touchstart',function(e){var g=e.target.closest('[data-go]');if(g){e.preventDefault();_tg=1;go(g.dataset.go);}},{passive:false});
-document.addEventListener('click',function(e){if(_tg){_tg=0;return;}if(!e.target.closest('#w,#wm'))wm.classList.remove('x');var g=e.target.closest('[data-go]');if(g)go(g.dataset.go);});
+// press-to-act: fire on pointerdown (mouse+touch), not lift-off — matches native depress-instant. inputs/selects keep focus; modifier-clicks pass through.
+var _act='[data-go],.pg,button,a[href],[onclick]',_in='input,select,textarea';
+addEventListener('pointerdown',function(e){if(e.button||e.metaKey||e.ctrlKey||e.shiftKey)return;if(!e.target.closest('#w,#wm'))wm.classList.remove('x');
+  var t=e.target.closest(_act);if(!t||e.target.closest(_in))return;
+  e.preventDefault();var g=t.closest('[data-go]');g?go(g.dataset.go):t.click();},true);
+addEventListener('click',function(e){if(!e.isTrusted)return;if(e.target.closest(_act)&&!e.target.closest(_in)){e.stopImmediatePropagation();e.preventDefault();}},true);
 qi.onblur=function(){setTimeout(function(){if(document.activeElement===document.body)qi.focus()},0)};
 window.onfocus=function(){qi.style.borderColor='#555'};window.onblur=function(){qi.style.borderColor='#333'};
 var _cmds=__CMDS__,_cs=0;

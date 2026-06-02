@@ -236,6 +236,45 @@ static char*_cloud_html(void){
     hl+=snprintf(h+hl,(size_t)(cap-hl),"<div><h3 style=color:#888>Copy between clouds</h3>from <select id=src>%s</select> to <select id=dst>%s</select> <button class=cp onclick=startcp()>Copy</button> <button class=cp onclick=stopcp() style=background:#d33>Stop</button><div id=cpstat></div></div>",opts,opts);
     hl+=snprintf(h+hl,(size_t)(cap-hl),"%s","<script>function cpoll(){fetch('/api/cloudcp-status').then(r=>r.text()).then(t=>{var e=document.getElementById('cpstat'),p=t.split('|');if(p[0]=='running'){e.innerHTML='Copying '+(p[1]||'')+' ...';setTimeout(cpoll,2000)}else if(p[0]=='done'){e.innerHTML='Finished - <a target=_blank style=color:#4af href=\"'+p[1]+'\">'+p[1]+'</a>'}else if(p[0]=='stopped'){e.innerHTML='<span style=color:#fa0>Stopped: '+(p[1]||'')+'</span>'}else if(p[0]=='error'){e.innerHTML='<span style=color:#f44>Error: '+(p[1]||'')+'</span>'}else{e.textContent=''}})}function startcp(){var s=document.getElementById('src').value,d=document.getElementById('dst').value;if(s==d){alert('pick two different remotes');return}document.getElementById('cpstat').textContent='Starting ...';fetch('/api/cloudcp?src='+encodeURIComponent(s)+'&dst='+encodeURIComponent(d),{method:'POST'}).then(function(){setTimeout(cpoll,800)})}function stopcp(){fetch('/api/cloudcp-stop',{method:'POST'}).then(function(){setTimeout(cpoll,400)})}cpoll();</script>");
     return h;}
+static char*_phtml;static int _phlen;
+static void _prompt_gen(void){ /* cached at startup like _shtml; was ~160ms/req. refresh: a ui reload */
+        int pp[2];if(pipe(pp))return;pid_t ch=fork();
+        if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);(void)!chdir(SDIR);execlp("a","a","prompt","show",(char*)0);_exit(1);}
+        close(pp[1]);size_t cap=1<<19,ol=0;char*o=malloc(cap);
+        if(o)for(int r;(r=(int)read(pp[0],o+ol,cap-1-ol))>0;){ol+=(size_t)r;
+            if(ol+8192>cap){char*t=realloc(o,cap*=2);if(!t){free(o);o=NULL;break;}o=t;}}
+        close(pp[0]);waitpid(ch,NULL,0);
+        if(!o)return;
+        long cboff=-1;{char ap[P];snprintf(ap,P,"%s/local/a_cat.txt",AROOT);size_t al=0;char*ac=readf(ap,&al);
+            if(ac&&al){char*t=realloc(o,ol+al+1);if(t){o=t;cboff=(long)ol;memcpy(o+ol,ac,al);ol+=al;}free(ac);}}
+        o[ol]=0;
+        char*h=malloc(ol*6+2048);if(!h){free(o);return;}
+        char cm[4096];int cl;size_t HL=strlen(HOME);
+        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{"default.txt","%s/common/prompts/default.txt",SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"mem index","%s/mem/index.txt",SROOT,"==> mem index <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,cboff}};
+        int N=5;
+        for(int i=0;i<N;i++){if(CP[i].off>=0)continue;char key[160]={0};
+            if(CP[i].mk)snprintf(key,160,"%s",CP[i].mk);
+            else if(CP[i].fmt[0]){char fp[P];snprintf(fp,P,CP[i].fmt,CP[i].root);FILE*f=fopen(fp,"r");
+                if(f){char ln[160];while(fgets(ln,160,f)){ln[strcspn(ln,"\n")]=0;if((int)strlen(ln)>8){snprintf(key,160,"%s",ln);break;}}fclose(f);}}
+            if(key[0]){char*pq=strstr(o,key);if(pq)CP[i].off=(long)(pq-o);}}
+        cl=snprintf(cm,4096,"<div class=c><b>components</b> <span class=g>= write_prompt_file (lib/tmux.c) + a cat · click to jump · also inline: git-status, a-done line</span><br>");
+        for(int i=0;i<N;i++){char fp[P]="";if(CP[i].fmt[0])snprintf(fp,P,CP[i].fmt,CP[i].root);
+            struct stat st;long sz=fp[0]&&!stat(fp,&st)?(long)st.st_size:-1;
+            const char*d=fp[0]?fp:"(generated)";if(fp[0]&&!strncmp(d,HOME,HL)&&d[HL]=='/')d+=HL+1;
+            if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(4096-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ldB<br>",i,CP[i].lbl,d,sz);
+            else cl+=snprintf(cm+cl,(size_t)(4096-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ldB<br>",CP[i].lbl,d,sz);}
+        cl+=snprintf(cm+cl,(size_t)(4096-cl),"</div>");
+        int hl=snprintf(h,(size_t)(ol*6+2048),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#6cf;padding:8px 16px;border-bottom:1px solid #222;z-index:2}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.8}.g{color:#888}.k{color:#6cf;text-decoration:none}.k:hover{text-decoration:underline}.p{color:#9c9}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}pre span{scroll-margin-top:46px}</style><header><b>unified prompt</b> — every agent (claude·codex·gemini·m) · %zu bytes</header>%s<pre>",ol,cm);
+        for(size_t i=0;i<ol;i++){
+            for(int z=0;z<N;z++)if(CP[z].off==(long)i)hl+=snprintf(h+hl,40,"<span id=c%d></span>",z);
+            char k=o[i];
+            if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
+            else if(k=='>'){memcpy(h+hl,"&gt;",4);hl+=4;}
+            else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
+            else h[hl++]=k;}
+        memcpy(h+hl,"</pre>",6);hl+=6;
+        free(o);_phtml=h;_phlen=hl;
+}
 static char _rl[160];
 static void _handle(int c){
     static char req[262144];int n=0;
@@ -360,43 +399,7 @@ static void _handle(int c){
         for(int k=0;k<2;k++){hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<h3>%s/</h3>",dirs[k]);
             hl=_docls(h,hl,dirs[k],(int)strlen(dirs[k])+1);}
         _sdoc(c,h,hl);free(h);return;}
-    if(!strncmp(req,"GET /prompt",11)){
-        int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","err",3);return;}pid_t ch=fork();
-        if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);(void)!chdir(SDIR);execlp("a","a","prompt","show",(char*)0);_exit(1);}
-        close(pp[1]);size_t cap=1<<19,ol=0;char*o=malloc(cap);
-        if(o)for(int r;(r=(int)read(pp[0],o+ol,cap-1-ol))>0;){ol+=(size_t)r;
-            if(ol+8192>cap){char*t=realloc(o,cap*=2);if(!t){free(o);o=NULL;break;}o=t;}}
-        close(pp[0]);waitpid(ch,NULL,0);
-        if(!o){_sresp(c,500,"text/plain","oom",3);return;}
-        long cboff=-1;{char ap[P];snprintf(ap,P,"%s/local/a_cat.txt",AROOT);size_t al=0;char*ac=readf(ap,&al);
-            if(ac&&al){char*t=realloc(o,ol+al+1);if(t){o=t;cboff=(long)ol;memcpy(o+ol,ac,al);ol+=al;}free(ac);}}
-        o[ol]=0;
-        char*h=malloc(ol*6+2048);if(!h){free(o);_sresp(c,500,"text/plain","oom",3);return;}
-        char cm[4096];int cl;size_t HL=strlen(HOME);
-        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{"default.txt","%s/common/prompts/default.txt",SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"mem index","%s/mem/index.txt",SROOT,"==> mem index <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,cboff}};
-        int N=5;
-        for(int i=0;i<N;i++){if(CP[i].off>=0)continue;char key[160]={0};
-            if(CP[i].mk)snprintf(key,160,"%s",CP[i].mk);
-            else if(CP[i].fmt[0]){char fp[P];snprintf(fp,P,CP[i].fmt,CP[i].root);FILE*f=fopen(fp,"r");
-                if(f){char ln[160];while(fgets(ln,160,f)){ln[strcspn(ln,"\n")]=0;if((int)strlen(ln)>8){snprintf(key,160,"%s",ln);break;}}fclose(f);}}
-            if(key[0]){char*pq=strstr(o,key);if(pq)CP[i].off=(long)(pq-o);}}
-        cl=snprintf(cm,4096,"<div class=c><b>components</b> <span class=g>= write_prompt_file (lib/tmux.c) + a cat · click to jump · also inline: git-status, a-done line</span><br>");
-        for(int i=0;i<N;i++){char fp[P]="";if(CP[i].fmt[0])snprintf(fp,P,CP[i].fmt,CP[i].root);
-            struct stat st;long sz=fp[0]&&!stat(fp,&st)?(long)st.st_size:-1;
-            const char*d=fp[0]?fp:"(generated)";if(fp[0]&&!strncmp(d,HOME,HL)&&d[HL]=='/')d+=HL+1;
-            if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(4096-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ldB<br>",i,CP[i].lbl,d,sz);
-            else cl+=snprintf(cm+cl,(size_t)(4096-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ldB<br>",CP[i].lbl,d,sz);}
-        cl+=snprintf(cm+cl,(size_t)(4096-cl),"</div>");
-        int hl=snprintf(h,(size_t)(ol*6+2048),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#6cf;padding:8px 16px;border-bottom:1px solid #222;z-index:2}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.8}.g{color:#888}.k{color:#6cf;text-decoration:none}.k:hover{text-decoration:underline}.p{color:#9c9}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}pre span{scroll-margin-top:46px}</style><header><b>unified prompt</b> — every agent (claude·codex·gemini·m) · %zu bytes</header>%s<pre>",ol,cm);
-        for(size_t i=0;i<ol;i++){
-            for(int z=0;z<N;z++)if(CP[z].off==(long)i)hl+=snprintf(h+hl,40,"<span id=c%d></span>",z);
-            char k=o[i];
-            if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
-            else if(k=='>'){memcpy(h+hl,"&gt;",4);hl+=4;}
-            else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
-            else h[hl++]=k;}
-        memcpy(h+hl,"</pre>",6);hl+=6;
-        _sdoc(c,h,hl);free(o);free(h);return;}
+    if(!strncmp(req,"GET /prompt",11)){if(_phtml)_sdoc(c,_phtml,_phlen);return;}
     if(!strncmp(req,"GET /p",6)&&(req[6]==' '||req[6]=='\r'||req[6]=='?')){
         char out[B]="";int ol=0,pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","i",(char*)0);_exit(1);}
@@ -575,7 +578,7 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     (void)!system("for h in after-new-window after-rename-window after-kill-pane session-window-changed;do tmux set-hook -g $h 'run-shell -b \"echo x > /tmp/a_dash.fifo\"' 2>/dev/null;done");
     {const char*op=getenv("PATH")?:"";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
-    printf("> generating HTML...\n");_html_gen();
+    printf("> generating HTML...\n");_html_gen();_prompt_gen();
     if(!_shtml){puts("x HTML generation failed");return 1;}
     printf("+ %d bytes cached\n",_shlen);
     int fd=socket(AF_INET,SOCK_STREAM,0);
