@@ -42,26 +42,20 @@ static void sync_bg(void) {
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }
 static void sync_pane(const char *text){(void)text;sync_bg();}
-/* proof of save: commit locally, then a TIME-BOUNDED pull+push. Fast push (ff) → real URL.
-   Slow/behind (mobile: activity/ blobs bloat the fetch) → return now with clear status + finish in bg. Never hang, never false-proof. */
-static void sync_proof(void){
+/* save proof. gh contents API commits to the REMOTE head directly → real url even when local trails the high-churn repo (a bare push would be rejected). then a local commit (NO push) so later pulls don't trip on the new file and the next note's PUT can't 422. no gh (e.g. phone) → bg sync + "saved ✓ syncing", never the old ~30s blocking pull/push. flock serializes; out!=0 writes line else prints. */
+static void note_url(const char*fn,const char*msg,char*out){
+    const char*rel=fn;size_t sl=strlen(SROOT);if(fn&&!strncmp(fn,SROOT,sl)&&fn[sl]=='/')rel=fn+sl+1;
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);if(fd>=0)flock(fd,LOCK_EX);
-    char c[B],o[256];
-    snprintf(c,B,"D='%s';g(){ git -C \"$D\" \"$@\";};g add --sparse -A;g commit -qm sync >/dev/null 2>&1;"
-        "u=$(g remote get-url origin 2>/dev/null|sed 's#\\.git$##');h=$(g rev-parse --short HEAD 2>/dev/null);"
-        "if timeout 12 git -C \"$D\" pull --no-rebase --no-edit -q origin main >/dev/null 2>&1 && timeout 12 git -C \"$D\" push -q origin main 2>/dev/null;then echo \"$u/commit/$h\";else echo \"PENDING $h\";fi",SROOT);
-    pcmd(c,o,256);o[strcspn(o,"\n")]=0;if(fd>=0)close(fd);
-    if(!strncmp(o,"PENDING ",8))sync_bg(),printf("saved ✓ (commit %s) — syncing to github…\n",o+8);
-    else printf("saved → %s\n",o);}
-/* fast url: push ONE note file via the github contents API (1 request, ~1s) → real commit url now; git repo reconciles in bg. falls back to git sync if no gh. */
-static void note_url(const char*fn){
-    const char*bn=bname(fn);char c[B*2],o[512];
-    snprintf(c,B*2,"command -v gh>/dev/null||exit 1;"
-        "r=$(git -C '%s' remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##');[ -n \"$r\" ]||exit 1;"
+    char c[B*2],o[512]="";
+    if(fn){snprintf(c,B*2,"command -v gh>/dev/null||exit 1;D='%s';"
+        "r=$(git -C $D remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##');[ -n \"$r\" ]||exit 1;"
         "d=$(base64 -w0 <'%s' 2>/dev/null||base64 <'%s'|tr -d '\\n');"
-        "gh api --method PUT \"repos/$r/contents/notes/%s\" -f message=note -f content=\"$d\" --jq .commit.html_url 2>/dev/null",SROOT,fn,fn,bn);
-    if(pcmd(c,o,512)==0&&!strncmp(o,"https",5)){o[strcspn(o,"\n")]=0;printf("saved → %s\n",o);sync_bg();}
-    else sync_proof();}
+        "u=$(timeout 10 gh api --method PUT \"repos/$r/contents/%s\" -f message=%s -f content=\"$d\" --jq .commit.html_url 2>/dev/null);[ -n \"$u\" ]||exit 1;"
+        "git -C $D add --sparse -A;git -C $D commit -qm %s >/dev/null 2>&1;echo \"$u\"",SROOT,fn,fn,rel,msg,msg);
+        pcmd(c,o,512);o[strcspn(o,"\n")]=0;}  /* trust output, not pcmd's exit: serve sets SIGCHLD=IGN so pclose returns -1 even on success */
+    if(fd>=0)close(fd);
+    char l[300];if(!strncmp(o,"https",5))snprintf(l,300,"saved \342\206\222 %s",o);else{sync_bg();snprintf(l,300,"saved \342\234\223 syncing");}
+    if(out)snprintf(out,256,"%s",l);else puts(l);}
 static const char*sync_age(void){static char b[16];char p[P];
     snprintf(p,P,"%s/.git/FETCH_HEAD",SROOT);struct stat st;
     if(stat(p,&st))return"never";

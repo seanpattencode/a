@@ -50,10 +50,10 @@ static int cmd_note(int argc, char **argv) {
     if(argc>2&&!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
     if(argc>3&&!strcmp(argv[2],"-u")){perf_disarm();char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL fast via gh API (apk); disarm: network */
-        note_url(note_save(dir,t));return 0;}
+        note_url(note_save(dir,t),"note",NULL);return 0;}
     {char t[B]="";ajoin(t,B,argc,argv,2);
         note_save(dir,t);puts("✓");sync_pane(t);
-        snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);if(isatty(0))sync_proof();return 0;}
+        snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);if(isatty(0))note_url(NULL,"note",NULL);return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
 typedef struct{char d[P],t[256],p[8];}Tk;
@@ -76,14 +76,15 @@ static int load_tasks(const char*dir){
         n++;
     }closedir(d);qsort(T,(size_t)n,sizeof(Tk),tcmp);return n;
 }
-static void task_add(const char*dir,const char*t,int pri){
+static char* task_add(const char*dir,const char*t,int pri){
     char sl[64];snprintf(sl,64,"%.32s",t);for(char*p=sl;*p;p++)*p=*p==' '||*p=='/'?'-':*p>='A'&&*p<='Z'?*p+32:*p;
     struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);
-    char ts[32],fn[P],buf[B];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
+    static char fn[P];char ts[32],buf[B];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
     snprintf(ltd,P,"%s/%05d-%s_%s",dir,pri,sl,ts);mkdir(ltd,0755);
     char sd[P];snprintf(sd,P,"%s/task",ltd);mkdir(sd,0755);
     snprintf(fn,P,"%s/task/%s.%09ld_%s.txt",ltd,ts,tp.tv_nsec,DEV);
     snprintf(buf,B,"Text: %s\nDevice: %s\nCreated: %s\n",t,DEV,ts);writef(fn,buf);
+    return fn;
 }
 #define THINT "  \033[90mp <pri>  d MM-DD  enter=done\033[0m\n"
 static void rapid_task(const char*t){
@@ -392,7 +393,10 @@ static int cmd_task(int argc,char**argv){
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # N");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1;if(x<0||x>=n){puts("x Invalid");return 1;}
         task_repri(x,atoi(argv[4]));return 0;}
-    if(!strcmp(sub,"add")||!strcmp(sub,"a")){if(argc<4){puts("a task add [PPPPP] <text>");return 1;}
+    if(!strcmp(sub,"add")||!strcmp(sub,"a")){if(argc<4){puts("a task add [-u] [PPPPP] <text>");return 1;}
+        if(!strcmp(argv[3],"-u")){int si=4,pri=50000;if(si<argc&&is5d(argv[si]))pri=atoi(argv[si++]);
+            if(si>=argc){puts("a task add -u [PPPPP] <text>");return 1;}
+            char t[B]="";ajoin(t,B,argc,argv,si);note_url(task_add(dir,t,pri),"task",NULL);return 0;}
         return task_add_p(dir,argc,argv,3);}
     if(*sub=='d'&&!sub[1]){if(argc<4){puts("a task d <#|name>...");return 1;}int n=load_tasks(dir);
         for(int j=3;j<argc;j++){int x=-1,v=atoi(argv[j]);if(v>0&&v<=n)x=v-1;

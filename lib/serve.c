@@ -422,20 +422,20 @@ static void _handle(int c){
             if(q[ci]=='+')cmd[ci]=' ';
             else if(q[ci]=='%'&&q[ci+1]&&q[ci+2]){char h[3]={q[ci+1],q[ci+2],0};cmd[ci]=(char)strtol(h,NULL,16);q+=2;}
             else cmd[ci]=q[ci];}cmd[ci]=0;
+        if(isnote){char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);char*nf=note_save(nd,cmd);
+            char m[256]="";note_url(nf,"note",m); /* gh PUT → real url (works even when local trails); no fork, no 30s freeze */
+            _sresp(c,200,"text/plain",m,(int)strlen(m));return;}
         int pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){close(pp[0]);dup2(pp[1],1);dup2(pp[1],2);close(pp[1]);
-            signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL); /* SIG_DFL so child's gh/git can waitpid (serve sets SIG_IGN) */
-            if(isnote)execlp("a","a","note","-u",cmd,(char*)0); /* -u: push via gh API, prints "saved → <url>" */
-            else{/* split cmd into args */
-                char*args[32]={"a"};int ac=1;char*p2=cmd;
-                while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(*p2)*p2++=0;}
-                args[ac]=NULL;execvp("a",args);}
+            signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL); /* SIG_DFL so child's git can waitpid (serve sets SIG_IGN) */
+            char*args[32]={"a"};int ac=1;char*p2=cmd;
+            while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(*p2)*p2++=0;}
+            args[ac]=NULL;execvp("a",args);
             _exit(1);}
         close(pp[1]);char out[8192];int ol=0;
         {int r;while((r=(int)read(pp[0],out+ol,(size_t)(8191-ol)))>0)ol+=r;}
         close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
-        if(isnote){_sresp(c,200,"text/plain",out,ol);} /* out has "saved → <url>" line for the client to surface */
-        else{char resp[16384];int rl=ol?snprintf(resp,16384,"<pre style=\"color:#fff\">%.*s</pre>",ol,out):0;
+        {char resp[16384];int rl=ol?snprintf(resp,16384,"<pre style=\"color:#fff\">%.*s</pre>",ol,out):0;
             _sresp(c,200,"text/html",resp,rl);}
         return;}
     if(!strncmp(req,"POST /api/savep",15)){char buf[1024];buf[0]=0;
@@ -525,12 +525,11 @@ static void _handle(int c){
             free(buf);if(!len)break;}
         close(c);_exit(0);}
     if(!strncmp(req,"GET /stream",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
-        char dev[64]="local";{const char*q=strstr(req,"?dev=");if(q){q+=5;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)dev[i]=q[i];dev[i]=0;if(!dev[0])snprintf(dev,64,"local");}}
-        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=\"/stream?dev=local\"%s>local</a>",strcmp(dev,"local")?"":" class=on");
+        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a data-d=local href=# onclick=\"sel('local');return false\">local</a>");
         {char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
-         for(int i=0;i<n&&nl<3600;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
-            if(nm)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a href=\"/stream?dev=%s\"%s>%s</a>",nm,strcmp(dev,nm)?"":" class=on",nm);}}
-        char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream \xc2\xb7 %s</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#9cf;text-decoration:none;padding:7px 9px;border:1px solid #233;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#b a.on{background:#13320f;color:#9f9;border-color:#2a5a2a}img{display:block;width:100vw;height:100vh;object-fit:contain;padding-left:160px;box-sizing:border-box;color:#888}</style><div id=b>%s</div><img src=\"/stream/s?dev=%s\" alt=\"streaming %s\xe2\x80\xa6\">",dev,nav,dev,dev);
+         for(int i=0;i<n&&nl<3500;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
+            if(nm)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a data-d=\"%s\" href=# onclick=\"sel('%s');return false\">%s</a>",nm,nm,nm);}}
+        char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#9cf;text-decoration:none;padding:7px 9px;border:1px solid #233;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}#b a.on{background:#13320f;color:#9f9;border-color:#2a5a2a}img{display:block;width:100vw;height:100vh;object-fit:contain;padding-left:160px;box-sizing:border-box;color:#888;font:14px ui-monospace,monospace}</style><div id=b>%s</div><img alt=\"\xe2\x86\x90 pick a device to start streaming\"><script>var img=document.querySelector('img'),cur='';function sel(d){if(cur===d){cur='';img.removeAttribute('src');img.alt='stopped \xc2\xb7 pick a device';}else{cur=d;img.src='/stream/s?dev='+encodeURIComponent(d);img.alt='starting '+d+'\xe2\x80\xa6';}document.querySelectorAll('#b a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-d')===cur)});}</script>",nav);
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
         const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3]))?atoi(qw+3):-1;
