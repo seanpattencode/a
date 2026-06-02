@@ -2,11 +2,12 @@ static void do_archive(const char *p) {
     const char *s=strrchr(p,'/'); char a[P],d[P]; snprintf(a,P,"%.*s/.archive",(int)(s-p),p); mkdirp(a);
     snprintf(d,P,"%s%s",a,s); rename(p,d);
 }
-static void note_save(const char *d, const char *t) {
+static char* note_save(const char *d, const char *t) {
     struct timespec tp; clock_gettime(CLOCK_REALTIME,&tp); time_t now=tp.tv_sec;
-    char ts[32],fn[P],buf[B]; strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&now));
+    static char fn[P]; char ts[32],buf[B]; strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&now));
     snprintf(fn,P,"%s/%08x_%s.%09ld.txt",d,(unsigned)(tp.tv_nsec^(unsigned)now),ts,tp.tv_nsec);
     snprintf(buf,B,"Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n",t,DEV,ts); writef(fn,buf);
+    return fn;
 }
 static char rdir[P],ltd[P]="";
 static void dl_norm(const char*,char*,size_t);
@@ -48,8 +49,8 @@ static int cmd_note(int argc, char **argv) {
         raw_exit();if(i>=n)puts("Done");return 0;}
     if(argc>2&&!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
-    if(argc>3&&!strcmp(argv[2],"-u")){perf_disarm();char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL (for non-tty callers e.g. the apk); disarm: push is network-slow */
-        note_save(dir,t);sync_proof();return 0;}
+    if(argc>3&&!strcmp(argv[2],"-u")){perf_disarm();char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL fast via gh API (apk); disarm: network */
+        note_url(note_save(dir,t));return 0;}
     {char t[B]="";ajoin(t,B,argc,argv,2);
         note_save(dir,t);puts("✓");sync_pane(t);
         snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);if(isatty(0))sync_proof();return 0;}

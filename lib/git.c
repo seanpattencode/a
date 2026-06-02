@@ -53,6 +53,15 @@ static void sync_proof(void){
     pcmd(c,o,256);o[strcspn(o,"\n")]=0;if(fd>=0)close(fd);
     if(!strncmp(o,"PENDING ",8))sync_bg(),printf("saved ✓ (commit %s) — syncing to github…\n",o+8);
     else printf("saved → %s\n",o);}
+/* fast url: push ONE note file via the github contents API (1 request, ~1s) → real commit url now; git repo reconciles in bg. falls back to git sync if no gh. */
+static void note_url(const char*fn){
+    const char*bn=bname(fn);char c[B*2],o[512];
+    snprintf(c,B*2,"command -v gh>/dev/null||exit 1;"
+        "r=$(git -C '%s' remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##');[ -n \"$r\" ]||exit 1;"
+        "d=$(base64 -w0 <'%s' 2>/dev/null||base64 <'%s'|tr -d '\\n');"
+        "gh api --method PUT \"repos/$r/contents/notes/%s\" -f message=note -f content=\"$d\" --jq .commit.html_url 2>/dev/null",SROOT,fn,fn,bn);
+    if(pcmd(c,o,512)==0&&!strncmp(o,"https",5)){o[strcspn(o,"\n")]=0;printf("saved → %s\n",o);sync_bg();}
+    else sync_proof();}
 static const char*sync_age(void){static char b[16];char p[P];
     snprintf(p,P,"%s/.git/FETCH_HEAD",SROOT);struct stat st;
     if(stat(p,&st))return"never";
