@@ -7,7 +7,7 @@
 <style>*{font-family:system-ui}[data-go]{touch-action:manipulation;cursor:pointer}.b{padding:16px 24px;font-size:24px;background:#000;color:#4af;border:2px solid #4af;border-radius:8px;cursor:pointer}.n{font-size:28px;color:#4af;cursor:pointer;padding:20px 40px;border:2px solid #4af;border-radius:12px}.f{background:#000;color:#fff;border:1px solid #333;border-radius:8px}.ni{padding:6px 0;color:#aaa;border-bottom:1px solid #222;display:flex;align-items:center}.nx{background:none;border:1px solid #555;color:#888;padding:12px 20px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px}#w,#wm{position:fixed;right:10px;z-index:9}#w{top:10px;width:24px;height:24px;cursor:pointer;background:radial-gradient(#aaa 28%,transparent 32%) 0 0/8px 8px}#wm{top:44px;background:#111;border:1px solid #333;border-radius:8px;padding:8px;display:none;grid-template-columns:repeat(3,64px);gap:6px}#wm.x{display:grid}#wm a{color:#4af;border:1px solid #333;border-radius:6px;text-decoration:none;font-size:13px;aspect-ratio:1;display:grid;place-items:center}.pg{padding:16px 26px;font-size:21px;color:#4af;background:#0b0f1a;border:1px solid #2a3a5a;border-radius:12px;cursor:pointer;touch-action:manipulation}.pg:active{background:#13203a}.v{position:absolute;inset:0;height:100vh;display:flex;flex-direction:column;visibility:hidden}.v.on{visibility:visible}</style>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
 <div id=w onclick="wm.classList.toggle('x')"></div>
-<div id=wm><a data-go="/">home</a><a href="/p">proj</a><a href="/op">op</a><a href="/dash">dash</a><a data-go="/jobs">job</a><a data-go="/note">note</a><a data-go="/tasks">task</a><a data-go="/term">term</a><a href="/docs">docs</a><a href="/cloud">cloud</a><a href="/prompt">prompt</a></div>
+<div id=wm><a data-go="/">home</a><a href="/p">proj</a><a href="/op">op</a><a href="/dash">dash</a><a href="/stream">stream</a><a data-go="/jobs">job</a><a data-go="/note">note</a><a data-go="/tasks">task</a><a data-go="/term">term</a><a href="/book">book</a><a href="/docs">docs</a><a href="/cloud">cloud</a><a href="/prompt">prompt</a></div>
 <div id=v_index class=v style="align-items:center">
   <form id=omni style="margin-top:9vh"><input id=qi autofocus placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:#4af"></form>
   <div style="display:flex;gap:12px;align-items:center;margin-top:10px"><select id=ag class=f style="font-size:14px;padding:6px"><option value=c>claude</option><option value=co>codex</option></select><select id=dev class=f style="font-size:14px;padding:6px">__DO__</select><span id=qh style="color:#345;font-size:15px">tap a page · or type a command / prompt</span></div>
@@ -15,7 +15,13 @@
 </div>
 __MY__
 <div id=v_tasks class=v style="padding:20px;align-items:center;overflow-y:auto">
-  <div id=tl style="width:95vw;max-width:900px;color:#fff;font-family:monospace;font-size:14px">__TO__</div>
+  <form id=tf style="display:flex;gap:8px;width:95vw;max-width:900px;align-items:center">
+    <input id=tp class=f style="width:78px;font-size:18px;padding:14px;text-align:center" placeholder="P" title="priority 0–99999, lower = sooner (blank = 50000)">
+    <input id=tc placeholder="new task" class=f style="flex:1;font-size:22px;padding:14px">
+    <button class=b type=submit>add</button>
+  </form>
+  <div id=tst style="width:95vw;max-width:900px;font:15px monospace;margin-top:10px;min-height:20px;word-break:break-all"></div>
+  <div id=tl style="width:95vw;max-width:900px;color:#fff;font-family:monospace;font-size:14px;margin-top:10px">__TO__</div>
 </div>
 <div id=v_term class=v style="display:block">
   <div id=t style="height:100vh"></div>
@@ -32,19 +38,22 @@ __MY__
   <div id=jl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px;font-family:monospace;font-size:14px;white-space:pre;color:#aaa">__JO__</div>
 </div>
 <div id=v_note class=v style="padding-top:20px;align-items:center">
-  <form id=nf style="display:flex;gap:10px;width:95vw;align-items:center">
-    <input id=nc autofocus placeholder="note" class=f style="flex:1;font-size:24px;padding:16px">
-    <button class=b type=submit>save</button>
-    <button class=b type=button onclick="fetch('/api/sync',{method:'POST'}).then(()=>show('/note'))">sync</button>
-    <button class=b type=button data-go="/term">term</button>
+  <form id=nf style="display:flex;flex-direction:column;gap:10px;width:95vw">
+    <input id=nc autofocus placeholder="note — type, enter to save" class=f style="width:100%;font-size:32px;padding:22px;box-sizing:border-box">
+    <div style="display:flex;gap:10px">
+      <button class=b type=submit style="flex:1">save</button>
+      <button class=b type=button onclick="fetch('/api/sync',{method:'POST'}).then(()=>show('/note'))">sync</button>
+      <button class=b type=button data-go="/term">term</button>
+    </div>
   </form>
+  <div id=ns style="width:95vw;min-height:24px;margin-top:8px;font-size:18px;word-break:break-all"></div>
   <div id=nl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px">__NO__</div>
 </div>
 <script>
 var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks'__MV__}, T, F, W;
 // perf: go() must stay <1ms. show() is DOM toggle only, no network. keep this instrumentation.
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);console.log('go('+p+') '+(performance.now()-t).toFixed(2)+'ms');}
-function show(p){wm.classList.remove('x');for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'&&F)setTimeout(function(){F.fit();T.focus()},0);if(p==='/note')fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);if(p==='/')qi.oninput()}
+function show(p){wm.classList.remove('x');for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'&&F)setTimeout(function(){F.fit();T.focus()},0);if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='/')qi.oninput()}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 function arct(d,el){fetch('/api/task/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:d})});el.parentElement.remove();}
 function loadjobs(){Promise.all([fetch('/api/jobs').then(function(r){return r.text()}),fetch('/api/job-status').then(function(r){return r.json()})]).then(function(d){
@@ -69,7 +78,13 @@ try{
   new ResizeObserver(()=>{F.fit();sz()}).observe(t);
   connect();
 }catch(e){document.body.innerHTML='<pre style="color:red;padding:20px">'+e+'</pre>';}
-nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(c){nc.value='';fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(p){nl.insertAdjacentHTML('afterbegin','<div class=ni>'+c+'</div>');nc.placeholder=p;}).catch(function(){nc.placeholder='FAIL';nc.style.borderColor='red';setTimeout(function(){nc.style.borderColor='#333'},2000);});}};
+tf.onsubmit=function(e){e.preventDefault();var t=tc.value.trim();if(!t)return;var p=tp.value.trim(),q='task add -u '+(/^\d{1,5}$/.test(p)?p.padStart(5,'0')+' ':'')+t;
+  tst.style.color='#fa0';tst.textContent='saving…';
+  fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(q)}).then(function(r){return r.text()}).then(function(h){
+    var u=(h.match(/https?:\/\/[^\s<]+/)||[''])[0];tst.style.color='#6a6';
+    tst.innerHTML=u?'✓ saved → <a href="'+u+'" target=_blank style="color:#6cf">'+u+'</a>':'✓ '+(h.replace(/<[^>]*>/g,'').trim()||'saved');
+    tc.value='';tp.value='';fetch('/api/tasks').then(function(r){return r.text()}).then(function(x){tl.innerHTML=x})});};
+nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';ns.innerHTML='<span style="color:#fa0">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#4a4">saved → </span><a href="'+m[0]+'" target=_blank style="color:#4af">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#f44">save FAILED</span>'});};
 var _tg=0;document.addEventListener('touchstart',function(e){var g=e.target.closest('[data-go]');if(g){e.preventDefault();_tg=1;go(g.dataset.go);}},{passive:false});
 document.addEventListener('click',function(e){if(_tg){_tg=0;return;}if(!e.target.closest('#w,#wm'))wm.classList.remove('x');var g=e.target.closest('[data-go]');if(g)go(g.dataset.go);});
 qi.onblur=function(){setTimeout(function(){if(document.activeElement===document.body)qi.focus()},0)};
@@ -77,7 +92,7 @@ window.onfocus=function(){qi.style.borderColor='#555'};window.onblur=function(){
 var _cmds=__CMDS__,_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
-var PAGES=[['/p','proj'],['/op','op'],['/dash','dash'],['/jobs','jobs'],['/note','note'],['/tasks','tasks'],['/term','term'],['/docs','docs'],['/cloud','cloud'],['/prompt','prompt']];
+var PAGES=[['/p','proj'],['/op','op'],['/dash','dash'],['/jobs','jobs'],['/note','note'],['/tasks','tasks'],['/term','term'],['/book','book'],['/docs','docs'],['/cloud','cloud'],['/prompt','prompt']];
 function pfreq(r){try{return +(localStorage['pf'+r]||0)}catch(e){return 0}}
 function navpage(r){try{localStorage['pf'+r]=pfreq(r)+1}catch(e){}if(views[r])go(r);else location.href=r}
 qi.oninput=function(){var v=qi.value.toLowerCase();_cs=0;

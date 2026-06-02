@@ -31,16 +31,17 @@ static int _notes_build(char*h,int cap){
     char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
     int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
     DIR*d=opendir(nd);if(!d)return hl;struct dirent*e;
-    static char names[2048][64];int nn=0;
-    while((e=readdir(d))&&nn<2048){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt"))continue;
+    char(*names)[64]=NULL;int nn=0,ncp=0;  /* read ALL notes; static[2048] dropped newest once notes>2048 */
+    while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt"))continue;
+        if(nn>=ncp){ncp=ncp?ncp*2:2048;names=realloc(names,(size_t)ncp*64);}
         snprintf(names[nn++],64,"%s",e->d_name);}closedir(d);
-    qsort(names,(size_t)nn,sizeof(names[0]),_ncmp);
+    qsort(names,(size_t)nn,64,_ncmp);
     for(int i=0;i<nn&&hl<cap-2048;i++){
         char fp[P];snprintf(fp,P,"%s/%s",nd,names[i]);
         FILE*f=fopen(fp,"r");if(!f)continue;char ln[512];
         while(fgets(ln,512,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
             hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span>%s</span></div>",names[i],ln+6);break;}}
-        fclose(f);}return hl;
+        fclose(f);}free(names);return hl;
 }
 static int _tasks_build(char*h,int cap){
     char td[P];snprintf(td,P,"%s/git/tasks",AROOT);
@@ -66,10 +67,10 @@ static int _tasks_build(char*h,int cap){
         nr++;}
     closedir(d);
     for(int i=1;i<nr;i++){typeof(rows[0]) k=rows[i];int j=i-1;while(j>=0&&strcmp(rows[j].pri,k.pri)>0){rows[j+1]=rows[j];j--;}rows[j+1]=k;}
-    int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
+    int hl=snprintf(h,(size_t)cap,SYNC_HTML "<div class=ni style=\"color:#789;border-bottom:1px solid #444;margin-top:10px\"><span class=nx style=\"visibility:hidden\">x</span><span style=\"display:inline-block;width:84px\">PRIORITY</span>TASK <span style=\"color:#456\">— lower P sorts first · red≤1000 · orange≤10000</span></div>",sync_age());
     for(int i=0;i<nr&&hl<cap-512;i++){
         const char*c=strcmp(rows[i].pri,"01000")<=0?"#f44":strcmp(rows[i].pri,"10000")<=0?"#fa0":"#aaa";
-        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:%s\">P%s</span> %.120s</div>",rows[i].name,c,rows[i].pri,rows[i].txt);}
+        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:%s;display:inline-block;width:84px\">P%s</span>%.120s</div>",rows[i].name,c,rows[i].pri,rows[i].txt);}
     if(!hl)hl=snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
     return hl;
 }
@@ -125,6 +126,8 @@ static void _sresph(int c,int code,const char*ct,const char*body,int bl,const ch
 /* static doc pages: NOT no-store, so the browser back/forward cache restores them instantly (0ms, no refetch) */
 static void _sresp(int c,int code,const char*ct,const char*body,int bl){_sresph(c,code,ct,body,bl,"no-store");}
 static void _sdoc(int c,const char*body,int bl){_sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
+static int _scmp(const void*a,const void*b){return strcmp((const char*)a,(const char*)b);}
+static void _qn(const char*req,char*nm){nm[0]=0;const char*q=strstr(req,"?n=");if(!q)return;q+=3;int i=0;for(;q[i]&&q[i]!='&'&&q[i]!=' '&&i<127;i++)nm[i]=q[i];nm[i]=0;}
 /* ?f=<path> → rel (urldecoded). returns 1 if valid (non-empty, no ..) */
 static int _docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f=");if(!q)return 0;q+=3;
     int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;
@@ -289,6 +292,66 @@ static void _handle(int c){
             if(lf){if(!ok)fprintf(lf,"✗ FAIL write %s\n",rel);else if(gurl[0])fprintf(lf,"✓ saved %s · verified on origin · %s\n",rel,gurl);else fprintf(lf,"✓ saved %s LOCALLY (✗ not pushed to origin)\n",rel);fclose(lf);}}
         size_t nl=0;char*nf=readf(fp,&nl);
         _docpage(c,rel,nf?nf:ct,nf?nl:(size_t)w,saved);free(nf);return;}
+    if(!strncmp(req,"POST /book",10)){char nm[128];_qn(req,nm);
+        char po[24]="0";char*bd=strstr(req,"\r\n\r\n"),*pp=bd?strstr(bd+4,"pos="):0;
+        if(pp){pp+=4;int i=0;for(;pp[i]>='0'&&pp[i]<='9'&&i<23;i++)po[i]=pp[i];po[i]=0;}
+        if(nm[0]&&!strchr(nm,'/')&&!strstr(nm,"..")&&!fork()){int n=open("/dev/null",O_WRONLY);if(n>=0)dup2(n,1);execlp("a","a","book","pos",nm,po,(char*)0);_exit(1);}
+        _sresp(c,200,"text/plain","ok",2);return;}
+    if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];_qn(req,nm);
+        if(!nm[0]){
+            char bd[P];snprintf(bd,P,"%s/books",AROOT);
+            static char names[4096][128];int n=0;DIR*d=opendir(bd);struct dirent*e;
+            if(d){while((e=readdir(d))&&n<4096){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
+                char dp[P];snprintf(dp,P,"%s/%s",bd,e->d_name);struct stat st;if(!stat(dp,&st)&&S_ISDIR(st.st_mode))snprintf(names[n++],128,"%s",e->d_name);}closedir(d);}
+            qsort(names,(size_t)n,128,_scmp);
+            int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
+                "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
+                "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:15px/1.3 system-ui}h3{color:#6cf;padding:14px 16px 6px;margin:0}"
+                "a{display:flex;align-items:center;gap:12px;color:#9cf;text-decoration:none;padding:11px 16px;border-bottom:1px solid #1a1a1a}a:hover{background:#161616}a.x{color:#5a6b7a}"
+                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.s{flex:none;width:52px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}</style><h3>books (%d)</h3>",n);
+            const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};
+            for(int i=0;i<n&&hl<cap-768;i++){
+                char tf[P];snprintf(tf,P,"%s/%s/output/explained.txt",bd,names[i]);int has=!access(tf,R_OK);
+                if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
+                char xt[8]="";for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);if(!access(tf,R_OK)){snprintf(xt,8,"%s",ex[k]);break;}}
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<a class=\"%s\" href=\"/book?n=%s\"><span class=t>%s</span><span class=s>%s</span></a>",has?"":"x",names[i],names[i],xt);}
+            _sdoc(c,h,hl);free(h);return;}
+        if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
+        char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
+        if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/source.txt",AROOT,nm);
+        size_t tl=0;char*txt=readf(tf,&tl);
+        if(!txt){_sresp(c,404,"text/plain","no text — a book transcribe first",34);return;}
+        long pos=0;{char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);  /* saved offset = index.txt col5 */
+            if(ix){char*l=ix;while(l<ix+il){char*e=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e?e:ix+il;
+                char*t1=memchr(l,'\t',(size_t)(lim-l)),*t2=t1?memchr(t1+1,'\t',(size_t)(lim-t1-1)):0;
+                if(t1&&t2&&(size_t)(t2-t1-1)==strlen(nm)&&!strncmp(t1+1,nm,strlen(nm))){
+                    char*t3=memchr(t2+1,'\t',(size_t)(lim-t2-1)),*t4=t3?memchr(t3+1,'\t',(size_t)(lim-t3-1)):0;
+                    if(t4&&t4+1<lim)pos=atol(t4+1);break;}
+                if(e)l=e+1;else break;}free(ix);}}
+        char*esc=malloc(tl*5+1);size_t el=0;  /* escape &<> so text node==exact file chars → caret offset==file offset */
+        for(size_t i=0;i<tl;i++){char ch=txt[i];
+            if(ch=='&'){memcpy(esc+el,"&amp;",5);el+=5;}
+            else if(ch=='<'){memcpy(esc+el,"&lt;",4);el+=4;}
+            else if(ch=='>'){memcpy(esc+el,"&gt;",4);el+=4;}
+            else esc[el++]=ch;}
+        free(txt);
+        size_t cap=el+4096;char*pg=malloc(cap);int hl=snprintf(pg,cap,
+            "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
+            "<style>html,body{margin:0;background:#0b0b0b}#bk{white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:26px 18px;max-width:760px;margin:0 auto}#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}</style>"
+            "<div id=hud></div><pre id=bk>");
+        memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
+        hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
+            "</pre><script>var N=\"%s\",P=%ld,K=bk,H=hud,ns=[].slice.call(K.childNodes),T=0,bs=[],co=P;"
+            "for(var i=0;i<ns.length;i++){bs.push(T);T+=ns[i].length||0;}"
+            "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
+            "function O(){var x=K.getBoundingClientRect().left+18,o;for(var y=4;y<100;y+=10){o=C(x,y);if(o!=null)return o;}return co;}"
+            "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();scrollBy(0,c.top-4);}"
+            "function S(){var b='pos='+co,u='/book?n='+encodeURIComponent(N);if(navigator.sendBeacon)navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'}));else fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
+            "requestAnimationFrame(function(){if(P>0)R(P);H.textContent='start '+P+' / '+T;});"
+            "var st;addEventListener('scroll',function(){co=O();H.textContent='pos '+co+' / '+T;clearTimeout(st);st=setTimeout(S,500);});"
+            "addEventListener('pagehide',S);addEventListener('visibilitychange',function(){if(document.hidden)S();});"
+            "</script>",nm,pos);
+        _sdoc(c,pg,hl);free(pg);return;}
     if(!strncmp(req,"GET /docs",9)){
         /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
         char*h=malloc(1<<18);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
@@ -358,8 +421,8 @@ static void _handle(int c){
             else cmd[ci]=q[ci];}cmd[ci]=0;
         int pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){close(pp[0]);dup2(pp[1],1);dup2(pp[1],2);close(pp[1]);
-            signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);
-            if(isnote)execlp("a","a","note",cmd,(char*)0);
+            signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL); /* SIG_DFL so child's gh/git can waitpid (serve sets SIG_IGN) */
+            if(isnote)execlp("a","a","note","-u",cmd,(char*)0); /* -u: push via gh API, prints "saved → <url>" */
             else{/* split cmd into args */
                 char*args[32]={"a"};int ac=1;char*p2=cmd;
                 while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(*p2)*p2++=0;}
@@ -368,7 +431,7 @@ static void _handle(int c){
         close(pp[1]);char out[8192];int ol=0;
         {int r;while((r=(int)read(pp[0],out+ol,(size_t)(8191-ol)))>0)ol+=r;}
         close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
-        if(isnote){char np[P];snprintf(np,P,"%s/git/notes",AROOT);_sresp(c,200,"text/plain",np,(int)strlen(np));}
+        if(isnote){_sresp(c,200,"text/plain",out,ol);} /* out has "saved → <url>" line for the client to surface */
         else{char resp[16384];int rl=ol?snprintf(resp,16384,"<pre style=\"color:#fff\">%.*s</pre>",ol,out):0;
             _sresp(c,200,"text/html",resp,rl);}
         return;}
@@ -422,6 +485,50 @@ static void _handle(int c){
         for(;;){int n=poll(pf,2,5000);if(n<=0||(pf[1].revents&(POLLHUP|POLLERR|POLLIN)))break;
             if(pf[0].revents&POLLIN){char b[4096];while(read(ifd,b,4096)>0){}DEMIT;}}
         close(ifd);close(c);_exit(0);}
+    if(!strncmp(req,"GET /stream/s",13)){
+        char dev[64]="";{const char*q=strstr(req,"?dev=");if(q){q+=5;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)dev[i]=q[i];dev[i]=0;}}
+        pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
+        if(fp>0)return;signal(SIGCHLD,SIG_DFL);
+        char gc[1024];int remote=0;
+        if(dev[0]&&strcmp(dev,"local")&&strcmp(dev,DEV)){       /* remote device: ssh in, capture to stdout */
+            char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
+            char host[256]="",pw[256]="";
+            for(int i=0;i<n;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
+                if(nm&&!strcmp(nm,dev)){const char*h=kvget(&kv,"Host"),*p=kvget(&kv,"Password");if(h)snprintf(host,256,"%s",h);if(p)snprintf(pw,256,"%s",p);break;}}
+            if(!host[0])_exit(0);
+            char hp[256],port[8];ssh_parse(host,hp,port);char pre[600];
+            ssh_pre(pre,600,pw[0]?pw:NULL,"-oStrictHostKeyChecking=accept-new -oConnectTimeout=6",port,hp);
+            snprintf(gc,sizeof gc,"%s 'R=${XDG_RUNTIME_DIR:-/run/user/$(id -u)};W=$(ls $R/wayland-* 2>/dev/null|grep -v lock|head -1);XDG_RUNTIME_DIR=$R WAYLAND_DISPLAY=$(basename \"$W\") grim -s 0.4 - 2>/dev/null||screencapture -x -t jpg - 2>/dev/null||DISPLAY=:0 import -window root -resize 40%% jpg:- 2>/dev/null'",pre);remote=1;}
+        if(!remote){                                            /* local sway: derive env + focused output */
+            const char*rt=getenv("XDG_RUNTIME_DIR");char rtb[64];
+            if(!rt||!rt[0]){snprintf(rtb,64,"/run/user/%d",(int)getuid());rt=rtb;}
+            setenv("XDG_RUNTIME_DIR",rt,1);
+            {char ic[160];snprintf(ic,160,"ls %s/wayland-* 2>/dev/null|grep -v lock|head -1",rt);
+             FILE*p=popen(ic,"r");char wl[128]="";if(p){if(fgets(wl,128,p))wl[strcspn(wl,"\n")]=0;pclose(p);}
+             if(wl[0]){const char*b=strrchr(wl,'/');setenv("WAYLAND_DISPLAY",b?b+1:wl,1);}}
+            char ob[64]="";
+            {FILE*p=popen("S=$(ls $XDG_RUNTIME_DIR/sway-ipc.*.sock 2>/dev/null|head -1);SWAYSOCK=$S swaymsg -t get_outputs 2>/dev/null|python3 -c 'import sys,json;print(next((o[\"name\"] for o in json.load(sys.stdin) if o.get(\"focused\")),\"\"))' 2>/dev/null","r");
+             if(p){if(fgets(ob,64,p))ob[strcspn(ob,"\n")]=0;pclose(p);}}
+            if(ob[0])snprintf(gc,sizeof gc,"grim -o '%s' -s 0.4 -",ob);else snprintf(gc,sizeof gc,"grim -s 0.4 -");}
+        static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:multipart/x-mixed-replace;boundary=f\r\nCache-Control:no-store\r\n\r\n";
+        if(write(c,SH,sizeof SH-1)<0)_exit(0);
+        for(;;){FILE*g=popen(gc,"r");if(!g)break;
+            char*buf=NULL;size_t cap=0,len=0,r;char tb[65536];
+            while((r=fread(tb,1,sizeof tb,g))>0){if(len+r>cap){size_t nc=(len+r)*2;char*nb=realloc(buf,nc);if(!nb){free(buf);buf=NULL;break;}buf=nb;cap=nc;}memcpy(buf+len,tb,r);len+=r;}
+            pclose(g);
+            if(buf&&len){const char*ct=(len>=2&&(unsigned char)buf[0]==0xff&&(unsigned char)buf[1]==0xd8)?"image/jpeg":"image/png";
+                char hd[64];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:%s\r\n\r\n",ct);
+                if(write(c,hd,(size_t)hl)<0||write(c,buf,len)<0||write(c,"\r\n",2)<0){free(buf);break;}}
+            free(buf);if(!len)break;}
+        close(c);_exit(0);}
+    if(!strncmp(req,"GET /stream",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
+        char dev[64]="local";{const char*q=strstr(req,"?dev=");if(q){q+=5;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)dev[i]=q[i];dev[i]=0;if(!dev[0])snprintf(dev,64,"local");}}
+        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=\"/stream?dev=local\"%s>local</a>",strcmp(dev,"local")?"":" class=on");
+        {char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
+         for(int i=0;i<n&&nl<3600;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
+            if(nm)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a href=\"/stream?dev=%s\"%s>%s</a>",nm,strcmp(dev,nm)?"":" class=on",nm);}}
+        char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream \xc2\xb7 %s</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#9cf;text-decoration:none;padding:7px 9px;border:1px solid #233;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#b a.on{background:#13320f;color:#9f9;border-color:#2a5a2a}img{display:block;width:100vw;height:100vh;object-fit:contain;padding-left:160px;box-sizing:border-box;color:#888}</style><div id=b>%s</div><img src=\"/stream/s?dev=%s\" alt=\"streaming %s\xe2\x80\xa6\">",dev,nav,dev,dev);
+        _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
         const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3]))?atoi(qw+3):-1;
         if(idx>=0){char tc[256];
