@@ -112,9 +112,9 @@ i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.get
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
-val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.BOTTOM;setBackgroundColor(0xFF000000.toInt())}
-val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint=if(intent?.getBooleanExtra("note",false)==true)"note → type or 🎤, enter saves" else "capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT;imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEND}
-status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16)}
+val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.TOP;setBackgroundColor(0xFF000000.toInt())}
+val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint=if(intent?.getBooleanExtra("note",false)==true)"note → type or 🎤 (multi-line)" else "capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;gravity=Gravity.TOP or Gravity.START;minLines=4;maxLines=12;isVerticalScrollBarEnabled=true}
+status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16);autoLinkMask=android.text.util.Linkify.WEB_URLS;movementMethod=android.text.method.LinkMovementMethod.getInstance()}
 val btn=Button(this).apply{text="windows";setOnClickListener{
 status?.text="checking…"
 val ai=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
@@ -132,13 +132,13 @@ override fun onError(x:Int){status?.text="voice err $x";sr.destroy()}
 override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{status?.text="🎤 $it"}}
 override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(by:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}})
 sr.startListening(Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true))}}
-val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(e,LinearLayout.LayoutParams(0,-2,1f));row.addView(mic,LinearLayout.LayoutParams(-2,-2));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
-ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
+val save=Button(this).apply{text="✓ save"}
+val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(mic,LinearLayout.LayoutParams(-2,-2));row.addView(save,LinearLayout.LayoutParams(0,-2,1f));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
+ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f))
 setContentView(ll);e.requestFocus()
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
 val go={fire(e.text.toString());e.setText("")}
-e.setOnEditorActionListener{_,_,_->go();true}
-e.setOnKeyListener{_,k,ev->if(ev.action==android.view.KeyEvent.ACTION_DOWN&&k==android.view.KeyEvent.KEYCODE_ENTER){go();true}else false}}
+save.setOnClickListener{go()}}
 override fun onDestroy(){try{unregisterReceiver(rcv)}catch(e:Exception){};super.onDestroy()}}
 class T(c:android.content.Context):android.view.View(c){
 private val h=Handler(Looper.getMainLooper())
