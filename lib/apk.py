@@ -38,14 +38,12 @@ val buf=ByteArray(65536);while(true){val op=ins.read();if(op<0)break;val lb=ins.
 if(len==126){len=(ins.read() shl 8) or ins.read()}else if(len==127){len=0;for(i in 0..7)len=(len shl 8) or ins.read()}
 var got=0;while(got<len){val n=ins.read(buf,got,len-got);if(n<=0)return@submit;got+=n}
 if((op and 0xf)==8)break
-val sb=StringBuilder();for(i in 0 until len)sb.append(buf[i].toInt() and 0xff).append(',')
-jsEval("window._wsMsg&&window._wsMsg(String.fromCharCode(${sb.dropLast(1)}))")}
+jsEval("window._wsMsg&&window._wsMsg(atob('${android.util.Base64.encodeToString(buf,0,len,android.util.Base64.NO_WRAP)}'))")}
 jsEval("window._wsClose&&window._wsClose(1000)")
 }catch(e:Exception){jsEval("window._wsClose&&window._wsClose(1011)")}}}
 @JavascriptInterface fun wsSend(data:String){wsExec.submit{try{val bs=data.toByteArray(Charsets.UTF_8);val o=java.io.ByteArrayOutputStream();o.write(0x81)
-val m=ByteArray(4).also{java.security.SecureRandom().nextBytes(it)}
 when{bs.size<126->o.write(0x80 or bs.size);bs.size<65536->{o.write(0x80 or 126);o.write(bs.size shr 8);o.write(bs.size and 0xff)}}
-o.write(m);for(i in bs.indices)o.write(bs[i].toInt() xor m[i%4].toInt())
+o.write(ByteArray(4));o.write(bs)
 wsOut?.write(o.toByteArray());wsOut?.flush()}catch(e:Exception){}}}
 private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this;this.readyState=0;this.send=function(d){A.wsSend(d+'')};this.close=function(){this.readyState=3};A.wsOpen(url)};window._wsOpen=function(){if(_w){_w.readyState=1;if(_w.onopen)_w.onopen()}};window._wsMsg=function(d){if(_w&&_w.onmessage)_w.onmessage({data:d})};window._wsClose=function(c){if(_w){_w.readyState=3;if(_w.onclose)_w.onclose({code:c,wasClean:false})}}})()"
 private var openMenu:(()->Unit)?=null;private var nav:((String)->Unit)?=null
@@ -1004,7 +1002,7 @@ class InstantNdkService : InputMethodService(), android.view.textservice.SpellCh
     private lateinit var kbView: NdkKeyboardView
     private var root: android.widget.LinearLayout? = null
     private var sc: android.view.textservice.SpellCheckerSession? = null
-    private var fix: String? = null; private var fixWord = ""; private var skip = ""
+    private var fix: String? = null; private var fixWord = ""; private var skip = ""; private var word = ""
 
     override fun onEvaluateFullscreenMode() = false
     override fun onGetSuggestions(r: Array<out android.view.textservice.SuggestionsInfo>?) { r?.firstOrNull()?.let { if (it.suggestionsCount > 0) fix = it.getSuggestionAt(0) } }
@@ -1014,22 +1012,21 @@ class InstantNdkService : InputMethodService(), android.view.textservice.SpellCh
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting)
         val bub = (getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any { it.service.className == "com.aios.a.BubbleService" }
         root?.setPadding(0, 0, 0, if (bub) (resources.displayMetrics.density * 52).toInt() else 0)
-        kbView.requestLayout(); fix = null; fixWord = ""; skip = "" }
+        kbView.requestLayout(); fix = null; fixWord = ""; skip = ""; word = "" }
 
     fun sendChar(c: Char) = when (c) {
-        '\b' -> currentInputConnection?.deleteSurroundingText(1, 0)
-        '\n' -> { val a = currentInputEditorInfo?.imeOptions?.and(android.view.inputmethod.EditorInfo.IME_MASK_ACTION) ?: 0
+        '\b' -> { word = word.dropLast(1); currentInputConnection?.deleteSurroundingText(1, 0) }
+        '\n' -> { word = ""; val a = currentInputEditorInfo?.imeOptions?.and(android.view.inputmethod.EditorInfo.IME_MASK_ACTION) ?: 0
             if (a != 0 && a != android.view.inputmethod.EditorInfo.IME_ACTION_NONE) currentInputConnection?.performEditorAction(a)
             else currentInputConnection?.commitText("\n", 1) }
-        ' ' -> { val word = currentInputConnection?.getTextBeforeCursor(20, 0)?.trim()?.split(Regex("\\s+"))?.lastOrNull() ?: ""
-            if (fix != null && word.equals(fixWord, true) && word.lowercase() != skip) { currentInputConnection?.deleteSurroundingText(word.length, 0); currentInputConnection?.commitText("$fix ", 1); skip = word.lowercase() }
-            else currentInputConnection?.commitText(" ", 1); fix = null; null }
+        ' ' -> { if (fix != null && word.equals(fixWord, true) && word.lowercase() != skip) { currentInputConnection?.deleteSurroundingText(word.length, 0); currentInputConnection?.commitText("$fix ", 1); skip = word.lowercase() }
+            else currentInputConnection?.commitText(" ", 1); word = ""; fix = null; null }
         '\u0001' -> { NativeKB.toggleMode(); kbView.invalidate(); null }
         '\u0002' -> { NativeKB.toggleShift(); kbView.invalidate(); null }
         else -> { val out = if (NativeKB.getShift() == 1 && c in 'a'..'z') c.uppercaseChar() else c
             currentInputConnection?.commitText(out.toString(), 1)
             if (NativeKB.getShift() == 1 && c in 'a'..'z') { NativeKB.clearShift(); kbView.invalidate() }
-            val w = currentInputConnection?.getTextBeforeCursor(20, 0)?.trim()?.split(Regex("\\s+"))?.lastOrNull() ?: ""; if (w.length >= 2) { fixWord = w; fix = null; sc?.getSuggestions(android.view.textservice.TextInfo(w), 3) }; null }
+            word += out; if (word.length >= 2) { fixWord = word; fix = null; sc?.getSuggestions(android.view.textservice.TextInfo(word), 3) }; null }
     }
 }
 
@@ -1048,7 +1045,6 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
         else if (c == 'S'.code) svc.startActivity(android.content.Intent(svc, SettingsActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
         if (NativeKB.getPressed() >= 0) handler.postDelayed(this, 16)
     }}
-    private val hz120 = object : android.view.Choreographer.FrameCallback { override fun doFrame(t: Long) { invalidate(0,0,1,1); android.view.Choreographer.getInstance().postFrameCallback(this) } }
 
     private val toolbarH = 0f
     private var listening = false
@@ -1069,8 +1065,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
         NativeKB.setHFudge(prefs.getInt("hfudge", 10).toFloat())
         updatePressPaint()
     }
-    override fun onAttachedToWindow() { super.onAttachedToWindow(); updatePressPaint(); android.view.Choreographer.getInstance().postFrameCallback(hz120) }
-    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); android.view.Choreographer.getInstance().removeFrameCallback(hz120) }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); updatePressPaint() }
     override fun onMeasure(ws: Int, hs: Int) {
         val w = MeasureSpec.getSize(ws)
         val pct = prefs.getInt("kb_height", 95).coerceIn(20, 200) / 100f
