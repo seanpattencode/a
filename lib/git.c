@@ -34,7 +34,7 @@ static void sync_repo(void) {
     char c[B];
     snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
         "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add --sparse -A;g commit -qm sync;"
-        "g pull --no-rebase --no-edit -q origin main;g push -q origin main;} >/dev/null 2>&1",SROOT);
+        "g pull --rebase -q origin main;g push -q origin main;} >/dev/null 2>&1",SROOT);
     (void)!system(c);if(fd>=0)close(fd);
 }
 static void sync_bg(void) {
