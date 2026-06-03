@@ -525,7 +525,7 @@ static void _handle(int c){
             free(buf);if(!len)break;}
         close(c);_exit(0);}
     if(!strncmp(req,"GET /stream",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
-        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a data-d=local href=# onclick=\"sel('local');return false\">local</a>");
+        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=# onclick=\"if(cur)sel(cur);return false\" style=\"color:#f99;border-color:#5a2a2a\">\xe2\x96\xa0 stop</a><a data-d=local href=# onclick=\"sel('local');return false\">local</a>");
         {char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
          for(int i=0;i<n&&nl<3500;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
             if(nm)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a data-d=\"%s\" href=# onclick=\"sel('%s');return false\">%s</a>",nm,nm,nm);}}
