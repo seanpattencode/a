@@ -287,11 +287,11 @@ static int cmd_swarm(int c,char**v){
    so the caller pops to the local next window. Bound to one key, this sweeps every window
    on the local device and every sshed device, then loops. */
 static int cmd_fl(int c,char**v){
-    if(c<4)return 1;int n=*v[2]=='n';char cm[B];
+    if(c<4)return 1;int n=*v[2]=='n';char cm[B];   /* parse stays POSIX (tr/sed/grep -oE) so it runs on macOS too */
     snprintf(cm,B,
-        "L=$(tmux capture-pane -ep -t %s 2>/dev/null|grep -v '^$'|tail -1);"
-        "A=$(printf %%s \"$L\"|grep -aoP '48;2;255;255;255m \\K[0-9]+'|head -1);[ -z \"$A\" ]&&exit 0;"
-        "lim=$(printf %%s \"$L\"|grep -aoP ' \\K[0-9]+(?=:)'|sort -n|%s);"
+        "L=$(tmux capture-pane -ep -t %s 2>/dev/null|grep -v '^$'|tail -1|tr '\\033' '~');"
+        "A=$(printf %%s \"$L\"|sed -n 's/.*48;2;255;255;255m \\([0-9]*\\):.*/\\1/p');[ -z \"$A\" ]&&exit 0;"
+        "lim=$(printf %%s \"$L\"|grep -oE '[0-9]+:'|tr -d :|sort -n|%s);"
         "tmux send-keys -t %s C-b %s;[ \"$A\" = \"$lim\" ]",
         v[3],n?"tail -1":"head -1",v[3],n?"n":"p");
     return system(cm)?1:0;}
