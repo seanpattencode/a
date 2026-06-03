@@ -33,11 +33,6 @@ static int cmd_sess(int argc, char **argv) {
         snprintf(sn,256,"%s-%s-%d%02d%s",s->name,bname(wd),h,t->tm_min,t->tm_hour>=12?"p":"a");
         if(tm_has(sn))snprintf(sn,256,"%s-%s-%d%02d%02d%s",s->name,bname(wd),h,t->tm_min,t->tm_sec,t->tm_hour>=12?"p":"a");}
     const char *xp = is_prompt ? prompt : NULL;
-    /* claim ghost if matches */
-    {char gf[P];snprintf(gf,P,"%s/ghost",DDIR);char*gh=readf(gf,NULL);
-    if(gh){gh[strcspn(gh,"\n")]=0;if(!strcmp(gh,sn)&&tm_has(sn)){unlink(gf);free(gh);
-        if(is_prompt&&prompt[0]){tm_send(sn,prompt);usleep(100000);tm_key(sn,"Enter");}
-        tm_go(sn);return 0;}free(gh);}}
     /* Existing session = attach, send prompt via keys (already running) */
     if (tm_has(sn)) {
         if (is_prompt && prompt[0]) {

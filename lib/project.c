@@ -15,23 +15,11 @@ static int cmd_project_num(int argc, char **argv, int idx) { (void)argc; (void)a
             int t=open("/dev/tty",O_WRONLY);if(t>=0){dup2(t,2);close(t);}
             const char*sh=getenv("SHELL");execlp(sh?sh:"bash",sh?sh:"bash","-i",(char*)NULL);}
         snprintf(c,B,"%s/cd_target",DDIR); writef(c,p->path); printf("%s\n",p->path);
-        if(p->gdrive[0]) return 0; /* gdrive project: skip git/ghost */
+        if(p->gdrive[0]) return 0; /* gdrive: skip git housekeeping */
         if(!fork()){snprintf(c,B,"git -C '%s' ls-remote --exit-code origin HEAD>/dev/null 2>&1&&mkdir -p '%s/logs'&&touch '%s/logs/push.ok'",p->path,DDIR,DDIR);(void)!system(c);_exit(0);}
-        /* ghost: pre-spawn default agent */
-        if(!fork()){setsid();load_sess();
-            const char*dk=cfget("default_agent");if(!dk[0])dk="c";
-            sess_t*gs=find_sess(dk);if(!gs)_exit(0);
-            char sn[256];snprintf(sn,256,"%s-%s",gs->name,p->name);
-            if(tm_has(sn))_exit(0);
-            char gf[P];snprintf(gf,P,"%s/ghost",DDIR);
-            char*og=readf(gf,NULL);if(og){og[strcspn(og,"\n")]=0;
-                char k[B];snprintf(k,B,"tmux kill-session -t '=%s' 2>/dev/null",og);(void)!system(k);free(og);}
-            tm_ensure_conf();create_sess(sn,p->path,gs->cmd,NULL);writef(gf,sn);
-            if(!fork()){sleep(30);char*g=readf(gf,NULL);
-                if(g){g[strcspn(g,"\n")]=0;if(!strcmp(g,sn)){
-                    char k[B];snprintf(k,B,"tmux kill-session -t '=%s' 2>/dev/null",sn);(void)!system(k);unlink(gf);}free(g);}
-                _exit(0);}
-            _exit(0);}
+        /* nav only: no agent pre-spawn. the old "ghost" split claude into the user's pane
+           (tm_new splits when $TMUX is set) and was never claimed anyway — cmd_sess looks for a
+           time-suffixed name the ghost lacked — so it only ever surfaced as an unwanted window. */
         return 0;
     }
     int ai = idx - NPJ;
