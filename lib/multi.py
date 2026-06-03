@@ -40,7 +40,7 @@ def run():
     if not launched: print("x No agents created"); sys.exit(1)
     sp.run(['tmux', 'new-session', '-d', '-s', sn, '-c', launched[0][0], launched[0][1]], env=env)
     for wt_path, bc in launched[1:]: sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', wt_path, bc], env=env)
-    sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', cd], env=env); sp.run(['tmux', 'send-keys', '-t', sn, f'n={len(launched)}; while read -ep "> " c; do [ -n "$c" ] && for i in $(seq 0 $((n-1))); do tmux send-keys -l -t ":.$i" "$c"; tmux send-keys -t ":.$i" C-m; done; done', 'C-m'])
+    sp.run(['tmux', 'split-window', '-h', '-t', sn, '-c', cd], env=env); sp.run(['tmux', 'send-keys', '-t', sn, f'n={len(launched)}; while read -ep "> " c; do [ -n "$c" ] && for i in $(seq 0 $((n-1))); do tmux send-keys -l -t "{sn}:.$i" "$c"; tmux send-keys -t "{sn}:.$i" C-m; done; done', 'C-m'])
     sp.run(['tmux', 'select-layout', '-t', sn, 'even-horizontal'], env=env); ensure_tmux(cfg)
     # send prefix + prompt to each agent pane in background
     for idx, (wt_path, bc) in enumerate(launched):
