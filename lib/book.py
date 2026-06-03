@@ -270,6 +270,39 @@ if __name__ == "__main__":
         tty = os.open('/dev/tty', os.O_RDONLY)
         os.dup2(tty, 0); os.close(tty)
         os.execvp("claude", ["claude", "--dangerously-skip-permissions", "--append-system-prompt-file", tmp.name])
+    elif cmd == "pos":
+        # a book pos <name> <offset> — persist reading char-offset to index.txt col5 (same field `e`/APK use)
+        name, off = args[2], (args[3] if len(args) > 3 else "0")
+        IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
+        out, found = [], False
+        for l in IDX.read_text().splitlines():
+            p = l.split("\t")
+            if len(p) >= 2 and p[1] == name:
+                while len(p) < 5: p.append("")
+                p[4] = str(off); found = True; out.append("\t".join(p))
+            else: out.append(l)
+        if not found: out.append("\t".join(["", name, "", "", str(off)]))
+        IDX.write_text("\n".join(out) + "\n")
+        print(f"{name} pos {off}")
+    elif cmd == "convert":
+        # a book convert <name> | <fmt e.g. epub> | all  — calibre ebook-convert source.<ext> -> output/<name>.txt
+        if not shutil.which("ebook-convert"): print("install calibre (ebook-convert not found)"); sys.exit(1)
+        a = args[2] if len(args) > 2 else "all"
+        if (DATA_DIR / a).is_dir(): books, fmt = [DATA_DIR / a], None        # one book by name
+        else: books, fmt = sorted(d for d in DATA_DIR.iterdir() if d.is_dir()), (None if a == "all" else a.lstrip("."))
+        done = skip = fail = 0
+        for bd in books:
+            src = next(bd.glob("source.*"), None)
+            if not src or src.suffix.lower() == ".txt": continue
+            if fmt and src.suffix.lower() != "." + fmt: continue
+            out = bd / "output" / (bd.name + ".txt")
+            if out.exists() and out.stat().st_size: skip += 1; continue
+            out.parent.mkdir(parents=True, exist_ok=True)
+            try: r = subprocess.run(["ebook-convert", str(src), str(out)], capture_output=True, text=True, timeout=180)
+            except subprocess.TimeoutExpired: fail += 1; print(f"✗ {bd.name}: timeout (>180s)"); continue
+            if out.exists() and out.stat().st_size: done += 1; print(f"✓ {bd.name}", flush=True)
+            else: fail += 1; print(f"✗ {bd.name}: {((r.stderr or r.stdout).strip().splitlines() or ['failed'])[-1][:80]}")
+        print(f"\nconverted {done}, skipped {skip} (already had text), failed {fail}")
     elif cmd == "split":
         book = resolve_book(args[2] if len(args) > 2 else None)
         split_pdf(book, nocache=nocache)
@@ -281,8 +314,9 @@ if __name__ == "__main__":
         b = resolve_book(args[2] if len(args) > 2 else None); name = b.name
         txt = b / "output" / "explained.txt"
         if not txt.is_file():
-            src = b / "source.txt"
-            if src.is_file(): txt = src
+            alt = b / "output" / (name + ".txt")  # a book convert output
+            if alt.is_file(): txt = alt
+            elif (b / "source.txt").is_file(): txt = b / "source.txt"
             else:  # no text yet — open the source (pdf/epub/docx) in the native app
                 f = next(b.glob("source.*"), None)
                 if not f: print(f"no file in {b}"); sys.exit(1)
