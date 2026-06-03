@@ -280,10 +280,18 @@ static int cmd_swarm(int c,char**v){
     return!ok;
 }
 /* fl n|p <host>: advance remote a: window; if at end, advance local tmux */
+/* a fl n|p <pane> — cross-device window flip, logic on this device only.
+   Reads the remote tmux status rendered in the ssh pane (no remote config / extra ssh):
+   not at last window -> advance the remote (C-b n) and return 1 (caller stays put); at the
+   last window (or no remote tmux) -> wrap the remote back to its first window and return 0
+   so the caller pops to the local next window. Bound to one key, this sweeps every window
+   on the local device and every sshed device, then loops. */
 static int cmd_fl(int c,char**v){
-    if(c<4)return 1;int n=*v[2]=='n';const char*w=n?"next-window":"previous-window";
-    char cm[B],o[8]="";
-    snprintf(cm,B,"a ssh %s 'w=$(tmux display -p -ta: \"#{window_index} #{session_windows}\");set -- $w;[ \"$1\" %s ]&&{ tmux %s -ta:;echo r;}' 2>/dev/null",v[3],n?"-lt $(($2-1))":"-gt 0",w);
-    pcmd(cm,o,8);
-    if(*o!='r')execlp("tmux","tmux",w,(char*)NULL);
-    return 0;}
+    if(c<4)return 1;int n=*v[2]=='n';char cm[B];
+    snprintf(cm,B,
+        "L=$(tmux capture-pane -ep -t %s 2>/dev/null|grep -v '^$'|tail -1);"
+        "A=$(printf %%s \"$L\"|grep -aoP '48;2;255;255;255m \\K[0-9]+'|head -1);[ -z \"$A\" ]&&exit 0;"
+        "lim=$(printf %%s \"$L\"|grep -aoP ' \\K[0-9]+(?=:)'|sort -n|%s);"
+        "tmux send-keys -t %s C-b %s;[ \"$A\" = \"$lim\" ]",
+        v[3],n?"tail -1":"head -1",v[3],n?"n":"p");
+    return system(cm)?1:0;}

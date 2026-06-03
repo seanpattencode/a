@@ -68,10 +68,14 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
 static void jcmd_fill(char*b,int cont,const char*wd,const char*extra){
     char ctxf[P],xsuf[512]="";snprintf(ctxf,P,"%s/a_ctx_%d.txt",TMP,(int)getpid());
     write_prompt_file(ctxf,wd,NULL);
-    if(extra&&extra[0]){char ef[P];snprintf(ef,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(ef,extra);
-        snprintf(xsuf,512," \"$(cat '%s')\"",ef);}
-    const char*sid=getenv("SID");char sp[96]="";if(sid&&*sid)snprintf(sp,96,"--session-id %s ",sid);
-    snprintf(b,B,"tmux splitw -vd -p50 -t $TMUX_PANE;" ACAT " >>%s 2>/dev/null;claude %s--dangerously-skip-permissions --effort max --append-system-prompt-file %s%s%s;e=$?;[ $e -ne 0 ]&&echo \"$(date) $e $(pwd)\">>%s/crashes.log;exec bash",ctxf,sp,ctxf,cont?" --continue":"",xsuf,LOGDIR);}
+    if(extra&&extra[0]){char xf[P];snprintf(xf,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(xf,extra);
+        snprintf(xsuf,512," \"$(cat '%s')\"",xf);}
+    const char*ag=cfget("m_agent");if(!*ag)ag="claude";const char*md=cfget("m_model"),*ef=cfget("m_effort");char run[B];
+    if(strstr(ag,"codex"))snprintf(run,B,"codex -c model_reasoning_effort=\"%s\" --model %s --dangerously-bypass-approvals-and-sandbox%s",*ef?ef:"xhigh",*md?md:"gpt-5.5",xsuf);
+    else if(strstr(ag,"gemini"))snprintf(run,B,"gemini --yolo%s",xsuf);
+    else{const char*sid=getenv("SID");char sp[96]="";if(sid&&*sid)snprintf(sp,96,"--session-id %s ",sid);
+        snprintf(run,B,ACAT " >>%s 2>/dev/null;claude %s--dangerously-skip-permissions --model %s --effort %s --append-system-prompt-file %s%s%s",ctxf,sp,*md?md:"opus",*ef?ef:"max",ctxf,cont?" --continue":"",xsuf);}
+    snprintf(b,B,"tmux splitw -vd -p50 -t $TMUX_PANE;%s;e=$?;[ $e -ne 0 ]&&echo \"$(date) $e $(pwd)\">>%s/crashes.log;exec bash",run,LOGDIR);}
 
 static void tm_ensure_conf(void) {
     if (strcmp(cfget("tmux_conf"), "y") != 0) return;
@@ -114,13 +118,15 @@ static void tm_ensure_conf(void) {
         "bind -n M-Right if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
         "bind -n M-Left if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl p #W\"' previous-window\n"
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
-        "bind -n C-k if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-k' 'next-window'\n"
-        "bind -n C-j if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-j' 'previous-window'\n"
-        "bind -n C-PageDown if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
+#define SSHIF "if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' "
+        "bind -n C-k " SSHIF "'send C-k' 'next-window'\n"
+        "bind -n C-j " SSHIF "'send C-j' 'previous-window'\n"
+        "bind -n C-PageDown " SSHIF "'if-shell \"a fl n #{pane_id}\" next-window' 'next-window'\n"
         "bind-key -n C-n new-window\n"
-        "bind -n C-t if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-t' 'new-window'\n"
+        "bind -n C-t " SSHIF "'send C-t' 'new-window'\n"
         "bind-key -n C-y split-window -fh\n"
-        "bind -n C-w if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' 'send C-w' 'selectw -n;killw -t:!'\n"
+        "bind -n C-w " SSHIF "'send C-w' 'selectw -n;killw -t:!'\n"
+#undef SSHIF
         "bind -n M-w if -F '#{==:#{pane_current_command},ssh}' 'send M-w' kill-pane\n"
         "bind-key -n C-q detach\n"
         "bind-key -n C-x kill-session\n"
