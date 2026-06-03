@@ -57,7 +57,7 @@ static int cmd_deps(int argc, char **argv) { (void)argc;(void)argv; AB;
 
 static int cmd_e(int argc, char **argv) { AB;
     if (argc > 2 && !strcmp(argv[2], "install")) {
-        (void)!system("curl -sL https://raw.githubusercontent.com/seanpattencode/editor/main/e.c|clang -xc -Wno-everything -o ~/.local/bin/e -");
+        (void)!system("curl -sL https://raw.githubusercontent.com/seanpattencode/e/main/e.c|clang -xc -Wno-everything -o ~/.local/bin/e -");
         return 0;
     }
     if (getenv("TMUX")) execlp("e", "e", (char*)NULL);

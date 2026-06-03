@@ -242,8 +242,8 @@ install)
     esac
     _ensure_cc
     sh "$D/a.c" && ok "a compiled" || warn "Build failed"
-    E="$HOME/editor"
-    [[ -f "$E/e.c" ]] || git clone https://github.com/seanpattencode/editor "$E" 2>/dev/null || :
+    E="$HOME/e"
+    [[ -f "$E/e.c" ]] || git clone https://github.com/seanpattencode/e "$E" 2>/dev/null || :
     [[ -f "$E/e.c" ]] && sh "$E/e.c" install || :
     _shell_funcs
     install_cli() {
