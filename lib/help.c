@@ -83,13 +83,6 @@ static void gen_icache(void) {
     "task add\tadd\ntask l\tlist\ntask r\treview\ntask rank\trank\n"
     "prompt\tdefault prompt\npow\tpower\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
     "tutorial\tguided intro\no\toperator\nop\toperator\noperator\toperator\n",f);
-    /* recent downloads — tagged so TUI hides until typed */
-    {char dl[P];snprintf(dl,P,"%s/Downloads",HOME);DIR*dd=opendir(dl);struct dirent*de;
-    if(dd){struct{char n[256];time_t t;}df[64];int nd=0;struct stat st;
-        while((de=readdir(dd))&&nd<64){if(de->d_name[0]=='.')continue;char fp[P];snprintf(fp,P,"%s/%s",dl,de->d_name);
-            if(!stat(fp,&st)){snprintf(df[nd].n,256,"%s",de->d_name);df[nd].t=st.st_mtime;nd++;}}
-        closedir(dd);for(int a=0;a<nd-1;a++)for(int b=a+1;b<nd;b++)if(df[b].t>df[a].t){typeof(df[0]) tmp=df[a];df[a]=df[b];df[b]=tmp;}
-        for(int j=0;j<nd&&j<20;j++)fprintf(f,"file %s\tdir\n",df[j].n);}}
     char sd[P]; snprintf(sd, P, "%s/ssh", SROOT);
     char sp[32][P]; int sn = listdir(sd, sp, 32);
     for (i=0;i<sn;i++) {
