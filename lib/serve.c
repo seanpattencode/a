@@ -358,7 +358,7 @@ static void _handle(int c){
                 if(!has){snprintf(tf,P,"%s/%s/output/%s.txt",bd,names[i],names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
                 char xt[8]="";for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);if(!access(tf,R_OK)){snprintf(xt,8,"%s",ex[k]);break;}}
-                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookcloud?n=%s\" target=_blank title=\"open in cloud\">\xe2\x98\x81</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],xt);}
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],xt);}
             _sdoc(c,h,hl);free(h);return;}
         if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
