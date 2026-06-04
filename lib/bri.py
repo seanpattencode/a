@@ -30,19 +30,18 @@ Drive shortcuts (bridge must already be running in another process):
                      (id, sel, text, code, args, ms, keys, …). Use when a
                      shortcut shape doesn't fit, e.g. eval/wait/html/custom id.
 
-Chat-UI recipe (proven on Gemini and Claude.ai):
-  # Gemini
-  a bri https://gemini.google.com/app
-  a bri click 'rich-textarea [contenteditable]'             # focus
-  a bri type  'rich-textarea [contenteditable]' 'your prompt'
-  a bri keys  'rich-textarea [contenteditable]' Enter       # submit
-  sleep 8; a bri text 'message-content'                     # read reply
-  # Claude.ai (same pattern, different selectors)
-  a bri https://claude.ai/new
-  a bri click 'div[contenteditable=true]'
-  a bri type  'div[contenteditable=true]' 'your prompt'
-  a bri keys  'div[contenteditable=true]' Enter
-  sleep 8; a bri text '.font-claude-response'
+Driving a chat/web UI — do NOT hardcode per-site selectors here. They DRIFT and
+break SILENTLY: a script acts but cannot perceive, so it reports ok on a stale
+selector and types nothing. Drive it as an AGENT off the generic primitives,
+confirming each step by screenshot:
+  a bri hint [host]        # Set-of-Mark: label every clickable element
+  a bri screenshot         # read the labels with vision
+  a bri hint-click <code>  # click by label; RE-HINT after each action (menus add items)
+  a bri save <url> [note]  # log the resulting chat URL (a bri <N> reopens it)
+Discover a flow once by screenshotting each step; record the working path (goal,
+step path, success-oracle, traps) in agent MEMORY and reuse it — but keep
+screenshotting and confirming every step, and re-discover if it's stale. Per-site
+recipes live in agent memory, not in bri.
 
 Read a signed-in app — rendered text can LIE (proven on Keep):
   The visible cards are truncated previews of only the on-screen notes
@@ -378,6 +377,13 @@ def client(args):
         return
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
     if a == 'mon':     _mon(); return
+    if a == 'save':  # generic URL log (replaces the per-site dr.sh appenders); a bri <N> reopens
+        import datetime, urllib.parse, os
+        if len(args) < 2: sys.stderr.write('usage: a bri save <url> [note...]\n'); sys.exit(1)
+        src = urllib.parse.urlparse(args[1]).hostname or 'web'
+        line = f'{datetime.datetime.now().astimezone().isoformat(timespec="seconds")} {src} {args[1]} {" ".join(args[2:])}\n'
+        p = os.path.expanduser('~/a/adata/git/urls.txt'); os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, 'a').write(line); sys.stdout.write('+ saved → adata/git/urls.txt\n' + line); return
     if a == 'screen':
         import os
         p = _MONP(); os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -498,6 +504,7 @@ MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
   url              current URL
   hint [host]      label every clickable element (Set-of-Mark); screenshot to read codes
   hint-click <C>   click the element labeled C (re-enumerates; optional [host] filter)
+  save <url> [nt]  log a research/chat URL → urls.txt (a bri <N> reopens)
   screenshot [p]   PNG of active tab → p (default /tmp/bri-<ts>.png)
                    ! avoid if possible — prefer text/html/url (text is the
                      artifact, PNG is lossy + heavy + needs a vision model)
@@ -510,7 +517,7 @@ if __name__=='__main__':
     if not args:
         up = __import__('subprocess').run(['ss','-ltn','sport = :1234'],capture_output=True,text=True).stdout
         print(f"[{'running' if ':1234' in up else 'stopped'}] :1234")
-        # Recent research URLs — gemini/chatgpt/claude DR sessions append here.
+        # Recent research URLs — logged generically via `a bri save <url>` (any site).
         # Numbered → `a bri <N>` opens URL N. URL on its own line so terminals
         # that auto-detect plain URLs make them clickable too.
         try:
