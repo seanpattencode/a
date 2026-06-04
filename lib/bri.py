@@ -82,7 +82,7 @@ pollers, pending = [], {}  # pollers: list[Queue]  pending: id -> Queue
 USERSCRIPT = r"""// ==UserScript==
 // @name         a-bridge
 // @namespace    https://github.com/seanpattencode/a
-// @version      0.7
+// @version      0.8
 // @match        *://*/*
 // @grant        GM_xmlhttpRequest
 // @connect      127.0.0.1
@@ -151,11 +151,11 @@ USERSCRIPT = r"""// ==UserScript==
   const loop = () => GM_xmlhttpRequest({
     url:POLL, method:'GET', timeout:30000,
     onload: async r => {
+      loop();  // re-poll IMMEDIATELY (was after dispatch → commands during dispatch were dropped)
       if (r.status === 200 && r.responseText) {
         try { const c=JSON.parse(r.responseText); post({id:c.id, ...await dispatch(c)}); }
         catch (e) { post({error:String(e)}); }
       }
-      loop();
     },
     onerror: () => setTimeout(loop, 2000),
     ontimeout: () => loop(),
