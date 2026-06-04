@@ -362,7 +362,9 @@ _HL_CLICK = ('(()=>{__GUARD____ENUM__const c=__CODE__;'
   'new(t[0]=="p"?PointerEvent:MouseEvent)(t,o)));return"clicked "+c+" = "+'
   '(e.innerText||e.getAttribute("aria-label")||e.tagName).trim().slice(0,30)})()')
 def _hl(host='', code=None):
-    g = ('if(window.top!=window)return"skip:iframe";if(!location.host.includes('+json.dumps(host)+'))return"skip:"+location.host;') \
+    # `host` is any URL substring — a real host (chatgpt.com) OR a job tag (brijob=7) so
+    # parallel jobs each get their own tab: open chatgpt.com/#brijob=7, drive with `hint brijob=7`.
+    g = ('if(window.top!=window)return"skip:iframe";if(!location.href.includes('+json.dumps(host)+'))return"skip:"+location.href;') \
         if host else 'if(window.top!=window)return"skip:iframe";if(!document.hasFocus())return"skip:unfocused";'
     body = (_HL_HINT if code is None else _HL_CLICK).replace('__GUARD__', g).replace('__ENUM__', _HL_ENUM.replace('__SEL__', json.dumps(_HL_SEL)))
     return body if code is None else body.replace('__CODE__', json.dumps(code.upper()))
@@ -376,6 +378,15 @@ def client(args):
         else: cdp('Page.navigate', {'url': args[1]}); print(f'nav: {args[1]}')
         return
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
+    if a == 'new':  # open a new job tab tagged in the URL; drive it with `a bri hint brijob=<id>`
+        import os, subprocess
+        if len(args) < 2: sys.stderr.write('usage: a bri new <id> [url]   (default url: chatgpt.com)\n'); sys.exit(1)
+        jid, url = args[1], (args[2] if len(args) > 2 else 'chatgpt.com')
+        if not url.startswith(('http://','https://')): url = 'https://' + url
+        url += ('&' if '#' in url else '#') + 'brijob=' + jid
+        env = os.environ.copy(); env.setdefault('WAYLAND_DISPLAY','wayland-1'); env['MOZ_ENABLE_WAYLAND']='1'
+        subprocess.Popen(['firefox-nightly','--new-tab',url], env=env, stdout=-3, stderr=-3, start_new_session=True)
+        sys.stdout.write(f'+ job tab: {url}\n  drive: a bri hint brijob={jid} | hint-click <C> brijob={jid} | save <url>\n'); return
     if a == 'mon':     _mon(); return
     if a == 'save':  # generic URL log (replaces the per-site dr.sh appenders); a bri <N> reopens
         import datetime, urllib.parse, os
@@ -502,8 +513,9 @@ MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
   type <sel> <s>   type into element (handles contenteditable)
   keys <sel> <k>   dispatch keydown/keyup (e.g. Enter)
   url              current URL
-  hint [host]      label every clickable element (Set-of-Mark); screenshot to read codes
-  hint-click <C>   click the element labeled C (re-enumerates; optional [host] filter)
+  new <id> [url]   open a job tab tagged #brijob=<id> (default chatgpt.com) for parallel jobs
+  hint [match]     label clickable els on tabs whose URL contains <match> (host or brijob=<id>)
+  hint-click <C>   click element C (re-enumerates; optional [match] filter, same as hint)
   save <url> [nt]  log a research/chat URL → urls.txt (a bri <N> reopens)
   screenshot [p]   PNG of active tab → p (default /tmp/bri-<ts>.png)
                    ! avoid if possible — prefer text/html/url (text is the
