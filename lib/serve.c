@@ -130,6 +130,7 @@ static void _sresp(int c,int code,const char*ct,const char*body,int bl){_sresph(
 static void _sdoc(int c,const char*body,int bl){_sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
 static int _scmp(const void*a,const void*b){return strcmp((const char*)a,(const char*)b);}
 static void _qn(const char*req,char*nm){nm[0]=0;const char*q=strstr(req,"?n=");if(!q)return;q+=3;int i=0;for(;q[i]&&q[i]!='&'&&q[i]!=' '&&i<127;i++)nm[i]=q[i];nm[i]=0;}
+static void _redir(int c,const char*url){char h[768];int hl=snprintf(h,768,"HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length:0\r\nConnection:close\r\n\r\n",url);(void)!write(c,h,(size_t)hl);}
 /* ?f=<path> → rel (urldecoded). returns 1 if valid (non-empty, no ..) */
 static int _docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f=");if(!q)return 0;q+=3;
     int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;
@@ -348,15 +349,16 @@ static void _handle(int c){
             int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
                 "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
                 "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:15px/1.3 system-ui}h3{color:#6cf;padding:14px 16px 6px;margin:0}"
-                "a{display:flex;align-items:center;gap:12px;color:#9cf;text-decoration:none;padding:11px 16px;border-bottom:1px solid #1a1a1a}a:hover{background:#161616}a.x{color:#5a6b7a}"
-                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.s{flex:none;width:52px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}</style>" TAPJS "<h3>books (%d)</h3>",n);
+                ".r{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1a1a1a}.r:hover{background:#161616}"
+                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9cf;text-decoration:none}.r.x .t{color:#5a6b7a}"
+                ".c{flex:none;color:#6a9;text-decoration:none;font-size:15px}.s{flex:none;width:48px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}</style>" TAPJS "<h3>books (%d)</h3>",n);
             const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};
-            for(int i=0;i<n&&hl<cap-768;i++){
+            for(int i=0;i<n&&hl<cap-1024;i++){
                 char tf[P];snprintf(tf,P,"%s/%s/output/explained.txt",bd,names[i]);int has=!access(tf,R_OK);
                 if(!has){snprintf(tf,P,"%s/%s/output/%s.txt",bd,names[i],names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
                 char xt[8]="";for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);if(!access(tf,R_OK)){snprintf(xt,8,"%s",ex[k]);break;}}
-                hl+=snprintf(h+hl,(size_t)(cap-hl),"<a class=\"%s\" href=\"/book?n=%s\"><span class=t>%s</span><span class=s>%s</span></a>",has?"":"x",names[i],names[i],xt);}
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookcloud?n=%s\" target=_blank title=\"open in cloud\">\xe2\x98\x81</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],xt);}
             _sdoc(c,h,hl);free(h);return;}
         if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
@@ -395,6 +397,21 @@ static void _handle(int c){
             "addEventListener('pagehide',S);addEventListener('visibilitychange',function(){if(document.hidden)S();});"
             "</script>",nm,pos);
         _sdoc(c,pg,hl);free(pg);return;}
+    if(!strncmp(req,"GET /bookcloud",14)){char nm[128];_qn(req,nm);  /* → exact Drive file URL for a-gdrive:books/<name>/source.* (else Drive search) */
+        if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
+        char path[256];snprintf(path,256,"a-gdrive:books/%s/",nm);char id[128]="";int pp[2];
+        if(!pipe(pp)){pid_t ch=fork();
+            if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);int z=open("/dev/null",O_WRONLY);if(z>=0)dup2(z,2);
+                execlp("rclone","rclone","lsf","--files-only","--format","ip","--separator",";",path,(char*)0);_exit(1);}
+            close(pp[1]);char o[8192];int ol=0,r;while(ol<8191&&(r=(int)read(pp[0],o+ol,(size_t)(8191-ol)))>0)ol+=r;close(pp[0]);waitpid(ch,NULL,0);o[ol]=0;
+            for(char*l=o;l&&*l;){char*e=strchr(l,'\n');if(e)*e=0;char*s=strchr(l,';');
+                if(s&&!strncmp(s+1,"source.",7)){*s=0;snprintf(id,128,"%s",l);break;}
+                if(e)l=e+1;else break;}}
+        char url[600];
+        if(id[0])snprintf(url,600,"https://drive.google.com/file/d/%s/view",id);
+        else{char q[256];int j=0;for(int i=0;nm[i]&&j<250;i++){char d=((nm[i]>='a'&&nm[i]<='z')||(nm[i]>='0'&&nm[i]<='9'))?nm[i]:'+';if(d=='+'&&j&&q[j-1]=='+')continue;q[j++]=d;}q[j]=0;
+            snprintf(url,600,"https://drive.google.com/drive/search?q=%s",q);}
+        _redir(c,url);return;}
     if(!strncmp(req,"GET /docs",9)){
         /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
         char*h=malloc(1<<18);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
@@ -544,7 +561,7 @@ static void _handle(int c){
             if(strcmp(nm,"claude")&&strcmp(nm,"codex")&&strcmp(nm,"gemini")&&strcmp(nm,"aider")){
                 static const char NO[]="<!doctype html><style>body{background:#000;color:#fff;font:16px system-ui;text-align:center;padding-top:40vh}a{color:#4af}</style>no agent<br><br><a href=/dash>← dash</a>";
                 _sresp(c,200,"text/html",NO,sizeof NO-1);return;}}
-        static const char H[]="<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><link rel=stylesheet href=\"https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css\"><script src=\"https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js\"></script><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#t{height:100vh;width:100vw}</style><div id=t></div><script>var W=new URLSearchParams(location.search).get('w')||'',T=new Terminal({scrollback:10000,cursorBlink:true}),F=new FitAddon.FitAddon(),E=document.getElementById('t');T.loadAddon(F);T.open(E);var fit=()=>{try{F.fit();if(ws.readyState===1)ws.send(JSON.stringify({cols:T.cols,rows:T.rows}))}catch(e){}};var ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws'+(W?'?w='+encodeURIComponent(W):''));ws.onopen=()=>{F.fit();ws.send(JSON.stringify({cols:T.cols,rows:T.rows}));T.focus()};ws.onmessage=e=>T.write(e.data);T.onData(d=>ws.readyState===1&&ws.send(d));addEventListener('click',()=>T.focus());addEventListener('resize',fit);new ResizeObserver(fit).observe(E);requestAnimationFrame(()=>{F.fit();T.focus()})</script>";
+        static const char H[]="<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><link rel=stylesheet href=\"https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css\"><script src=\"https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js\"></script><script src=\"https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js\"></script><style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#t{height:100vh;width:100vw}</style><div id=t></div><script>var W=new URLSearchParams(location.search).get('w')||'',T=new Terminal({scrollback:10000,cursorBlink:true}),F=new FitAddon.FitAddon(),E=document.getElementById('t');T.loadAddon(F);T.open(E);var fit=()=>{try{F.fit();if(ws.readyState===1)ws.send(JSON.stringify({cols:T.cols,rows:T.rows}))}catch(e){}};var ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws'+(W?'?w='+encodeURIComponent(W):''));ws.onopen=()=>{F.fit();ws.send(JSON.stringify({cols:T.cols,rows:T.rows}));T.focus()};ws.onmessage=e=>T.write(e.data);T.onData(d=>ws.readyState===1&&ws.send(d));addEventListener('click',()=>T.focus());addEventListener('resize',fit);new ResizeObserver(fit).observe(E);requestAnimationFrame(()=>{F.fit();T.focus()});var _ty=0;E.addEventListener('touchstart',e=>{_ty=e.touches[0].clientY},{passive:true});E.addEventListener('touchmove',e=>{var t=e.touches[0],ch=E.clientHeight/T.rows,n=Math.trunc((t.clientY-_ty)/ch);if(n){var b=n>0?64:65,col=Math.max(1,Math.round(t.clientX/(E.clientWidth/T.cols))),row=Math.max(1,Math.round(t.clientY/ch)),i=Math.abs(n);while(i--)ws.send('\\x1b[<'+b+';'+col+';'+row+'M');_ty=t.clientY}},{passive:true})</script>";
         _sresp(c,200,"text/html",H,sizeof H-1);return;}
     if(!strncmp(req,"GET /cloud",10)){
         char cf[P];snprintf(cf,P,"%s/local/.cloud.html",AROOT);char*cached=readf(cf,NULL);
