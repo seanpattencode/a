@@ -1,4 +1,11 @@
-"""a apk [path]
+"""a apk [path] [serial] [noauth]   |   a apk auth [serial]
+
+After install, `a apk` auto-provisions the phone's termux with this dev box's gh + rclone
+creds (~/.config/gh/hosts.yml, ~/.config/rclone/rclone.conf) and points adata/git's origin
+at seanpattencode/a-git — so the web-UI's note sync (gh contents API) + rclone work on the
+phone. The apk does this via termux RUN_COMMAND (adb can't reach termux's home); idempotent
+and non-destructive (sets the remote, never clones/wipes). `noauth` skips it; `a apk auth
+[serial]` re-pushes creds + sets the remote without rebuilding.
 
 Inspect / debug the APK's live web UI from your dev machine (the app runs `a serve` on device port 1112):
     adb -s <serial> forward tcp:9112 tcp:1112      # one-time; local 9112 -> device 1112
@@ -7,7 +14,7 @@ Inspect / debug the APK's live web UI from your dev machine (the app runs `a ser
     curl -s localhost:9112/api/omni --data-urlencode 'q=ssh <dev> a c <prompt>'   # drive it (e.g. ssh fedora-wan + launch claude)
 Chrome DevTools also works: chrome://inspect (WebContentsDebugging is on) to see the in-app WebView.
 Drive the UI programmatically (no coordinate-tapping) — pick any menu item / open the menu:
-    adb -s <serial> shell am start -n com.aios.a/.M --es nav Web      # tabs: Native Web Notes Setup Read Rec Termux homebox Bubble
+    adb -s <serial> shell am start -n com.aios.a/.M --es nav note      # items: Native | web boxes (home proj op dash stream job note task term book docs cloud prompt) | Setup Read Rec Termux homebox Bubble
     adb -s <serial> shell am start -n com.aios.a/.M --ez menu true     # open the menu overlay
 ui_full.html is re-copied from assets on every launch, so a fresh `a apk` reinstall always updates the UI.
 """
@@ -17,18 +24,18 @@ KT=r'''@file:Suppress("DEPRECATION","OVERRIDE_DEPRECATION")
 package com.aios.a
 import android.app.Activity;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*
 import java.io.File;import java.io.OutputStream;import java.net.Socket
-private const val U="http://127.0.0.1:1112/term"
+private const val BASE="http://127.0.0.1:1112"
 // All a-logic shells out to the termux `a` install (the device's real terminal); the APK is a UI caller. RUN_COMMAND also cold-starts termux if it crashed. arg passed as $1 (no injection).
 fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
 companion object{init{System.loadLibrary("anative")}}
-private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0
+private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0;private var cur="$BASE/note"
 private var wsOut:OutputStream?=null;private var rt:LinearLayout?=null
 private fun bubOn()=(getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any{it.service.className=="com.aios.a.BubbleService"}
 private val wsExec=java.util.concurrent.Executors.newSingleThreadExecutor()
 private fun pg(s:String)=w.loadDataWithBaseURL(null,"<body style='font:18px monospace;padding:20px;background:#000;color:#0f0'>$s","text/html","utf-8",null)
 private fun jsEval(s:String)=h.post{w.evaluateJavascript(s,null)}
-@JavascriptInterface fun retry(){h.post{boot()}}
+@JavascriptInterface fun retry(){h.post{spawn();n=0;w.loadUrl(cur)}}
 @JavascriptInterface fun wsOpen(url:String){wsExec.submit{try{val s=Socket("127.0.0.1",1112);wsOut=s.getOutputStream()
 val k=android.util.Base64.encodeToString(ByteArray(16).also{java.security.SecureRandom().nextBytes(it)},android.util.Base64.NO_WRAP)
 wsOut!!.write("GET /ws HTTP/1.1\r\nHost: 127.0.0.1:1112\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $k\r\nSec-WebSocket-Version: 13\r\n\r\n".toByteArray())
@@ -47,19 +54,21 @@ o.write(ByteArray(4));o.write(bs)
 wsOut?.write(o.toByteArray());wsOut?.flush()}catch(e:Exception){}}}
 private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this;this.readyState=0;this.send=function(d){A.wsSend(d+'')};this.close=function(){this.readyState=3};A.wsOpen(url)};window._wsOpen=function(){if(_w){_w.readyState=1;if(_w.onopen)_w.onopen()}};window._wsMsg=function(d){if(_w&&_w.onmessage)_w.onmessage({data:d})};window._wsClose=function(c){if(_w){_w.readyState=3;if(_w.onclose)_w.onclose({code:c,wasClean:false})}}})()"
 private var openMenu:(()->Unit)?=null;private var nav:((String)->Unit)?=null
-/* programmatic menu control: am start -n com.aios.a/.M --es nav Web   (or --ez menu true to open the menu) */
-private fun applyNav(i:Intent?):Boolean{val n=i?.getStringExtra("nav");if(n!=null)nav?.invoke(n);if(i?.getBooleanExtra("menu",false)==true)openMenu?.invoke();return n!=null}
+/* programmatic menu control: am start -n com.aios.a/.M --es nav note   (or --ez menu true to open the menu) */
+private fun applyNav(i:Intent?):Boolean{val n=i?.getStringExtra("nav");if(n!=null)nav?.invoke(n);if(i?.getBooleanExtra("menu",false)==true)openMenu?.invoke()
+// `a apk` (desktop) adb-pushes the dev box's gh hosts.yml + rclone.conf to /data/local/tmp (file sync, so contents never hit logcat — unlike intent extras, which adbd logs verbatim) then fires --ez prov. Only the apk holds termux's RUN_COMMAND grant, so it copies them into termux ~/.config (chmod 600), runs gh auth setup-git, and ensures adata/git's origin points at a-git. note sync uses the gh contents API (note_url's PUT — see lib/git.c), which only needs the origin URL to derive owner/repo, NOT a full clone — so we just set the remote (no rm, no clone, no data loss). http.version=HTTP/1.1 is set because the phone's git stalls on HTTP/2 smart-POST (clone-fetch/push hang while GET/ls-remote work). a apk then wipes the staging copies.
+if(i?.getBooleanExtra("prov",false)==true)txRun(this,"mkdir -p ~/.config/gh ~/.config/rclone;[ -f /data/local/tmp/a_gh ]&&{ cp /data/local/tmp/a_gh ~/.config/gh/hosts.yml;chmod 600 ~/.config/gh/hosts.yml;};[ -f /data/local/tmp/a_rc ]&&{ cp /data/local/tmp/a_rc ~/.config/rclone/rclone.conf;chmod 600 ~/.config/rclone/rclone.conf;};command -v gh>/dev/null||exit 0;gh auth setup-git 2>/dev/null;git config --global http.version HTTP/1.1;D=~/a/adata/git;git -C \"\$D\" remote get-url origin 2>/dev/null|grep -q a-git||{ git -C \"\$D\" remote add origin https://github.com/seanpattencode/a-git.git 2>/dev/null;git -C \"\$D\" remote set-url origin https://github.com/seanpattencode/a-git.git 2>/dev/null;}")
+return n!=null||i?.getBooleanExtra("prov",false)==true}
 override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);applyNav(i)}
 override fun onBackPressed(){val o=openMenu;if(w.visibility==View.VISIBLE&&w.canGoBack())w.goBack() else if(o!=null)o() else super.onBackPressed()}
-override fun onResume(){super.onResume();boot();rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0)}
+override fun onResume(){super.onResume();setup();spawn();rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0)}
 private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}  /* always refresh: reinstall must update the UI */
 val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.deleteRecursively();ti.mkdirs();val src=File(filesDir,"terminfo.src");if(!src.exists())assets.open("terminfo.src").use{i->src.outputStream().use{o->i.copyTo(o)}}
 ProcessBuilder("$nl/libtic.so","-o",ti.absolutePath,src.absolutePath).redirectErrorStream(true).redirectOutput(File(filesDir,"tic.log")).start().waitFor()}
 val bin=File(filesDir,"bin");bin.mkdirs();for(p in listOf("a" to "liba.so","tmux" to "libtmux.so","tic" to "libtic.so","dbclient" to "libssh.so","ssh" to "libsshwrap.so","sshpass" to "libsshwrap.so","rclone" to "librclone.so")){val l=File(bin,p.first);try{android.system.Os.remove(l.absolutePath)}catch(e:Exception){};try{android.system.Os.symlink("$nl/${p.second}",l.absolutePath)}catch(e:Exception){}}
 for(sub in listOf("ssh","workspace/projects","workspace/cmds")){val sd=File(filesDir,"adata/git/$sub");sd.mkdirs();try{for(n in assets.list("git/$sub")?:emptyArray()){assets.open("git/$sub/$n").use{i->File(sd,n).outputStream().use{o->i.copyTo(o)}}}}catch(e:Exception){}}}
-private fun spawn(){txRun(this,"a serve 1112")}  // termux serves on shared loopback :1112; WebView (U) connects to it
-private fun boot(){setup();spawn();n=0;h.postDelayed({w.loadUrl(U)},1800)}
+private fun spawn(){txRun(this,"a serve 1112")}  // termux serves on shared loopback :1112; WebView connects to it. onResume re-ensures serve but never reloads the page, so app-switch preserves your current box.
 private fun atlas(sz:Float):IntArray{val p=Paint().apply{textSize=sz;color=-1;isAntiAlias=true;typeface=Typeface.MONOSPACE};val cw=p.measureText("M").toInt()+1;val ch=(-p.ascent()+p.descent()).toInt()+1;val b=Bitmap.createBitmap(cw*95,ch,Bitmap.Config.ARGB_8888);Canvas(b).let{c->for(i in 0 until 95)c.drawText(((32+i).toChar()).toString(),(i*cw).toFloat(),-p.ascent(),p)};val r=IntArray(2+cw*95*ch);r[0]=cw;r[1]=ch;b.getPixels(r,2,cw*95,0,0,cw*95,ch);b.recycle();return r}
 @android.annotation.SuppressLint("ClickableViewAccessibility")
 override fun onCreate(b:Bundle?){super.onCreate(b)
@@ -67,9 +76,13 @@ WebView.setWebContentsDebuggingEnabled(true)
 w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(this@M,"A")
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
-override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(U)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
-val nv=T(this);val nt=N(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,nt,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
-val mb=S(this,listOf("Native","Web","Notes","Setup","Read","Rec").mapIndexed{i,n->n to{vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}}+("Termux" to{startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})+("Note" to{startActivity(Intent(this,Cap::class.java).putExtra("note",true))})+("homebox" to{startActivity(Intent(this,Cap::class.java))})+("Bubble" to{if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}),{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
+override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
+val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
+fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
+// each localhost "box" (ui_full.html nav) is its own menu item; selecting it loads that route in the one WebView. native Notes/Note removed — web /note replaces them.
+val web=listOf("home" to "/","proj" to "/p","op" to "/op","dash" to "/dash","stream" to "/stream","job" to "/jobs","note" to "/note","task" to "/tasks","term" to "/term","book" to "/book","docs" to "/docs","cloud" to "/cloud","prompt" to "/prompt")
+val items=listOf<Pair<String,()->Unit>>("Native" to {show(0)})+web.map{(l,r)->l to {cur="$BASE$r";n=0;show(1);w.loadUrl(cur)}}+listOf<Pair<String,()->Unit>>("Setup" to {show(2)},"Read" to {show(3)},"Rec" to {show(4)},"Termux" to {startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},"homebox" to {startActivity(Intent(this,Cap::class.java))},"Bubble" to {if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})
+val mb=S(this,items,{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second();nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->mb.navTo(nm)};if(!applyNav(intent))mb.post{mb.open()}}}
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false;var sel=0;var pnm=-1;var plen=0;var onLeave:(()->Unit)?=null
@@ -104,14 +117,14 @@ private fun fire(t:String){if(t.isBlank())return
 status?.text="sending…"
 val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
-i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c",if(intent?.getBooleanExtra("note",false)==true)"a n -u \"\$1\" 2>&1" else "a sw homebox \"\$1\" 2>&1","a",t))
+i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a sw homebox \"\$1\" 2>&1","a",t))
 i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
 i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
 val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.TOP;setBackgroundColor(0xFF000000.toInt())}
-val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint=if(intent?.getBooleanExtra("note",false)==true)"note → type or 🎤 (multi-line)" else "capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;gravity=Gravity.TOP or Gravity.START;minLines=4;maxLines=12;isVerticalScrollBarEnabled=true}
+val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;gravity=Gravity.TOP or Gravity.START;minLines=4;maxLines=12;isVerticalScrollBarEnabled=true}
 status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16);autoLinkMask=android.text.util.Linkify.WEB_URLS;movementMethod=android.text.method.LinkMovementMethod.getInstance()}
 val btn=Button(this).apply{text="windows";setOnClickListener{
 status?.text="checking…"
@@ -192,17 +205,6 @@ init{isFocusable=true;isFocusableInTouchMode=true}
 override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt());for((i,e) in items.withIndex()){val y=300f+i*140f;if(i==sel){p.color=-1;c.drawRect(0f,y-78f,width.toFloat(),y+34f,p)};p.color=if(i==sel)0xFF000000.toInt() else -1;c.drawText(e.first(),width/2f,y,p)}}
 override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{when(k){android.view.KeyEvent.KEYCODE_DPAD_UP->sel=(sel-1).coerceAtLeast(0);android.view.KeyEvent.KEYCODE_DPAD_DOWN->sel=(sel+1).coerceAtMost(items.size-1);android.view.KeyEvent.KEYCODE_DPAD_CENTER,android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_BUTTON_A->items[sel].second();else->return super.onKeyDown(k,e)};invalidate();return true}
 override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){val idx=((e.y-240f)/140f).toInt();if(idx in items.indices){sel=idx;items[idx].second();invalidate()}};return true}
-}
-class N(c:android.content.Context):android.view.View(c),android.speech.RecognitionListener{
-private val sr by lazy{android.speech.SpeechRecognizer.createSpeechRecognizer(c).apply{setRecognitionListener(this@N)}}
-private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
-private var msg="tap to speak"
-override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());cv.drawText(msg,width/2f,height/2f,p)}
-override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){try{sr.cancel();val i=Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH);i.putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);i.putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);msg="listening...";invalidate();sr.startListening(i)}catch(e:Exception){msg="err: ${e.message}";invalidate()}};return true}
-override fun onResults(b:Bundle?){val r=b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION);if(r!=null&&r.isNotEmpty()){val t=r[0];try{txRun(context,"a n \"\$1\"",t);msg="$t ✓"}catch(e:Exception){msg="$t ✗ ${e.message}"};invalidate()}}
-override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{msg=it;invalidate()}}
-override fun onError(c:Int){msg="err $c";invalidate()}
-override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(b:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(c:Int,b:Bundle?){}
 }
 class Rec(val a:Activity):android.view.View(a){
 private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
@@ -1458,12 +1460,36 @@ def qr_pair():
         time.sleep(0.5)
     print("x timeout")
 
+def _provision(serial,pkg):
+    """Push this dev box's gh+rclone creds to the phone so its termux web-UI can sync. adb can't write termux's private home, so we adb-push the files to /data/local/tmp (binary sync — contents never logged, unlike intent extras) and fire --ez prov; only the apk holds termux's RUN_COMMAND grant, so it copies them into ~/.config. Then we wipe the staging copies. Returns provisioned names."""
+    import time;staged=[]
+    # rish/Shizuku installs don't grant RUN_COMMAND, without which the apk can neither start `a serve` ("a serve not reachable") nor run this import (both go via termux's RunCommandService). adb install -g grants it; this covers the rish path.
+    if pkg:adb("shell","pm","grant",pkg,"com.termux.permission.RUN_COMMAND",serial=serial)
+    for src,dst,nm in[("~/.config/gh/hosts.yml","/data/local/tmp/a_gh","gh"),("~/.config/rclone/rclone.conf","/data/local/tmp/a_rc","rclone")]:
+        p=os.path.expanduser(src)
+        if os.path.exists(p) and adb("push",p,dst,serial=serial).returncode==0:
+            adb("shell","chmod","644",dst,serial=serial);staged.append((dst,nm))  # 644 so termux (other uid) can read; wiped below
+    if not staged:return[]
+    if pkg:adb("shell","am","start","-n",pkg+"/.M","--ez","prov","true",serial=serial)
+    time.sleep(8)  # let the apk's termux RUN_COMMAND copy them in before we wipe the staging files
+    for dst,_ in staged:adb("shell","rm","-f",dst,serial=serial)
+    return[nm for _,nm in staged]
+def _apk_auth(serial):
+    if not serial:
+        ds=devlist()
+        if not ds:sys.exit("x no device")
+        serial=ds[0] if len(ds)==1 else pick(ds)
+    names=_provision(serial,P)
+    print(f"✓ provisioned termux on {serial}: {', '.join(names)}" if names else "! no gh/rclone creds on this dev box to push")
 def run():
     if "pair" in sys.argv[1:]:return shizuku_pair()
     if "pair-qr" in sys.argv[1:] or "qr" in sys.argv[1:]:return qr_pair()
+    if "auth" in sys.argv[1:]:return _apk_auth(next((a for a in sys.argv[2:] if a!="auth"),None))
+    auth_on="noauth" not in sys.argv[2:]
     AMAP={"arm":"armeabi-v7a","v7a":"armeabi-v7a","armeabi-v7a":"armeabi-v7a","arm64":"arm64-v8a","v8a":"arm64-v8a","arm64-v8a":"arm64-v8a"}
     proj=serial=ABI=None
     for a in sys.argv[2:]:
+        if a=="noauth":continue
         if a in AMAP:ABI=AMAP[a];continue
         for p in [a,H+"/"+a,R+"/adata/git/my/"+a]:
             if os.path.isdir(p) and glob.glob(p+"/build.gradle*"):proj=os.path.abspath(p);break
@@ -1568,12 +1594,17 @@ def run():
             ds=devlist()
             if not ds:sys.exit("No devices")
             serial=pick(ds)
-        if _rish_install(apk,pkg,serial=serial):print("✓ "+(pkg or os.path.basename(apk))+" (rish)");return
+        if _rish_install(apk,pkg,serial=serial):
+            names=_provision(serial,pkg) if auth_on else []
+            if not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
+            print("✓ "+(pkg or os.path.basename(apk))+" (rish)"+(" + creds: "+", ".join(names) if names else ""));return
         r=adb("install","-r","-g",apk,serial=serial)
         if "INSTALL_FAILED" in r.stdout+r.stderr:
             if pkg:adb("uninstall",pkg,serial=serial)
             r=adb("install","-g",apk,serial=serial)
         if r.returncode:print(r.stderr);sys.exit(1)
-        if pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
+        names=_provision(serial,pkg) if auth_on else []
+        if not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
+        if names:print("→ provisioned termux creds: "+", ".join(names))
     print("✓ "+(pkg or os.path.basename(apk)))
 run()
