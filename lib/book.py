@@ -26,13 +26,13 @@ def resolve_book(name=None):
 def _codex(pdf, prompt, txt_path):
     import glob
     tmp = f"/tmp/_ocr_{os.getpid()}_{Path(pdf).stem}"
-    subprocess.run(["pdftoppm","-png","-r","100",str(pdf),tmp],capture_output=True)
+    subprocess.run(["pdftoppm","-png","-r","200",str(pdf),tmp],capture_output=True)  # 200dpi: cleaner math/subscripts than 100
     pngs = sorted(glob.glob(f"{tmp}*.png"))
     if not pngs: return ""
     of = f"{tmp}.out"
     args = ["codex","exec",prompt,"--skip-git-repo-check","-o",of]
     for p in pngs: args += ["--image",p]
-    subprocess.run(args,capture_output=True,timeout=300)
+    subprocess.run(args,capture_output=True,timeout=300,stdin=subprocess.DEVNULL)  # codex blocks reading stdin without this
     t = Path(of).read_text().strip() if Path(of).exists() else ""
     for p in pngs+[of]:
         try: os.unlink(p)
@@ -46,6 +46,10 @@ def process_page(source_path, output_dir, prompt, nocache=False):
     output_dir.mkdir(parents=True, exist_ok=True)
     txt_path = output_dir / f"{Path(source_path).stem}.txt"
     if not nocache and txt_path.exists() and txt_path.stat().st_size > 0: return txt_path.read_text()
+    if os.environ.get("A_BOOK_CODEX") and str(source_path).endswith(".pdf"):   # force codex (vision→LaTeX); skip claude (it content-filters copyrighted scans)
+        out = _codex(source_path, prompt, txt_path)
+        if out: print(f"  ✓ codex: {Path(source_path).name}", flush=True)
+        return out
     for attempt in range(3):
         try:
             r = subprocess.run(["claude", "--dangerously-skip-permissions", "--print"], input=f"{prompt}: {source_path}", text=True, capture_output=True, timeout=120)
