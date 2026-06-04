@@ -44,12 +44,13 @@ Chat-UI recipe (proven on Gemini and Claude.ai):
   a bri keys  'div[contenteditable=true]' Enter
   sleep 8; a bri text '.font-claude-response'
 
-Read a signed-in app (Keep, etc.) — no API needed, just read the page:
-  a bri https://keep.google.com ; sleep 6
-  a bri text body    # whole rendered innerText in ONE call. Pinned notes are
-                     # the block between "Take a note…" and the "PINNED" label
-                     # (the label TRAILS the cards in innerText order — don't
-                     # assume header-precedes-content). Don't selector-poke (Notes).
+Read a signed-in app — rendered text can LIE (proven on Keep):
+  The visible cards are truncated previews of only the on-screen notes
+  (content-visibility skips the rest), so `text body` MISSES data both ways.
+  The full set rides in a page JSON blob → parse it, don't scrape the DOM:
+    a bri html > /tmp/k.html      # or browser File>Save As (html caps at 200k)
+    python3 lib/bri/keepx.py /tmp/k.html   # notes#node → indexableText, full bodies
+  General data layer beats DOM for any such app (gkeepapi/Takeout for Keep).
 
 OAuth sign-in (e.g. "Continue with Google"):
   Some sign-in buttons live in shadow DOM or cross-origin Google Identity
@@ -63,11 +64,11 @@ Notes:
 - Custom-element wrappers (rich-textarea, ms-textarea, …) need a CSS
   descendant combinator (`wrapper [contenteditable]`) to reach the inner
   <div contenteditable>. The bare wrapper has no working .value setter.
-- Read, don't poke: reach for `bri text body` (or `html`) FIRST — one call
-  returns the whole rendered page; parse that. Selector-by-selector eval
-  probing is slow and fragile, and eval is CSP-blocked on Google domains +
-  Claude.ai anyway. text/click/type/keys/html use DOM APIs (no eval), so they
-  work everywhere; only narrow to a selector once you know the shape.
+- Read, don't poke: grab `bri html` (full DOM) or `text body` in ONE call and
+  parse that, vs selector-by-selector eval (slow, and eval is CSP-blocked on
+  Google + Claude.ai). But text=innerText reads only PAINTED nodes — apps using
+  content-visibility/preview-clipping (Keep, Gmail) hide data from it; prefer
+  html, or the app's data blob/API, when the rendered text looks incomplete.
 - Each command gets one response per connected frame (main + iframes). Pick the
   row whose src is your target origin — its value is longest. The noise rows
   (ogs/gsi/clients6 proxies, accounts.google.com RotateCookiesPage → CSP
@@ -271,7 +272,29 @@ def _ff_move(mon):
 def _ff_restart():
     # Live wayland socket — process env may have stale wayland-0 from a dead session,
     # leaving FF connected to nothing and invisible on monitors (looks headless).
-    import os, glob, subprocess
+    import os, glob, subprocess, sys
+    # LLMs/agents: FAVOR restarting Firefox here. It is the correct, SAFE way to (re)load
+    # bri-ext (the eval-capable client that bypasses page CSP) — these prefs make the -9
+    # restart restore every tab, and the driven window lands on the chosen monitor, so a
+    # restart loses nothing. Don't avoid it out of fear of losing tabs.
+    for _p in glob.glob(os.path.expanduser('~/.mozilla/firefox/*default-nightly'))+[d for d in glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) if 'nightly' in d.lower()]:
+        _u=os.path.join(_p,'user.js')
+        if 'resume_from_crash' not in (open(_u).read() if os.path.exists(_u) else ''):
+            open(_u,'a').write('\nuser_pref("browser.sessionstore.resume_from_crash", true);\nuser_pref("browser.startup.page", 3);\n')
+    # Too-many-tabs guard: restarting reloads every loaded tab and spikes memory — with many
+    # tabs this trips the OOM killer (which targets python, i.e. THIS bridge). Require y/N.
+    _nt = subprocess.run(['pgrep','-fc','firefox.*-isForBrowser'],capture_output=True,text=True).stdout.strip()
+    _nt = int(_nt) if _nt.isdigit() else 0
+    if _nt > int(os.environ.get('BRI_TAB_MAX','25')) and os.environ.get('FORCE') != '1':
+        _w = f'⚠ {_nt} loaded browser tabs — restarting Firefox will spike memory and may trip the OOM killer (which kills this bridge).'
+        if sys.stdin.isatty():
+            sys.stderr.write(_w + '\n')
+            if input('  proceed with restart? [y/N] ').strip().lower() != 'y':
+                print('aborted (set FORCE=1 to skip this check)'); return
+        else:
+            sys.stderr.write(_w + '\n  LLM/agent: PAUSE here and ASK THE USER what to do (close tabs first? proceed anyway?).\n'
+                                  '  Do NOT auto-proceed; only re-run with FORCE=1 after the user says so.\n')
+            return
     subprocess.run(['pkill','-9','-f','firefox-nightly'],stdout=-3,stderr=-3); time.sleep(1)
     env = os.environ.copy(); xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
     socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
@@ -309,6 +332,41 @@ def cdp(method, params=None, _s=[None, 0]):
     _s[0].send(json.dumps({'id':i,'method':method,'params':params or {}}))
     while (r := json.loads(_s[0].recv())).get('id') != i: pass
     return r.get('result', {})
+
+# --- selector highlighter (Set-of-Mark) ----------------------------------------
+# Drift-proof alternative to hardcoded CSS selectors: label every clickable element
+# with a code, screenshot, let a vision model pick the code, then click by code.
+#   a bri hint [host]          overlay labels + return code=text map (host filters tabs)
+#   a bri hint-click <CODE> [host]   re-enumerate (same order) and click that element
+# Both walk open shadow roots and use the identical enumeration so codes are stable.
+_HL_SEL = ('a[href],button,input,textarea,select,summary,[role=button],[role=menuitem],'
+  '[role=menuitemradio],[role=menuitemcheckbox],[role=tab],[role=switch],[role=option],'
+  '[onclick],[contenteditable=""],[contenteditable="true"],[tabindex]:not([tabindex="-1"])')
+_HL_ENUM = ('const S=__SEL__;const seen=new Set(),V=[];const W=r=>{r.querySelectorAll(S).forEach(e=>{'
+  'if(!seen.has(e)){seen.add(e);V.push(e)}});r.querySelectorAll("*").forEach(e=>e.shadowRoot&&W(e.shadowRoot))};'
+  'W(document);const Z=V.filter(e=>{const r=e.getBoundingClientRect();if(r.width<6||r.height<6)return 0;'
+  'if(r.bottom<0||r.top>innerHeight||r.right<0||r.left>innerWidth)return 0;const c=getComputedStyle(e);'
+  'return c.visibility!="hidden"&&c.display!="none"&&c.pointerEvents!="none"});')
+_HL_HINT = ('(()=>{__GUARD____ENUM__document.querySelectorAll(".__bh").forEach(n=>n.remove());'
+  'const cd=i=>{const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ";return i<26?A[i]:A[(i/26|0)-1]+A[i%26]};'
+  'const o=Z.map((e,i)=>{const c=cd(i),r=e.getBoundingClientRect(),b=document.createElement("div");'
+  'b.className="__bh";b.textContent=c;b.style.cssText="position:fixed;left:"+Math.max(0,r.left)+"px;top:"+'
+  'Math.max(0,r.top)+"px;z-index:2147483647;background:#ff0;color:#000;font:bold 10px monospace;'
+  'padding:0 2px;border:1px solid #000;pointer-events:none;line-height:12px";document.body.appendChild(b);'
+  'return c+"="+(e.innerText||e.getAttribute("aria-label")||e.getAttribute("placeholder")||e.tagName)'
+  '.trim().replace(/\\s+/g," ").slice(0,30)});return o.length+" marks: "+o.join(" | ")})()')
+_HL_CLICK = ('(()=>{__GUARD____ENUM__const c=__CODE__;'
+  'const i=c.length<2?c.charCodeAt(0)-65:(c.charCodeAt(0)-64)*26+(c.charCodeAt(1)-65);'
+  'const e=Z[i];if(!e)return"no element "+c;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,'
+  'o={bubbles:1,cancelable:1,clientX:x,clientY:y,button:0,buttons:1,view:window,pointerType:"mouse",isPrimary:1};'
+  '["pointerdown","mousedown","pointerup","mouseup","click"].forEach(t=>e.dispatchEvent('
+  'new(t[0]=="p"?PointerEvent:MouseEvent)(t,o)));return"clicked "+c+" = "+'
+  '(e.innerText||e.getAttribute("aria-label")||e.tagName).trim().slice(0,30)})()')
+def _hl(host='', code=None):
+    g = ('if(window.top!=window)return"skip:iframe";if(!location.host.includes('+json.dumps(host)+'))return"skip:"+location.host;') \
+        if host else 'if(window.top!=window)return"skip:iframe";if(!document.hasFocus())return"skip:unfocused";'
+    body = (_HL_HINT if code is None else _HL_CLICK).replace('__GUARD__', g).replace('__ENUM__', _HL_ENUM.replace('__SEL__', json.dumps(_HL_SEL)))
+    return body if code is None else body.replace('__CODE__', json.dumps(code.upper()))
 
 def client(args):
     a = args[0]
@@ -387,6 +445,10 @@ def client(args):
         elif a=='type':  j = {'id':1,'action':'type','sel':args[1],'text':args[2]}
         elif a=='keys':  j = {'id':1,'action':'keys','sel':args[1],'keys':args[2]}
         elif a=='url':   j = {'id':1,'action':'url'}
+        elif a=='hint':  j = {'id':1,'action':'eval','code':_hl(args[1] if len(args)>1 else '')}
+        elif a in ('hint-click','hc'):
+            if len(args)<2: sys.stderr.write('usage: a bri hint-click <CODE> [host]\n'); sys.exit(1)
+            j = {'id':1,'action':'eval','code':_hl(args[2] if len(args)>2 else '', args[1])}
         # NOT recommended — prefer text/html/url. PNG is lossy for any text-bearing
         # page, heavy (200KB+), and requires a vision model to parse. Use only when
         # the rendered pixels themselves are the artifact (canvas, layout bug, etc).
@@ -434,6 +496,8 @@ MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
   type <sel> <s>   type into element (handles contenteditable)
   keys <sel> <k>   dispatch keydown/keyup (e.g. Enter)
   url              current URL
+  hint [host]      label every clickable element (Set-of-Mark); screenshot to read codes
+  hint-click <C>   click the element labeled C (re-enumerates; optional [host] filter)
   screenshot [p]   PNG of active tab → p (default /tmp/bri-<ts>.png)
                    ! avoid if possible — prefer text/html/url (text is the
                      artifact, PNG is lossy + heavy + needs a vision model)
