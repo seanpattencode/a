@@ -168,11 +168,17 @@ static int cmd_done(int argc,char**argv){AB;
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
         FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}}
-    if(getenv("TMUX")){char ts[B]="",dl[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
+    if(getenv("TMUX")){char ts[B]="",dl[B]="",cu[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
+        char*ck[16],*cc[16],*cx[16];int ncu=0;
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);}}
-        TAG(ts,"test");TAG(dl,"diff");
+        TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");
         #undef TAG
+        /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */
+        for(char*ent=cu;*ent&&ncu<16;){char*nx=strstr(ent,"||");if(nx)*nx=0;
+            char*p1=strstr(ent,"::"),*p2=p1?strstr(p1+2,"::"):0;
+            if(p2){*p1=*p2=0;while(*ent==' ')ent++;ck[ncu]=ent;cc[ncu]=p1+2;cx[ncu++]=p2+2;}
+            if(!nx)break;ent=nx+2;}
         if(dl[0]){char*cms=strstr(msg,"</diff>");cms=cms?cms+7:msg;while(*cms==' ')cms++;
             char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(cms,"\n"),cms,dl);fclose(cf);}}
         snprintf(sp,P,"%s/a_done.sh",DDIR);FILE*sf=fopen(sp,"w");
@@ -197,6 +203,7 @@ static int cmd_done(int argc,char**argv){AB;
             fputs("printf '\\033[1;33m[n]\\033[0m suggest next step (opus)\\n'\n",sf);
             fputs("printf '\\033[1;33m[b]\\033[0m suggest next + book/effort\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;35m[e]\\033[0m talk to agent\\n'\n",sf);
+            for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;33m[%s]\\033[0m %%s: \\033[32m%%s\\033[0m\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
             fputs("printf '\\033[2mpress a key (other=close)\\033[0m '\nread -rsn1 k </dev/tty;echo\n",sf);
             if(dl[0])fputs("[ \"$k\" = y ]&&{ a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sf);
             if(dl[0]&&tp)fprintf(sf,"[ \"$k\" = p ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,PP,tp);
@@ -205,6 +212,7 @@ static int cmd_done(int argc,char**argv){AB;
             fprintf(sf,"[ \"$k\" = n ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s'\n",np);
             fprintf(sf,"[ \"$k\" = b ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s -i'\n",np);
             if(tp)fprintf(sf,"[ \"$k\" = e ]&&tmux select-pane -t '%s'\n",tp);
+            for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %s ]&&{ %s;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",ck[i],cx[i]);
             fputs("case \"$k\" in r|n|b) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
             char c[P*2];
