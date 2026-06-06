@@ -50,7 +50,7 @@ static void note_url(const char*fn,const char*msg,char*out){
     if(fn){snprintf(c,B*2,"command -v gh>/dev/null||exit 1;D='%s';"
         "r=$(git -C $D remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##');[ -n \"$r\" ]||exit 1;"
         "d=$(base64 -w0 <'%s' 2>/dev/null||base64 <'%s'|tr -d '\\n');"
-        "u=$(timeout 10 gh api --method PUT \"repos/$r/contents/%s\" -f message=%s -f content=\"$d\" --jq .commit.html_url 2>/dev/null);[ -n \"$u\" ]||exit 1;"
+        "u=$(timeout 10 gh api --method PUT \"repos/$r/contents/%s\" -f message=%s -f content=\"$d\" --jq .content.html_url 2>/dev/null);[ -n \"$u\" ]||exit 1;"
         "git -C $D add --sparse -A;git -C $D commit -qm %s >/dev/null 2>&1;echo \"$u\"",SROOT,fn,fn,rel,msg,msg);
         pcmd(c,o,512);o[strcspn(o,"\n")]=0;}  /* trust output, not pcmd's exit: serve sets SIGCHLD=IGN so pclose returns -1 even on success */
     if(fd>=0)close(fd);

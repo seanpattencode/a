@@ -11,7 +11,8 @@ static char* note_save(const char *d, const char *t) {
 }
 static char rdir[P],ltd[P]="";
 static void dl_norm(const char*,char*,size_t);
-static void rapid_note(const char*t){note_save(rdir,t);puts("✓");sync_pane(t);}
+static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
+static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ local");}
 typedef struct{char p[P];char t[512];}GN;
 static GN*gn;static int gn_cap;
 static int gncmp(const void*a,const void*b){return strcmp(strrchr(((const GN*)a)->p,'_'),strrchr(((const GN*)b)->p,'_'));}
@@ -51,9 +52,10 @@ static int cmd_note(int argc, char **argv) {
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
     if(argc>3&&!strcmp(argv[2],"-u")){perf_disarm();char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL fast via gh API (apk); disarm: network */
         note_url(note_save(dir,t),"note",NULL);return 0;}
-    {char t[B]="";ajoin(t,B,argc,argv,2);
-        note_save(dir,t);puts("✓");sync_pane(t);
-        snprintf(rdir,P,"%s",dir);rapid("n> ",rapid_note);if(isatty(0))note_url(NULL,"note",NULL);return 0;}
+    {char t[B]="";ajoin(t,B,argc,argv,2);snprintf(rdir,P,"%s",dir);rapid_note(t);
+        rapid("n> ",rapid_note);
+        if(nfn){printf("\nsyncing %d → github…\n",nfn);for(int i=0;i<nfn;i++)note_url(nfs[i],"note",NULL);}
+        return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
 typedef struct{char d[P],t[256],p[8];}Tk;
