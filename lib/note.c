@@ -12,7 +12,7 @@ static char* note_save(const char *d, const char *t) {
 static char rdir[P],ltd[P]="";
 static void dl_norm(const char*,char*,size_t);
 static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
-static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ local");}
+static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved locally");}
 typedef struct{char p[P];char t[512];}GN;
 static GN*gn;static int gn_cap;
 static int gncmp(const void*a,const void*b){return strcmp(strrchr(((const GN*)a)->p,'_'),strrchr(((const GN*)b)->p,'_'));}
@@ -89,18 +89,21 @@ static char* task_add(const char*dir,const char*t,int pri){
     return fn;
 }
 #define THINT "  \033[90mp <pri>  d MM-DD  enter=done\033[0m\n"
+static char tfs[256][P];static int tfn;  /* tasks captured this session; git-synced + url'd on exit */
 static void rapid_task(const char*t){
     if((*t=='p'||*t=='d')&&t[1]==' '){char*bn=strrchr(ltd,'/');
         if(*t=='p'){int pv=atoi(t+2);pv=pv<0?0:pv>99999?99999:pv;char np[8];snprintf(np,8,"%05d",pv);
             char nw[P];snprintf(nw,P,"%.*s/%s%s",(int)(bn-ltd),ltd,np,bn+6);
-            rename(ltd,nw);snprintf(ltd,P,"%s",nw);printf("✓ P%s\n",np);}
+            rename(ltd,nw);if(tfn)memcpy(tfs[tfn-1],nw,strlen(nw));snprintf(ltd,P,"%s",nw);printf("✓ P%s\n",np);}  /* 5-digit pri: nw,ltd same len */
         else{char dn[32],df[P];dl_norm(t+2,dn,32);snprintf(df,P,"%s/deadline.txt",ltd);writef(df,dn);printf("✓ %s\n",dn);}
         return;}
-    task_add(rdir,t,50000);printf("✓ P50000 %s\n" THINT,t);sync_pane(t);}
+    char*f=task_add(rdir,t,50000);if(tfn<256)snprintf(tfs[tfn++],P,"%s",f);printf("✓ saved locally P50000 %s\n" THINT,t);}
 static int task_add_p(const char*dir,int argc,char**argv,int si){
     int pri=50000;if(si<argc&&is5d(argv[si])){pri=atoi(argv[si]);si++;if(si>=argc){puts("a task [PPPPP] <text>");return 1;}}
-    char t[B]="";ajoin(t,B,argc,argv,si);task_add(dir,t,pri);printf("✓ P%05d %s\n" THINT,pri,t);sync_pane(t);
-    snprintf(rdir,P,"%s",dir);rapid("t> ",rapid_task);return 0;}
+    char t[B]="";ajoin(t,B,argc,argv,si);char*f=task_add(dir,t,pri);if(tfn<256)snprintf(tfs[tfn++],P,"%s",f);printf("✓ saved locally P%05d %s\n" THINT,pri,t);
+    snprintf(rdir,P,"%s",dir);rapid("t> ",rapid_task);
+    if(tfn){printf("\nsyncing %d → github…\n",tfn);for(int i=0;i<tfn;i++)note_url(tfs[i],"task",NULL);}
+    return 0;}
 static void task_printbody(const char*path){
     size_t l;char*r=readf(path,&l);if(!r)return;if(!strncmp(r,"Text: ",6))r+=6;
     for(char*p=r;;){char*nl=strchr(p,'\n');if(nl)*nl=0;
