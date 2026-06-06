@@ -77,6 +77,7 @@ static void gen_icache(void) {
     "diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\n"
     "jobs\tlist jobs\ndash\tdashboard\nperf\tperformance\n"
     "ui\tweb dashboard\nterm\tterminal (a ui /term)\n"
+    "webview\tnative window (localhost:1111)\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
     "cal add\tadd event\nhub add\tadd\nhub run\trun\nhub rm\trm\nhub log\tlog\n"
     "note\tnotes\nnote l\tlist\nnote r\treview\ntasks\ttasks\nssh add\tadd host\nssh all\tall hosts\n"
