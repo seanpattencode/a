@@ -279,19 +279,16 @@ static int cmd_swarm(int c,char**v){
     else printf("x %s: %s\n",v[2],out[0]?out:"no job window made");
     return!ok;
 }
-/* fl n|p <host>: advance remote a: window; if at end, advance local tmux */
-/* a fl n|p <pane> — cross-device window flip, logic on this device only.
-   Reads the remote tmux status rendered in the ssh pane (no remote config / extra ssh):
-   not at last window -> advance the remote (C-b n) and return 1 (caller stays put); at the
-   last window (or no remote tmux) -> wrap the remote back to its first window and return 0
-   so the caller pops to the local next window. Bound to one key, this sweeps every window
-   on the local device and every sshed device, then loops. */
+/* a fl n|p <pane> — recursive cross-device window flip, all logic on this device.
+   The ssh pane renders every nested tmux's status bar (deeper levels stack upward). Forward
+   the nav key inward so each device cycles its own innermost window; return 0 (caller pops to
+   the local next/prev window) only when every nested level sits at its last(n)/first(p) window
+   — no window index beyond the active one on any bar. One key sweeps deepest→shallowest→local. */
 static int cmd_fl(int c,char**v){
-    if(c<4)return 1;int n=*v[2]=='n';char cm[B];   /* parse stays POSIX (tr/sed/grep -oE) so it runs on macOS too */
+    if(c<4)return 1;int n=*v[2]=='n';char cm[B];
     snprintf(cm,B,
-        "L=$(tmux capture-pane -ep -t %s 2>/dev/null|grep -v '^$'|tail -1|tr '\\033' '~');"
-        "A=$(printf %%s \"$L\"|sed -n 's/.*48;2;255;255;255m \\([0-9]*\\):.*/\\1/p');[ -z \"$A\" ]&&exit 0;"
-        "lim=$(printf %%s \"$L\"|grep -oE '[0-9]+:'|tr -d :|sort -n|%s);"
-        "tmux send-keys -t %s C-b %s;[ \"$A\" = \"$lim\" ]",
-        v[3],n?"tail -1":"head -1",v[3],n?"n":"p");
+        "C=$(tmux capture-pane -ep -t %s 2>/dev/null|tr '\\033' '~');"
+        "printf %%s \"$C\"|grep -q '48;2;255;255;255'&&tmux send-keys -t %s %s;"
+        "printf %%s \"$C\"|awk -v n=%d '/48;2;255;255;255m /{o=$0;sub(/.*48;2;255;255;255m /,\"\");a=$0+0;while(match(o,/[0-9]+:/)){k=substr(o,RSTART,RLENGTH-1)+0;if(n?k>a:k<a)b=1;o=substr(o,RSTART+RLENGTH)}}END{exit b}'",
+        v[3],v[3],n?"C-PageDown":"C-PageUp",n);
     return system(cm)?1:0;}

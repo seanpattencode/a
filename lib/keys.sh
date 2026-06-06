@@ -97,7 +97,7 @@ let cb:CGEventTapCallBack={_,type,e,_ in
   if type == .keyDown { cand=false; if kc==79 && e.getIntegerValueField(.keyboardEventAutorepeat)==0 {run(["/usr/bin/open",summon])} }
   else if kc==60 {
     if e.flags.contains(.maskShift) {t=Date().timeIntervalSince1970; cand=true}
-    else if cand && Date().timeIntervalSince1970-t<0.3 {run([tmux,"next-window"]); cand=false} }
+    else if cand && Date().timeIntervalSince1970-t<0.3 {run([tmux,"if-shell","ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE ^ssh","if-shell \"a fl n #{pane_id}\" next-window","next-window"]); cand=false} }
   return Unmanaged.passUnretained(e) }
 let m=CGEventMask((1<<CGEventType.flagsChanged.rawValue)|(1<<CGEventType.keyDown.rawValue))
 guard let tap=CGEvent.tapCreate(tap:.cgSessionEventTap,place:.headInsertEventTap,options:.listenOnly,eventsOfInterest:m,callback:cb,userInfo:nil) else {exit(1)}

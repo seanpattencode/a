@@ -122,6 +122,7 @@ static void tm_ensure_conf(void) {
         "bind -n C-k " SSHIF "'send C-k' 'next-window'\n"
         "bind -n C-j " SSHIF "'send C-j' 'previous-window'\n"
         "bind -n C-PageDown " SSHIF "'if-shell \"a fl n #{pane_id}\" next-window' 'next-window'\n"
+        "bind -n C-PageUp " SSHIF "'if-shell \"a fl p #{pane_id}\" previous-window' 'previous-window'\n"
         "bind-key -n C-n new-window\n"
         "bind -n C-t " SSHIF "'send C-t' 'new-window'\n"
         "bind-key -n C-y split-window -fh\n"
