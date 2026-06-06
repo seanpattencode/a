@@ -47,7 +47,10 @@ def process_page(source_path, output_dir, prompt, nocache=False):
     txt_path = output_dir / f"{Path(source_path).stem}.txt"
     if not nocache and txt_path.exists() and txt_path.stat().st_size > 0: return txt_path.read_text()
     if os.environ.get("A_BOOK_CODEX") and str(source_path).endswith(".pdf"):   # force codex (vision→LaTeX); skip claude (it content-filters copyrighted scans)
-        out = _codex(source_path, prompt, txt_path)
+        try:
+            out = _codex(source_path, prompt, txt_path)                        # isolate per-page failures (e.g. codex 300s timeout) so one bad page can't crash the whole run
+        except Exception as e:
+            print(f"  ✗ codex {Path(source_path).name}: {type(e).__name__}", flush=True); return ""
         if out: print(f"  ✓ codex: {Path(source_path).name}", flush=True)
         return out
     for attempt in range(3):
@@ -69,7 +72,7 @@ def transcribe_page(source_path, output_dir, nocache=False):
     return process_page(source_path, output_dir, "Read this file and transcribe it. Remove headers, footers, page numbers, and section labels like 'INTRODUCTION xix'. For any graphs/charts/images, include a description in the format 'Graph: [description]'. If the page is blank or has no meaningful content, return empty <transcription></transcription> tags. Return ONLY the main body text wrapped in <transcription></transcription> tags", nocache)
 
 def translate_page(source_path, output_dir, target_lang="English", nocache=False):
-    return process_page(source_path, output_dir, f"Translate this document to {target_lang}. Return only the translated text, preserving paragraph structure", nocache)
+    return process_page(source_path, output_dir, f"Translate this scanned page to {target_lang}, preserving paragraph structure and section headers (\\section*{{}}). Render ALL mathematics as LaTeX — $..$ inline, \\[..\\] display — transcribing every formula exactly; translate only the prose, never alter or omit a formula. Keep footnote markers. Blank page → empty <transcription></transcription> tags. Return only the translated text wrapped in <transcription></transcription>", nocache)
 
 def latex_page(source_path, output_dir, nocache=False):
     return process_page(source_path, output_dir, "Transcribe to LaTeX body (no preamble/documentclass/begin{document}). $..$ inline, \\[..\\] display, \\section*{}, \\footnote{}, \\textit{}. Blank→empty tags. Wrap in <transcription></transcription>", nocache)
