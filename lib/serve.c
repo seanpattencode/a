@@ -358,7 +358,7 @@ static void _handle(int c){
                 if(!has){snprintf(tf,P,"%s/%s/output/%s.txt",bd,names[i],names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
                 char xt[8]="";for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);if(!access(tf,R_OK)){snprintf(xt,8,"%s",ex[k]);break;}}
-                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],xt);}
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],names[i],xt);}
             _sdoc(c,h,hl);free(h);return;}
         if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
@@ -412,6 +412,18 @@ static void _handle(int c){
         else{char q[256];int j=0;for(int i=0;nm[i]&&j<250;i++){char d=((nm[i]>='a'&&nm[i]<='z')||(nm[i]>='0'&&nm[i]<='9'))?nm[i]:'+';if(d=='+'&&j&&q[j-1]=='+')continue;q[j++]=d;}q[j]=0;
             snprintf(url,600,"https://drive.google.com/drive/search?q=%s",q);}
         _redir(c,url);return;}
+    if(!strncmp(req,"GET /bookdir",12)){char nm[128];_qn(req,nm);  /* open the book's folder in the OS file manager — shows every version (epub/txt/…) */
+        if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
+        char dir[P];snprintf(dir,P,"%s/books/%s",AROOT,nm);
+        if(access(dir,X_OK)){_sresp(c,404,"text/plain","no such book",12);return;}
+        if(!fork()){setsid();
+            char rd[64];snprintf(rd,64,"/run/user/%d",(int)getuid());setenv("XDG_RUNTIME_DIR",rd,1);
+            DIR*wd=opendir(rd);struct dirent*we;char wl[64]="";
+            if(wd){while((we=readdir(wd)))if(!strncmp(we->d_name,"wayland-",8)&&!strstr(we->d_name,".lock")){snprintf(wl,64,"%s",we->d_name);break;}closedir(wd);}
+            if(wl[0])setenv("WAYLAND_DISPLAY",wl,1);
+            int z=open("/dev/null",O_RDWR);if(z>=0){dup2(z,0);dup2(z,1);dup2(z,2);}
+            execlp("nautilus","nautilus",dir,(char*)0);_exit(1);}
+        _sresp(c,204,"text/plain","",0);return;}  /* 204 → browser stays put; the file-manager window pops up */
     if(!strncmp(req,"GET /docs",9)){
         /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
         char*h=malloc(1<<18);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
