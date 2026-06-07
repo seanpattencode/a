@@ -1,7 +1,7 @@
 static int cmd_pow(int c,char**v){
     const char*u="pow o power off\npow r restart\npow s suspend\npow h hibernate";
     if(c<3){puts(u);return 0;}
-    char*a=v[2],k=(!strncmp(a,"shut",4)||!strcmp(a,"off")||!strcmp(a,"down"))?'o':*a;
+    char k=(!strncmp(v[2],"sh",2)||*v[2]=='d')?'o':*v[2];
     const char*l="orsh",*p=strchr(l,k),*x[]={"poweroff","reboot","suspend","hibernate"};
     if(!p){puts(u);return 1;}
 #ifdef __APPLE__
@@ -9,7 +9,7 @@ static int cmd_pow(int c,char**v){
     if(k=='s')execlp("pmset","pmset","sleepnow",(char*)0);
     puts("x hibernate unsupported");return 1;
 #else
-    execlp("systemctl","systemctl",x[p-l],(char*)0);
+    execlp("sudo","sudo","systemctl",x[p-l],(char*)0);
 #endif
     perror("pow");return 1;
 }
