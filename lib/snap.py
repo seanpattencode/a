@@ -6,19 +6,24 @@
   a snap restore    recreate each window in its cwd: claude --dangerously-skip-permissions --resume <sid>
                     (add --dry to print the tmux commands without running them)
 
-For each tmux pane it walks the process tree to the claude proc and records the REAL resumable
-session: the newest transcript jsonl in that proc's cwd project dir. (The launch `--session-id`
-on the cmdline is NOT reliable — Claude compacts a long session to a new on-disk id, so resuming
-the launch id errors.) Snapshot is per-device on local disk, so a reboot/RAM-kill is recoverable.
-Set A_SNAP_SESSION to target a tmux session other than `a`.
+For each tmux pane it walks the process tree to the claude proc and records its REAL resumable
+session id: the id on the cmdline (--resume for a restored session, --session-id for a fresh one)
+when that transcript exists, else the newest transcript jsonl in the proc's cwd — because Claude
+compacts a long session to a NEW on-disk id, so the launch --session-id can be stale. Distinct
+panes claim distinct transcripts. Snapshot is per-device on local disk, so a reboot/RAM-kill is
+recoverable. Set A_SNAP_SESSION to target a tmux session other than `a`.
+
+TODO: this is claude-specific (keys on claude processes + their transcripts) — generalize to
+any tmux program with restorable session state; start with claude.
 """
-import sys, os, json, glob, socket, subprocess
+import sys, os, json, glob, re, socket, subprocess
 
 DEV = socket.gethostname()
 TMS = os.environ.get("A_SNAP_SESSION", "a")          # a's tmux session (overridable for testing)
 SNAPDIR = os.path.expanduser("~/a/adata/git/sessions")
 SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
+ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # the session id on a claude cmdline
 
 
 def tree(pid):                                        # pid + all descendants
@@ -32,33 +37,45 @@ def tree(pid):                                        # pid + all descendants
     return seen
 
 
-def sid_of(pane_pid):                                 # real resumable session: newest transcript in the claude proc's cwd
+def claude_of(pane_pid):                              # (cmdline session id, cwd) of the pane's claude proc
     for p in tree(pane_pid):
         try:
-            if b"claude" not in open(f"/proc/{p}/cmdline", "rb").read(): continue
+            cl = open(f"/proc/{p}/cmdline", "rb").read().decode("utf-8", "replace")
+            if "claude" not in cl: continue
             cwd = os.readlink(f"/proc/{p}/cwd")
         except OSError:
             continue
-        d = PROJ + "/" + "".join(c if c.isalnum() else "-" for c in cwd)
-        js = sorted(glob.glob(f"{d}/*.jsonl"), key=os.path.getmtime)
-        if js: return os.path.basename(js[-1])[:-6]
+        m = ID.search(cl)
+        return (m.group(1) if m else None), cwd
+    return None, None
+
+
+def have(sid): return bool(sid) and bool(glob.glob(f"{PROJ}/*/{sid}.jsonl"))
+
+
+def newest_in(cwd, skip):                             # newest transcript in cwd's project dir not already owned
+    d = PROJ + "/" + "".join(c if c.isalnum() else "-" for c in cwd)
+    for j in sorted(glob.glob(f"{d}/*.jsonl"), key=os.path.getmtime, reverse=True):
+        s = os.path.basename(j)[:-6]
+        if s not in skip: return s
     return None
 
 
 def panes():
-    fmt = "#{window_index}\t#{window_name}\t#{pane_pid}\t#{pane_current_path}"
-    r = subprocess.run(["tmux", "list-panes", "-s", "-t", TMS, "-F", fmt], capture_output=True, text=True)
+    r = subprocess.run(["tmux", "list-panes", "-s", "-t", TMS, "-F", "#{window_name}\t#{pane_pid}"],
+                       capture_output=True, text=True)
     return [l.split("\t") for l in r.stdout.splitlines() if l] if not r.returncode else []
 
 
 def save():
-    seen, jobs = set(), []
-    for _win, name, pid, cwd in panes():
-        sid = sid_of(pid)
-        key = (name, cwd, sid)
-        if sid and key not in seen:                   # only claude windows resume; dedupe grouped-session mirrors
-            seen.add(key)
-            jobs.append({"window": name, "cwd": cwd, "sid": sid})
+    raw = [(name, *claude_of(pid)) for name, pid in panes()]         # (window, cmdid, cwd)
+    raw = [r for r in raw if r[2]]                                   # keep claude panes (those with a cwd)
+    claimed = {cid for _n, cid, _w in raw if have(cid)}             # exact ids that resolve to a transcript
+    used, jobs = set(), []
+    for name, cid, cwd in raw:
+        sid = cid if have(cid) else newest_in(cwd, claimed | used)   # exact id, else newest unowned transcript
+        if sid and sid not in used:
+            used.add(sid); jobs.append({"window": name, "cwd": cwd, "sid": sid})
     os.makedirs(SNAPDIR, exist_ok=True)
     json.dump({"host": DEV, "session": TMS, "jobs": jobs}, open(SNAP, "w"), indent=1)
     print(f"✓ snapshot {len(jobs)} claude session(s) → {SNAP}")
