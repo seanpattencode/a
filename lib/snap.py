@@ -7,12 +7,12 @@
                     (add --dry to print the tmux commands without running them)
 
 Generic: each window is saved as (name, cwd, command) and replayed with `tmux new-window`.
-The command is the window's start command, EXCEPT claude windows, whose real resumable session
-is resolved to `claude --resume <id>` — Claude compacts a long session to a new on-disk id, so
-the launch --session-id is stale, and a fresh window's start command holds /tmp refs that vanish
-on reboot. Distinct claude panes claim distinct transcripts. Restore is triggered on tmux
-session-create (a's tm_ensure_sess), per-device from a local snapshot, so a reboot/RAM-kill is
-recoverable. Set A_SNAP_SESSION to target a tmux session other than `a`.
+Claude windows resolve to `claude --resume <id>` (the real transcript — Claude compacts a long
+session to a new on-disk id, so the launch --session-id is stale). Every OTHER window reopens as
+a shell in its cwd: replaying arbitrary start commands is fragile (tmux requotes them, and they
+hold stale /tmp refs), so window+cwd restore is the robust default. Distinct claude panes claim
+distinct transcripts. Restore is triggered on tmux session-create (a's tm_ensure_sess), per-device
+from a local snapshot, so a reboot/RAM-kill is recoverable. A_SNAP_SESSION overrides the session.
 
 TODO: claude is the first per-program resolver; add more (e.g. resume-able REPLs) as needed.
 """
@@ -76,8 +76,8 @@ def save():
             sid = cid if have(cid) else newest_in(cwd, claimed | used)
             if not sid or sid in used: continue
             used.add(sid); cmd = RESUME % sid
-        else:                                                      # any other program → replay its start command (shell if none)
-            cmd = sc.strip()
+        else:                                                      # any other window → reopen as a shell in its cwd
+            cmd = ""
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd})
     os.makedirs(SNAPDIR, exist_ok=True)
     json.dump({"host": DEV, "session": TMS, "jobs": jobs}, open(SNAP, "w"), indent=1)
