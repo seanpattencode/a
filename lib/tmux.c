@@ -9,7 +9,7 @@ static void tm_ensure_sess(void){
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
     /* own scope so a-ui's `a ui reload` cgroup-kill can't take tmux down (the "crash"); diag: my/tmuxlog.sh */
     (void)!system("{ command -v systemd-run >/dev/null 2>&1&&systemctl --user show-environment >/dev/null 2>&1&&Z='systemd-run --user --scope -q --'||Z=;"
-        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do :;done';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
+        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do :;done';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;(a snap restore >/dev/null 2>&1 &);} </dev/null >/dev/null 2>&1");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
@@ -51,8 +51,8 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     const char *dp=dprompt(),*cp=cfget("claude_prefix");
     if(dp[0])fprintf(f,"%s\n",dp);
     if(cp[0])fprintf(f,"%s\n",cp);
-    fprintf(f,"When work finished, run a done \"[<test>cmd</test>][<diff>files</diff>] msg\""
-        " — split pane shows full diff, focused diff, runs test live as PTY."
+    fprintf(f,"When work finished, run a done \"[<test>cmd</test>][<diff>files</diff>][<do>key::label::cmd||key::label::cmd</do>] msg\""
+        " — split pane shows full diff, focused diff, runs test live as PTY; <do> adds custom menu keys that print the literal cmd and run it on keypress."
         " a tools: a done a help a diff a push [msg] a note <text> a cat 2|3 a ssh\n");
     char af[P];snprintf(af,P,"%s/AGENTS.md",wd);
     char *amd=readf(af,NULL);if(amd){fprintf(f,"%s\n",amd);free(amd);}
