@@ -27,12 +27,37 @@ ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # the session 
 RESUME = "claude --dangerously-skip-permissions --resume %s; exec bash"
 
 
+LINUX = os.path.isdir("/proc")
+PS = {}                                               # macOS/BSD: {pid: (ppid, command)} from one `ps`
+
+
+def _scan():                                          # populate PS on platforms without /proc (macOS)
+    global PS
+    out = subprocess.run(["ps", "-axww", "-o", "pid=,ppid=,command="], capture_output=True, text=True).stdout
+    PS = {}
+    for ln in out.splitlines():
+        p = ln.split(None, 2)
+        if len(p) >= 2: PS[p[0]] = (p[1], p[2] if len(p) > 2 else "")
+
+
+def _children(pid):                                   # direct children of pid — /proc on Linux, ps map elsewhere
+    if LINUX:
+        try: return open(f"/proc/{pid}/task/{pid}/children").read().split()
+        except OSError: return []
+    return [p for p, (pp, _c) in PS.items() if pp == pid]
+
+
+def _cmdline(pid):                                    # full command line of pid
+    if LINUX:
+        try: return open(f"/proc/{pid}/cmdline", "rb").read().decode("utf-8", "replace")
+        except OSError: return ""
+    return PS.get(str(pid), ("", ""))[1]
+
+
 def tree(pid):                                        # pid + all descendants
     seen, i = [str(pid)], 0
     while i < len(seen):
-        try: kids = open(f"/proc/{seen[i]}/task/{seen[i]}/children").read().split()
-        except OSError: kids = []
-        for c in kids:
+        for c in _children(seen[i]):
             if c not in seen: seen.append(c)
         i += 1
     return seen
@@ -40,8 +65,7 @@ def tree(pid):                                        # pid + all descendants
 
 def claude_id(pid):                                   # claude cmdline session id under this window; "" if claude w/o id; None if not claude
     for p in tree(pid):
-        try: cl = open(f"/proc/{p}/cmdline", "rb").read().decode("utf-8", "replace")
-        except OSError: continue
+        cl = _cmdline(p)
         if "claude" in cl:
             m = ID.search(cl)
             return m.group(1) if m else ""
@@ -67,6 +91,7 @@ def windows():                                        # per window: [name, cwd, 
 
 
 def save():
+    if not LINUX: _scan()                             # macOS: snapshot the process table once for tree/cmdline lookups
     info = [(n, cwd, claude_id(pid), sc) for n, cwd, pid, sc in windows()]
     claimed = {cid for _n, _c, cid, _s in info if have(cid)}        # claude ids that resolve to a transcript
     used, jobs = set(), []
