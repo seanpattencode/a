@@ -105,12 +105,16 @@ def restore(dry=False):
     jobs = json.load(open(SNAP))["jobs"]
     if subprocess.run(["tmux", "has-session", "-t", TMS], capture_output=True).returncode:
         run(["tmux", "new-session", "-d", "-s", TMS], dry)
+    seen = subprocess.run(["tmux", "list-windows", "-t", TMS, "-F", "#{window_name}"],
+                          capture_output=True, text=True).stdout.split()          # idempotent: any trigger can run restore
+    n = 0
     for j in jobs:
+        if j["window"] in seen: continue                                          # already open (another trigger, or a dup) → skip
         argv = ["tmux", "new-window", "-d", "-t", TMS, "-n", j["window"], "-c", j["cwd"]]
         if j["cmd"]: argv.append(j["cmd"])
-        run(argv, dry)
+        run(argv, dry); seen.append(j["window"]); n += 1
         print(f"  {'[dry] ' if dry else ''}↻ {j['window']:24} {j['cmd'][:50] or '(shell)'}")
-    print(f"{'[dry] ' if dry else ''}✓ restored {len(jobs)} window(s) into tmux '{TMS}'")
+    print(f"{'[dry] ' if dry else ''}✓ restored {n} window(s) into tmux '{TMS}'")
 
 
 def main(a):
