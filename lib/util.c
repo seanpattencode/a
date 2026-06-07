@@ -53,25 +53,30 @@ static const char *bname(const char *p) { const char *s = strrchr(p, '/'); retur
 /* join argv[from..argc) with spaces into buf */
 static int ajoin(char*b,int sz,int argc,char**argv,int from){int l=0;for(int i=from;i<argc;i++)l+=snprintf(b+l,(size_t)(sz-l),"%s%s",i>from?" ":"",argv[i]);return l;}
 
-/* paste-aware fgets: bracketed paste (\x1b[200~..\x1b[201~) returned as one line; caller enables/disables ?2004h */
-static size_t paste_line(char *b, size_t sz, FILE *fp) {
-    size_t bl=0;int paste=0;char *p,*e;b[0]=0;
-    for(;;){if(!fgets(b+bl,sz-bl,fp))return 0;
-        bl+=strlen(b+bl);
-        if((p=strstr(b,"\x1b[200~"))){memmove(p,p+6,strlen(p+6)+1);bl-=6;paste=1;continue;}
-        if((e=strstr(b,"\x1b[201~"))){*e=0;return (size_t)(e-b);}
-        if(!paste&&bl&&b[bl-1]=='\n'){b[--bl]=0;return bl;}}
-}
-/* rapid input loop — empty line OR ctrl-c exits (cleanly, so callers can run after); bracketed paste = one note */
-static void rapid_sig(int s){(void)s;}
+/* rapid input loop — empty line, ESC, or ctrl-c exits cleanly (callers run after); bracketed paste = one note.
+   raw byte read: lone ESC (no follow within 40ms) exits; ESC[200~..201~ paste captured as one note. */
 static void rapid(const char *prompt, void (*fn)(const char*)) {
     if (!isatty(STDIN_FILENO)) return; perf_disarm();
-    struct sigaction sa={0},old;sa.sa_handler=rapid_sig;sigaction(SIGINT,&sa,&old);/* no SA_RESTART: ctrl-c breaks the read */
+    struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSAFLUSH,&r);
     (void)!write(1,"\x1b[?2004h",8);
-    static char b[65536];
-    for(;;){fputs(prompt,stdout);fflush(stdout);if(!paste_line(b,sizeof b,stdin)||!*b)break;fn(b);}
-    (void)!write(1,"\x1b[?2004l\n",9);
-    sigaction(SIGINT,&old,NULL);
+    static char b[65536];int quit=0;unsigned char c;
+    while(!quit){fputs(prompt,stdout);fflush(stdout);size_t n=0;
+        for(;;){if(read(0,&c,1)!=1||c==3){quit=1;break;}                  /* EOF / ctrl-c */
+            if(c=='\n'||c=='\r')break;
+            if(c==127||c==8){if(n){n--;(void)!write(1,"\b \b",3);}continue;} /* backspace */
+            if(c==27){struct pollfd p={0,POLLIN,0};                       /* ESC: lone=quit, else CSI seq */
+                if(poll(&p,1,40)<=0){quit=1;break;}
+                char s[8];int sl=0;(void)!read(0,&c,1);                   /* skip '[' / 'O' */
+                while(read(0,&c,1)==1){if(sl<7)s[sl++]=(char)c;if(c>=64&&c<127)break;}s[sl]=0;
+                if(!strcmp(s,"200~")){                                    /* bracketed paste = one note */
+                    while(read(0,&c,1)==1){
+                        if(c==27){(void)!read(0,&c,1);while(read(0,&c,1)==1&&!(c>=64&&c<127));break;} /* 201~ */
+                        if(n<sizeof b-1){b[n++]=(char)c;(void)!write(1,&c,1);}}
+                    break;}
+                continue;}                                               /* ignore arrows etc */
+            if(n<sizeof b-1){b[n++]=(char)c;(void)!write(1,&c,1);}}
+        (void)!write(1,"\n",1);b[n]=0;if(quit||!n)break;fn(b);}
+    (void)!write(1,"\x1b[?2004l\n",9);tcsetattr(0,TCSAFLUSH,&o);
 }
 
 /* raw terminal helpers */
