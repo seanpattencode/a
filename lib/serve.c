@@ -252,23 +252,30 @@ static void _prompt_gen(void){ /* cached at startup like _shtml; was ~160ms/req.
             if(ac&&al){char*t=realloc(o,ol+al+1);if(t){o=t;cboff=(long)ol;memcpy(o+ol,ac,al);ol+=al;}free(ac);}}
         o[ol]=0;
         char*h=malloc(ol*6+2048);if(!h){free(o);return;}
-        char cm[4096];int cl;size_t HL=strlen(HOME);
-        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{"default.txt","%s/common/prompts/default.txt",SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"mem index","%s/mem/index.txt",SROOT,"==> mem index <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,cboff}};
+        char cm[8192];int cl;size_t HL=strlen(HOME);
+        load_cfg();const char*pap=cfget("prompt");if(!*pap)pap="default";  /* active prompt file feeds the unified prompt; CP[0] + selector reflect it */
+        char pfmt[P],plbl[80];snprintf(pfmt,P,"%%s/common/prompts/%s.txt",pap);snprintf(plbl,80,"%s.txt (active)",pap);
+        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{plbl,pfmt,SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"mem index","%s/mem/index.txt",SROOT,"==> mem index <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,cboff}};
         int N=5;
         for(int i=0;i<N;i++){if(CP[i].off>=0)continue;char key[160]={0};
             if(CP[i].mk)snprintf(key,160,"%s",CP[i].mk);
             else if(CP[i].fmt[0]){char fp[P];snprintf(fp,P,CP[i].fmt,CP[i].root);FILE*f=fopen(fp,"r");
                 if(f){char ln[160];while(fgets(ln,160,f)){ln[strcspn(ln,"\n")]=0;if((int)strlen(ln)>8){snprintf(key,160,"%s",ln);break;}}fclose(f);}}
             if(key[0]){char*pq=strstr(o,key);if(pq)CP[i].off=(long)(pq-o);}}
-        cl=snprintf(cm,4096,"<div class=c><b>components</b> <span class=g>= write_prompt_file (lib/tmux.c) + a cat · click to jump · edit → saves to git + commit url</span><br>");
+        char pfs[64][P];int np2=0;{char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);np2=listdir(pdir,pfs,64);}
+        cl=snprintf(cm,8192,"<div class=c><b>prompt files</b> <span class=g>· view/edit · ★ active · load: a prompt &lt;name&gt;</span><br>");
+        for(int i=0;i<np2;i++){const char*b=bname(pfs[i]),*dot=strrchr(b,'.');char nm[64];snprintf(nm,64,"%.*s",(int)(dot?dot-b:(long)strlen(b)),b);
+            int act=!strcmp(nm,pap);cl+=snprintf(cm+cl,(size_t)(8192-cl),"<a class=k href=\"/doc?f=common/prompts/%s\"%s>%s%s</a>&nbsp; ",b,act?" style=color:#6f6":"",act?"★":"",nm);}
+        cl+=snprintf(cm+cl,(size_t)(8192-cl),"</div>");
+        cl+=snprintf(cm+cl,(size_t)(8192-cl),"<div class=c><b>unified prompt</b> <span class=g>= active prompt file + AGENTS.md + mem index + tools + codebase · click to jump · edit → saves to git</span><br>");
         for(int i=0;i<N;i++){char fp[P]="";if(CP[i].fmt[0])snprintf(fp,P,CP[i].fmt,CP[i].root);
             struct stat st;long sz=fp[0]&&!stat(fp,&st)?(long)st.st_size:-1;
             const char*d=fp[0]?fp:"(generated)";if(fp[0]&&!strncmp(d,HOME,HL)&&d[HL]=='/')d+=HL+1;
             char ed[160]="";int ec=CP[i].root==SROOT||CP[i].root==SDIR;  /* editable: backed by a git file (fmt+3 skips "%s/") */
             if(ec)snprintf(ed,160," <a class=k href=\"/doc?f=%s%s\" style=color:#9f9>edit</a>",CP[i].fmt+3,CP[i].root==SDIR?"&d=code":"");
-            if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(4096-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ldB%s<br>",i,CP[i].lbl,d,sz,ed);
-            else cl+=snprintf(cm+cl,(size_t)(4096-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ldB%s<br>",CP[i].lbl,d,sz,ed);}
-        cl+=snprintf(cm+cl,(size_t)(4096-cl),"</div>");
+            if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(8192-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ldB%s<br>",i,CP[i].lbl,d,sz,ed);
+            else cl+=snprintf(cm+cl,(size_t)(8192-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ldB%s<br>",CP[i].lbl,d,sz,ed);}
+        cl+=snprintf(cm+cl,(size_t)(8192-cl),"</div>");
         int hl=snprintf(h,(size_t)(ol*6+2048),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#6cf;padding:8px 16px;border-bottom:1px solid #222;z-index:2}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.8}.g{color:#888}.k{color:#6cf;text-decoration:none}.k:hover{text-decoration:underline}.p{color:#9c9}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}pre span{scroll-margin-top:46px}</style><header><b>unified prompt</b> — every agent (claude·codex·gemini·m) · %zu bytes</header>%s<pre>",ol,cm);
         for(size_t i=0;i<ol;i++){
             for(int z=0;z<N;z++)if(CP[z].off==(long)i)hl+=snprintf(h+hl,40,"<span id=c%d></span>",z);

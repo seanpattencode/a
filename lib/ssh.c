@@ -201,7 +201,9 @@ static int cmd_ssh(int argc,char**argv){
         char curh[256]="",curn[128]="?";
         if(argc>3){int x=ssh_idx(argv[3],H,nh);
             if(x<0||x>=nh){printf("x No host %s\n",argv[3]);return 1;}
-            ssh_savex(dir,"homebox",H[x].host,H[x].pw,0,0);
+            char fb[128]="";char*ls=strstr(H[x].name,"-lan");/* keep WAN reach: fall back to the picked box's -wan sibling */
+            if(ls&&!ls[4]){snprintf(fb,128,"%.*s-wan",(int)(ls-H[x].name),H[x].name);int ok=0;for(int i=0;i<nh;i++)if(!strcmp(H[i].name,fb))ok=1;if(!ok)fb[0]=0;}
+            ssh_savex(dir,"homebox",H[x].host,H[x].pw,fb[0]?"Fallback":(char*)0,fb[0]?fb:(char*)0);
             snprintf(curh,256,"%s",H[x].host);snprintf(curn,128,"%s",H[x].name);}
         else for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,"homebox")){snprintf(curh,256,"%s",H[i].host);break;}
         if(!strcmp(curn,"?"))for(int i=0;i<nh;i++)if(strcasecmp(H[i].name,"homebox")&&!strcmp(H[i].host,curh)){snprintf(curn,128,"%s",H[i].name);break;}
