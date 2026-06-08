@@ -500,9 +500,15 @@ static void _handle(int c){
     if(!strncmp(req,"GET /api/tasks",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
         int hl=_tasks_build(html,cap);_sresp(c,200,"text/html",html,hl);free(html);return;}
-    if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* workflows view: note -> split -> confirm -> tasks */
-        char fp[P];snprintf(fp,P,"%s/lib/flow.html",SDIR);size_t fl=0;char*fd=readf(fp,&fl);
-        if(fd){_sdoc(c,fd,(int)fl);free(fd);}else _sresp(c,404,"text/plain","no flow.html",12);return;}
+    if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* unified view: notes + tasks + prompts. html is just a terminal: render `a flow` output. */
+        int cap=1<<18;char*buf=malloc((size_t)cap);if(!buf){_sresp(c,500,"text/plain","oom",3);return;}
+        int bl=snprintf(buf,256,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>flow</title><body style=\"background:#111;color:#ddd;font:14px/1.45 ui-monospace,monospace;padding:1em;white-space:pre-wrap\">");
+        FILE*f=popen("a flow","r");char ln[1024];
+        while(f&&fgets(ln,sizeof ln,f)){if(bl>cap-32)break;
+            for(char*p=ln;*p;p++){const char*e=*p=='<'?"&lt;":*p=='>'?"&gt;":*p=='&'?"&amp;":NULL;
+                if(e){bl+=snprintf(buf+bl,(size_t)(cap-bl),"%s",e);}else if(bl<cap-1){buf[bl++]=*p;}}}
+        if(f)pclose(f);buf[bl]=0;
+        _sdoc(c,buf,bl);free(buf);return;}
     if(!strncmp(req,"POST /flowsplit",15)){   /* body=raw note text -> a split json -> {"segs":[..],"lossless":bool} */
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}body+=4;
         int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","pipe",4);return;}pid_t ch=fork();

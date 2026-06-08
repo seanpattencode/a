@@ -56,14 +56,15 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     return r;
 }
 
-/* a resume [mins]  interactive menu of recent claude conversations; pick # to resume, <n>m to time-filter. */
+/* a resume [mins]  menu of recent claude conversations; pick # to resume one, or a=restore all active within the last N hours. */
 static int cmd_resume(int c,char**v){perf_disarm();
     if(!getenv("TMUX")){fputs("x need tmux\n",stderr);return 1;}
     char m[16];snprintf(m,16,"%d",c>2?atoi(v[2]):0);setenv("A_RM",m,1);
     return system(
-      "P=\"$HOME/.claude/projects\";mins=${A_RM:-0};sel=\"\";all=\"\";tmp=$(mktemp)\n"
+      "P=\"$HOME/.claude/projects\";mins=${A_RM:-0};sel=\"\";all=\"\";hr=\"\";tmp=$(mktemp)\n"
       "ag(){ a=$(($1-$2));[ $a -lt 3600 ]&&echo $((a/60))m||{ [ $a -lt 86400 ]&&echo $((a/3600))h||echo $((a/86400))d;};}\n"
-      "echo \"note: automated a m/scanner runs may bury real work in this list; use <n>m to narrow\"\n"
+      "RES(){ tmux new-window -n \"r-${2##*/}\" -c \"$2\" \"claude --dangerously-skip-permissions --resume $1\";}\n"
+      "echo \"note: pick # for one, or a=restore all active in the last N hours\"\n"
       "while :;do\n"
       " :>\"$tmp\";i=0;filt=\"\";now=$(date +%s)\n"
       " [ \"$mins\" -gt 0 ] 2>/dev/null&&filt=$(find \"$P\" -name '*.jsonl' -mmin -\"$mins\" 2>/dev/null)\n"
@@ -79,11 +80,10 @@ static int cmd_resume(int c,char**v){perf_disarm();
       "  [ \"$i\" -ge 20 ]&&break\n"
       " done\n"
       " [ \"$i\" = 0 ]&&echo \"(none)\"\n"
-      " printf '# resume, a=all, <n>m filter, q quit: '\n"
+      " [ -n \"$all\" ]&&{ n=0;while IFS='|' read -r s w;do RES \"$s\" \"$w\";n=$((n+1));done<\"$tmp\";echo \"+ restored $n from last ${hr}h\";break;}\n"
+      " printf '# pick #, a=restore by hours, q quit: '\n"
       " read -r x </dev/tty||break\n"
-      " case \"$x\" in ''|q)break;;a)all=1;break;;*m)mins=${x%m};;*[!0-9]*);;*)[ \"$x\" -ge 1 ]&&[ \"$x\" -le \"$i\" ]&&{ sel=$(sed -n \"${x}p\" \"$tmp\");break;};;esac\n"
+      " case \"$x\" in ''|q)break;;a)printf 'restore all active within how many hours ago: ';read -r hr </dev/tty;[ \"$hr\" -ge 1 ] 2>/dev/null&&{ mins=$((hr*60));all=1;}||hr=\"\";;*[!0-9]*);;*)[ \"$x\" -ge 1 ]&&[ \"$x\" -le \"$i\" ]&&{ sel=$(sed -n \"${x}p\" \"$tmp\");break;};;esac\n"
       "done\n"
-      "RES(){ tmux new-window -n \"r-${2##*/}\" -c \"$2\" \"claude --dangerously-skip-permissions --resume $1\";}\n"
-      "[ -n \"$all\" ]&&{ n=0;while IFS='|' read -r s w;do RES \"$s\" \"$w\";n=$((n+1));done<\"$tmp\";echo \"+ resumed $n\";}\n"
       "rm -f \"$tmp\"\n"
       "[ -n \"$sel\" ]&&RES \"${sel%%|*}\" \"${sel#*|}\"\n");}

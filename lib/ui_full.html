@@ -42,7 +42,7 @@ __MY__
     <input id=nc autofocus placeholder="note — type, enter to save" class=f style="width:100%;font-size:32px;padding:22px;box-sizing:border-box">
     <div style="display:flex;gap:10px">
       <button class=b type=submit style="flex:1">save</button>
-      <button class=b type=button onclick="fetch('/api/sync',{method:'POST'}).then(()=>show('/note'))">sync</button>
+      <button class=b type=button onclick="var n=0;ns.textContent='⟳ syncing…';fetch('/api/sync',{method:'POST'});var p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{if(t=='syncing')ns.textContent='⟳ syncing… '+(++n)+'s';else{clearInterval(p);ns.textContent='✓ synced '+t;fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h)}}),1000)">sync</button>
       <button class=b type=button data-go="/term">term</button>
     </div>
   </form>

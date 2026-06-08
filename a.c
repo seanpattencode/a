@@ -681,7 +681,7 @@ static const cmd_t CMDS[] = {
     {"bench",cmd_bench},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},
+    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},{"job",cmd_job},{"jobs",cmd_job},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},

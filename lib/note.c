@@ -10,6 +10,7 @@ static char* note_save(const char *d, const char *t) {
     return fn;
 }
 static char rdir[P],ltd[P]="";
+static const char*g_by=NULL;   /* set by `a task add --by <model>`: optional LLM provenance. priority + deadlines are assumed to be sorted by the human, not the model. */
 static void dl_norm(const char*,char*,size_t);
 static char* task_add(const char*,const char*,int);
 static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
@@ -95,7 +96,9 @@ static char* task_add(const char*dir,const char*t,int pri){
     snprintf(ltd,P,"%s/%05d-%s_%s",dir,pri,sl,ts);mkdir(ltd,0755);
     char sd[P];snprintf(sd,P,"%s/task",ltd);mkdir(sd,0755);
     snprintf(fn,P,"%s/task/%s.%09ld_%s.txt",ltd,ts,tp.tv_nsec,DEV);
-    snprintf(buf,B,"Text: %s\nDevice: %s\nCreated: %s\n",t,DEV,ts);writef(fn,buf);
+    int bo=snprintf(buf,B,"Text: %s\nDevice: %s\nCreated: %s\n",t,DEV,ts);
+    if(g_by)snprintf(buf+bo,(size_t)(B-bo),"By: %s\n",g_by);   /* LLM provenance line, only when --by given */
+    writef(fn,buf);
     return fn;
 }
 #define THINT "  \033[90mp <pri>  d MM-DD  enter=done\033[0m\n"
@@ -241,7 +244,7 @@ static int cmd_task(int argc,char**argv){
     if(!sub||!strcmp(sub,"top")){int n=load_tasks(dir),k=sub&&argc>3?atoi(argv[3]):10;if(k>n)k=n;
         printf("%d tasks\n",n);
         for(int i=0;i<k;i++)printf("  %2d P%s %.60s\n",i+1,T[i].p,T[i].t);
-        printf("\n  l=list  r=review  v=vision  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task  add <text>\n  last synced %s\n",sync_age());
+        printf("\n  l=list  r=review  v=vision  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task\n  add: a task add [--by <model>] <text>   (--by = LLM proposal; human sets priority/deadline)\n  last synced %s\n",sync_age());
         if(!isatty(0))return 0;
         printf("\n> ");fflush(stdout);
         struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
@@ -269,7 +272,7 @@ static int cmd_task(int argc,char**argv){
         writef(vf,wb);puts("✓");return 0;}
     int grn=0;
     if(!strcmp(sub,"help")||!strcmp(sub,"-h")||!strcmp(sub,"h")){
-        puts("  a task          vision + scream + #1\n  a task v        edit vision\n  a task l        list\n  a task r        review (navigate)\n  a task rank     reprioritize walk-through\n  a task add <t>  add (prefix 5-digit pri)\n  a task d #      archive\n  a task pri # N  set priority\n  a task m        AI manage\n  a task deadline # MM-DD\n  a task due      by deadline\n  a task sync     sync");
+        puts("  a task          vision + scream + #1\n  a task v        edit vision\n  a task l        list\n  a task r        review (navigate)\n  a task rank     reprioritize walk-through\n  a task add [--by <model>] <t>  add (prefix 5-digit pri; --by marks an LLM proposal, optional)\n  a task d #      archive\n  a task pri # N  set priority\n  a task m        AI manage\n  a task deadline # MM-DD\n  a task due      by deadline\n  a task sync     sync");
         return 0;}
     if(!strcmp(sub,"rank")){int n=load_tasks(dir);if(!n){puts("No tasks");return 0;}
         int changed=0;
@@ -408,11 +411,13 @@ static int cmd_task(int argc,char**argv){
     if(!strcmp(sub,"pri")){if(argc<5){puts("a task pri # N");return 1;}
         int n=load_tasks(dir),x=atoi(argv[3])-1;if(x<0||x>=n){puts("x Invalid");return 1;}
         task_repri(x,atoi(argv[4]));return 0;}
-    if(!strcmp(sub,"add")||!strcmp(sub,"a")){if(argc<4){puts("a task add [-u] [PPPPP] <text>");return 1;}
-        if(!strcmp(argv[3],"-u")){int si=4,pri=50000;if(si<argc&&is5d(argv[si]))pri=atoi(argv[si++]);
-            if(si>=argc){puts("a task add -u [PPPPP] <text>");return 1;}
+    if(!strcmp(sub,"add")||!strcmp(sub,"a")){int si=3;
+        if(si+1<argc&&(!strcmp(argv[si],"--by")||!strcmp(argv[si],"-b"))){g_by=argv[si+1];si+=2;}  /* optional: an LLM marks who entered it, e.g. --by claude-opus-4-8. not required. */
+        if(si>=argc){puts("a task add [--by <model>] [-u] [PPPPP] <text>");return 1;}
+        if(!strcmp(argv[si],"-u")){si++;int pri=50000;if(si<argc&&is5d(argv[si]))pri=atoi(argv[si++]);
+            if(si>=argc){puts("a task add [--by <model>] -u [PPPPP] <text>");return 1;}
             char t[B]="";ajoin(t,B,argc,argv,si);note_url(task_add(dir,t,pri),"task",NULL);return 0;}
-        return task_add_p(dir,argc,argv,3);}
+        return task_add_p(dir,argc,argv,si);}
     if(*sub=='d'&&!sub[1]){if(argc<4){puts("a task d <#|name>...");return 1;}int n=load_tasks(dir);
         for(int j=3;j<argc;j++){int x=-1,v=atoi(argv[j]);if(v>0&&v<=n)x=v-1;
             else{for(int i=0;i<n;i++){char*b=strrchr(T[i].d,'/');if(b&&!strcmp(b+1,argv[j])){x=i;break;}}}
@@ -479,4 +484,25 @@ static int cmd_task(int argc,char**argv){
         snprintf(fn,P,"%s/%s.%09ld_%s.txt",sd,ts,tp.tv_nsec,DEV);writef(fn,t);
         printf("✓ %s: %.40s\n",sub,t);return 0;}}
     return task_add_p(dir,argc,argv,2);
+}
+/* a flow — one place: notes + tasks + prompts, three independent flat lists (no cross-association).
+   The single source of truth: `GET /flow` just renders this command's output (html is a terminal). */
+static int cmd_flow(int argc,char**argv){(void)argc;(void)argv;perf_disarm();
+    int tty=isatty(1);const char*BO=tty?"\033[1m":"",*DM=tty?"\033[90m":"",*X=tty?"\033[0m":"";
+    int lim=20;char dir[P];
+    snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);
+    printf("%s━━ NOTES (%d)%s\n",BO,nn,X);
+    for(int i=0;i<nn&&i<lim;i++)printf("  %.78s\n",gn[i].t);
+    if(nn>lim)printf("  %s…+%d more%s\n",DM,nn-lim,X);
+    snprintf(dir,P,"%s/tasks",SROOT);int nt=load_tasks(dir);
+    printf("\n%s━━ TASKS (%d)%s — priority sorted\n",BO,nt,X);
+    for(int i=0;i<nt&&i<lim;i++)printf("  P%s %.74s\n",T[i].p,T[i].t);
+    if(nt>lim)printf("  %s…+%d more%s\n",DM,nt-lim,X);
+    char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);
+    static char pf[256][P];int np=listdir(pdir,pf,256),shown=0;
+    printf("\n%s━━ PROMPTS%s %s(common/prompts)%s\n",BO,X,DM,X);
+    for(int i=0;i<np;i++){char*b=strrchr(pf[i],'/');b=b?b+1:pf[i];
+        if(!strstr(b,".txt"))continue;printf("  %s\n",b);shown++;}
+    if(!shown)printf("  %s(none)%s\n",DM,X);
+    return 0;
 }
