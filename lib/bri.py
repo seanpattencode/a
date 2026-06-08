@@ -208,6 +208,13 @@ def handle(c, addr):
     if method == 'GET' and '.user.js' in path:
         http_send(c, '200 OK', USERSCRIPT.encode(), 'application/javascript; charset=utf-8')
         c.close(); return
+    if method == 'GET' and path == '/bridge.js':  # frozen-shell: bri-chrome SW fetches live bridge logic here each start (see sw.js bridgeSetup) → edit lib/bri-chrome/bridge.js, no repack/re-drag
+        import os; body = b''
+        try: body = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bri-chrome', 'bridge.js'), 'rb').read()
+        except Exception as e: log(f'!! /bridge.js {e}')
+        log(f'>> served /bridge.js ({len(body)}b)')
+        http_send(c, '200 OK', body, 'application/javascript; charset=utf-8')
+        c.close(); return
     http_send(c, '404 Not Found'); c.close()
 
 def cmd_serve():

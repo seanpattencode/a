@@ -181,12 +181,11 @@ static int cmd_done(int argc,char**argv){AB;
             if(!nx)break;ent=nx+2;}
         if(dl[0]){char*cms=strstr(msg,"</diff>");cms=cms?cms+7:msg;while(*cms==' ')cms++;
             char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(cms,"\n"),cms,dl);fclose(cf);}}
-        char vp[P],np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
-        snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(vp,P,"%s/a_verify_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
+        char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
+        snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        if(sf){fprintf(sf,"trap 'rm -f %s %s %s' EXIT\n",sp,vp,np);fputs("echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff\n",sf);
+        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\n",sp,np);fputs("echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff\n",sf);
             if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
-            if(ts[0]){FILE*vf=fopen(vp,"w");if(vf){fprintf(vf,"printf '\\033[1;33m$ ';cat<<'A_DONE'\n%s\nA_DONE\nprintf '\\033[0m'\n%s\nexec ${SHELL:-bash}\n",ts,ts);fclose(vf);}}
             {FILE*nf=fopen(np,"w");if(nf){
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking opus (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
                 if(ts[0])fprintf(nf," echo; echo '=== TEST CMD OUTPUT ==='; %s 2>&1;",ts);
@@ -199,7 +198,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push\\033[0m\\n'\n",dl);
             if(dl[0]&&tp)fputs("printf '\\033[1;33m[p]\\033[0m tell agent: push prompt\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;33m[c]\\033[0m crunch the code\\n'\n",sf);
-            if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run test in split\\n'\n",sf);
+            if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run test\\n'\n",sf);
             fputs("printf '\\033[1;33m[n]\\033[0m suggest next step (opus)\\n'\n",sf);
             fputs("printf '\\033[1;33m[b]\\033[0m suggest next + book/effort\\n'\n",sf);
             fputs("printf '\\033[1;36m[s]\\033[0m bash shell here (your own testing)\\n'\n",sf);
@@ -209,7 +208,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(dl[0])fputs("[ \"$k\" = y ]&&{ a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sf);
             if(dl[0]&&tp)fprintf(sf,"[ \"$k\" = p ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,PP,tp);
             if(tp)fprintf(sf,"[ \"$k\" = c ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,CR,tp);
-            if(ts[0])fprintf(sf,"[ \"$k\" = r ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s'\n",vp);
+            if(ts[0])fputs("[ \"$k\" = r ]&&{ printf '\\033[1;33m$ \\033[0m%s\\n' \"$TS\";eval \"$TS\" 2>&1;}\n",sf);
             fprintf(sf,"[ \"$k\" = n ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s'\n",np);
             fprintf(sf,"[ \"$k\" = b ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s -i'\n",np);
             fputs("[ \"$k\" = s ]&&exec ${SHELL:-bash}\n",sf);

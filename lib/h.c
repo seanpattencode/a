@@ -18,10 +18,7 @@ static int cmd_h(int c,char**v){(void)c;(void)v;perf_disarm();
         if(ch==27||ch=='q'||ch==3){if(sp){sp--;continue;}break;}
         for(int i=0;m[i].l;i++)if(m[i].k==ch){
             if(m[i].s){if(sp<15){ttl[sp+1]=m[i].l;stk[++sp]=m[i].s;}}
-            else{tcsetattr(0,TCSANOW,&o);(void)!write(1,"\033[2J\033[H",7);
-                char*a[8],t[64];int n=0;a[n++]="a";snprintf(t,64,"%s",m[i].c);
-                for(char*p=strtok(t," ");p&&n<7;p=strtok(0," "))a[n++]=p;a[n]=0;
-                execvp("a",a);_exit(0);}
+            else{tcsetattr(0,TCSANOW,&o);(void)!write(1,"\033[2J\033[H",7);execlp("a","a",m[i].c,(char*)0);_exit(0);}
             break;}
     }
     tcsetattr(0,TCSANOW,&o);(void)!write(1,"\033[2J\033[H",7);return 0;}
