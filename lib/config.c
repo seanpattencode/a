@@ -102,7 +102,7 @@ static int cmd_prompt(int argc, char **argv) {
         perf_disarm();CWD(wd);char tf[P];snprintf(tf,P,"/tmp/a_prompt_show_%d.txt",(int)getpid());
         write_prompt_file(tf,wd,argc>3?argv[3]:NULL);
         char*c=readf(tf,NULL);size_t n=0;if(c){n=strlen(c);fputs(c,stdout);free(c);}unlink(tf);
-        fprintf(stderr,"\n— unified prompt · %zu bytes · active file:%s · files: a prompt · edit/web: a prompt edit|web\n",n,act);return 0;
+        fprintf(stderr,"\n— unified prompt · %zu tok · active file:%s · files: a prompt · edit/web: a prompt edit|web\n",n/4,act);return 0;
     }
     if(!strcmp(sub,"web")){perf_disarm();(void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/prompt");puts("✓ opening localhost:1111/prompt");return 0;}
     if(!*sub||!strcmp(sub,"list")||!strcmp(sub,"ls")){perf_disarm();
@@ -110,7 +110,7 @@ static int cmd_prompt(int argc, char **argv) {
         puts("prompt files  \033[2m(\033[32m*\033[0m\033[2m active → feeds the unified prompt)\033[0m");
         for(int i=0;i<n;i++){char nm[64];const char*b=bname(paths[i]),*dot=strrchr(b,'.');snprintf(nm,64,"%.*s",(int)(dot?dot-b:(long)strlen(b)),b);
             struct stat st;long sz=!stat(paths[i],&st)?(long)st.st_size:0;
-            printf(" %s %-12s %ldB\n",!strcmp(nm,act)?"\033[32m*\033[0m":" ",nm,sz);}
+            printf(" %s %-12s %ld tok\n",!strcmp(nm,act)?"\033[32m*\033[0m":" ",nm,sz/4);}
         printf("\nload: a prompt <name>   edit: a prompt edit <name>   unified prompt: a prompt show\n");return 0;}
     if(!strcmp(sub,"edit")){const char*nm=argc>3?argv[3]:act;char f[P];snprintf(f,P,"%s/%s.txt",d,nm);
         execlp("e","e",f,(char*)0);execlp("vi","vi",f,(char*)0);return 1;}
