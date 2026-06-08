@@ -54,7 +54,7 @@ static int cmd_note(int argc, char **argv) {
         note_url(note_save(dir,t),"note",NULL);return 0;}
     {char t[B]="";ajoin(t,B,argc,argv,2);snprintf(rdir,P,"%s",dir);rapid_note(t);
         rapid("n> ",rapid_note);
-        if(nfn)sync_bg();   /* bg push: instant, no 10s gh-api block */
+        for(int i=0;i<nfn;i++){printf("[%d/%d] ",i+1,nfn);fflush(stdout);note_url(nfs[i],"note",NULL);}  /* show each note's url at end */
         return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
