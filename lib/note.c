@@ -11,6 +11,7 @@ static char* note_save(const char *d, const char *t) {
 }
 static char rdir[P],ltd[P]="";
 static void dl_norm(const char*,char*,size_t);
+static char* task_add(const char*,const char*,int);
 static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
 static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved locally");}
 typedef struct{char p[P];char t[512];}GN;
@@ -34,15 +35,24 @@ static int cmd_note(int argc, char **argv) {
         qsort(gn,(size_t)n,sizeof(GN),gncmp);
         for(int i=0;i<n;i++)printf("%3d. %s\n",i+1,gn[i].t);return 0;}
     if(argc<=2){int n=0;DIR*d=opendir(dir);if(d){struct dirent*e;while((e=readdir(d)))if(e->d_name[0]!='.'&&strstr(e->d_name,".txt"))n++;closedir(d);}
-        printf("%d notes  last synced %s\n  a n <text>  add\n  a n l       list\n  a n r       review\n  a n ?<q>    search\n  a n m       AI manage\n",n,sync_age());return 0;}
+        printf("%d notes  last synced %s\n  l=list  r=review  m=manage  /=search   a n <text>=add\n",n,sync_age());
+        if(!isatty(0))return 0;
+        printf("> ");fflush(stdout);
+        struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
+        char ch;int rv=read(0,&ch,1);tcsetattr(0,TCSAFLUSH,&ot);putchar('\n');
+        if(rv!=1||ch==27||ch==3)return 0;
+        if(ch=='/'||ch=='s'){char q[128];printf("search: ");fflush(stdout);if(fgets(q,128,stdin)){q[strcspn(q,"\n")]=0;char a2[130];snprintf(a2,130,"?%s",q);execvp("a",(char*[]){"a","n",a2,NULL});}return 0;}
+        {static const char km[]="lrm";static const char*kv[]={"l","r","m"};for(int i=0;km[i];i++)if(ch==km[i])execvp("a",(char*[]){"a","n",(char*)kv[i],NULL});}
+        return 0;}
     if(argc>2&&(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review"))){
         const char *f=argv[2][0]=='?'?argv[2]+1:NULL;int n=load_notes(dir,f);
         if(!n){puts("(none)");return 0;} if(!isatty(STDIN_FILENO)){for(int i=0;i<n&&i<10;i++)puts(gn[i].t);return 0;}
         int i=0,show=1; raw_enter();
         while(i<n){if(show)printf("\n[%d/%d] %s\n",i+1,n,gn[i].t);show=1;
-            printf("  [d]el [a]dd [/]find [j/k/q]  ");fflush(stdout);
+            printf("  [d]el [t]ask [a]dd [/]find [j/k/q]  ");fflush(stdout);
             int k=raw_key();putchar('\n');
-            if(k=='d'){do_archive(gn[i].p);puts("✓");n=load_notes(dir,f);if(i>=n)i=n-1;if(i<0)break;}
+            if(k=='t'){char td[P];snprintf(td,P,"%s/tasks",SROOT);task_add(td,gn[i].t,50000);do_archive(gn[i].p);puts("✓ → task");n=load_notes(dir,f);if(i>=n)i=n-1;if(i<0)break;}
+            else if(k=='d'){do_archive(gn[i].p);puts("✓");n=load_notes(dir,f);if(i>=n)i=n-1;if(i<0)break;}
             else if(k=='a'){char buf[B];if(raw_line("  Text: ",buf,B)){note_save(dir,buf);n=load_notes(dir,NULL);printf("✓ [%d]\n",n);}show=0;}
             else if(k=='/'||k=='s'){char q[128];if(raw_line("  Search: ",q,128)){n=load_notes(dir,q);i=0;printf("%d results\n",n);}else show=0;}
             else if(k=='k'){if(i>0)i--;else show=0;}

@@ -419,6 +419,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/v.c"
 #include "lib/m.c"
 #include "lib/webview.c"
+#include "lib/h.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
@@ -680,8 +681,8 @@ static const cmd_t CMDS[] = {
     {"bench",cmd_bench},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},
-    {"help",cmd_help_full},{"hi",cmd_hi},{"hub",cmd_hub},{"i",cmd_i},
+    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},
+    {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},{"job",cmd_job},{"jobs",cmd_job},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
     {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
