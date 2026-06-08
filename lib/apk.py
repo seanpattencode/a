@@ -139,7 +139,7 @@ override fun onMeasure(ws:Int,hs:Int){val sz=MeasureSpec.getSize(hs);val h=if(o&
 // homebox = the user's primary ssh device — the main box they work on. Generic alias, not a specific host: each user points "homebox" at their default machine via an ssh entry named homebox. Cap fires captured thoughts to it (a sw homebox) and the button attaches (a ssh homebox).
 class Cap:Activity(){
 private val ACT="com.aios.a.CAP_RESULT"
-private var status:TextView?=null;private var boxhdr:TextView?=null;private var hosts=listOf<String>()
+private var status:TextView?=null;private var boxhdr:TextView?=null;private var hosts=listOf<String>();private var sr:android.speech.SpeechRecognizer?=null;private var listening=false;private var dbase=""
 private val rcv=object:android.content.BroadcastReceiver(){override fun onReceive(c:Context,i:Intent){
 val ex=i.extras
 var b=ex?.getBundle("com.termux.execute.PLUGIN_RESULT_BUNDLE")?:ex?.getBundle("result")
@@ -166,15 +166,19 @@ val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt())
 status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16);autoLinkMask=android.text.util.Linkify.WEB_URLS;movementMethod=android.text.method.LinkMovementMethod.getInstance()}
 boxhdr=TextView(this).apply{setTextColor(0xFF66CCFF.toInt());textSize=15f;setPadding(48,18,48,2);text="homebox → …";setOnClickListener{if(hosts.isEmpty())hb("") else android.app.AlertDialog.Builder(this@Cap).setTitle("homebox = which computer?").setItems(hosts.toTypedArray()){_,wi->hb(hosts[wi])}.show()}}
 val btn=Button(this).apply{text="windows";setOnClickListener{status?.text="checking…";txr("a ssh homebox tmux list-windows -t a 2>&1|grep j-|sort -t@ -k2 -n|tail -1|cut -d' ' -f2|grep .||echo NONE")}}
-val mic=Button(this).apply{text="🎤";setOnClickListener{
-if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),7);return@setOnClickListener}
-status?.text="🎤 listening…";val sr=android.speech.SpeechRecognizer.createSpeechRecognizer(this@Cap)
-sr.setRecognitionListener(object:android.speech.RecognitionListener{
-override fun onResults(b:Bundle?){val t=b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull();sr.destroy();if(!t.isNullOrBlank())fire(t)}
-override fun onError(x:Int){status?.text="voice err $x";sr.destroy()}
-override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{status?.text="🎤 $it"}}
-override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(by:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}})
-sr.startListening(Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true))}}
+// continuous dictation: partials stream live into the box, each finalized phrase is committed to dbase, and we re-listen on every result/silence so it only stops when you tap ⏹
+val mic=Button(this).apply{text="🎤"}
+val ri=Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true).putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,6000)
+fun put(s:String){e.setText(dbase+s);e.setSelection(e.text.length)}
+fun reco(){sr=android.speech.SpeechRecognizer.createSpeechRecognizer(this@Cap);sr!!.setRecognitionListener(object:android.speech.RecognitionListener{
+override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{put(it)}}
+override fun onResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf{it.isNotBlank()}?.let{dbase=(dbase+it).trimEnd()+" ";put("")};if(listening)sr?.startListening(ri)}
+override fun onError(x:Int){if(listening)e.postDelayed({if(listening)sr?.startListening(ri)},150)}
+override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(by:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}});sr!!.startListening(ri)}
+mic.setOnClickListener{
+if(listening){listening=false;mic.text="🎤";status?.text="";sr?.destroy();sr=null}
+else if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),7)
+else{listening=true;mic.text="⏹";status?.text="🎤 listening… tap ⏹ to stop";dbase=e.text.toString().let{if(it.isEmpty()||it.endsWith(" "))it else "$it "};reco()}}
 val save=Button(this).apply{text="send"}
 val press=View.OnTouchListener{v,ev->if(ev.action==MotionEvent.ACTION_DOWN)v.alpha=0.45f else if(ev.action==MotionEvent.ACTION_UP||ev.action==MotionEvent.ACTION_CANCEL)v.alpha=1f;false}
 listOf(mic,save,btn).forEach{it.setOnTouchListener(press)}
@@ -184,7 +188,7 @@ setContentView(ll);e.requestFocus();hb("")
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 val go={fire(e.text.toString());e.setText("")}
 save.setOnClickListener{go()}}
-override fun onDestroy(){try{unregisterReceiver(rcv)}catch(e:Exception){};super.onDestroy()}}
+override fun onDestroy(){listening=false;try{sr?.destroy()}catch(e:Exception){};try{unregisterReceiver(rcv)}catch(e:Exception){};super.onDestroy()}}
 class T(c:android.content.Context):android.view.View(c){
 private val h=Handler(Looper.getMainLooper())
 private var px:IntArray?=null
