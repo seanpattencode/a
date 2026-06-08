@@ -61,10 +61,11 @@ static int cmd_resume(int c,char**v){perf_disarm();
     if(!getenv("TMUX")){fputs("x need tmux\n",stderr);return 1;}
     char m[16];snprintf(m,16,"%d",c>2?atoi(v[2]):0);setenv("A_RM",m,1);
     return system(
-      "P=\"$HOME/.claude/projects\";mins=${A_RM:-0};sel=\"\";tmp=$(mktemp)\n"
+      "P=\"$HOME/.claude/projects\";mins=${A_RM:-0};sel=\"\";all=\"\";tmp=$(mktemp)\n"
+      "ag(){ a=$(($1-$2));[ $a -lt 3600 ]&&echo $((a/60))m||{ [ $a -lt 86400 ]&&echo $((a/3600))h||echo $((a/86400))d;};}\n"
       "echo \"note: automated a m/scanner runs may bury real work in this list; use <n>m to narrow\"\n"
       "while :;do\n"
-      " :>\"$tmp\";i=0;filt=\"\"\n"
+      " :>\"$tmp\";i=0;filt=\"\";now=$(date +%s)\n"
       " [ \"$mins\" -gt 0 ] 2>/dev/null&&filt=$(find \"$P\" -name '*.jsonl' -mmin -\"$mins\" 2>/dev/null)\n"
       " echo\n"
       " for f in $(ls -t \"$P\"/*/*.jsonl 2>/dev/null|head -150);do\n"
@@ -72,14 +73,17 @@ static int cmd_resume(int c,char**v){perf_disarm();
       "  h=$(grep -c '\"role\":\"user\",\"content\":\"' \"$f\");[ \"$h\" -ge 2 ]||continue\n"
       "  w=$(grep -m1 -oE '\"cwd\":\"[^\"]+' \"$f\"|sed 's/.*\"cwd\":\"//');[ -d \"$w\" ]||continue\n"
       "  p=$(grep -m1 -oE '\"role\":\"user\",\"content\":\"[^\"]+' \"$f\"|sed 's/.*content\":\"//'|cut -c1-50)\n"
+      "  t=$(stat -c %Y \"$f\" 2>/dev/null||stat -f %m \"$f\" 2>/dev/null)\n"
       "  s=${f##*/};s=${s%.jsonl};i=$((i+1));echo \"$s|$w\">>\"$tmp\"\n"
-      "  printf '%2d) %3dt %-12s %s\\n' \"$i\" \"$h\" \"${w##*/}\" \"$p\"\n"
+      "  printf '%2d) %4s %3dt %-12s %s\\n' \"$i\" \"$(ag $now ${t:-$now})\" \"$h\" \"${w##*/}\" \"$p\"\n"
       "  [ \"$i\" -ge 20 ]&&break\n"
       " done\n"
       " [ \"$i\" = 0 ]&&echo \"(none)\"\n"
-      " printf '# resume, <n>m filter, q quit: '\n"
+      " printf '# resume, a=all, <n>m filter, q quit: '\n"
       " read -r x </dev/tty||break\n"
-      " case \"$x\" in ''|q)break;;*m)mins=${x%m};;*[!0-9]*);;*)[ \"$x\" -ge 1 ]&&[ \"$x\" -le \"$i\" ]&&{ sel=$(sed -n \"${x}p\" \"$tmp\");break;};;esac\n"
+      " case \"$x\" in ''|q)break;;a)all=1;break;;*m)mins=${x%m};;*[!0-9]*);;*)[ \"$x\" -ge 1 ]&&[ \"$x\" -le \"$i\" ]&&{ sel=$(sed -n \"${x}p\" \"$tmp\");break;};;esac\n"
       "done\n"
+      "RES(){ tmux new-window -n \"r-${2##*/}\" -c \"$2\" \"claude --dangerously-skip-permissions --resume $1\";}\n"
+      "[ -n \"$all\" ]&&{ n=0;while IFS='|' read -r s w;do RES \"$s\" \"$w\";n=$((n+1));done<\"$tmp\";echo \"+ resumed $n\";}\n"
       "rm -f \"$tmp\"\n"
-      "[ -n \"$sel\" ]&&{ s=${sel%%|*};w=${sel#*|};tmux new-window -n \"r-${w##*/}\" -c \"$w\" \"claude --dangerously-skip-permissions --resume $s\";}\n");}
+      "[ -n \"$sel\" ]&&RES \"${sel%%|*}\" \"${sel#*|}\"\n");}
