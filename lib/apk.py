@@ -139,36 +139,33 @@ override fun onMeasure(ws:Int,hs:Int){val sz=MeasureSpec.getSize(hs);val h=if(o&
 // homebox = the user's primary ssh device — the main box they work on. Generic alias, not a specific host: each user points "homebox" at their default machine via an ssh entry named homebox. Cap fires captured thoughts to it (a sw homebox) and the button attaches (a ssh homebox).
 class Cap:Activity(){
 private val ACT="com.aios.a.CAP_RESULT"
-private var status:TextView?=null
+private var status:TextView?=null;private var boxhdr:TextView?=null;private var hosts=listOf<String>()
 private val rcv=object:android.content.BroadcastReceiver(){override fun onReceive(c:Context,i:Intent){
 val ex=i.extras
 var b=ex?.getBundle("com.termux.execute.PLUGIN_RESULT_BUNDLE")?:ex?.getBundle("result")
 if(b==null)for(k in ex?.keySet()?:emptySet<String>()){val v=ex?.get(k);if(v is Bundle){b=v;break}}
 val o=(b?.getString("stdout")?:"")+(b?.getString("stderr")?:"")
+val hi=o.lines().indexOfFirst{it.contains("homebox ->")}
 val w=Regex("window (\\S+)").find(o)?.groupValues?.get(1)
 val sline=o.lines().lastOrNull{it.trimStart().startsWith("saved")}?.trim()
-runOnUiThread{status?.text=if(sline!=null)sline else if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
-private fun fire(t:String){if(t.isBlank())return
-status?.text="sending…"
-val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
+runOnUiThread{if(hi>=0){boxhdr?.text=o.lines()[hi].replace("->","→")+"  ·tap to switch";hosts=o.lines().drop(hi+1).filter{it.isNotBlank()}}
+else status?.text=if(sline!=null)sline else if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
+private fun txr(vararg a:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
-i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a sw homebox \"\$1\" 2>&1","a",t))
+i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c",*a))
 i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
 i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
+private fun hb(arg:String){if(arg.isEmpty())txr("a ssh hb 2>&1") else txr("a ssh hb \"\$1\" 2>&1","a",arg)}
+private fun fire(t:String){if(t.isBlank())return
+status?.text="sending…";txr("a sw homebox \"\$1\" 2>&1","a",t)}
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
 val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.TOP;setBackgroundColor(0xFF000000.toInt())}
 val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;gravity=Gravity.TOP or Gravity.START;minLines=4;maxLines=12;isVerticalScrollBarEnabled=true}
 status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16);autoLinkMask=android.text.util.Linkify.WEB_URLS;movementMethod=android.text.method.LinkMovementMethod.getInstance()}
-val btn=Button(this).apply{text="windows";setOnClickListener{
-status?.text="checking…"
-val ai=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
-ai.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
-ai.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c","a ssh homebox tmux list-windows -t a 2>&1|grep j-|sort -t@ -k2 -n|tail -1|cut -d' ' -f2|grep .||echo NONE"))
-ai.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
-ai.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this@Cap,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
-try{startForegroundService(ai)}catch(e:Exception){try{startService(ai)}catch(e2:Exception){}}}}
+boxhdr=TextView(this).apply{setTextColor(0xFF66CCFF.toInt());textSize=15f;setPadding(48,18,48,2);text="homebox → …";setOnClickListener{if(hosts.isEmpty())hb("") else android.app.AlertDialog.Builder(this@Cap).setTitle("homebox = which computer?").setItems(hosts.toTypedArray()){_,wi->hb(hosts[wi])}.show()}}
+val btn=Button(this).apply{text="windows";setOnClickListener{status?.text="checking…";txr("a ssh homebox tmux list-windows -t a 2>&1|grep j-|sort -t@ -k2 -n|tail -1|cut -d' ' -f2|grep .||echo NONE")}}
 val mic=Button(this).apply{text="🎤";setOnClickListener{
 if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),7);return@setOnClickListener}
 status?.text="🎤 listening…";val sr=android.speech.SpeechRecognizer.createSpeechRecognizer(this@Cap)
@@ -180,8 +177,8 @@ override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};
 sr.startListening(Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true))}}
 val save=Button(this).apply{text="✓ save"}
 val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(mic,LinearLayout.LayoutParams(-2,-2));row.addView(save,LinearLayout.LayoutParams(0,-2,1f));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
-ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f))
-setContentView(ll);e.requestFocus()
+ll.addView(boxhdr,LinearLayout.LayoutParams(-1,-2));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f))
+setContentView(ll);e.requestFocus();hb("")
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
 val go={fire(e.text.toString());e.setText("")}
 save.setOnClickListener{go()}}

@@ -21,7 +21,7 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
     if(k&&v&&v[0])snprintf(d+l,(size_t)(B-l),"%s: %s\n",k,v);
     writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);}
 static int ssh_idx(const char*a,const void*H_,int nh){
-    typedef struct{char name[128],host[256],pw[256],path[P];}ht;const ht*H=(const ht*)H_;
+    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],path[P];}ht;const ht*H=(const ht*)H_;/* layout MUST match host_t in cmd_ssh or the stride is wrong */
     if(isdigit((unsigned char)*a))return atoi(a);
     for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,a))return i;return -1;}
 static int cmd_ssh(int argc,char**argv){
@@ -195,6 +195,19 @@ static int cmd_ssh(int argc,char**argv){
             else printf("x %s\n",h->name);}
         return 0;}
 
+    /* hb — show/set homebox (the box captures + `a sw homebox` target). `a ssh hb` prints which
+       computer homebox points at + the pickable host list; `a ssh hb <name|#>` repoints it. */
+    if(!strcmp(sub,"hb")||!strcmp(sub,"homebox")){
+        char curh[256]="",curn[128]="?";
+        if(argc>3){int x=ssh_idx(argv[3],H,nh);
+            if(x<0||x>=nh){printf("x No host %s\n",argv[3]);return 1;}
+            ssh_savex(dir,"homebox",H[x].host,H[x].pw,0,0);
+            snprintf(curh,256,"%s",H[x].host);snprintf(curn,128,"%s",H[x].name);}
+        else for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,"homebox")){snprintf(curh,256,"%s",H[i].host);break;}
+        if(!strcmp(curn,"?"))for(int i=0;i<nh;i++)if(strcasecmp(H[i].name,"homebox")&&!strcmp(H[i].host,curh)){snprintf(curn,128,"%s",H[i].name);break;}
+        printf("homebox -> %s (%s)\n",curn,curh[0]?curh:"unset");
+        for(int i=0;i<nh;i++)if(strcasecmp(H[i].name,"homebox"))printf("%s\n",H[i].name);
+        return 0;}
     /* fleet view: ordered host windows, idx 90+, -k recreates */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){
         if(!getenv("TMUX")){char sn[32];snprintf(sn,32,"a-%d",(int)getpid());execlp("tmux","tmux","new-session","-s",sn,"a","ssh","all",(char*)NULL);}
