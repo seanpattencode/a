@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>flow</title>
+<style>
+body{background:#0b0b0b;color:#ddd;font:15px/1.5 system-ui;margin:0 auto;max-width:760px;padding:14px}
+body.busy button{opacity:.45;pointer-events:none}
+h3{color:#6cf;font-weight:500;margin:18px 0 8px}
+textarea{width:100%;box-sizing:border-box;height:7em;background:#111;color:#ddd;border:1px solid #333;font:inherit;padding:10px;border-radius:6px}
+button{font:inherit;cursor:pointer;border-radius:6px}
+#splitb{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:6px 16px}
+#notes{max-height:40vh;overflow:auto;border:1px solid #1a1a1a;border-radius:6px;padding:0 8px}
+.note{padding:7px 0;border-bottom:1px solid #1a1a1a;display:flex;gap:8px;align-items:flex-start}
+.note button{flex:none;background:#101826;color:#6cf;border:1px solid #2a3a5a;padding:3px 12px}
+.note .arc{background:#2a1010;color:#c66;border-color:#5a2a2a}
+.note span{flex:1;min-width:0}
+#segs{padding-left:1.4em}#segs li{margin:.9em 0}
+#segs .orig{color:#7a8aa0;font-size:13px;white-space:pre-wrap}
+#segs b{color:#4a6a9a;font:10px/1 ui-monospace,monospace;text-transform:uppercase;margin-right:7px;letter-spacing:.5px}
+#segs .trow{display:flex;gap:8px;align-items:baseline;margin-top:3px}
+#segs .task{flex:1;color:#cfeacf;white-space:pre-wrap;outline:0;border-bottom:1px dashed #2a5a2a}
+.sb{flex:none;background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:2px 11px}
+#b{padding:2px 9px;border-radius:5px;color:#000}#msg{margin:10px 0;min-height:1.3em}
+</style>
+<h3>flow · note &rarr; tasks</h3>
+<div id=notes>loading notes…</div>
+
+<h3>split</h3>
+<textarea id=t placeholder="tap a note's split button above, or paste text here"></textarea><br><br>
+<button id=splitb onclick="go()">split</button> <span id=b></span>
+<ol id=segs></ol>
+<button id=sv style="display:none;background:#1a2f1a;color:#9f9;border:1px solid #2a5a2a;padding:6px 16px" onclick="saveAll()">save all remaining</button>
+<div id=msg></div>
+
+<script>
+const E=s=>s.replace(/</g,"&lt;");
+let busy=false;
+async function load(){
+  let h=await(await fetch("/note-list")).text(),d=document.createElement("div");d.innerHTML=h;
+  let all=[...d.querySelectorAll(".ni")].map(ni=>{
+    let x=ni.querySelector(".nx"),s=ni.querySelector("span"),m=x&&x.getAttribute("onclick").match(/arcn\('([^']+)'/);
+    return{f:m?m[1]:"",t:s?s.textContent:""};}).filter(o=>o.t),xs=all.slice(0,60);
+  notes.innerHTML=(xs.map(o=>`<div class=note><button class=arc onclick="arch(this,'${o.f}')">archive</button><button onclick="pick(this)">split</button><span>${E(o.t)}</span></div>`).join("")
+    +(all.length>xs.length?`<div style="color:#667;padding:8px">… ${all.length-xs.length} older notes hidden</div>`:""))||"<i>no notes</i>";
+}
+async function arch(btn,f){if(!f)return;btn.closest(".note").remove();await fetch("/api/note/archive",{method:"POST",body:JSON.stringify({f})});}
+function pick(btn){t.value=btn.nextElementSibling.textContent;go()}
+async function go(){
+  if(busy)return;                                   // generate once: ignore re-press while in flight
+  busy=true;document.body.classList.add("busy");
+  b.textContent="splitting… ⏳";b.style.background="#fc6";segs.innerHTML="";sv.style.display="none";msg.textContent="";
+  try{
+    let d=await(await fetch("/flowsplit",{method:"POST",body:t.value})).json();
+    b.style.background=d.lossless?"#9f9":"#f99";
+    b.textContent=d.items.length+" items · "+(d.lossless?"✓ all original text kept":"✗ TEXT LOST — re-split");
+    segs.innerHTML=d.items.map(o=>`<li><div class=orig><b>orig</b>${E(o.orig)}</div><div class=trow><b>task</b><span class=task contenteditable>${E(o.task)}</span><button class=sb onclick="saveOne(this)">save</button></div></li>`).join("");
+    if(d.items.length)sv.style.display="inline-block";
+  }finally{busy=false;document.body.classList.remove("busy");}
+}
+async function post(tasks){return(await(await fetch("/flowsave",{method:"POST",body:JSON.stringify(tasks)})).text());}
+async function saveOne(btn){
+  let task=btn.closest("li").querySelector(".task").textContent.trim();if(!task)return;
+  btn.textContent="…";btn.disabled=true;await post([task]);btn.textContent="✓ saved";btn.style.background="#1a2f1a";
+}
+async function saveAll(){
+  let btns=[...segs.querySelectorAll(".sb")].filter(b=>!b.disabled),
+      tasks=btns.map(b=>b.closest("li").querySelector(".task").textContent.trim()).filter(x=>x);
+  if(!tasks.length)return;msg.textContent="saving "+tasks.length+"…";
+  let r=await post(tasks);btns.forEach(b=>{b.textContent="✓ saved";b.disabled=true;b.style.background="#1a2f1a"});
+  msg.innerHTML="<b style=color:#6c6>"+r+"</b>";
+}
+load();
+</script>

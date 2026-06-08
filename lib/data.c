@@ -1,6 +1,7 @@
 /* data */
 static const char *dprompt(void) {
-    static char b[B*4]; char p[P]; snprintf(p,P,"%s/common/prompts/default.txt",SROOT);
+    static char b[B*4]; const char*a=cfget("prompt");if(!*a)a="default";
+    char p[P]; snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,a);
     char *d=readf(p,NULL); b[0]=0; if(d){snprintf(b,sizeof(b),"%s ",d);free(d);} return b;
 }
 static void esc_nl(const char *s, char *o, int sz) {

@@ -1,0 +1,10 @@
+<!doctype html><meta charset=utf-8><title>bri-chrome options</title>
+<!-- bri-chrome (Chrome): instant-preload + pageflip, no automation bridge. Standalone extension — the Firefox a-bridge is separate at lib/bri-ext (no shared source). -->
+<style>body{font:15px system-ui;padding:20px;max-width:34em}label{display:flex;gap:10px;align-items:center;font-size:16px;margin:.6em 0}small{color:#666}h3{margin-bottom:.2em}</style>
+<h3>bri-chrome</h3>
+<label><input type=checkbox id=enablePrerender> Instant preload — prerender links on hover (speculation rules)</label>
+<label><input type=checkbox id=debugNotifications> Debug notifications — popup on each preload</label>
+<label><input type=checkbox id=debugMode> Debug mode — console logging + on-page overlay</label>
+<label><input type=checkbox id=pageflip> Pageflip — Down=next page, Up=prev (one tap), ▲▼ buttons</label>
+<p><small>Changes take effect immediately, no reload.</small></p>
+<script src=options.js></script>

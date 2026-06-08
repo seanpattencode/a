@@ -136,9 +136,9 @@ static int _docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f
     int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;
     return rel[0]&&!strstr(rel,"..");}
 /* editor page: form POST + save button + escaped textarea + optional saved-banner (zero JS) */
-static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*saved){
+static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*saved,const char*ds){
     char*h=malloc(bl*6+2048);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
-    int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#6cf}button{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#6c6}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,rel,saved?saved:"");
+    int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#6cf}button{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#6c6}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
     for(size_t i=0;i<bl;i++){char k=body[i];
         if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
         else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
@@ -260,12 +260,14 @@ static void _prompt_gen(void){ /* cached at startup like _shtml; was ~160ms/req.
             else if(CP[i].fmt[0]){char fp[P];snprintf(fp,P,CP[i].fmt,CP[i].root);FILE*f=fopen(fp,"r");
                 if(f){char ln[160];while(fgets(ln,160,f)){ln[strcspn(ln,"\n")]=0;if((int)strlen(ln)>8){snprintf(key,160,"%s",ln);break;}}fclose(f);}}
             if(key[0]){char*pq=strstr(o,key);if(pq)CP[i].off=(long)(pq-o);}}
-        cl=snprintf(cm,4096,"<div class=c><b>components</b> <span class=g>= write_prompt_file (lib/tmux.c) + a cat · click to jump · also inline: git-status, a-done line</span><br>");
+        cl=snprintf(cm,4096,"<div class=c><b>components</b> <span class=g>= write_prompt_file (lib/tmux.c) + a cat · click to jump · edit → saves to git + commit url</span><br>");
         for(int i=0;i<N;i++){char fp[P]="";if(CP[i].fmt[0])snprintf(fp,P,CP[i].fmt,CP[i].root);
             struct stat st;long sz=fp[0]&&!stat(fp,&st)?(long)st.st_size:-1;
             const char*d=fp[0]?fp:"(generated)";if(fp[0]&&!strncmp(d,HOME,HL)&&d[HL]=='/')d+=HL+1;
-            if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(4096-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ldB<br>",i,CP[i].lbl,d,sz);
-            else cl+=snprintf(cm+cl,(size_t)(4096-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ldB<br>",CP[i].lbl,d,sz);}
+            char ed[160]="";int ec=CP[i].root==SROOT||CP[i].root==SDIR;  /* editable: backed by a git file (fmt+3 skips "%s/") */
+            if(ec)snprintf(ed,160," <a class=k href=\"/doc?f=%s%s\" style=color:#9f9>edit</a>",CP[i].fmt+3,CP[i].root==SDIR?"&d=code":"");
+            if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(4096-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ldB%s<br>",i,CP[i].lbl,d,sz,ed);
+            else cl+=snprintf(cm+cl,(size_t)(4096-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ldB%s<br>",CP[i].lbl,d,sz,ed);}
         cl+=snprintf(cm+cl,(size_t)(4096-cl),"</div>");
         int hl=snprintf(h,(size_t)(ol*6+2048),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#6cf;padding:8px 16px;border-bottom:1px solid #222;z-index:2}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.8}.g{color:#888}.k{color:#6cf;text-decoration:none}.k:hover{text-decoration:underline}.p{color:#9c9}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}pre span{scroll-margin-top:46px}</style><header><b>unified prompt</b> — every agent (claude·codex·gemini·m) · %zu bytes</header>%s<pre>",ol,cm);
         for(size_t i=0;i<ol;i++){
@@ -302,12 +304,14 @@ static void _handle(int c){
         if(_ws_upgrade(c,req))_ws_reload(c);return;}
     if(!strncmp(req,"GET /api/u-status",17)){_sresp(c,200,"application/json","{\"ok\":true}",11);return;}
     if(!strncmp(req,"GET /doc",8)&&(req[8]=='?'||req[8]==' ')){
-        char rel[P];const char*m="? GET /doc?f=<path under adata/git>";
+        char rel[P];const char*m="? GET /doc?f=<path under adata/git> [&d=code for the a repo]";
         if(!_docrel(req,rel)){_sresp(c,400,"text/plain",m,(int)strlen(m));return;}
-        char fp[P];snprintf(fp,P,"%s/%s",SROOT,rel);size_t fl=0;char*fd=readf(fp,&fl);
-        _docpage(c,rel,fd?fd:"",fl,NULL);free(fd);return;}   /* missing path -> blank editor; save creates it */
+        char*dc=strstr(req,"d=code"),*eol=strstr(req,"\r\n");const char*ds=(dc&&eol&&dc<eol)?"&d=code":"";const char*base=*ds?SDIR:SROOT;
+        char fp[P];snprintf(fp,P,"%s/%s",base,rel);size_t fl=0;char*fd=readf(fp,&fl);
+        _docpage(c,rel,fd?fd:"",fl,NULL,ds);free(fd);return;}   /* missing path -> blank editor; save creates it */
     if(!strncmp(req,"POST /doc",9)){
         char rel[P];if(!_docrel(req,rel)){_sresp(c,400,"text/plain","bad path",8);return;}
+        char*dc=strstr(req,"d=code"),*eol=strstr(req,"\r\n");const char*ds=(dc&&eol&&dc<eol)?"&d=code":"";const char*base=*ds?SDIR:SROOT;
         char*bd=strstr(req,"\r\n\r\n"),*clh=strstr(req,"Content-Length:");
         if(!bd||!clh){_sresp(c,400,"text/plain","no body",7);return;}
         bd+=4;int blen=atoi(clh+15);
@@ -315,7 +319,7 @@ static void _handle(int c){
         char*ct=bd;if(blen>=2&&!strncmp(bd,"b=",2)){ct+=2;blen-=2;}              /* strip enctype=text/plain field name */
         while(blen>0&&(ct[blen-1]=='\n'||ct[blen-1]=='\r'))blen--;              /* drop the trailing CRLF the form appends */
         int w=0;for(int i=0;i<blen;i++)if(ct[i]!='\r')ct[w++]=ct[i];            /* CRLF -> LF */
-        char fp[P];snprintf(fp,P,"%s/%s",SROOT,rel);
+        char fp[P];snprintf(fp,P,"%s/%s",base,rel);
         {char*sl=strrchr(fp,'/');if(sl){*sl=0;mkdirp(fp);*sl='/';}}   /* create parent folders */
         FILE*wf=fopen(fp,"w");int ok=0;if(wf){fwrite(ct,1,(size_t)w,wf);ok=!ferror(wf);fclose(wf);}
         char saved[512],gurl[B]="";
@@ -323,7 +327,7 @@ static void _handle(int c){
             /* commit just this file to a-git, push (rebase-retry), then fetch + confirm on origin → github commit url */
             char gc[B*2];snprintf(gc,B*2,"cd '%s'&&git add '%s'&&{ git diff --cached --quiet||git commit -q -m 'doc: %s';};"
                 "{ git push -q 2>/dev/null||{ git pull --rebase --autostash -q 2>/dev/null&&git push -q 2>/dev/null;}; };"
-                "git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo \"https://github.com/$u/commit/$(git rev-parse --short HEAD)\";}",SROOT,rel,rel);
+                "git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo \"https://github.com/$u/commit/$(git rev-parse --short HEAD)\";}",base,rel,rel);
             pcmd(gc,gurl,B);gurl[strcspn(gurl,"\n")]=0;
             char ts[16];time_t tt=time(0);strftime(ts,16,"%H:%M:%S",localtime(&tt));
             const char*hash=strrchr(gurl,'/');hash=hash?hash+1:gurl;
@@ -333,7 +337,7 @@ static void _handle(int c){
         {char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*lf=fopen(lg,"a");
             if(lf){if(!ok)fprintf(lf,"✗ FAIL write %s\n",rel);else if(gurl[0])fprintf(lf,"✓ saved %s · verified on origin · %s\n",rel,gurl);else fprintf(lf,"✓ saved %s LOCALLY (✗ not pushed to origin)\n",rel);fclose(lf);}}
         size_t nl=0;char*nf=readf(fp,&nl);
-        _docpage(c,rel,nf?nf:ct,nf?nl:(size_t)w,saved);free(nf);return;}
+        _docpage(c,rel,nf?nf:ct,nf?nl:(size_t)w,saved,ds);free(nf);return;}
     if(!strncmp(req,"POST /book",10)){char nm[128];_qn(req,nm);
         char po[24]="0";char*bd=strstr(req,"\r\n\r\n"),*pp=bd?strstr(bd+4,"pos="):0;
         if(pp){pp+=4;int i=0;for(;pp[i]>='0'&&pp[i]<='9'&&i<23;i++)po[i]=pp[i];po[i]=0;}
@@ -489,8 +493,24 @@ static void _handle(int c){
     if(!strncmp(req,"GET /api/tasks",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
         int hl=_tasks_build(html,cap);_sresp(c,200,"text/html",html,hl);free(html);return;}
+    if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* workflows view: note -> split -> confirm -> tasks */
+        char fp[P];snprintf(fp,P,"%s/lib/flow.html",SDIR);size_t fl=0;char*fd=readf(fp,&fl);
+        if(fd){_sdoc(c,fd,(int)fl);free(fd);}else _sresp(c,404,"text/plain","no flow.html",12);return;}
+    if(!strncmp(req,"POST /flowsplit",15)){   /* body=raw note text -> a split json -> {"segs":[..],"lossless":bool} */
+        char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}body+=4;
+        int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","pipe",4);return;}pid_t ch=fork();
+        if(!ch){close(pp[0]);dup2(pp[1],1);close(pp[1]);signal(SIGCHLD,SIG_DFL);execlp("a","a","split","json",body,(char*)0);_exit(1);}
+        close(pp[1]);char out[65536];int ol=0,r;while(ol<65535&&(r=(int)read(pp[0],out+ol,(size_t)(65535-ol)))>0)ol+=r;
+        close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;_sresp(c,200,"application/json",out,ol);return;}
+    if(!strncmp(req,"POST /flowsave",14)){   /* body=JSON ["seg",..] -> one `a task` each */
+        char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}body+=4;
+        int saved=0;char seg[1024];
+        for(char*p=strchr(body,'"');p;p=strchr(p,'"')){p++;int i=0;
+            for(;*p&&*p!='"'&&i<1023;i++){if(*p=='\\'&&p[1])p++;seg[i]=*p++;}seg[i]=0;if(*p=='"')p++;
+            if(seg[0]){pid_t ch=fork();if(!ch){int z=open("/dev/null",O_RDWR);if(z>=0){dup2(z,0);dup2(z,1);dup2(z,2);}signal(SIGCHLD,SIG_DFL);execlp("a","a","task",seg,(char*)0);_exit(1);}waitpid(ch,NULL,0);saved++;}}
+        char m[128];int ml=snprintf(m,128,"✓ saved %d tasks — open the task page to verify",saved);_sresp(c,200,"text/plain",m,ml);return;}
     if(!strncmp(req,"POST /api/note/archive",22)||!strncmp(req,"POST /api/task/archive",22)){
-        int isn=req[18]=='n';char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
+        int isn=req[10]=='n';char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
         char*k=strstr(body+4,isn?"\"f\":\"":"\"d\":\"");if(!k){_sresp(c,400,"text/plain","no name",7);return;}
         k+=5;char name[256];int ni=0;while(k[ni]&&k[ni]!='"'&&ni<255){name[ni]=k[ni];ni++;}name[ni]=0;
         for(char*p=name;*p;p++)if(*p=='/'){_sresp(c,400,"text/plain","bad name",8);return;}

@@ -29,7 +29,7 @@ private const val BASE="http://127.0.0.1:1112"
 fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
 companion object{init{System.loadLibrary("anative")}}
-private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0;private var cur="$BASE/note"
+private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0;private var cur="$BASE/";private var loaded=false;private var onSpa=true
 private var wsOut:OutputStream?=null;private var rt:LinearLayout?=null
 private fun bubOn()=(getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any{it.service.className=="com.aios.a.BubbleService"}
 private val wsExec=java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -61,7 +61,7 @@ if(i?.getBooleanExtra("prov",false)==true)txRun(this,"mkdir -p ~/.config/gh ~/.c
 return n!=null||i?.getBooleanExtra("prov",false)==true}
 override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);applyNav(i)}
 override fun onBackPressed(){val o=openMenu;if(w.visibility==View.VISIBLE&&w.canGoBack())w.goBack() else if(o!=null)o() else super.onBackPressed()}
-override fun onResume(){super.onResume();setup();spawn();rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0)}
+override fun onResume(){super.onResume();setup();spawn();if(!loaded){n=0;h.postDelayed({if(!loaded)w.loadUrl(cur)},700)};rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0)}
 private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}  /* always refresh: reinstall must update the UI */
 val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.deleteRecursively();ti.mkdirs();val src=File(filesDir,"terminfo.src");if(!src.exists())assets.open("terminfo.src").use{i->src.outputStream().use{o->i.copyTo(o)}}
@@ -75,32 +75,67 @@ override fun onCreate(b:Bundle?){super.onCreate(b)
 WebView.setWebContentsDebuggingEnabled(true)
 w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(this@M,"A")
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
-webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null)}
+webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null);if(url.startsWith("http"))loaded=true}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
-// each localhost "box" (ui_full.html nav) is its own menu item; selecting it loads that route in the one WebView. native Notes/Note removed — web /note replaces them.
-val web=listOf("home" to "/","proj" to "/p","op" to "/op","dash" to "/dash","stream" to "/stream","job" to "/jobs","note" to "/note","task" to "/tasks","term" to "/term","book" to "/book","docs" to "/docs","cloud" to "/cloud","prompt" to "/prompt")
-val items=listOf<Pair<String,()->Unit>>("Native" to {show(0)})+web.map{(l,r)->l to {cur="$BASE$r";n=0;show(1);w.loadUrl(cur)}}+listOf<Pair<String,()->Unit>>("Setup" to {show(2)},"Read" to {show(3)},"Rec" to {show(4)},"Termux" to {startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},"homebox" to {startActivity(Intent(this,Cap::class.java))},"Bubble" to {if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})
+// each localhost "box" is its own menu item. The web UI is an SPA, so we PRELOAD it once (onResume, while the selector covers it) and switch views with JS (navpage) → INSTANT nav, no reload. spaR = routes that are SPA views (serve.c: / /jobs /note /tasks /term); others fall back to a full load. native Notes/Note removed — web /note replaces them.
+val web=listOf("note" to "/note","task" to "/tasks","term" to "/term","home" to "/","proj" to "/p","op" to "/op","dash" to "/dash","stream" to "/stream","job" to "/jobs","book" to "/book","docs" to "/docs","cloud" to "/cloud","prompt" to "/prompt")
+val spaR=listOf("/","/note","/tasks","/term","/jobs")
+val items=listOf<Pair<String,()->Unit>>("Native" to {show(0)})+web.map{(l,r)->l to {show(1);if(loaded&&onSpa&&r in spaR)w.evaluateJavascript("navpage('$r')",null) else {cur="$BASE$r";n=0;w.loadUrl(cur);onSpa=r in spaR}}}+listOf<Pair<String,()->Unit>>("Setup" to {show(2)},"Read" to {show(3)},"Rec" to {show(4)},"Termux" to {startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},"homebox" to {startActivity(Intent(this,Cap::class.java))},"Bubble" to {if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})
 val mb=S(this,items,{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
-root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.it[0].second();nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->mb.navTo(nm)};if(!applyNav(intent))mb.post{mb.open()}}}
-class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){var i=0;var o=false;var sel=0;var pnm=-1;var plen=0;var onLeave:(()->Unit)?=null
-fun open(){o=true;sel=0;pnm=-1;plen=0;onOp();isFocusable=true;requestFocus();requestLayout();invalidate()}
-fun navTo(name:String):Boolean{val j=it.indexOfFirst{p->p.first.equals(name,true)};if(j<0)return false;i=j;it[j].second();if(o)cl() else v.invalidate();return true}
-override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{if(!o)return super.onKeyDown(k,e);val m=ms();when(k){android.view.KeyEvent.KEYCODE_DPAD_UP->sel=(sel+1).coerceAtMost(maxOf(0,m.size-1));android.view.KeyEvent.KEYCODE_DPAD_DOWN->if(sel<=0){cl();onLeave?.invoke()}else sel--;android.view.KeyEvent.KEYCODE_DPAD_CENTER,android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_BUTTON_A->{pick();onLeave?.invoke()};android.view.KeyEvent.KEYCODE_BACK->{cl();onLeave?.invoke()};else->return super.onKeyDown(k,e)};v.invalidate();return true}
-private val p=Paint().apply{textSize=100f;textAlign=Paint.Align.CENTER;typeface=Typeface.MONOSPACE;isAntiAlias=true}
-private val et=android.widget.EditText(a).apply{alpha=0f;background=null;inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE}
-private val imm by lazy{a.getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager}
-private fun ms()=et.text.toString().replace("\n","").lowercase().let{q->it.indices.filter{j->it[j].first.lowercase().contains(q)}}
-private fun cl(){o=false;sel=0;pnm=-1;plen=0;isFocusable=false;imm.hideSoftInputFromWindow(et.windowToken,0);et.setText("");onCl();requestLayout();invalidate()}
-private fun pick(){val m=ms();if(m.isNotEmpty()){i=m[sel.coerceIn(0,m.size-1)];it[i].second()};cl()}
+root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.navTo("home");nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->mb.navTo(nm)};applyNav(intent)}}
+// nav selector = the launcher keyboard (launcher.c), translated: bare white letters on pure black, 5-row layout (num row + qwerty + fn keys), keyboard = bottom 52%. Results render BOTTOM-UP so the most-used (navfreq prefs) sits right above the keys; tap a row or type to filter, '>' picks the top match. Closed = a ≡ bar; tap to reopen.
+class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){
+var i=0;var o=false;var q="";var onLeave:(()->Unit)?=null;var so=0f;var dy=0f;var mv=false;private val slop=android.view.ViewConfiguration.get(a).scaledTouchSlop
+private val sp=a.getSharedPreferences("navfreq",0)
+private val cnt=HashMap<String,Int>().also{m->for(pr in it)m[pr.first]=sp.getInt(pr.first,0)}
+private val KR=listOf("1234567890","qwertyuiop","asdfghjkl","\u0002zxcvbnm\b","\u0001 \n")
+private val dens=a.resources.displayMetrics.density
+private val fb=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=68f;textAlign=Paint.Align.CENTER}
+private val fk=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=46f;textAlign=Paint.Align.CENTER}
+private val fq=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=52f;color=0xFFFFFF00.toInt()}
+private val fd=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=34f;textAlign=Paint.Align.CENTER}
+private val desc=mapOf("native" to "native terminal","note" to "quick notes","task" to "task list","term" to "terminal","home" to "home dashboard","proj" to "projects","op" to "operator view","dash" to "dashboard","stream" to "activity stream","job" to "background jobs","book" to "ebook reader","docs" to "documentation","cloud" to "cloud files","prompt" to "prompt library","setup" to "setup & permissions","read" to "speed reader","rec" to "audio recorder","termux" to "open termux","homebox" to "ssh homebox","bubble" to "floating scroll bubble")
+fun open(){o=true;q="";so=0f;onOp();v.isFocusableInTouchMode=true;v.requestFocus();requestLayout();v.invalidate()}
+private fun cl(){o=false;q="";onCl();requestLayout();v.invalidate()}
+private fun flt():List<Int>{val ql=q.lowercase();val s=it.indices.sortedByDescending{j->cnt[it[j].first]?:0};return if(ql.isEmpty())s else s.filter{j->it[j].first.lowercase().contains(ql)}}
+private fun choose(idx:Int){i=idx;val k=it[idx].first;val nc=(cnt[k]?:0)+1;cnt[k]=nc;sp.edit().putInt(k,nc).apply();it[idx].second();cl();onLeave?.invoke()}
+fun navTo(name:String):Boolean{val j=it.indexOfFirst{pr->pr.first.equals(name,true)};if(j<0)return false;i=j;it[j].second();if(o)cl();return true}
 private val v=object:android.view.View(a){
-private fun rowH(n:Int)=minOf(200f,(height-20f)/n.coerceAtLeast(1))
-override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());if(o){val m=ms();val rh=rowH(m.size);val sc=sel.coerceIn(0,maxOf(0,m.size-1));p.textSize=minOf(100f,rh*0.52f);for((r,j) in m.withIndex()){val yb=height-r*rh;if(r==sc){p.color=-1;cv.drawRect(0f,yb-rh,width.toFloat(),yb,p)};p.color=if(r==sc)0xFF000000.toInt() else -1;cv.drawText(it[j].first,width/2f,yb-rh*0.32f,p)}}else{p.textSize=100f;p.color=-1;cv.drawText("≡ "+it[i].first,width/2f,85f,p)}}
-override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN){if(o){val m=ms();val r=((height-e.y)/rowH(m.size)).toInt();if(r in m.indices){i=m[r];it[i].second()};cl()}else{o=true;sel=0;pnm=-1;plen=0;onOp();et.requestFocus();imm.showSoftInput(et,android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);requestLayout();invalidate()}};return true}}
-init{addView(v,FrameLayout.LayoutParams(-1,-1));addView(et,FrameLayout.LayoutParams(1,1));et.addTextChangedListener(object:android.text.TextWatcher{override fun afterTextChanged(s:android.text.Editable?){if(s?.contains('\n')==true){pick();return};val nm=ms().size;val len=s?.length?:0;sel=if(len>plen&&nm==pnm)sel+1 else 0;if(sel>=nm)sel=maxOf(0,nm-1);pnm=nm;plen=len;v.invalidate();requestLayout()};override fun beforeTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){};override fun onTextChanged(s:CharSequence?,x:Int,y:Int,z:Int){}})}
-override fun onMeasure(ws:Int,hs:Int){val want=if(o)ms().size.coerceAtLeast(1)*200+20 else 140;val h=if(o&&MeasureSpec.getSize(hs)>0)minOf(want,MeasureSpec.getSize(hs)) else want;super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
+private fun kbh()=height*0.52f
+private fun ky()=height-kbh()
+private fun kw()=width/10f
+private fun keyAt(x:Float,y:Float):Char?{val k=ky();if(y<k)return null;val r=((y-k)/(kbh()/5)).toInt().coerceIn(0,4);val row=KR[r];val w=kw()
+when(r){0,1->{val j=(x/w).toInt();return if(j in row.indices)row[j] else null}
+2->{val j=((x-w*0.5f)/w).toInt();return if(j in row.indices)row[j] else null}
+3->{if(x<w*1.5f)return row[0];if(x>=w*8.5f)return row[row.length-1];val j=1+((x-w*1.5f)/w).toInt();return if(j in 1 until row.length-1)row[j] else null}
+else->{if(x<w*1.5f)return row[0];if(x>=w*8f)return row[2];return row[1]}}}
+private fun keyCx(r:Int,j:Int,n:Int):Float{val w=kw();return when(r){0,1->j*w+w/2f;2->w*0.5f+j*w+w/2f;3->if(j==0)w*0.75f else if(j==n-1)(w*8.5f+width)/2f else w*1.5f+(j-1)*w+w/2f;else->if(j==0)w*0.75f else if(j==1)w*4.75f else (w*8f+width)/2f}}
+override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{if(!o)return super.onKeyDown(k,e);when(k){android.view.KeyEvent.KEYCODE_DEL->if(q.isNotEmpty())q=q.dropLast(1);android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_DPAD_CENTER->{flt().firstOrNull()?.let{choose(it)};return true};android.view.KeyEvent.KEYCODE_BACK->{cl();onLeave?.invoke();return true};else->{val ch=e.unicodeChar;if(ch in 32..126)q+=ch.toChar() else return super.onKeyDown(k,e)}};invalidate();return true}
+override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt())
+if(!o){fb.color=-1;c.drawText("≡  "+it[i].first,width/2f,height*0.6f,fb);return}
+val ky=ky();val lh=ky-70f;val rh=120f;val bo=(fb.ascent()+fb.descent())/2f
+if(q.isNotEmpty()){fq.textAlign=Paint.Align.LEFT;c.drawText(q,32f,ky-22f,fq)}
+val m=flt()
+so=so.coerceIn(0f,maxOf(0f,m.size*rh-lh))
+for((r,idx) in m.withIndex()){val y=lh-rh*(r+1)+so;if(y<-rh||y>lh)continue
+if(r==0){fb.color=-1;c.drawRect(0f,maxOf(0f,y),width.toFloat(),y+rh,fb)};fb.color=if(r==0)0xFF000000.toInt() else -1;c.drawText(it[idx].first,width/2f,y+rh/2f-bo-16f,fb)
+fd.color=if(r==0)0xFF444444.toInt() else 0xFF888888.toInt();desc[it[idx].first.lowercase()]?.let{d->c.drawText(d,width/2f,y+rh/2f+34f,fd)}}
+val rk=kbh()/5;val bk=(fk.ascent()+fk.descent())/2f
+for(r in 0..4){val row=KR[r];val yy=ky+r*rk
+for(j in row.indices){val ch=row[j];if(ch==' ')continue;val lbl=when(ch){'\b'->"<";'\n'->">";'\u0001'->"*";'\u0002'->"i";else->ch.toString()};fk.color=-1;c.drawText(lbl,keyCx(r,j,row.length),yy+rk/2f-bk,fk)}}}
+override fun onTouchEvent(e:MotionEvent):Boolean{
+if(!o){if(e.action==MotionEvent.ACTION_DOWN)open();return true}
+val k=ky()
+if(e.action==MotionEvent.ACTION_DOWN&&e.y>=k){val ch=keyAt(e.x,e.y);if(ch!=null){when(ch){'\b'->if(q.isNotEmpty())q=q.dropLast(1);'\n'->flt().firstOrNull()?.let{choose(it)};' '->q+=" ";'\u0001'->{};'\u0002'->{};else->q+=ch};so=0f;invalidate()};return true}
+when(e.action){MotionEvent.ACTION_DOWN->{dy=e.y;mv=false}
+MotionEvent.ACTION_MOVE->{if(!mv&&Math.abs(e.y-dy)>slop)mv=true;if(mv){so+=e.y-dy;dy=e.y;invalidate()}}
+MotionEvent.ACTION_UP->if(!mv&&e.y<k){val lh=k-70f;val r=((lh-e.y+so)/120f).toInt();val m=flt();if(r in m.indices)choose(m[r])}}
+return true}}
+init{addView(v,FrameLayout.LayoutParams(-1,-1))}
+override fun onMeasure(ws:Int,hs:Int){val sz=MeasureSpec.getSize(hs);val h=if(o&&sz>0)sz else (56f*dens).toInt();super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
 // homebox = the user's primary ssh device — the main box they work on. Generic alias, not a specific host: each user points "homebox" at their default machine via an ssh entry named homebox. Cap fires captured thoughts to it (a sw homebox) and the button attaches (a ssh homebox).
 class Cap:Activity(){
 private val ACT="com.aios.a.CAP_RESULT"

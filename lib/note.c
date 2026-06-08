@@ -27,15 +27,15 @@ static int load_notes(const char *dir, const char *f) {
     } closedir(d); return n;
 }
 static int cmd_note(int argc, char **argv) {
-    AB;
+    AB;perf_disarm();
     char dir[P]; snprintf(dir,P,"%s/notes",SROOT); mkdirp(dir);
-    if(argc>2&&!strcmp(argv[2],"l")){perf_disarm();int n=load_notes(dir,NULL);
+    if(argc>2&&!strcmp(argv[2],"l")){int n=load_notes(dir,NULL);
         if(!n){puts("(none)");return 0;}
         qsort(gn,(size_t)n,sizeof(GN),gncmp);
         for(int i=0;i<n;i++)printf("%3d. %s\n",i+1,gn[i].t);return 0;}
     if(argc<=2){int n=0;DIR*d=opendir(dir);if(d){struct dirent*e;while((e=readdir(d)))if(e->d_name[0]!='.'&&strstr(e->d_name,".txt"))n++;closedir(d);}
         printf("%d notes  last synced %s\n  a n <text>  add\n  a n l       list\n  a n r       review\n  a n ?<q>    search\n  a n m       AI manage\n",n,sync_age());return 0;}
-    if(argc>2&&(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review"))){perf_disarm();
+    if(argc>2&&(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review"))){
         const char *f=argv[2][0]=='?'?argv[2]+1:NULL;int n=load_notes(dir,f);
         if(!n){puts("(none)");return 0;} if(!isatty(STDIN_FILENO)){for(int i=0;i<n&&i<10;i++)puts(gn[i].t);return 0;}
         int i=0,show=1; raw_enter();
@@ -50,11 +50,11 @@ static int cmd_note(int argc, char **argv) {
         raw_exit();if(i>=n)puts("Done");return 0;}
     if(argc>2&&!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
-    if(argc>3&&!strcmp(argv[2],"-u")){perf_disarm();char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL fast via gh API (apk); disarm: network */
+    if(argc>3&&!strcmp(argv[2],"-u")){char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL via gh API (apk) */
         note_url(note_save(dir,t),"note",NULL);return 0;}
     {char t[B]="";ajoin(t,B,argc,argv,2);snprintf(rdir,P,"%s",dir);rapid_note(t);
         rapid("n> ",rapid_note);
-        if(nfn){printf("\nsyncing %d → github…\n",nfn);for(int i=0;i<nfn;i++)note_url(nfs[i],"note",NULL);}
+        if(nfn)sync_bg();   /* bg push: instant, no 10s gh-api block */
         return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}

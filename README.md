@@ -46,12 +46,12 @@ Auth syncs across devices:
 
 1. Start existing project
 2. Hit friction
-2. Ask agent to fix a
-3. Now a handles that
-4. Repeat
+3. Ask agent to fix a
+4. Now a handles that
+5. Repeat
 
 Simple code — you can read all of it. Fork it, change it, make it yours. PRs are merged very fast worst case one day.
 
 ## Depth
 
-Full framework: [IDEAS.md] — explains purpose and philosophy of the project in ranked points.
+Full framework: [IDEAS.md](IDEAS.md) — explains purpose and philosophy of the project in ranked points.

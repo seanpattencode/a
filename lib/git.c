@@ -38,6 +38,7 @@ static void sync_repo(void) {
     (void)!system(c);if(fd>=0)close(fd);
 }
 static void sync_bg(void) {
+    fflush(NULL);   /* flush before fork, else children re-emit buffered stdout */
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }

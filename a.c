@@ -371,6 +371,7 @@ static void mkdirp(const char *p);
 static void alog(const char *cmd, const char *cwd);
 static void perf_disarm(void);
 static int cmd_sess(int, char**);
+static const char *cfget(const char *key);
 typedef struct{char n[64];int c;}FC;
 static int ctcmp(const void*a,const void*b){return((const FC*)b)->c-((const FC*)a)->c;}
 static const char*EXT[]={"",".py",".c",".sh",".html",0};
@@ -499,8 +500,8 @@ static int cmd_cat(int c,char**v){perf_disarm();
             char sp[P],sh[260];snprintf(sp,P,"%s/%s",fp2,se->d_name);snprintf(sh,260,"%s/%s",de->d_name,se->d_name);CTX_EMIT(sp,sh);}closedir(sd);}continue;}
         CTX_EMIT(fp2,de->d_name);}closedir(dd);}}
     #undef CTX_EMIT
-    {char p[P];snprintf(p,P,"%s/common/prompts/default.txt",SROOT);FILE*f=fopen(p,"r");
-     if(f){GA("\n==> default prompt <==\n",24);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
+    {const char*ap=cfget("prompt");if(!*ap)ap="default";char p[P];snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,ap);FILE*f=fopen(p,"r");
+     if(f){char hd[64];size_t hl2=(size_t)snprintf(hd,64,"\n==> prompt: %s <==\n",ap);GA(hd,hl2);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
     if(!d)return 1;d[l]=0;
     char tf[P];snprintf(tf,P,"%s/local/a_cat.txt",AROOT);writef(tf,d);
     {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full\n\n",tf,lc);}

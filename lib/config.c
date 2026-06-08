@@ -85,20 +85,39 @@ static int cmd_config(int argc, char **argv) {
     return 0;
 }
 
+static void prompt_preview(const char*path){ /* confirm load: first 6 + last 3 lines, ... between */
+    size_t n=0;char*d=readf(path,&n);if(!d){puts("  (empty)");return;}
+    int tot=0;for(size_t i=0;i<n;i++)tot+=d[i]=='\n';
+    if(tot<10){fputs(d,stdout);if(n&&d[n-1]!='\n')putchar('\n');free(d);return;}
+    char*p=d;for(int i=0;*p&&i<6;p++){putchar(*p);if(*p=='\n')i++;}
+    printf("\033[2m  ... (%d lines) ...\033[0m\n",tot-9);
+    char*q=d;for(int c=0;*q&&c<tot-3;q++)c+=*q=='\n';
+    fputs(q,stdout);if(n&&d[n-1]!='\n')putchar('\n');free(d);}
 static int cmd_prompt(int argc, char **argv) {
+    init_db();load_cfg();
     char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
-    char df[P]; snprintf(df,P,"%s/default.txt",d);
-    if(argc<3 || !strcmp(argv[2],"show")) {
+    const char*act=cfget("prompt");if(!*act)act="default";
+    const char*sub=argc>2?argv[2]:"";
+    if(!strcmp(sub,"show")) {
         perf_disarm();CWD(wd);char tf[P];snprintf(tf,P,"/tmp/a_prompt_show_%d.txt",(int)getpid());
         write_prompt_file(tf,wd,argc>3?argv[3]:NULL);
         char*c=readf(tf,NULL);size_t n=0;if(c){n=strlen(c);fputs(c,stdout);free(c);}unlink(tf);
-        fprintf(stderr,"\n— %zu bytes sent as system prompt · edit: a prompt edit · web: a prompt web\n",n);return 0;
+        fprintf(stderr,"\n— %zu bytes · active:%s · list: a prompt · edit/web: a prompt edit|web\n",n,act);return 0;
     }
-    if(!strcmp(argv[2],"web")){perf_disarm();(void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/prompt");puts("✓ opening localhost:1111/prompt");return 0;}
-    if(!strcmp(argv[2],"edit")){execlp("e","e",df,(char*)0);execlp("vi","vi",df,(char*)0);return 1;}
-    char val[B]="";ajoin(val,B,argc,argv,2);
-    if(!strcmp(val,"clear"))val[0]=0;
-    writef(df,val); printf("✓ %s\n",val[0]?val:"(cleared)"); return 0;
+    if(!strcmp(sub,"web")){perf_disarm();(void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/prompt");puts("✓ opening localhost:1111/prompt");return 0;}
+    if(!*sub||!strcmp(sub,"list")||!strcmp(sub,"ls")){perf_disarm();
+        char paths[64][P];int n=listdir(d,paths,64);
+        for(int i=0;i<n;i++){char nm[64];const char*b=bname(paths[i]),*dot=strrchr(b,'.');snprintf(nm,64,"%.*s",(int)(dot?dot-b:(long)strlen(b)),b);
+            struct stat st;long sz=!stat(paths[i],&st)?(long)st.st_size:0;
+            printf(" %s %-12s %ldB\n",!strcmp(nm,act)?"\033[32m*\033[0m":" ",nm,sz);}
+        printf("\nload: a prompt <name>   edit: a prompt edit <name>   full: a prompt show\n");return 0;}
+    if(!strcmp(sub,"edit")){const char*nm=argc>3?argv[3]:act;char f[P];snprintf(f,P,"%s/%s.txt",d,nm);
+        execlp("e","e",f,(char*)0);execlp("vi","vi",f,(char*)0);return 1;}
+    char f[P];snprintf(f,P,"%s/%s.txt",d,sub);
+    if(!fexists(f)){printf("x no prompt '%s' — see: a prompt list\n",sub);return 1;}
+    cfset("prompt",sub);
+    printf("✓ loaded \033[1m%s\033[0m → active prompt for all agents\n",sub);
+    prompt_preview(f);return 0;
 }
 
 static int cmd_add(int argc, char **argv) {
