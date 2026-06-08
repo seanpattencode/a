@@ -197,7 +197,7 @@ static int cmd_ssh(int argc,char**argv){
 
     /* hb — show/set homebox (the box captures + `a sw homebox` target). `a ssh hb` prints which
        computer homebox points at + the pickable host list; `a ssh hb <name|#>` repoints it. */
-    if(!strcmp(sub,"hb")||!strcmp(sub,"homebox")){
+    if(!strcmp(sub,"hb")){/* NOT "homebox": that's a real host — `a ssh homebox <cmd>` must still connect+run */
         char curh[256]="",curn[128]="?";
         if(argc>3){int x=ssh_idx(argv[3],H,nh);
             if(x<0||x>=nh){printf("x No host %s\n",argv[3]);return 1;}

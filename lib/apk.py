@@ -175,11 +175,13 @@ override fun onError(x:Int){status?.text="voice err $x";sr.destroy()}
 override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{status?.text="🎤 $it"}}
 override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(by:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}})
 sr.startListening(Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true))}}
-val save=Button(this).apply{text="✓ save"}
+val save=Button(this).apply{text="send"}
+val press=View.OnTouchListener{v,ev->if(ev.action==MotionEvent.ACTION_DOWN)v.alpha=0.45f else if(ev.action==MotionEvent.ACTION_UP||ev.action==MotionEvent.ACTION_CANCEL)v.alpha=1f;false}
+listOf(mic,save,btn).forEach{it.setOnTouchListener(press)}
 val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(mic,LinearLayout.LayoutParams(-2,-2));row.addView(save,LinearLayout.LayoutParams(0,-2,1f));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
-ll.addView(boxhdr,LinearLayout.LayoutParams(-1,-2));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f))
+ll.addView(boxhdr,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
 setContentView(ll);e.requestFocus();hb("")
-window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 val go={fire(e.text.toString());e.setText("")}
 save.setOnClickListener{go()}}
 override fun onDestroy(){try{unregisterReceiver(rcv)}catch(e:Exception){};super.onDestroy()}}

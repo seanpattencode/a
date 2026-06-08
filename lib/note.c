@@ -102,7 +102,7 @@ static int task_add_p(const char*dir,int argc,char**argv,int si){
     int pri=50000;if(si<argc&&is5d(argv[si])){pri=atoi(argv[si]);si++;if(si>=argc){puts("a task [PPPPP] <text>");return 1;}}
     char t[B]="";ajoin(t,B,argc,argv,si);char*f=task_add(dir,t,pri);if(tfn<256)snprintf(tfs[tfn++],P,"%s",f);printf("✓ saved locally P%05d %s\n" THINT,pri,t);
     snprintf(rdir,P,"%s",dir);rapid("t> ",rapid_task);
-    if(tfn){printf("\nsyncing %d → github…\n",tfn);for(int i=0;i<tfn;i++)note_url(tfs[i],"task",NULL);}
+    for(int i=0;i<tfn;i++){printf("[%d/%d] ",i+1,tfn);fflush(stdout);note_url(tfs[i],"task",NULL);}  /* show each task's url at end */
     return 0;}
 static void task_printbody(const char*path){
     size_t l;char*r=readf(path,&l);if(!r)return;if(!strncmp(r,"Text: ",6))r+=6;
