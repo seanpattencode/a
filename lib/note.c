@@ -13,6 +13,7 @@ static char rdir[P],ltd[P]="";
 static const char*g_by=NULL;   /* set by `a task add --by <model>`: optional LLM provenance. priority + deadlines are assumed to be sorted by the human, not the model. */
 static void dl_norm(const char*,char*,size_t);
 static char* task_add(const char*,const char*,int);
+static void ts_human(const char*,char*,size_t);
 static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
 static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved locally");}
 typedef struct{char p[P];char t[512];}GN;
@@ -33,8 +34,12 @@ static int cmd_note(int argc, char **argv) {
     char dir[P]; snprintf(dir,P,"%s/notes",SROOT); mkdirp(dir);
     if(argc>2&&!strcmp(argv[2],"l")){int n=load_notes(dir,NULL);
         if(!n){puts("(none)");return 0;}
-        qsort(gn,(size_t)n,sizeof(GN),gncmp);
-        for(int i=0;i<n;i++)printf("%3d. %s\n",i+1,gn[i].t);return 0;}
+        qsort(gn,(size_t)n,sizeof(GN),gncmp);   /* gncmp = oldest→newest; newest live at the end */
+        int k=argc>3?(!strcmp(argv[3],"all")?n:atoi(argv[3])):4;if(k<=0||k>n)k=n;  /* default top 4 newest; a n l N|all = more */
+        for(int i=0;i<k;i++){int ix=n-1-i;const char*b=strrchr(gn[ix].p,'/'),*u=b?strrchr(b,'_'):0;char hu[48]="?";
+            if(u){char ts[16];snprintf(ts,16,"%.15s",u+1);ts_human(ts,hu,48);}
+            printf("%3d. \033[90m%-13s\033[0m %s\n",i+1,hu,gn[ix].t);}
+        if(k<n)printf("    \033[90m… %d more · a n l all\033[0m\n",n-k);return 0;}
     if(argc<=2){int n=0;DIR*d=opendir(dir);if(d){struct dirent*e;while((e=readdir(d)))if(e->d_name[0]!='.'&&strstr(e->d_name,".txt"))n++;closedir(d);}
         printf("%d notes  last synced %s\n  l=list  r=review  m=manage  /=search   a n <text>=add\n",n,sync_age());
         if(!isatty(0))return 0;
@@ -72,6 +77,7 @@ static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
 typedef struct{char d[P],t[256],p[8];}Tk;
 static Tk T[1024];
 static int tcmp(const void*a,const void*b){int c=strcmp(((const Tk*)a)->p,((const Tk*)b)->p);return c?c:strcmp(strrchr(((const Tk*)a)->d,'_'),strrchr(((const Tk*)b)->d,'_'));}
+static int tcmp_new(const void*a,const void*b){const char*x=strrchr(((const Tk*)a)->d,'_'),*y=strrchr(((const Tk*)b)->d,'_');return strcmp(y?y:"",x?x:"");}  /* created, newest first */
 static int load_tasks(const char*dir){
     DIR*d=opendir(dir);if(!d)return 0;struct dirent*e;int n=0;
     while((e=readdir(d))&&n<1024){
@@ -241,17 +247,19 @@ static void task_repri(int x,int pv){
 static int cmd_task(int argc,char**argv){
     perf_disarm();
     char dir[P];snprintf(dir,P,"%s/tasks",SROOT);mkdirp(dir);const char*sub=argc>2?argv[2]:NULL;
-    if(!sub||!strcmp(sub,"top")){int n=load_tasks(dir),k=sub&&argc>3?atoi(argv[3]):10;if(k>n)k=n;
-        printf("%d tasks\n",n);
+    if(!sub||!strcmp(sub,"top")||!strcmp(sub,"new")){int n=load_tasks(dir);
+        int bynew=sub&&!strcmp(sub,"new");if(bynew)qsort(T,(size_t)n,sizeof(Tk),tcmp_new);
+        int k=argc>3&&isdigit((unsigned char)argv[3][0])?atoi(argv[3]):4;if(k>n)k=n;  /* default top 4 */
+        printf("%d tasks  \033[90msort: %s\033[0m\n",n,bynew?"created":"priority");
         for(int i=0;i<k;i++)printf("  %2d P%s %.60s\n",i+1,T[i].p,T[i].t);
-        printf("\n  l=list  r=review  v=vision  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task\n  add: a task add [--by <model>] <text>   (--by = LLM proposal; human sets priority/deadline)\n  last synced %s\n",sync_age());
+        printf("\n  l=list  r=review  v=vision  n=new  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task\n  add: a task add [--by <model>] <text>   (--by = LLM proposal; human sets priority/deadline)\n  last synced %s\n",sync_age());
         if(!isatty(0))return 0;
         printf("\n> ");fflush(stdout);
         struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
         char ch;int rv=read(0,&ch,1);tcsetattr(0,TCSAFLUSH,&ot);
         if(rv!=1||ch=='\x1b'||ch==3){putchar('\n');return 0;}putchar('\n');
         if(ch>='1'&&ch<='9'){char d[2]={ch,0};execvp("a",(char*[]){"a","t",d,NULL});}
-        {static const char km[]="lrvdkmfsh";static const char*kv[]={"l","r","v","due","rank","m","f","sync","h"};
+        {static const char km[]="lrvndkmfsh";static const char*kv[]={"l","r","v","new","due","rank","m","f","sync","h"};
         for(int i=0;km[i];i++)if(ch==km[i]){execvp("a",(char*[]){"a","t",(char*)kv[i],NULL});}}
         printf("x %c\n",ch);return 1;}
     if(!strcmp(sub,"v")||!strcmp(sub,"vision")){
@@ -487,20 +495,49 @@ static int cmd_task(int argc,char**argv){
 }
 /* a flow — one place: notes + tasks + prompts, three independent flat lists (no cross-association).
    The single source of truth: `GET /flow` just renders this command's output (html is a terminal). */
-static int cmd_flow(int argc,char**argv){(void)argc;(void)argv;perf_disarm();
+static int cmd_flow(int argc,char**argv){perf_disarm();
     int tty=isatty(1);const char*BO=tty?"\033[1m":"",*DM=tty?"\033[90m":"",*X=tty?"\033[0m":"";
-    int lim=20;char dir[P];
-    snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);
-    printf("%s━━ NOTES (%d)%s\n",BO,nn,X);
-    for(int i=0;i<nn&&i<lim;i++)printf("  %.78s\n",gn[i].t);
+    const char*srt=argc>2?argv[2]:"pri";   /* a flow [pri|new|due] — sorts the TASKS block */
+    int bynew=!strcmp(srt,"new")||!strcmp(srt,"date"),bydue=!strcmp(srt,"due");
+    int lim=4;char dir[P];   /* constrain to 4 each */
+    snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);qsort(gn,(size_t)nn,sizeof(GN),gncmp);
+    printf("%s━━ NOTES (%d)%s %snewest%s\n",BO,nn,X,DM,X);
+    for(int i=0;i<nn&&i<lim;i++)printf("  %.78s\n",gn[nn-1-i].t);   /* gncmp asc → newest at end */
     if(nn>lim)printf("  %s…+%d more%s\n",DM,nn-lim,X);
     snprintf(dir,P,"%s/tasks",SROOT);int nt=load_tasks(dir);
-    printf("\n%s━━ TASKS (%d)%s — priority sorted\n",BO,nt,X);
-    for(int i=0;i<nt&&i<lim;i++)printf("  P%s %.74s\n",T[i].p,T[i].t);
+    if(bynew)qsort(T,(size_t)nt,sizeof(Tk),tcmp_new);
+    else if(bydue){int dl[1024];for(int i=0;i<nt;i++){int v=task_dl(T[i].d);dl[i]=v<0?1000000:v;}
+        for(int i=1;i<nt;i++){Tk k=T[i];int kd=dl[i],j=i-1;while(j>=0&&dl[j]>kd){T[j+1]=T[j];dl[j+1]=dl[j];j--;}T[j+1]=k;dl[j+1]=kd;}}
+    printf("\n%s━━ TASKS (%d)%s — %s%s%s  %ssort: a flow pri|new|due%s\n",BO,nt,X,BO,bynew?"created":bydue?"deadline":"priority",X,DM,X);
+    for(int i=0;i<nt&&i<lim;i++){int d=bydue?task_dl(T[i].d):-1;
+        if(d>=0)printf("  %s%2dd%s P%s %.66s\n",DM,d,X,T[i].p,T[i].t);
+        else printf("  P%s %.74s\n",T[i].p,T[i].t);}
     if(nt>lim)printf("  %s…+%d more%s\n",DM,nt-lim,X);
+    /* PROMPT CANDIDATES — suggested prompts that could accomplish a task (appendable like notes/tasks: a prompt c <text>) */
+    snprintf(dir,P,"%s/prompts",SROOT);int npc=load_notes(dir,NULL);qsort(gn,(size_t)npc,sizeof(GN),gncmp);
+    printf("\n%s━━ PROMPT CANDIDATES (%d)%s %ssuggested prompts for a task%s\n",BO,npc,X,DM,X);
+    for(int i=0;i<npc&&i<lim;i++)printf("  %.78s\n",gn[npc-1-i].t);
+    if(npc>lim)printf("  %s…+%d more%s\n",DM,npc-lim,X);
+    if(!npc)printf("  %s(none — a prompt c <text>)%s\n",DM,X);
+    /* TMUX WINDOWS — ★ = a window with an `a done` panel waiting for review, ● = active */
+    printf("\n%s━━ TMUX WINDOWS%s %s(★=a done waiting · ●=active)%s\n",BO,X,DM,X);
+    {char done[4096]=" ",ln[1024];
+        FILE*pp=popen("tmux list-panes -a -F '#{window_id} #{pane_start_command}' 2>/dev/null","r");
+        while(pp&&fgets(ln,sizeof ln,pp))if(strstr(ln,"a_done")){char*sp=strchr(ln,' ');if(sp){*sp=0;
+            if(strlen(done)+strlen(ln)+2<sizeof done){strcat(done,ln);strcat(done," ");}}}
+        if(pp)pclose(pp);
+        FILE*wp=popen("tmux list-windows -a -F '#{window_id}\t#{window_active}\t#{session_name}:#{window_index} #{window_name}' 2>/dev/null","r");
+        char seen[4096]=" ";int any=0;while(wp&&fgets(ln,sizeof ln,wp)){ln[strcspn(ln,"\n")]=0;
+            char*t1=strchr(ln,'\t');if(!t1)continue;*t1=0;char*t2=strchr(t1+1,'\t');if(!t2)continue;*t2=0;
+            int act=atoi(t1+1);char*lbl=t2+1;char key[40];snprintf(key,40," %s ",ln);
+            if(strstr(seen,key))continue;if(strlen(seen)+strlen(key)<sizeof seen){strcat(seen,ln);strcat(seen," ");}  /* dedup linked windows */
+            int hd=strstr(done,key)!=NULL;const char*cl=tty?(hd?"\033[33m":act?"\033[36m":"\033[90m"):"";
+            printf("  %s%s %s%s%s\n",cl,hd?"★":act?"●":"·",lbl,hd?"  ← a done":"",X);any=1;}
+        if(wp)pclose(wp);if(!any)printf("  %s(no tmux windows)%s\n",DM,X);}
+    /* COMMON PROMPTS — common instructions of how to act, not specific tasks (kept; managed by `a prompt`) */
     char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);
     static char pf[256][P];int np=listdir(pdir,pf,256),shown=0;
-    printf("\n%s━━ PROMPTS%s %s(common/prompts)%s\n",BO,X,DM,X);
+    printf("\n%s━━ COMMON PROMPTS%s %s(common/prompts — how to act, not tasks)%s\n",BO,X,DM,X);
     for(int i=0;i<np;i++){char*b=strrchr(pf[i],'/');b=b?b+1:pf[i];
         if(!strstr(b,".txt"))continue;printf("  %s\n",b);shown++;}
     if(!shown)printf("  %s(none)%s\n",DM,X);
