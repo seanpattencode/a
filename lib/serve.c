@@ -75,13 +75,14 @@ static int _tasks_build(char*h,int cap,const char*sort){
     for(int i=1;i<nr;i++){typeof(rows[0]) k=rows[i];int j=i-1;const char*kk=k.dl[0]?k.dl:"~";
         while(j>=0){int bf=md==1?strcmp(k.name,rows[j].name)>0:md==2?strcmp(kk,rows[j].dl[0]?rows[j].dl:"~")<0:strcmp(rows[j].pri,k.pri)>0;
             if(!bf)break;rows[j+1]=rows[j];j--;}rows[j+1]=k;}
-    int hl=snprintf(h,(size_t)cap,SYNC_HTML "<div class=ni style=\"color:#789;border-bottom:1px solid #444;margin-top:10px\"><span class=nx style=\"visibility:hidden\">x</span><span style=\"display:inline-block;width:84px\">WHEN</span><span style=\"display:inline-block;width:54px\">PRI</span>TASK <span style=\"color:#456\">— ⚑=deadline else created · red P≤1000</span></div>",sync_age());
+    int hl=snprintf(h,(size_t)cap,SYNC_HTML "<div class=ni style=\"color:#789;border-bottom:1px solid #444;margin-top:10px\"><span class=nx style=\"visibility:hidden\">x</span><span style=\"display:inline-block;width:124px\">WHEN</span><span style=\"display:inline-block;width:54px\">PRI</span>TASK <span style=\"color:#456\">— ⚑=deadline else created · red P≤1000</span></div>",sync_age());
     for(int i=0;i<nr&&i<4&&hl<cap-512;i++){   /* top 4 */
         const char*c=strcmp(rows[i].pri,"01000")<=0?"#f44":strcmp(rows[i].pri,"10000")<=0?"#fa0":"#aaa";
-        char fr[24];{int y,mo,dd;struct tm t={0};
-            if(rows[i].dl[0]&&sscanf(rows[i].dl,"%d-%d-%d",&y,&mo,&dd)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=dd;mktime(&t);char b[16];strftime(b,16,"%b %-d",&t);snprintf(fr,24,"⚑%s",b);}
-            else{const char*u=strrchr(rows[i].name,'_');char ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);}}
-        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:#9cf;display:inline-block;width:84px\">%s</span><span style=\"color:%s;display:inline-block;width:54px\">P%s</span>%.108s</div>",rows[i].name,fr,c,rows[i].pri,rows[i].txt);}
+        char fr[40];{int y,mo,dd,h=0,mi=0;struct tm t={0};
+            if(rows[i].dl[0]&&sscanf(rows[i].dl,"%d-%d-%d %d:%d",&y,&mo,&dd,&h,&mi)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=dd;mktime(&t);
+                char b[32];int bl2=(int)strftime(b,32,"%b %-d",&t);int h12=h%12;if(!h12)h12=12;snprintf(b+bl2,32-(size_t)bl2," %d:%02d%s",h12,mi,h>=12?"pm":"am");snprintf(fr,40,"⚑%s",b);}
+            else{const char*u=strrchr(rows[i].name,'_');char ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,40);}}
+        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:#9cf;display:inline-block;width:124px\">%s</span><span style=\"color:%s;display:inline-block;width:54px\">P%s</span>%.108s</div>",rows[i].name,fr,c,rows[i].pri,rows[i].txt);}
     if(!hl)hl=snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
     return hl;
 }

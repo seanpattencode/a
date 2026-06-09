@@ -152,16 +152,18 @@ static int task_dl(const char*td){char df[P];snprintf(df,P,"%s/deadline.txt",td)
     size_t l;char*c=readf(df,&l);if(!c)return-1;struct tm d={0};int h=23,mi=59;
     if(sscanf(c,"%d-%d-%d %d:%d",&d.tm_year,&d.tm_mon,&d.tm_mday,&h,&mi)<3){free(c);return-1;}
     d.tm_year-=1900;d.tm_mon--;d.tm_hour=h;d.tm_min=mi;free(c);return(int)((mktime(&d)-time(NULL))/86400);}
-static void ts_date(const char*ts,char*out,size_t sz){struct tm t={0};int y,mo,d,h,mi,s;  /* YYYYmmddTHHMMSS -> "Jun 8" */
-    if(ts&&sscanf(ts,"%4d%2d%2dT%2d%2d%2d",&y,&mo,&d,&h,&mi,&s)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=d;mktime(&t);strftime(out,sz,"%b %-d",&t);}
+static void ts_date(const char*ts,char*out,size_t sz){struct tm t={0};int y,mo,d,h=0,mi=0,s=0;  /* YYYYmmddTHHMMSS -> "Jun 8 3:26pm" */
+    if(ts&&sscanf(ts,"%4d%2d%2dT%2d%2d%2d",&y,&mo,&d,&h,&mi,&s)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=d;mktime(&t);
+        int l=(int)strftime(out,sz,"%b %-d",&t);int h12=h%12;if(!h12)h12=12;snprintf(out+l,sz-(size_t)l," %d:%02d%s",h12,mi,h>=12?"pm":"am");}
     else snprintf(out,sz,"-");}
-static void task_front(const char*dir,char*out,int sz){  /* front column: ⚑deadline if set, else created date; padded to 9 display cols */
-    char b[16]="-";int isdl=0;struct tm t={0};int y,mo,d;
+static void task_front(const char*dir,char*out,int sz){  /* front column: ⚑deadline (day+time) if set, else created day+time; padded to 16 display cols */
+    char b[40]="-";int isdl=0;struct tm t={0};int y,mo,d,h=0,mi=0;
     char df[P];snprintf(df,P,"%s/deadline.txt",dir);size_t l;char*c=readf(df,&l);
-    if(c&&sscanf(c,"%d-%d-%d",&y,&mo,&d)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=d;mktime(&t);strftime(b,16,"%b %-d",&t);isdl=1;}
-    else{const char*u=strrchr(dir,'_');char ts[16];if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,b,16);}
+    if(c&&sscanf(c,"%d-%d-%d %d:%d",&y,&mo,&d,&h,&mi)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=d;mktime(&t);
+        int ln=(int)strftime(b,40,"%b %-d",&t);int h12=h%12;if(!h12)h12=12;snprintf(b+ln,40-(size_t)ln," %d:%02d%s",h12,mi,h>=12?"pm":"am");isdl=1;}
+    else{const char*u=strrchr(dir,'_');char ts[16];if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,b,40);}
     if(c)free(c);
-    int cols=(isdl?1:0)+(int)strlen(b),pad=9-cols;if(pad<1)pad=1;
+    int cols=(isdl?1:0)+(int)strlen(b),pad=16-cols;if(pad<1)pad=1;
     snprintf(out,(size_t)sz,"%s%s%*s",isdl?"⚑":"",b,pad,"");}
 typedef struct{char n[256];char ts[32];}Ent;
 static int entcmp(const void*a,const void*b){return strcmp(((const Ent*)a)->ts,((const Ent*)b)->ts);}
@@ -262,7 +264,7 @@ static int cmd_task(int argc,char**argv){
         int bynew=sub&&!strcmp(sub,"new");if(bynew)qsort(T,(size_t)n,sizeof(Tk),tcmp_new);
         int k=argc>3&&isdigit((unsigned char)argv[3][0])?atoi(argv[3]):4;if(k>n)k=n;  /* default top 4 */
         printf("%d tasks  \033[90msort: %s\033[0m\n",n,bynew?"created":"priority");
-        for(int i=0;i<k;i++){char fr[24];task_front(T[i].d,fr,24);printf("  %2d %s \033[90mP%s\033[0m %.54s\n",i+1,fr,T[i].p,T[i].t);}
+        for(int i=0;i<k;i++){char fr[24];task_front(T[i].d,fr,24);printf("  %2d %s \033[90mP%s\033[0m %.46s\n",i+1,fr,T[i].p,T[i].t);}
         printf("\n  l=list  r=review  v=vision  n=new  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task\n  add: a task add [--by <model>] <text>   (--by = LLM proposal; human sets priority/deadline)\n  last synced %s\n",sync_age());
         if(!isatty(0))return 0;
         printf("\n> ");fflush(stdout);
@@ -504,17 +506,22 @@ static int cmd_task(int argc,char**argv){
         printf("✓ %s: %.40s\n",sub,t);return 0;}}
     return task_add_p(dir,argc,argv,2);
 }
+/* a flow v: what each tmux window is about = its claude session's first user prompt (session id is in pane_start_command) */
+static void win_about(const char*sid,char*out,int sz){*out=0;if(!sid||strlen(sid)<8)return;
+    char cmd[600];snprintf(cmd,600,"f=$(ls -1t ~/.claude/projects/*/%s.jsonl 2>/dev/null|head -1);[ -n \"$f\" ]&&jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' \"$f\" 2>/dev/null|grep -vm1 '^<'",sid);
+    FILE*p=popen(cmd,"r");if(!p)return;if(fgets(out,sz,p))out[strcspn(out,"\n")]=0;pclose(p);}
 /* a flow — one place: notes + tasks + prompts, three independent flat lists (no cross-association).
    The single source of truth: `GET /flow` just renders this command's output (html is a terminal). */
 static int cmd_flow(int argc,char**argv){perf_disarm();
     int tty=isatty(1);const char*BO=tty?"\033[1m":"",*DM=tty?"\033[90m":"",*X=tty?"\033[0m":"";
-    const char*srt=argc>2?argv[2]:"pri";   /* a flow [pri|new|due] — sorts the TASKS block */
+    const char*srt="pri";int verbose=0;   /* a flow [pri|new|due] [v]  — v = show each window's purpose */
+    for(int i=2;i<argc;i++){if(!strcmp(argv[i],"v")||!strcmp(argv[i],"verbose"))verbose=1;else srt=argv[i];}
     int bynew=!strcmp(srt,"new")||!strcmp(srt,"date"),bydue=!strcmp(srt,"due");
     int lim=4;char dir[P];   /* constrain to 4 each */
     snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);qsort(gn,(size_t)nn,sizeof(GN),gncmp);
     printf("%s━━ NOTES (%d)%s %snewest%s\n",BO,nn,X,DM,X);
-    for(int i=0;i<nn&&i<lim;i++){int ix=nn-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[16],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,16);
-        printf("  %s%-7s%s %.70s\n",DM,fr,X,gn[ix].t);}   /* gncmp asc → newest at end */
+    for(int i=0;i<nn&&i<lim;i++){int ix=nn-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
+        printf("  %s%-14s%s %.62s\n",DM,fr,X,gn[ix].t);}   /* gncmp asc → newest at end */
     if(nn>lim)printf("  %s…+%d more%s\n",DM,nn-lim,X);
     snprintf(dir,P,"%s/tasks",SROOT);int nt=load_tasks(dir);
     if(bynew)qsort(T,(size_t)nt,sizeof(Tk),tcmp_new);
@@ -522,21 +529,24 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
         for(int i=1;i<nt;i++){Tk k=T[i];int kd=dl[i],j=i-1;while(j>=0&&dl[j]>kd){T[j+1]=T[j];dl[j+1]=dl[j];j--;}T[j+1]=k;dl[j+1]=kd;}}
     printf("\n%s━━ TASKS (%d)%s — %s%s%s  %ssort: a flow pri|new|due%s\n",BO,nt,X,BO,bynew?"created":bydue?"deadline":"priority",X,DM,X);
     for(int i=0;i<nt&&i<lim;i++){char fr[24];task_front(T[i].d,fr,24);
-        printf("  %s %sP%s%s %.62s\n",fr,DM,T[i].p,X,T[i].t);}
+        printf("  %s %sP%s%s %.54s\n",fr,DM,T[i].p,X,T[i].t);}
     if(nt>lim)printf("  %s…+%d more%s\n",DM,nt-lim,X);
     /* PROMPT CANDIDATES — suggested prompts that could accomplish a task (appendable like notes/tasks: a prompt c <text>) */
     snprintf(dir,P,"%s/prompts",SROOT);int npc=load_notes(dir,NULL);qsort(gn,(size_t)npc,sizeof(GN),gncmp);
     printf("\n%s━━ PROMPT CANDIDATES (%d)%s %ssuggested prompts for a task%s\n",BO,npc,X,DM,X);
-    for(int i=0;i<npc&&i<lim;i++){int ix=npc-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[16],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,16);
-        printf("  %s%-7s%s %.70s\n",DM,fr,X,gn[ix].t);}
+    for(int i=0;i<npc&&i<lim;i++){int ix=npc-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
+        printf("  %s%-14s%s %.62s\n",DM,fr,X,gn[ix].t);}
     if(npc>lim)printf("  %s…+%d more%s\n",DM,npc-lim,X);
     if(!npc)printf("  %s(none — a prompt c <text>)%s\n",DM,X);
-    /* TMUX WINDOWS — ★ = a window with an `a done` panel waiting for review, ● = active */
-    printf("\n%s━━ TMUX WINDOWS%s %s(★=a done waiting · ●=active)%s\n",BO,X,DM,X);
-    {char done[4096]=" ",ln[1024];
+    /* TMUX WINDOWS — ★ = a window with an `a done` panel waiting for review, ● = active.  a flow v adds each window's purpose */
+    printf("\n%s━━ TMUX WINDOWS%s %s(★=a done · ●=active%s)%s\n",BO,X,DM,verbose?"":" · a flow v=about",X);
+    {char done[4096]=" ",ln[1024];struct{char wid[16],sid[80];}ws[64];int nws=0;
         FILE*pp=popen("tmux list-panes -a -F '#{window_id} #{pane_start_command}' 2>/dev/null","r");
-        while(pp&&fgets(ln,sizeof ln,pp))if(strstr(ln,"a_done")){char*sp=strchr(ln,' ');if(sp){*sp=0;
-            if(strlen(done)+strlen(ln)+2<sizeof done){strcat(done,ln);strcat(done," ");}}}
+        while(pp&&fgets(ln,sizeof ln,pp)){ln[strcspn(ln,"\n")]=0;char*sp=strchr(ln,' ');if(!sp)continue;*sp=0;char*wid=ln,*cm=sp+1;
+            if(strstr(cm,"a_done")&&strlen(done)+strlen(wid)+2<sizeof done){strcat(done,wid);strcat(done," ");}
+            char*rs=strstr(cm,"--resume ");if(!rs)rs=strstr(cm,"--session-id ");   /* claude session id → window purpose */
+            if(rs&&nws<64){rs=strchr(rs,' ')+1;char sid[80];int k=0;while(rs[k]&&rs[k]!=' '&&rs[k]!='"'&&k<79){sid[k]=rs[k];k++;}sid[k]=0;
+                if(k>=8){snprintf(ws[nws].wid,16,"%s",wid);snprintf(ws[nws].sid,80,"%s",sid);nws++;}}}
         if(pp)pclose(pp);
         FILE*wp=popen("tmux list-windows -a -F '#{window_id}\t#{window_active}\t#{session_name}:#{window_index} #{window_name}' 2>/dev/null","r");
         char seen[4096]=" ";int any=0;while(wp&&fgets(ln,sizeof ln,wp)){ln[strcspn(ln,"\n")]=0;
@@ -544,7 +554,10 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
             int act=atoi(t1+1);char*lbl=t2+1;char key[40];snprintf(key,40," %s ",ln);
             if(strstr(seen,key))continue;if(strlen(seen)+strlen(key)<sizeof seen){strcat(seen,ln);strcat(seen," ");}  /* dedup linked windows */
             int hd=strstr(done,key)!=NULL;const char*cl=tty?(hd?"\033[33m":act?"\033[36m":"\033[90m"):"";
-            printf("  %s%s %s%s%s\n",cl,hd?"★":act?"●":"·",lbl,hd?"  ← a done":"",X);any=1;}
+            printf("  %s%s %s%s%s\n",cl,hd?"★":act?"●":"·",lbl,hd?"  ← a done":"",X);any=1;
+            if(verbose){const char*sid=NULL;for(int j=0;j<nws;j++)if(!strcmp(ws[j].wid,ln)){sid=ws[j].sid;break;}
+                char ab[256]="";if(sid)win_about(sid,ab,256);
+                printf("       %s↳ %.76s%s\n",DM,ab[0]?ab:"(shell)",X);}}
         if(wp)pclose(wp);if(!any)printf("  %s(no tmux windows)%s\n",DM,X);}
     /* COMMON PROMPTS — common instructions of how to act, not specific tasks (kept; managed by `a prompt`) */
     char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);
@@ -553,5 +566,20 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     for(int i=0;i<np;i++){char*b=strrchr(pf[i],'/');b=b?b+1:pf[i];
         if(!strstr(b,".txt"))continue;printf("  %s\n",b);shown++;}
     if(!shown)printf("  %s(none)%s\n",DM,X);
+    /* one-keypress menu — add into notes/tasks/prompts (saves + prints commit URL), or re-sort */
+    if(!tty||!isatty(0))return 0;   /* web/pipe = static render only */
+    printf("\n  %sadd:%s [n]ote [t]ask [p]rompt   %ssort:%s [1]pri [2]new [3]due   [q]/esc=quit\n> ",BO,X,BO,X);fflush(stdout);
+    struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
+    char ch;int rv=read(0,&ch,1);tcsetattr(0,TCSAFLUSH,&ot);putchar('\n');
+    if(rv!=1||ch==27||ch==3||ch=='q')return 0;   /* esc / q / ^C exit */
+    if(ch=='1'||ch=='2'||ch=='3'){const char*s=ch=='1'?"pri":ch=='2'?"new":"due";char*av[]={"a","flow",(char*)s,verbose?"v":NULL,NULL};execvp("a",av);}
+    if(ch=='n'||ch=='t'||ch=='p'){char buf[B];
+        printf("  %s> ",ch=='n'?"note":ch=='t'?"task":"prompt");fflush(stdout);
+        if(fgets(buf,B,stdin)&&buf[0]!='\n'){buf[strcspn(buf,"\n")]=0;char d2[P],*path;const char*lbl;
+            if(ch=='t'){snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);path=task_add(d2,buf,50000);lbl="task";}
+            else{snprintf(d2,P,"%s/%s",SROOT,ch=='n'?"notes":"prompts");mkdirp(d2);path=note_save(d2,buf);lbl=ch=='n'?"note":"prompt";}
+            printf("  ");fflush(stdout);note_url(path,lbl,NULL);}   /* prints: saved → <commit url> */
+        printf("  %s↵=refresh  esc=quit%s",DM,X);fflush(stdout);int rk=getchar();if(rk==27||rk=='q')return 0;
+        char*av[]={"a","flow",(char*)srt,verbose?"v":NULL,NULL};execvp("a",av);}
     return 0;
 }
