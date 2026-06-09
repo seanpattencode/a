@@ -152,6 +152,17 @@ static int task_dl(const char*td){char df[P];snprintf(df,P,"%s/deadline.txt",td)
     size_t l;char*c=readf(df,&l);if(!c)return-1;struct tm d={0};int h=23,mi=59;
     if(sscanf(c,"%d-%d-%d %d:%d",&d.tm_year,&d.tm_mon,&d.tm_mday,&h,&mi)<3){free(c);return-1;}
     d.tm_year-=1900;d.tm_mon--;d.tm_hour=h;d.tm_min=mi;free(c);return(int)((mktime(&d)-time(NULL))/86400);}
+static void ts_date(const char*ts,char*out,size_t sz){struct tm t={0};int y,mo,d,h,mi,s;  /* YYYYmmddTHHMMSS -> "Jun 8" */
+    if(ts&&sscanf(ts,"%4d%2d%2dT%2d%2d%2d",&y,&mo,&d,&h,&mi,&s)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=d;mktime(&t);strftime(out,sz,"%b %-d",&t);}
+    else snprintf(out,sz,"-");}
+static void task_front(const char*dir,char*out,int sz){  /* front column: ⚑deadline if set, else created date; padded to 9 display cols */
+    char b[16]="-";int isdl=0;struct tm t={0};int y,mo,d;
+    char df[P];snprintf(df,P,"%s/deadline.txt",dir);size_t l;char*c=readf(df,&l);
+    if(c&&sscanf(c,"%d-%d-%d",&y,&mo,&d)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=d;mktime(&t);strftime(b,16,"%b %-d",&t);isdl=1;}
+    else{const char*u=strrchr(dir,'_');char ts[16];if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,b,16);}
+    if(c)free(c);
+    int cols=(isdl?1:0)+(int)strlen(b),pad=9-cols;if(pad<1)pad=1;
+    snprintf(out,(size_t)sz,"%s%s%*s",isdl?"⚑":"",b,pad,"");}
 typedef struct{char n[256];char ts[32];}Ent;
 static int entcmp(const void*a,const void*b){return strcmp(((const Ent*)a)->ts,((const Ent*)b)->ts);}
 static void ts_human(const char*ts,char*out,size_t sz){
@@ -251,7 +262,7 @@ static int cmd_task(int argc,char**argv){
         int bynew=sub&&!strcmp(sub,"new");if(bynew)qsort(T,(size_t)n,sizeof(Tk),tcmp_new);
         int k=argc>3&&isdigit((unsigned char)argv[3][0])?atoi(argv[3]):4;if(k>n)k=n;  /* default top 4 */
         printf("%d tasks  \033[90msort: %s\033[0m\n",n,bynew?"created":"priority");
-        for(int i=0;i<k;i++)printf("  %2d P%s %.60s\n",i+1,T[i].p,T[i].t);
+        for(int i=0;i<k;i++){char fr[24];task_front(T[i].d,fr,24);printf("  %2d %s \033[90mP%s\033[0m %.54s\n",i+1,fr,T[i].p,T[i].t);}
         printf("\n  l=list  r=review  v=vision  n=new  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task\n  add: a task add [--by <model>] <text>   (--by = LLM proposal; human sets priority/deadline)\n  last synced %s\n",sync_age());
         if(!isatty(0))return 0;
         printf("\n> ");fflush(stdout);
@@ -502,21 +513,22 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     int lim=4;char dir[P];   /* constrain to 4 each */
     snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);qsort(gn,(size_t)nn,sizeof(GN),gncmp);
     printf("%s━━ NOTES (%d)%s %snewest%s\n",BO,nn,X,DM,X);
-    for(int i=0;i<nn&&i<lim;i++)printf("  %.78s\n",gn[nn-1-i].t);   /* gncmp asc → newest at end */
+    for(int i=0;i<nn&&i<lim;i++){int ix=nn-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[16],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,16);
+        printf("  %s%-7s%s %.70s\n",DM,fr,X,gn[ix].t);}   /* gncmp asc → newest at end */
     if(nn>lim)printf("  %s…+%d more%s\n",DM,nn-lim,X);
     snprintf(dir,P,"%s/tasks",SROOT);int nt=load_tasks(dir);
     if(bynew)qsort(T,(size_t)nt,sizeof(Tk),tcmp_new);
     else if(bydue){int dl[1024];for(int i=0;i<nt;i++){int v=task_dl(T[i].d);dl[i]=v<0?1000000:v;}
         for(int i=1;i<nt;i++){Tk k=T[i];int kd=dl[i],j=i-1;while(j>=0&&dl[j]>kd){T[j+1]=T[j];dl[j+1]=dl[j];j--;}T[j+1]=k;dl[j+1]=kd;}}
     printf("\n%s━━ TASKS (%d)%s — %s%s%s  %ssort: a flow pri|new|due%s\n",BO,nt,X,BO,bynew?"created":bydue?"deadline":"priority",X,DM,X);
-    for(int i=0;i<nt&&i<lim;i++){int d=bydue?task_dl(T[i].d):-1;
-        if(d>=0)printf("  %s%2dd%s P%s %.66s\n",DM,d,X,T[i].p,T[i].t);
-        else printf("  P%s %.74s\n",T[i].p,T[i].t);}
+    for(int i=0;i<nt&&i<lim;i++){char fr[24];task_front(T[i].d,fr,24);
+        printf("  %s %sP%s%s %.62s\n",fr,DM,T[i].p,X,T[i].t);}
     if(nt>lim)printf("  %s…+%d more%s\n",DM,nt-lim,X);
     /* PROMPT CANDIDATES — suggested prompts that could accomplish a task (appendable like notes/tasks: a prompt c <text>) */
     snprintf(dir,P,"%s/prompts",SROOT);int npc=load_notes(dir,NULL);qsort(gn,(size_t)npc,sizeof(GN),gncmp);
     printf("\n%s━━ PROMPT CANDIDATES (%d)%s %ssuggested prompts for a task%s\n",BO,npc,X,DM,X);
-    for(int i=0;i<npc&&i<lim;i++)printf("  %.78s\n",gn[npc-1-i].t);
+    for(int i=0;i<npc&&i<lim;i++){int ix=npc-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[16],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,16);
+        printf("  %s%-7s%s %.70s\n",DM,fr,X,gn[ix].t);}
     if(npc>lim)printf("  %s…+%d more%s\n",DM,npc-lim,X);
     if(!npc)printf("  %s(none — a prompt c <text>)%s\n",DM,X);
     /* TMUX WINDOWS — ★ = a window with an `a done` panel waiting for review, ● = active */
