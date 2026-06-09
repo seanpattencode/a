@@ -57,22 +57,22 @@ static int cmd_ssh(int argc,char**argv){
                 if(f<0&&nh<32){snprintf(H[nh].name,128,"%s",sn);snprintf(H[nh].host,256,"%s",h);H[nh].pw[0]=0;nh++;}
                 else if(f>=0)snprintf(H[f].host,256,"%s",h);}}
         int on=!system("pgrep -x sshd >/dev/null 2>&1");
-        printf("SSH sshd:%s\n\n",on?" \033[32mon\033[0m":" \033[31moff\033[0m");
+        printf("SSH sshd:%s\n",on?" \033[32mon\033[0m":" \033[31moff\033[0m");
         size_t dl=strlen(DEV);
-        for(int i=0;i<nh;i++){int s=!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-';
-            printf("  %d. %s%s%s: %s%s\n",i,s?"\033[32m":"",H[i].name,s?" (self)\033[0m":"",H[i].host,H[i].pw[0]?" [pw]":"");}
-        if(!nh)puts("  (none)");
-        puts("\n  d=default a=add l=all f=self b=start x=stop c=status u=setup k=key h=auth r=rm w=pw m=mv i=info o=os p=ping");
-        if(!isatty(0))return 0;
-        printf("\n> ");fflush(stdout);
-        struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
-        char ch;int rv=read(0,&ch,1);tcsetattr(0,TCSAFLUSH,&ot);
-        if(rv!=1||ch=='\x1b'||ch==3){putchar('\n');return 0;}putchar('\n');
-        if(ch>='0'&&ch-'0'<nh){execvp("a",(char*[]){"a","ssh",H[ch-'0'].name,NULL});}
-        if(ch=='d'||ch=='\r'){const char*d=cfget("default_ssh");if(*d)execvp("a",(char*[]){"a","ssh",(char*)d,NULL});}
-        {static const char km[]="alfbxcukhrwmiop";static const char*kv[]={"add","all","self","start","stop","status","setup","key","auth","rm","pw","mv","info","os","ping"};
-        for(int i=0;km[i];i++)if(ch==km[i]){execvp("a",(char*[]){"a","ssh",(char*)kv[i],NULL});}}
-        printf("x %c\n",ch);return 1;}
+        if(!nh){puts("  (none) — a ssh add");return 0;}
+        if(!isatty(0)){for(int i=0;i<nh;i++)printf("  %s: %s\n",H[i].name,H[i].host);return 0;}
+        char tf[P];snprintf(tf,P,"%s/.ssh_pick",DDIR);FILE*tp=fopen(tf,"w");  /* type-to-search: single-digit menus break past 9 (1 vs 10) */
+        if(tp){fprintf(tp,"%-22s ↵ default host\n","default");
+            for(int i=0;i<nh;i++){int s=!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-';
+                fprintf(tp,"%-22s %s%s%s\n",H[i].name,H[i].host,H[i].pw[0]?" [pw]":"",s?" (self)":"");}
+            static const char*km[]={"add","all","self","start","stop","status","setup","key","auth","rm","pw","mv","info","os","ping",0};
+            for(int i=0;km[i];i++)fprintf(tp,"%-22s · command\n",km[i]);fclose(tp);}
+        char c[P+160];snprintf(c,sizeof c,"fzf --reverse --height=90%% --prompt='ssh> ' --header='type to filter · ↵ select · esc cancel' <'%s'",tf);
+        char sel[256]="";FILE*fp=popen(c,"r");int got=fp&&fgets(sel,256,fp);if(fp)pclose(fp);unlink(tf);
+        if(!got||!*sel){putchar('\n');return 0;}
+        sel[strcspn(sel," \t\n")]=0;  /* first token = host/command name */
+        if(!strcmp(sel,"default")){const char*d=cfget("default_ssh");if(*d)execvp("a",(char*[]){"a","ssh",(char*)d,NULL});return 0;}
+        execvp("a",(char*[]){"a","ssh",sel,NULL});return 1;}
 
     /* start/stop/status */
     if(!strcmp(sub,"start")){int r=system("sshd 2>/dev/null||service ssh start 2>/dev/null||sudo service ssh start 2>/dev/null||/usr/sbin/sshd 2>/dev/null||sudo /usr/sbin/sshd 2>/dev/null");puts(r?"x sshd":"✓ sshd");return r!=0;}
