@@ -205,7 +205,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(tp)fputs("printf '\\033[1;35m[e]\\033[0m talk to agent\\n'\n",sf);
             for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;33m[%s]\\033[0m %%s: \\033[32m%%s\\033[0m\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
             fputs("printf '\\033[2mpress a key (other=close)\\033[0m '\nread -rsn1 k </dev/tty;echo\n",sf);
-            if(dl[0])fputs("[ \"$k\" = y ]&&{ a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sf);
+            if(dl[0])fprintf(sf,"[ \"$k\" = y ]&&{ A_PANE='%s' a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",tp?tp:"");
             if(dl[0]&&tp)fprintf(sf,"[ \"$k\" = p ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,PP,tp);
             if(tp)fprintf(sf,"[ \"$k\" = c ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,CR,tp);
             if(ts[0])fputs("[ \"$k\" = r ]&&{ printf '\\033[1;33m$ \\033[0m%s\\n' \"$TS\";eval \"$TS\" 2>&1;}\n",sf);

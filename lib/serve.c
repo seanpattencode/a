@@ -29,27 +29,27 @@ static char*_shtml;static int _shlen;
 /* ARCH #32: list pages navigate on finger/mouse DOWN, not lift-off. delegated so it covers links added later (e.g. /dash EventSource). skips #/onclick links. */
 #define TAPJS "<script>addEventListener('pointerdown',function(e){var a=e.target.closest('a[href]');if(a&&!a.onclick&&a.getAttribute('href')[0]!='#'){e.preventDefault();a.click()}},true)</script>"
 static int _ncmp(const void*a,const void*b){const char*x=strrchr((const char*)a,'_'),*y=strrchr((const char*)b,'_');return strcmp(y?y:"",x?x:"");}
-static int _notes_build(char*h,int cap){
-    char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
+static int _notes_build(char*h,int cap,const char*kind){   /* kind = "notes" or "prompts" */
+    char nd[P];snprintf(nd,P,"%s/git/%s",AROOT,kind);const char*arc=!strcmp(kind,"prompts")?"arcp":"arcn";
     int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
     DIR*d=opendir(nd);if(!d)return hl;struct dirent*e;
-    char(*names)[64]=NULL;int nn=0,ncp=0;  /* read ALL notes; static[2048] dropped newest once notes>2048 */
+    char(*names)[64]=NULL;int nn=0,ncp=0;  /* read ALL; static[2048] dropped newest once >2048 */
     while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt"))continue;
         if(nn>=ncp){ncp=ncp?ncp*2:2048;names=realloc(names,(size_t)ncp*64);}
         snprintf(names[nn++],64,"%s",e->d_name);}closedir(d);
     qsort(names,(size_t)nn,64,_ncmp);   /* _ncmp = newest first */
-    for(int i=0,shown=0;i<nn&&shown<4&&hl<cap-2048;i++){   /* top 4 newest with text (skip malformed) */
+    for(int i=0,shown=0;i<nn&&shown<4&&hl<cap-4096;i++){   /* top 4 newest with text (skip malformed) */
         char fp[P];snprintf(fp,P,"%s/%s",nd,names[i]);
-        FILE*f=fopen(fp,"r");if(!f)continue;char ln[512];int got=0;
-        while(fgets(ln,512,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
+        FILE*f=fopen(fp,"r");if(!f)continue;char ln[4096];int got=0;
+        while(fgets(ln,4096,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
             const char*u=strrchr(names[i],'_');char hu[48]="";if(u){char ts[16];snprintf(ts,16,"%.15s",u+1);ts_human(ts,hu,48);}
-            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span style=\"color:#789;display:inline-block;width:104px\">%s</span><span>%s</span></div>",names[i],hu,ln+6);got=1;break;}}
+            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"%s('%s',this)\" class=nx>x</button><span style=\"color:#789;display:inline-block;width:104px\">%s</span><span style=\"flex:1\">%s</span><a href=\"/doc?f=%s/%s\" style=\"color:#789;margin-left:8px;text-decoration:none\">edit</a></div>",arc,names[i],hu,ln+6,kind,names[i]);got=1;break;}}
         fclose(f);shown+=got;}free(names);return hl;
 }
 static int _tasks_build(char*h,int cap,const char*sort){
     char td[P];snprintf(td,P,"%s/git/tasks",AROOT);
     DIR*d=opendir(td);if(!d)return snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
-    struct dirent*e;struct{char pri[8];char txt[256];char name[256];char dl[20];}rows[512];int nr=0;
+    struct dirent*e;struct{char pri[8];char txt[1024];char name[256];char dl[20];}rows[512];int nr=0;
     while((e=readdir(d))&&nr<512){if(e->d_name[0]=='.')continue;
         int hp=strlen(e->d_name)>5&&e->d_name[5]=='-';
         for(int i=0;hp&&i<5;i++)if(!isdigit((unsigned char)e->d_name[i]))hp=0;
@@ -64,9 +64,9 @@ static int _tasks_build(char*h,int cap,const char*sort){
         DIR*sd=opendir(probes[0]);
         if(sd){struct dirent*se;while((se=readdir(sd))){if(!strstr(se->d_name,".txt"))continue;
             char sfp[P];snprintf(sfp,P,"%s/%s",probes[0],se->d_name);FILE*sf=fopen(sfp,"r");if(!sf)continue;
-            char ln[512];while(fgets(ln,512,sf))if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;snprintf(rows[nr].txt,256,"%s",ln+6);break;}
+            char ln[1024];while(fgets(ln,1024,sf))if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;snprintf(rows[nr].txt,1024,"%s",ln+6);break;}
             fclose(sf);if(rows[nr].txt[0])break;}closedir(sd);}
-        if(!rows[nr].txt[0])snprintf(rows[nr].txt,256,"%s",slug);
+        if(!rows[nr].txt[0])snprintf(rows[nr].txt,1024,"%s",slug);
         rows[nr].dl[0]=0;{char dlf[P];snprintf(dlf,P,"%s/%s/deadline.txt",td,e->d_name);FILE*df=fopen(dlf,"r");
             if(df){if(fgets(rows[nr].dl,20,df))rows[nr].dl[strcspn(rows[nr].dl,"\n")]=0;fclose(df);}}
         nr++;}
@@ -82,7 +82,7 @@ static int _tasks_build(char*h,int cap,const char*sort){
             if(rows[i].dl[0]&&sscanf(rows[i].dl,"%d-%d-%d %d:%d",&y,&mo,&dd,&h,&mi)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=dd;mktime(&t);
                 char b[32];int bl2=(int)strftime(b,32,"%b %-d",&t);int h12=h%12;if(!h12)h12=12;snprintf(b+bl2,32-(size_t)bl2," %d:%02d%s",h12,mi,h>=12?"pm":"am");snprintf(fr,40,"⚑%s",b);}
             else{const char*u=strrchr(rows[i].name,'_');char ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,40);}}
-        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:#9cf;display:inline-block;width:124px\">%s</span><span style=\"color:%s;display:inline-block;width:54px\">P%s</span>%.108s</div>",rows[i].name,fr,c,rows[i].pri,rows[i].txt);}
+        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:#9cf;display:inline-block;width:124px\">%s</span><span style=\"color:%s;display:inline-block;width:54px\">P%s</span>%s</div>",rows[i].name,fr,c,rows[i].pri,rows[i].txt);}
     if(!hl)hl=snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
     return hl;
 }
@@ -121,7 +121,7 @@ static void _html_gen(void){
                     char gc[B];snprintf(gc,B,"grep -h '^Name:' '%s/ssh/'*.txt 2>/dev/null|sed 's/Name: //'|sort -u",SROOT);
                     FILE*df=popen(gc,"r");char dln[256];while(df&&fgets(dln,256,df)){dln[strcspn(dln,"\n")]=0;if(!dln[0])continue;
                         char o[300];int ol=snprintf(o,300,"<option>%s</option>",dln);EMIT(o,ol);}if(df)pclose(df);}
-                else if(!strcmp(tag,"NO")){char*nb=malloc(131072);int nl2=_notes_build(nb,131072);EMIT(nb,nl2);free(nb);}
+                else if(!strcmp(tag,"NO")){char*nb=malloc(131072);int nl2=_notes_build(nb,131072,"notes");EMIT(nb,nl2);free(nb);}
                 else if(!strcmp(tag,"TO")){char*tb=malloc(131072);int tl2=_tasks_build(tb,131072,"pri");EMIT(tb,tl2);free(tb);}
                 else if(!strcmp(tag,"JO")||!strcmp(tag,"MY")||!strcmp(tag,"MV")){/* empty */}
                 else{EMIT(p,(int)(end+2-p));p=end+2;continue;}
@@ -506,22 +506,23 @@ static void _handle(int c){
         const char*r=busy?"syncing":sync_age();_sresp(c,200,"text/plain",r,(int)strlen(r));return;}
     if(!strncmp(req,"GET /note-list",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
-        int hl=_notes_build(html,cap);_sresp(c,200,"text/html",html,hl);free(html);return;}
+        int hl=_notes_build(html,cap,"notes");_sresp(c,200,"text/html",html,hl);free(html);return;}
     if(!strncmp(req,"GET /api/tasks",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
         const char*sort="pri";char*q=strstr(req,"sort="),*eol=strchr(req,'\n');
         if(q&&(!eol||q<eol)){q+=5;if(!strncmp(q,"new",3))sort="new";else if(!strncmp(q,"due",3))sort="due";}
         int hl=_tasks_build(html,cap,sort);_sresp(c,200,"text/html",html,hl);free(html);return;}
-    if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* unified view: notes + tasks + prompts. html is just a terminal: render `a flow` output. */
-        int cap=1<<18;char*buf=malloc((size_t)cap);if(!buf){_sresp(c,500,"text/plain","oom",3);return;}
-        char fcmd[16]="a flow";char*q=strstr(req,"sort="),*eol=strchr(req,'\n');
-        if(q&&(!eol||q<eol)){q+=5;if(!strncmp(q,"new",3))strcpy(fcmd,"a flow new");else if(!strncmp(q,"due",3))strcpy(fcmd,"a flow due");}
-        int bl=snprintf(buf,640,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>flow</title><body style=\"background:#111;color:#ddd;font:14px/1.45 ui-monospace,monospace;padding:1em 1em 3.6em;white-space:pre-wrap\"><div style=\"position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #333;padding:.7em;text-align:center\">sort: <a href=/flow?sort=pri style=color:#9cf>priority</a>  <a href=/flow?sort=new style=color:#9cf>created</a>  <a href=/flow?sort=due style=color:#9cf>deadline</a></div>");
-        FILE*f=popen(fcmd,"r");char ln[1024];
-        while(f&&fgets(ln,sizeof ln,f)){if(bl>cap-32)break;
-            for(char*p=ln;*p;p++){const char*e=*p=='<'?"&lt;":*p=='>'?"&gt;":*p=='&'?"&amp;":NULL;
-                if(e){bl+=snprintf(buf+bl,(size_t)(cap-bl),"%s",e);}else if(bl<cap-1){buf[bl++]=*p;}}}
-        if(f)pclose(f);buf[bl]=0;
+    if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* structured review surface: notes + tasks + prompts, full text, per-row archive/edit, add + suggest */
+        int cap=1<<19;char*buf=malloc((size_t)cap);if(!buf){_sresp(c,500,"text/plain","oom",3);return;}
+        const char*sort="pri";char*q=strstr(req,"sort="),*eol=strchr(req,'\n');
+        if(q&&(!eol||q<eol)){q+=5;if(!strncmp(q,"new",3))sort="new";else if(!strncmp(q,"due",3))sort="due";}
+        int bl=snprintf(buf,3200,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>flow</title><style>body{background:#111;color:#ddd;font:14px/1.5 ui-monospace,monospace;margin:0;padding:8px 12px 9em}h3{color:#6cf;margin:16px 0 4px;font-size:15px}.ni{display:flex;align-items:flex-start;padding:6px 0;border-bottom:1px solid #1c1c1c;word-break:break-word}.nx{background:none;border:1px solid #555;color:#999;padding:5px 10px;margin-right:9px;border-radius:4px;cursor:pointer;flex:none}button{background:#0b0f1a;color:#9cf;border:1px solid #2a3a5a;border-radius:6px;padding:6px 11px;margin:0 2px;cursor:pointer;font:13px monospace}a{color:#9cf}</style><body><h3>NOTES <button onclick=\"fadd('note','note')\">+</button></h3>");
+        bl+=_notes_build(buf+bl,cap-bl,"notes");
+        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>TASKS <button onclick=\"fadd('task add -u','task')\">+</button> <span style=\"color:#456;font-size:12px\">sort: <a href=/flow?sort=pri>pri</a> <a href=/flow?sort=new>created</a> <a href=/flow?sort=due>deadline</a></span></h3>");
+        bl+=_tasks_build(buf+bl,cap-bl,sort);
+        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>PROMPT CANDIDATES <button onclick=\"fadd('prompt c','prompt')\">+</button></h3>");
+        bl+=_notes_build(buf+bl,cap-bl,"prompts");
+        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<div style=\"position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #333;padding:.6em;text-align:center\"><button onclick=fgen()>\342\234\246 suggest (book \342\206\222 claude)</button> <a href=\"/doc?f=common/prompts/propose.txt\">edit lens</a> <span id=fs style=color:#6a6></span></div><script>function omni(c){fs.textContent='\342\200\246';fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(c)}).then(function(r){return r.text()}).then(function(){location.reload()})}function fadd(c,k){var v=prompt('new '+k);if(v)omni(c+' '+v)}function arc(u,key,f){var b={};b[key]=f;fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(){location.reload()})}function arcn(f){arc('/api/note/archive','f',f)}function arct(d){arc('/api/task/archive','d',d)}function arcp(f){arc('/api/prompt/archive','f',f)}function fgen(){var s=prompt('seed idea');if(!s)return;var b=prompt('book name as full context (blank=none)')||'-';omni('flow gen '+b+' '+s)}</script>");
         _sdoc(c,buf,bl);free(buf);return;}
     if(!strncmp(req,"POST /flowsplit",15)){   /* body=raw note text -> a split json -> {"segs":[..],"lossless":bool} */
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}body+=4;
@@ -536,14 +537,15 @@ static void _handle(int c){
             for(;*p&&*p!='"'&&i<1023;i++){if(*p=='\\'&&p[1])p++;seg[i]=*p++;}seg[i]=0;if(*p=='"')p++;
             if(seg[0]){pid_t ch=fork();if(!ch){int z=open("/dev/null",O_RDWR);if(z>=0){dup2(z,0);dup2(z,1);dup2(z,2);}signal(SIGCHLD,SIG_DFL);execlp("a","a","task",seg,(char*)0);_exit(1);}waitpid(ch,NULL,0);saved++;}}
         char m[128];int ml=snprintf(m,128,"✓ saved %d tasks — open the task page to verify",saved);_sresp(c,200,"text/plain",m,ml);return;}
-    if(!strncmp(req,"POST /api/note/archive",22)||!strncmp(req,"POST /api/task/archive",22)){
-        int isn=req[10]=='n';char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
-        char*k=strstr(body+4,isn?"\"f\":\"":"\"d\":\"");if(!k){_sresp(c,400,"text/plain","no name",7);return;}
+    if(!strncmp(req,"POST /api/note/archive",22)||!strncmp(req,"POST /api/task/archive",22)||!strncmp(req,"POST /api/prompt/archive",24)){
+        char kc=req[10];const char*kind=kc=='t'?"tasks":kc=='p'?"prompts":"notes";  /* n=notes t=tasks p=prompts */
+        char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
+        char*k=strstr(body+4,kc=='t'?"\"d\":\"":"\"f\":\"");if(!k){_sresp(c,400,"text/plain","no name",7);return;}
         k+=5;char name[256];int ni=0;while(k[ni]&&k[ni]!='"'&&ni<255){name[ni]=k[ni];ni++;}name[ni]=0;
         for(char*p=name;*p;p++)if(*p=='/'){_sresp(c,400,"text/plain","bad name",8);return;}
         char src[P],dst[P],ad[P];
-        snprintf(ad,P,"%s/git/%s/.archive",AROOT,isn?"notes":"tasks");mkdir(ad,0755);
-        snprintf(src,P,"%s/git/%s/%s",AROOT,isn?"notes":"tasks",name);
+        snprintf(ad,P,"%s/git/%s/.archive",AROOT,kind);mkdir(ad,0755);
+        snprintf(src,P,"%s/git/%s/%s",AROOT,kind,name);
         snprintf(dst,P,"%s/%s",ad,name);rename(src,dst);
         _sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /dash",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){

@@ -1,6 +1,7 @@
+static char fa_last[P];   /* last archived src path — flow batches these into one exit commit */
 static void do_archive(const char *p) {
     const char *s=strrchr(p,'/'); char a[P],d[P]; snprintf(a,P,"%.*s/.archive",(int)(s-p),p); mkdirp(a);
-    snprintf(d,P,"%s%s",a,s); rename(p,d);
+    snprintf(d,P,"%s%s",a,s); rename(p,d); snprintf(fa_last,P,"%s",p);
 }
 static char* note_save(const char *d, const char *t) {
     struct timespec tp; clock_gettime(CLOCK_REALTIME,&tp); time_t now=tp.tv_sec;
@@ -16,7 +17,7 @@ static char* task_add(const char*,const char*,int);
 static void ts_human(const char*,char*,size_t);
 static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
 static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved locally");}
-typedef struct{char p[P];char t[512];}GN;
+typedef struct{char p[P];char t[2048];}GN;
 static GN*gn;static int gn_cap;
 static int gncmp(const void*a,const void*b){return strcmp(strrchr(((const GN*)a)->p,'_'),strrchr(((const GN*)b)->p,'_'));}
 static int load_notes(const char *dir, const char *f) {
@@ -26,7 +27,7 @@ static int load_notes(const char *dir, const char *f) {
         const char *t=kvget(&kv,"Text"),*s=kvget(&kv,"Status");
         if(t&&(!s||!strcmp(s,"pending"))&&(!f||strcasestr(t,f))){
             if(n>=gn_cap){gn_cap=gn_cap?gn_cap*2:2048;gn=realloc(gn,(size_t)gn_cap*sizeof*gn);}
-            snprintf(gn[n].p,P,"%s",fp);snprintf(gn[n].t,512,"%s",t);n++;}
+            snprintf(gn[n].p,P,"%s",fp);snprintf(gn[n].t,2048,"%s",t);n++;}
     } closedir(d); return n;
 }
 static int cmd_note(int argc, char **argv) {
@@ -74,7 +75,7 @@ static int cmd_note(int argc, char **argv) {
         return 0;}
 }
 static int is5d(const char*s){return strspn(s,"0123456789")==5&&!s[5];}
-typedef struct{char d[P],t[256],p[8];}Tk;
+typedef struct{char d[P],t[1024],p[8];}Tk;
 static Tk T[1024];
 static int tcmp(const void*a,const void*b){int c=strcmp(((const Tk*)a)->p,((const Tk*)b)->p);return c?c:strcmp(strrchr(((const Tk*)a)->d,'_'),strrchr(((const Tk*)b)->d,'_'));}
 static int tcmp_new(const void*a,const void*b){const char*x=strrchr(((const Tk*)a)->d,'_'),*y=strrchr(((const Tk*)b)->d,'_');return strcmp(y?y:"",x?x:"");}  /* created, newest first */
@@ -91,7 +92,7 @@ static int load_tasks(const char*dir){
             if(!f)f=fopen(T[n].d,"r");if(f){(void)!fgets(r,B,f);fclose(f);r[strcspn(r,"\n")]=0;if(!strncmp(r,"Text: ",6))memmove(r,r+6,strlen(r+6)+1);}
             if(!*r){const char*s=hp?nm+6:nm;const char*u=strchr(s,'_');int tl=u?(int)(u-s):(int)strlen(s);
                 if(tl>255)tl=255;for(int i=0;i<tl;i++)r[i]=s[i]=='-'?' ':s[i];r[tl]=0;}
-            snprintf(T[n].t,256,"%s",r);}
+            snprintf(T[n].t,1024,"%s",r);}
         n++;
     }closedir(d);qsort(T,(size_t)n,sizeof(Tk),tcmp);return n;
 }
@@ -264,7 +265,7 @@ static int cmd_task(int argc,char**argv){
         int bynew=sub&&!strcmp(sub,"new");if(bynew)qsort(T,(size_t)n,sizeof(Tk),tcmp_new);
         int k=argc>3&&isdigit((unsigned char)argv[3][0])?atoi(argv[3]):4;if(k>n)k=n;  /* default top 4 */
         printf("%d tasks  \033[90msort: %s\033[0m\n",n,bynew?"created":"priority");
-        for(int i=0;i<k;i++){char fr[24];task_front(T[i].d,fr,24);printf("  %2d %s \033[90mP%s\033[0m %.46s\n",i+1,fr,T[i].p,T[i].t);}
+        for(int i=0;i<k;i++){char fr[24];task_front(T[i].d,fr,24);printf("  %2d %s \033[90mP%s\033[0m %s\n",i+1,fr,T[i].p,T[i].t);}
         printf("\n  l=list  r=review  v=vision  n=new  d=due  k=rank  m=manage\n  f=flag  s=sync  h=help  1-9=open task\n  add: a task add [--by <model>] <text>   (--by = LLM proposal; human sets priority/deadline)\n  last synced %s\n",sync_age());
         if(!isatty(0))return 0;
         printf("\n> ");fflush(stdout);
@@ -510,36 +511,134 @@ static int cmd_task(int argc,char**argv){
 static void win_about(const char*sid,char*out,int sz){*out=0;if(!sid||strlen(sid)<8)return;
     char cmd[600];snprintf(cmd,600,"f=$(ls -1t ~/.claude/projects/*/%s.jsonl 2>/dev/null|head -1);[ -n \"$f\" ]&&jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' \"$f\" 2>/dev/null|grep -vm1 '^<'",sid);
     FILE*p=popen(cmd,"r");if(!p)return;if(fgets(out,sz,p))out[strcspn(out,"\n")]=0;pclose(p);}
+/* proposal spine: claude -p (single-shot, no agency) reads an editable lens prompt + a seed,
+   emits NOTE:/TASK:/PROMPT: lines that land in the review surface (notes/tasks/prompts). */
+static const char*PROPOSE_DEFAULT=
+"Be a sharp, decorrelated idea-generator for Sean, an operator who directs AI agents.\n"
+"Read the SEED and propose concrete items. Output ONLY lines, each beginning with exactly one tag:\n"
+"NOTE: <a raw idea, observation, angle, or risk worth keeping>\n"
+"TASK: <a concrete, actionable task>\n"
+"PROMPT: <a prompt to hand a coding agent to accomplish a task>\n"
+"Give 4-8 items, mixed across tags. Specific and non-obvious. No preamble, no other text.\n"
+"(Edit this lens with `a flow` -> [e], e.g. act as von Neumann / Torvalds / a security paranoid.)\n";
+static void propose_ensure(char*tpl,int sz){snprintf(tpl,(size_t)sz,"%s/common/prompts/propose.txt",SROOT);
+    struct stat st;if(stat(tpl,&st)){char d[P];snprintf(d,P,"%s/common/prompts",SROOT);mkdirp(d);writef(tpl,PROPOSE_DEFAULT);}}
+static void propose_run(const char*seed,const char*model,const char*book){
+    char tpl[P];propose_ensure(tpl,P);size_t tl;char*tc=readf(tpl,&tl);if(!tc)return;
+    char pf[P];snprintf(pf,P,"%s/a_propose_%d.txt",TMP,(int)getpid());
+    FILE*f=fopen(pf,"w");if(!f){free(tc);return;}
+    if(book&&*book){char bf[P];snprintf(bf,P,"%s/books/%s/output/explained.txt",AROOT,book);   /* load the ENTIRE book as context */
+        if(access(bf,R_OK))snprintf(bf,P,"%s/books/%s/output/%s.txt",AROOT,book,book);
+        if(access(bf,R_OK)){char od[P];snprintf(od,P,"%s/books/%s/output",AROOT,book);DIR*bd=opendir(od);struct dirent*be;bf[0]=0;  /* fallback: any .txt in output/ */
+            if(bd){while((be=readdir(bd)))if(strstr(be->d_name,".txt")){snprintf(bf,P,"%s/%s",od,be->d_name);break;}closedir(bd);}}
+        size_t bl=0;char*bc=bf[0]?readf(bf,&bl):NULL;
+        if(bc){fprintf(f,"=== BOOK CONTEXT: %s ===\nDraw ideas, angles, and methods from this entire work:\n%s\n=== END BOOK ===\n\n",book,bc);free(bc);printf("  loaded book: %s (%zu KB)\n",book,bl/1024);}
+        else printf("  (book '%s' had no readable text)\n",book);}
+    fputs(tc,f);fprintf(f,"\nSEED: %s\n",seed);fclose(f);free(tc);
+    char cmd[P];snprintf(cmd,P,"claude -p --dangerously-skip-permissions --model %s < '%s' 2>/dev/null",model,pf);
+    printf("  generating with %s (single-shot)…\n",model);fflush(stdout);
+    FILE*p=popen(cmd,"r");char ln[B];int cn=0,ct=0,cp=0;char d2[P];
+    while(p&&fgets(ln,B,p)){ln[strcspn(ln,"\n")]=0;char*t=ln;while(*t==' ')t++;
+        const char*v=0;int which=0;
+        if(!strncmp(t,"NOTE:",5)){v=t+5;which=1;}else if(!strncmp(t,"TASK:",5)){v=t+5;which=2;}else if(!strncmp(t,"PROMPT:",7)){v=t+7;which=3;}
+        if(!which)continue;while(*v==' ')v++;if(!*v)continue;
+        if(which==2){snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);task_add(d2,v,50000);ct++;}
+        else{snprintf(d2,P,"%s/%s",SROOT,which==1?"notes":"prompts");mkdirp(d2);note_save(d2,v);which==1?cn++:cp++;}}
+    if(p)pclose(p);unlink(pf);
+    printf("  ✓ proposed %d notes, %d tasks, %d prompts\n",cn,ct,cp);}
+/* instant edit receipt: blob URL is deterministic (repo slug cached once). The flocked add+commit is
+   BACKGROUNDED — sync holds that lock for seconds during pushes, a foreground flock froze o→ESC.
+   add/commit never touch the worktree (no stale redraw); the rebase that does stays exit-only. */
+static void edit_st(const char*f,char*st){
+    static char rp[128];if(!*rp){char c[B];snprintf(c,B,"git -C '%s' remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##'",SROOT);
+        pcmd(c,rp,128);rp[strcspn(rp,"\n")]=0;if(!*rp)snprintf(rp,128,"-");}
+    const char*rel=f;size_t sl=strlen(SROOT);if(!strncmp(f,SROOT,sl)&&f[sl]=='/')rel=f+sl+1;
+    char c[B];snprintf(c,B,"flock /tmp/.a_git.lock -c \"git -C '%s' add '%s'&&git -C '%s' commit -qm 'flow edit'\" >/dev/null 2>&1 &",SROOT,f,SROOT);(void)!system(c);
+    if(*rp!='-')snprintf(st,256,"✓ edited → https://github.com/%s/blob/main/%s  (pushes on exit)",rp,rel);
+    else snprintf(st,256,"✓ edited %s (local)",rel);}
+/* archive a flow item by its display id (n1..n4 notes, t1..t4 tasks, p1..p4 prompts); re-applies the active sort so the id matches the screen */
+static int flow_archive(const char*id,const char*srt){
+    int num=atoi(id+1);if(num<1||num>4)return 0;char dd[P];
+    if(id[0]=='t'){snprintf(dd,P,"%s/tasks",SROOT);int nt=load_tasks(dd);
+        if(!strcmp(srt,"new"))qsort(T,(size_t)nt,sizeof(Tk),tcmp_new);
+        else if(!strcmp(srt,"due")){int dl[1024];for(int i=0;i<nt;i++){int v=task_dl(T[i].d);dl[i]=v<0?1000000:v;}
+            for(int i=1;i<nt;i++){Tk k=T[i];int kd=dl[i],j=i-1;while(j>=0&&dl[j]>kd){T[j+1]=T[j];dl[j+1]=dl[j];j--;}T[j+1]=k;dl[j+1]=kd;}}
+        if(num<=nt){do_archive(T[num-1].d);printf("  ✓ archived t%d\n",num);return 1;}}
+    else{snprintf(dd,P,"%s/%s",SROOT,id[0]=='n'?"notes":"prompts");int m=load_notes(dd,NULL);qsort(gn,(size_t)m,sizeof(GN),gncmp);
+        int idx=m-num;if(idx>=0&&idx<m){do_archive(gn[idx].p);printf("  ✓ archived %s\n",id);return 1;}}
+    return 0;}
+static int key1(void){struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
+    char c=0;int rv=(int)read(0,&c,1);tcsetattr(0,TCSAFLUSH,&ot);return rv==1?c:27;}   /* no \n: at the last row it scrolls the screen = menu jitter */
+/* bottom-align the single shown item flush against the pinned strip: content + keys sit in one
+   eye fixation, no dead gap. Measures wrapped rows (skips ANSI + utf8 continuations) to place. */
+static void place1(const char*s){struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);
+    int rows=w.ws_row>8?w.ws_row:24,cols=w.ws_col?w.ws_col:80,r=1,c=0;
+    for(const char*p=s;*p;p++){if(*p==27){while(*p&&*p!='m')p++;continue;}if((*p&0xC0)==(char)0x80)continue;if(++c>=cols){r++;c=0;}}
+    int y=rows-4-r;printf("\033[%d;1H%s\n",y<1?1:y,s);}
+/* archive proof on exit (ARCH #13): stage exactly the session's rename pairs (never add -A — other
+   agents share this repo), one commit, print its github URL. Silent local moves are unverifiable. */
+static int flow_exit(char af[][P],int na,int ne){if(!na){if(ne)sync_bg();return 0;}   /* edits already committed; exit is the first safe moment to pull/push */
+    char*c=malloc(16384);int l=snprintf(c,16384,"cd '%s'&&git add",SROOT);
+    for(int i=0;i<na&&i<64;i++){const char*s=strrchr(af[i],'/');
+        l+=snprintf(c+l,(size_t)(16384-l)," '%s' '%.*s/.archive%s'",af[i],(int)(s-af[i]),af[i],s);}
+    snprintf(c+l,(size_t)(16384-l)," 2>/dev/null;git commit -qm 'flow: %d archived' >/dev/null 2>&1&&echo \"$(git remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##') $(git rev-parse --short HEAD)\"",na);
+    char r[256]="";pcmd(c,r,256);free(c);r[strcspn(r,"\n")]=0;char*sp=strchr(r,' ');
+    if(sp&&r[0]!=' '){*sp=0;printf("\n  ✓ %d archived → https://github.com/%s/commit/%s  (syncing)\n",na,r,sp+1);sync_bg();}
+    else printf("\n  ! %d archived locally only (commit failed or no remote)\n",na);
+    return 0;}
 /* a flow — one place: notes + tasks + prompts, three independent flat lists (no cross-association).
    The single source of truth: `GET /flow` just renders this command's output (html is a terminal). */
 static int cmd_flow(int argc,char**argv){perf_disarm();
+    if(argc>3&&!strcmp(argv[2],"x")){flow_archive(argv[3],argc>4?argv[4]:"pri");return 0;}  /* a flow x <id> [sort] — non-interactive archive (html calls this) */
+    if(argc>3&&!strcmp(argv[2],"gen")){const char*bk=strcmp(argv[3],"-")?argv[3]:NULL;char sd[B]="";ajoin(sd,B,argc,argv,4);  /* a flow gen <book|-> <seed…> — suggestor w/ full book context */
+        if(*sd)propose_run(sd,"opus",bk);return 0;}
     int tty=isatty(1);const char*BO=tty?"\033[1m":"",*DM=tty?"\033[90m":"",*X=tty?"\033[0m":"";
-    const char*srt="pri";int verbose=0;   /* a flow [pri|new|due] [v]  — v = show each window's purpose */
-    for(int i=2;i<argc;i++){if(!strcmp(argv[i],"v")||!strcmp(argv[i],"verbose"))verbose=1;else srt=argv[i];}
+    /* PAGED BY DEFAULT — phone-over-ssh scream: the full dump scrolls the one-key menu off a phone
+       screen, so you could read OR act, never both. One section per screen; [j]/[k] flip pages
+       (vim muscle memory, labeled next/prev in the menu). The menu is PINNED to the bottom rows of
+       the terminal so across flips and actions every key sits in the same visual spot — eye and
+       thumb never re-hunt, and bottom = thumb-reachable on a phone. [a]/`a flow all` keeps the
+       everything-at-once view; pipe/web stay full render. Loads are gated per page so a flip costs
+       only its own section (notes page never pays the tmux popen). Actions redraw in-process
+       (continue, not re-exec): page + sort survive, no respawn. */
+    const char*srt="pri";int verbose=0,pg=(tty&&isatty(0))?0:-1;   /* a flow [pri|new|due] [v] [all|0-4] */
+    for(int i=2;i<argc;i++){if(!strcmp(argv[i],"v")||!strcmp(argv[i],"verbose"))verbose=1;else if(!strcmp(argv[i],"all"))pg=-1;
+        else if(isdigit((unsigned char)argv[i][0])&&!argv[i][1])pg=(argv[i][0]-'0')%5;else srt=argv[i];}
+    #define PG(i) (pg<0||pg==(i))
+    char st[256]="";   /* action result, shown above the next menu — survives the clear-screen redraw */
+    static char af[64][P];int na=0,ne=0;   /* archived / edited this session → receipts; push deferred to exit */
+    for(;;){
     int bynew=!strcmp(srt,"new")||!strcmp(srt,"date"),bydue=!strcmp(srt,"due");
-    int lim=4;char dir[P];   /* constrain to 4 each */
-    snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);qsort(gn,(size_t)nn,sizeof(GN),gncmp);
-    printf("%s━━ NOTES (%d)%s %snewest%s\n",BO,nn,X,DM,X);
+    int lim=4,cnt=-1;char dir[P],top[P];*top=0;   /* all-mode shows 4 each; cnt + top (current item's file) feed the strip + [o] */
+    if(tty&&pg>=0)printf("\033[H\033[2J");
+    if(PG(0)){snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);cnt=nn;qsort(gn,(size_t)nn,sizeof(GN),gncmp);
+    if(pg>=0){if(nn){int ix=nn-1;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="",b2[B];if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
+        snprintf(b2,B,"  %sn1 %-14s%s %s",DM,fr,X,gn[ix].t);snprintf(top,P,"%s",gn[ix].p);place1(b2);}}   /* gncmp asc → newest at end */
+    else{printf("%s━━ NOTES (%d)%s %snewest%s\n",BO,nn,X,DM,X);
     for(int i=0;i<nn&&i<lim;i++){int ix=nn-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
-        printf("  %s%-14s%s %.62s\n",DM,fr,X,gn[ix].t);}   /* gncmp asc → newest at end */
-    if(nn>lim)printf("  %s…+%d more%s\n",DM,nn-lim,X);
-    snprintf(dir,P,"%s/tasks",SROOT);int nt=load_tasks(dir);
+        printf("  %sn%d %-14s%s %s\n",DM,i+1,fr,X,gn[ix].t);}
+    if(nn>lim)printf("  %s…+%d more%s\n",DM,nn-lim,X);}}
+    if(PG(1)){snprintf(dir,P,"%s/tasks",SROOT);int nt=load_tasks(dir);cnt=nt;
     if(bynew)qsort(T,(size_t)nt,sizeof(Tk),tcmp_new);
     else if(bydue){int dl[1024];for(int i=0;i<nt;i++){int v=task_dl(T[i].d);dl[i]=v<0?1000000:v;}
         for(int i=1;i<nt;i++){Tk k=T[i];int kd=dl[i],j=i-1;while(j>=0&&dl[j]>kd){T[j+1]=T[j];dl[j+1]=dl[j];j--;}T[j+1]=k;dl[j+1]=kd;}}
-    printf("\n%s━━ TASKS (%d)%s — %s%s%s  %ssort: a flow pri|new|due%s\n",BO,nt,X,BO,bynew?"created":bydue?"deadline":"priority",X,DM,X);
+    if(pg>=0){if(nt){char fr[24],b2[B];task_front(T[0].d,fr,24);
+        snprintf(b2,B,"  %st1%s %s %sP%s%s %s",DM,X,fr,DM,T[0].p,X,T[0].t);snprintf(top,P,"%s",T[0].d);place1(b2);}}
+    else{printf("\n%s━━ TASKS (%d)%s — %s%s%s  %ssort: a flow pri|new|due%s\n",BO,nt,X,BO,bynew?"created":bydue?"deadline":"priority",X,DM,X);
     for(int i=0;i<nt&&i<lim;i++){char fr[24];task_front(T[i].d,fr,24);
-        printf("  %s %sP%s%s %.54s\n",fr,DM,T[i].p,X,T[i].t);}
-    if(nt>lim)printf("  %s…+%d more%s\n",DM,nt-lim,X);
+        printf("  %st%d%s %s %sP%s%s %s\n",DM,i+1,X,fr,DM,T[i].p,X,T[i].t);}
+    if(nt>lim)printf("  %s…+%d more%s\n",DM,nt-lim,X);}}
     /* PROMPT CANDIDATES — suggested prompts that could accomplish a task (appendable like notes/tasks: a prompt c <text>) */
-    snprintf(dir,P,"%s/prompts",SROOT);int npc=load_notes(dir,NULL);qsort(gn,(size_t)npc,sizeof(GN),gncmp);
-    printf("\n%s━━ PROMPT CANDIDATES (%d)%s %ssuggested prompts for a task%s\n",BO,npc,X,DM,X);
+    if(PG(2)){snprintf(dir,P,"%s/prompts",SROOT);int npc=load_notes(dir,NULL);cnt=npc;qsort(gn,(size_t)npc,sizeof(GN),gncmp);
+    if(pg>=0){if(npc){int ix=npc-1;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="",b2[B];if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
+        snprintf(b2,B,"  %sp1 %-14s%s %s",DM,fr,X,gn[ix].t);snprintf(top,P,"%s",gn[ix].p);place1(b2);}}
+    else{printf("\n%s━━ PROMPT CANDIDATES (%d)%s %ssuggested prompts for a task%s\n",BO,npc,X,DM,X);
     for(int i=0;i<npc&&i<lim;i++){int ix=npc-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
-        printf("  %s%-14s%s %.62s\n",DM,fr,X,gn[ix].t);}
+        printf("  %sp%d %-14s%s %s\n",DM,i+1,fr,X,gn[ix].t);}
     if(npc>lim)printf("  %s…+%d more%s\n",DM,npc-lim,X);
-    if(!npc)printf("  %s(none — a prompt c <text>)%s\n",DM,X);
+    if(!npc)printf("  %s(none — a prompt c <text>)%s\n",DM,X);}}
     /* TMUX WINDOWS — ★ = a window with an `a done` panel waiting for review, ● = active.  a flow v adds each window's purpose */
-    printf("\n%s━━ TMUX WINDOWS%s %s(★=a done · ●=active%s)%s\n",BO,X,DM,verbose?"":" · a flow v=about",X);
+    if(PG(3)){printf("\n%s━━ TMUX WINDOWS%s %s(★=a done · ●=active%s)%s\n",BO,X,DM,verbose?"":" · a flow v=about",X);
     {char done[4096]=" ",ln[1024];struct{char wid[16],sid[80];}ws[64];int nws=0;
         FILE*pp=popen("tmux list-panes -a -F '#{window_id} #{pane_start_command}' 2>/dev/null","r");
         while(pp&&fgets(ln,sizeof ln,pp)){ln[strcspn(ln,"\n")]=0;char*sp=strchr(ln,' ');if(!sp)continue;*sp=0;char*wid=ln,*cm=sp+1;
@@ -558,28 +657,69 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
             if(verbose){const char*sid=NULL;for(int j=0;j<nws;j++)if(!strcmp(ws[j].wid,ln)){sid=ws[j].sid;break;}
                 char ab[256]="";if(sid)win_about(sid,ab,256);
                 printf("       %s↳ %.76s%s\n",DM,ab[0]?ab:"(shell)",X);}}
-        if(wp)pclose(wp);if(!any)printf("  %s(no tmux windows)%s\n",DM,X);}
+        if(wp)pclose(wp);if(!any)printf("  %s(no tmux windows)%s\n",DM,X);}}
     /* COMMON PROMPTS — common instructions of how to act, not specific tasks (kept; managed by `a prompt`) */
-    char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);
+    if(PG(4)){char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);
     static char pf[256][P];int np=listdir(pdir,pf,256),shown=0;
     printf("\n%s━━ COMMON PROMPTS%s %s(common/prompts — how to act, not tasks)%s\n",BO,X,DM,X);
     for(int i=0;i<np;i++){char*b=strrchr(pf[i],'/');b=b?b+1:pf[i];
         if(!strstr(b,".txt"))continue;printf("  %s\n",b);shown++;}
-    if(!shown)printf("  %s(none)%s\n",DM,X);
-    /* one-keypress menu — add into notes/tasks/prompts (saves + prints commit URL), or re-sort */
+    if(!shown)printf("  %s(none)%s\n",DM,X);}
+    /* one-keypress menu — act on key-down, no Enter; always on-screen with its page's content.
+       Key letters bright yellow: deliberate monochrome exception — on a phone the eye must FIND
+       the key, not read labels. Keys follow GMAIL conventions (the email shortcuts billions
+       already know): j/k next/prev, e=archive top item of THIS page (zero confirm, instant
+       redraw — triage is dismiss-dismiss-dismiss, friction multiplies by queue length),
+       x=select # then archive (one raw digit, no Enter), c=compose an item of the current
+       page's type. No shifted keys: shift is a chord on a phone keyboard. */
     if(!tty||!isatty(0))return 0;   /* web/pipe = static render only */
-    printf("\n  %sadd:%s [n]ote [t]ask [p]rompt   %ssort:%s [1]pri [2]new [3]due   [q]/esc=quit\n> ",BO,X,BO,X);fflush(stdout);
-    struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
-    char ch;int rv=read(0,&ch,1);tcsetattr(0,TCSAFLUSH,&ot);putchar('\n');
-    if(rv!=1||ch==27||ch==3||ch=='q')return 0;   /* esc / q / ^C exit */
-    if(ch=='1'||ch=='2'||ch=='3'){const char*s=ch=='1'?"pri":ch=='2'?"new":"due";char*av[]={"a","flow",(char*)s,verbose?"v":NULL,NULL};execvp("a",av);}
-    if(ch=='n'||ch=='t'||ch=='p'){char buf[B];
-        printf("  %s> ",ch=='n'?"note":ch=='t'?"task":"prompt");fflush(stdout);
-        if(fgets(buf,B,stdin)&&buf[0]!='\n'){buf[strcspn(buf,"\n")]=0;char d2[P],*path;const char*lbl;
-            if(ch=='t'){snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);path=task_add(d2,buf,50000);lbl="task";}
-            else{snprintf(d2,P,"%s/%s",SROOT,ch=='n'?"notes":"prompts");mkdirp(d2);path=note_save(d2,buf);lbl=ch=='n'?"note":"prompt";}
-            printf("  ");fflush(stdout);note_url(path,lbl,NULL);}   /* prints: saved → <commit url> */
-        printf("  %s↵=refresh  esc=quit%s",DM,X);fflush(stdout);int rk=getchar();if(rk==27||rk=='q')return 0;
-        char*av[]={"a","flow",(char*)srt,verbose?"v":NULL,NULL};execvp("a",av);}
-    return 0;
+    if(pg>=0){struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);printf("\033[%d;1H",(w.ws_row>8?w.ws_row:24)-4);}else putchar('\n');   /* pin menu to bottom rows: fixed position across flips */
+    if(pg>=0){static const char*PN[]={"NOTES","TASKS","PROMPTS","WINDOWS","COMMON PROMPTS"};   /* identity line IN the pinned strip: long wrapped items scroll the top header off a phone screen; the bottom strip is the only place guaranteed in view. \033[K per line: overflowed content scrolls old text into these rows — overprint must erase to EOL */
+        printf("%s━━ %d/5 %s",BO,pg+1,PN[pg]);if(cnt>=0)printf(" (%d)",cnt);
+        if(pg==1)printf(" — %s",bynew?"created":bydue?"deadline":"priority");printf("%s\033[K\n",X);}
+    if(*st){printf("  \033[32m%s\033[0m",st);*st=0;}printf("\033[K\n");   /* status row always emitted (even empty) so menu rows never shift */
+    static const char*CT[]={"note","task","prompt","note","note"};const char*ct=CT[pg<0?0:pg];char tc=pg==1?'t':pg==2?'p':'n';
+    #define K(s) "[\033[1;33m" s "\033[0m]"
+    printf("  " K("e") " archive  " K("o") " edit  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("l") " g's prompt  " K("x") " archive by id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "/esc quit\033[K\n> \033[J",ct);fflush(stdout);
+    #undef K
+    int ch=key1();
+    if(ch==27||ch==3||ch=='q')return flow_exit(af,na,ne);   /* esc / q / ^C exit */
+    if(ch=='j'){pg=pg<0?0:(pg+1)%5;continue;}
+    if(ch=='k'){pg=pg<0?4:(pg+4)%5;continue;}
+    if(ch=='a'){pg=pg<0?0:-1;continue;}
+    if(ch>='1'&&ch<='3'){srt=ch=='1'?"pri":ch=='2'?"new":"due";continue;}
+    if(ch=='e'){if(pg>=0&&pg<=2){char id[3]={tc,'1',0};   /* gmail e: top of current page goes, next promotes into view */
+            if(flow_archive(id,srt)){if(na<64)snprintf(af[na],P,"%s",fa_last);na++;snprintf(st,128,"✓ archived %s — next up",id);}else snprintf(st,128,"nothing to archive");}
+        else snprintf(st,128,"e: not a list page");continue;}
+    int acted=0;
+    if(ch=='x'){char ib[16];printf("  archive (n1 t2 p3 …)> ");fflush(stdout);   /* typed id = power path; only one item is on screen */
+        if(fgets(ib,16,stdin)&&(ib[0]=='n'||ib[0]=='t'||ib[0]=='p')){ib[strcspn(ib,"\n")]=0;
+            if(flow_archive(ib,srt)){if(na<64)snprintf(af[na],P,"%s",fa_last);na++;snprintf(st,128,"✓ archived %s",ib);}else snprintf(st,128,"x no %s",ib);}continue;}
+    if(ch=='g'){char sb[B];printf("  seed> ");fflush(stdout);
+        if(fgets(sb,B,stdin)&&sb[0]!='\n'){sb[strcspn(sb,"\n")]=0;
+            char book[256]="",bc[P];snprintf(bc,P,"ls -1 '%s/books' 2>/dev/null|grep -v '\\.py$'|fzf --prompt='book as context (esc=none)> ' --height=45%%",AROOT);
+            FILE*bp=popen(bc,"r");if(bp){if(fgets(book,256,bp))book[strcspn(book,"\n")]=0;pclose(bp);}
+            propose_run(sb,"opus",book[0]?book:NULL);}acted=1;}
+    if(ch=='o'){if(*top){char f[P+8];struct stat sb;   /* gmail o: open the shown item in e -w (writes on quit/ESC) → instant back, edited text on screen, url receipt in status */
+            if(!stat(top,&sb)&&S_ISDIR(sb.st_mode))snprintf(f,P+8,"%s/task",top);else snprintf(f,P+8,"%s",top);
+            int off=0;{FILE*fp=fopen(f,"r");char h[7]={0};if(fp){(void)!fread(h,1,6,fp);fclose(fp);off=!strcmp(h,"Text: ")?6:0;}}
+            /* cursor lands AFTER "Text: " (+6): o-then-type must edit the value — at byte 0 the insert
+               breaks the kv key and the note silently drops from the pending list (the it-didnt-change bug) */
+            char cm[P+24];snprintf(cm,P+24,"e -w %s'%s'",off?"+6 ":"",f);(void)!system(cm);
+            edit_st(f,st);ne++;}
+        else snprintf(st,128,"o: nothing to edit");continue;}
+    if(ch=='l'){char tpl[P];propose_ensure(tpl,P);   /* edit the prompt [g] generates with */
+        char cmd[P+8];snprintf(cmd,P+8,"e -w '%s'",tpl);(void)!system(cmd);
+        edit_st(tpl,st);ne++;continue;}
+    if(ch=='c'){char buf[B];   /* gmail c: compose — new item of the current page's type (note elsewhere) */
+        printf("  new %s> ",ct);fflush(stdout);
+        if(fgets(buf,B,stdin)&&buf[0]!='\n'){buf[strcspn(buf,"\n")]=0;char d2[P],*path;
+            if(pg==1){snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);path=task_add(d2,buf,50000);}
+            else{snprintf(d2,P,"%s/%s",SROOT,pg==2?"prompts":"notes");mkdirp(d2);path=note_save(d2,buf);}
+            printf("  ");fflush(stdout);note_url(path,ct,NULL);}acted=1;}   /* prints: saved → <commit url> */
+    if(!acted)continue;   /* unknown key → just redraw */
+    printf("  %sany key=back  esc=quit%s",DM,X);fflush(stdout);
+    if((ch=key1())==27||ch=='q')return flow_exit(af,na,ne);
+    }
+    #undef PG
 }

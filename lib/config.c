@@ -98,6 +98,21 @@ static int cmd_prompt(int argc, char **argv) {
     char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
     const char*act=cfget("prompt");if(!*act)act="default";
     const char*sub=argc>2?argv[2]:"";
+    /* DISTINCTION: prompt CANDIDATES (a prompt c [text]) = suggested prompts that could accomplish a *task*
+       — an appendable list like notes/tasks (lives in SROOT/prompts, note-file format so `a flow`/load_notes reads it).
+       COMMON PROMPTS (the .txt files below, managed by `a prompt`) = common instructions of how to *act*, not specific tasks. */
+    if(!strcmp(sub,"c")||!strcmp(sub,"cand")){perf_disarm();
+        char cd[P];snprintf(cd,P,"%s/prompts",SROOT);mkdirp(cd);
+        if(argc>3){char t[B]="";ajoin(t,B,argc,argv,3);
+            struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);char ts[32],fn[P],buf[B];
+            strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
+            snprintf(fn,P,"%s/%08x_%s.%09ld.txt",cd,(unsigned)(tp.tv_nsec^(unsigned)tp.tv_sec),ts,tp.tv_nsec);
+            snprintf(buf,B,"Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n",t,DEV,ts);writef(fn,buf);
+            puts("✓ candidate saved");return 0;}
+        char pp[256][P];int n=listdir(cd,pp,256);printf("%d prompt candidates  (add: a prompt c <text>)\n",n);
+        for(int i=0;i<n;i++){size_t l;char*ck=readf(pp[i],&l);if(!ck)continue;
+            if(!strncmp(ck,"Text: ",6)){char*nl=strchr(ck,'\n');if(nl)*nl=0;printf("  %s\n",ck+6);}free(ck);}
+        return 0;}
     if(!strcmp(sub,"show")) {
         perf_disarm();CWD(wd);char tf[P];snprintf(tf,P,"/tmp/a_prompt_show_%d.txt",(int)getpid());
         write_prompt_file(tf,wd,argc>3?argv[3]:NULL);
@@ -111,7 +126,7 @@ static int cmd_prompt(int argc, char **argv) {
         for(int i=0;i<n;i++){char nm[64];const char*b=bname(paths[i]),*dot=strrchr(b,'.');snprintf(nm,64,"%.*s",(int)(dot?dot-b:(long)strlen(b)),b);
             struct stat st;long sz=!stat(paths[i],&st)?(long)st.st_size:0;
             printf(" %s %-12s %ld tok\n",!strcmp(nm,act)?"\033[32m*\033[0m":" ",nm,sz/4);}
-        printf("\nload: a prompt <name>   edit: a prompt edit <name>   unified prompt: a prompt show\n");return 0;}
+        printf("\nload: a prompt <name>   edit: a prompt edit <name>   unified prompt: a prompt show\n  candidates (task-specific, appendable): a prompt c [text]\n");return 0;}
     if(!strcmp(sub,"edit")){const char*nm=argc>3?argv[3]:act;char f[P];snprintf(f,P,"%s/%s.txt",d,nm);
         execlp("e","e",f,(char*)0);execlp("vi","vi",f,(char*)0);return 1;}
     char f[P];snprintf(f,P,"%s/%s.txt",d,sub);

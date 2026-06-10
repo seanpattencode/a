@@ -35,8 +35,10 @@ static void writef(const char *p, const char *data) {
     FILE *f = fopen(p, "w"); if (f) { fputs(data, f); fclose(f); }
 }
 
-/* per-cwd commit-state path (scopes parallel jobs) */
-static void commit_path(char*o){CWD(w);int n=snprintf(o,P,"%s/commit_",DDIR);for(char*p=w;*p&&n<P-1;p++)o[n++]=*p=='/'?'_':*p;o[n]=0;}
+/* per-cwd+pane commit-state path: concurrent agents share a cwd but not a tmux pane, so suffix the pane id (A_PANE override lets a done's spawned review pane reach the agent pane's file) */
+static void commit_path(char*o){CWD(w);int n=snprintf(o,P,"%s/commit_",DDIR);for(char*p=w;*p&&n<P-1;p++)o[n++]=*p=='/'?'_':*p;
+    const char*tp=getenv("A_PANE");if(!tp||!*tp)tp=getenv("TMUX_PANE");
+    if(tp&&*tp&&n<P-1){o[n++]='_';for(const char*q=tp;*q&&n<P-1;q++)o[n++]=isalnum((unsigned char)*q)?*q:'_';}o[n]=0;}
 
 static int pcmd(const char *cmd, char *out, int sz) {
     if (out) out[0] = 0;
