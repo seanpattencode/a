@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 # experimental — promoted from my/auto/ after working end-to-end on Gemini + Claude.ai.
-"""bri — userscript bridge via HTTP long-poll (bypasses page CSP, works on
-Gemini/Claude.ai/other strict-CSP LLM UIs). Listens :1234 (HTTP: serves
-userscript, GET /poll for next cmd, POST /resp for results); :1235 (push JSON).
+"""bri — extension bridge via HTTP long-poll (bypasses page CSP, works on
+Gemini/Claude.ai/chatgpt/other strict-CSP LLM UIs). Listens :1234 (HTTP:
+GET /poll for next cmd, POST /resp for results); :1235 (push JSON).
 
-Two interchangeable page-side clients (pick one or run both — server doesn't care):
-  (a) Tampermonkey userscript — Setup: install Tampermonkey extension → open
-      http://127.0.0.1:1234/a.user.js → click Install/Update. Per-bump cost is
-      one Update click. Works on any browser that has TM.
-  (b) Firefox WebExtension at lib/bri-ext/ — Setup: drop a-bridge.xpi into
-      <profile>/extensions/ + set user_pref("xpinstall.signatures.required",
-      false) in user.js + restart FF. No per-bump click; rebuild xpi & restart.
-      Wins over userscript: eval works on chatgpt.com (TM hits CSP there);
-      fetch goes through extension context (no GM_xhr). Same dispatch loop,
-      same /poll + /resp protocol — server is identical for both clients.
-  Both: launch Firefox WITHOUT -marionette → sign into target site once.
+ONE page-side client per browser — never two in one tab (a second client makes
+every command double-execute and responses interleave one-behind):
+  Firefox: WebExtension at lib/bri-ext/ — `a bri deploy` builds + installs +
+      restarts. Eval runs in extension context (immune to page CSP, incl.
+      chatgpt.com); fetch likewise. Tampermonkey client removed 2026-06-10.
+  Chrome:  lib/bri-chrome/ (same /poll + /resp protocol).
+  No Marionette/CDP: navigator.webdriver + devtools side-channels get flagged
+  by Google sign-in ("browser may not be secure"); extension context is a real
+  user. Launch Firefox WITHOUT -marionette → sign into target site once.
 
 Drive shortcuts (bridge must already be running in another process):
   bri <url>          navigate (http/https prefix detected)
@@ -77,92 +75,19 @@ Tail full event stream: tail -f /tmp/bri.log
 import socket, threading, queue, json, sys, time
 
 PORT, CMD, LOG = 1234, 1235, '/tmp/bri.log'
-pollers, pending = [], {}  # pollers: list[Queue]  pending: id -> Queue
+pollers, pending = [], {}  # pollers: list[(Queue, browser)]  pending: id -> Queue
 
-USERSCRIPT = r"""// ==UserScript==
-// @name         a-bridge
-// @namespace    https://github.com/seanpattencode/a
-// @version      0.8
-// @match        *://*/*
-// @grant        GM_xmlhttpRequest
-// @connect      127.0.0.1
-// @run-at       document-end
-// @updateURL    http://127.0.0.1:1234/a.user.js
-// @downloadURL  http://127.0.0.1:1234/a.user.js
-// ==/UserScript==
-// HTTP long-poll via GM_xmlhttpRequest — runs in TM's privileged extension
-// context, bypasses page CSP for our own network. WebSocket from page context
-// (v0.2) was blocked by strict connect-src on Gemini/Claude.ai. GM_xhr is fine.
-// Dep: Tampermonkey extension. Alternative client with same protocol but
-// fewer dep clicks: a-bridge WebExtension at lib/bri-ext/ (drop xpi).
-// Why TM beats Marionette/CDP for signed-in automation:
-//   Marionette: Firefox hard-codes navigator.webdriver=true while -marionette
-//     runs. Google → "browser may not be secure". Restart FF without it.
-//   Chrome CDP: 136+ blocks --remote-debugging-port on default profile;
-//     attaching enables Runtime/Page with detectable side effects.
-//   TM + GM_xhr: no driver attached, no page-CSP filter. Real DOM, real user.
-(() => {
-  const POLL = 'http://127.0.0.1:1234/poll', RESP = 'http://127.0.0.1:1234/resp';
-  const $ = s => document.querySelector(s);
-  const dispatch = async (m) => {
-    try {
-      switch (m.action) {
-        case 'navigate': top.location=m.url; return {ok:true};
-        case 'click':    $(m.sel).click(); return {ok:true};
-        case 'type':     { let e=$(m.sel);
-                           if (!e.isContentEditable && e.tagName==='DIV')
-                             e = e.querySelector('[contenteditable]') || e;
-                           e.focus();
-                           if (e.isContentEditable) document.execCommand('insertText',false,m.text);
-                           else e.value = m.text;
-                           e.dispatchEvent(new InputEvent('input',{bubbles:true,data:m.text,inputType:'insertText'}));
-                           return {ok:true}; }
-        case 'keys':     { const e=$(m.sel)||document.activeElement; e.focus();
-                           (Array.isArray(m.keys)?m.keys:[m.keys]).forEach(k=>{
-                             ['keydown','keyup'].forEach(t=>e.dispatchEvent(new KeyboardEvent(t,{key:k,bubbles:true,cancelable:true}))); });
-                           return {ok:true}; }
-        case 'text':     return {ok:true, value:$(m.sel).innerText};
-        case 'html':     return {ok:true, value:document.documentElement.outerHTML.slice(0,200000)};
-        case 'find':     { // walk open shadow roots; match by visible text OR aria-label (case-insens, contains)
-                           const need = (m.text||'').toLowerCase().trim();
-                           const sel = m.sel || 'button, [role="button"], a, [tabindex]:not([tabindex="-1"])';
-                           const hits = [];
-                           const walk = root => {
-                             for (const el of root.querySelectorAll(sel)) {
-                               const t = ((el.innerText||el.textContent||'')+' '+(el.getAttribute('aria-label')||'')).toLowerCase();
-                               if (!need || t.includes(need)) hits.push(el);
-                             }
-                             for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
-                           };
-                           walk(document);
-                           if (m.click && hits.length) hits[0].click();
-                           return {ok:true, value:{n:hits.length, first:(hits[0]?(hits[0].innerText||hits[0].getAttribute('aria-label')||'').trim().slice(0,80):null)}}; }
-        case 'eval':     { let c=m.code; try{if(window.trustedTypes&&trustedTypes.createPolicy){const tt=window._abp||(window._abp=trustedTypes.createPolicy('abridge',{createScript:s=>s}));c=tt.createScript(m.code);}}catch(e){}
-                           return {ok:true, value:await (async()=>eval(c))()}; }
-        case 'wait':     await new Promise(r=>setTimeout(r,m.ms||500)); return {ok:true};
-        case 'url':      return {ok:true, value:location.href};
-        default: return {error:'unknown action: '+m.action};
-      }
-    } catch (e) { return {error:String(e)}; }
-  };
-  const post = d => GM_xmlhttpRequest({url:RESP, method:'POST',
-    headers:{'Content-Type':'application/json'}, data:JSON.stringify({src:location.href, ...d})});
-  post({hello:location.href, title:document.title});
-  const loop = () => GM_xmlhttpRequest({
-    url:POLL, method:'GET', timeout:30000,
-    onload: async r => {
-      loop();  // re-poll IMMEDIATELY (was after dispatch → commands during dispatch were dropped)
-      if (r.status === 200 && r.responseText) {
-        try { const c=JSON.parse(r.responseText); post({id:c.id, ...await dispatch(c)}); }
-        catch (e) { post({error:String(e)}); }
-      }
-    },
-    onerror: () => setTimeout(loop, 2000),
-    ontimeout: () => loop(),
-  });
-  loop();
-})();
-"""
+import re
+def _bid(ua):  # browser/version from a User-Agent — one bridge drives Chrome + Firefox at once
+    m = re.search(r'Firefox/([\d.]+)', ua)
+    if m: return 'firefox/' + m.group(1)
+    m = re.search(r'(?:Chrome|Chromium)/([\d.]+)', ua)
+    if m: return 'chrome/' + m.group(1)
+    return '?'
+def _ua(head):  # extract User-Agent from the raw HTTP request head (bytes)
+    for h in head.split(b'\r\n'):
+        if h.lower().startswith(b'user-agent:'): return h.split(b':', 1)[1].decode(errors='replace').strip()
+    return ''
 
 def log(*a):
     line = ' '.join(str(x) for x in a)
@@ -181,10 +106,10 @@ def handle(c, addr):
     head, _, rest = req.partition(b'\r\n\r\n')
     method, path, *_ = (head.split(b'\r\n',1)[0].decode(errors='replace').split() + ['',''])
     if method == 'GET' and path == '/poll':
-        q = queue.Queue(); pollers.append(q)
+        q = queue.Queue(); entry = (q, _bid(_ua(head))); pollers.append(entry)   # remember which browser this poller is
         try: cmd = q.get(timeout=25)
         except Exception: cmd = None
-        try: pollers.remove(q)
+        try: pollers.remove(entry)
         except Exception: pass
         if cmd: http_send(c, '200 OK', cmd.encode())
         else:   http_send(c, '204 No Content')
@@ -201,13 +126,11 @@ def handle(c, addr):
         m = body.decode(errors='replace')
         log(f'<< {m}')
         try:
-            rid = json.loads(m).get('id')
+            obj = json.loads(m); obj['br'] = _bid(_ua(head)); m = json.dumps(obj)   # tag which browser/version answered
+            rid = obj.get('id')
             if rid in pending: pending[rid].put(m)
         except Exception: pass
         http_send(c, '200 OK'); c.close(); return
-    if method == 'GET' and '.user.js' in path:
-        http_send(c, '200 OK', USERSCRIPT.encode(), 'application/javascript; charset=utf-8')
-        c.close(); return
     if method == 'GET' and path == '/bridge.js':  # frozen-shell: bri-chrome SW fetches live bridge logic here each start (see sw.js bridgeSetup) → edit lib/bri-chrome/bridge.js, no repack/re-drag
         import os; body = b''
         try: body = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bri-chrome', 'bridge.js'), 'rb').read()
@@ -229,14 +152,19 @@ def cmd_serve():
             if b'\n' in d: break
         msg = d.decode(errors='replace').strip()
         if not msg: c.close(); continue
-        rid = None
-        try: rid = json.loads(msg).get('id')
+        rid, tgt = None, 'all'
+        try:
+            cj = json.loads(msg); rid = cj.get('id'); tgt = (cj.get('to') or 'all').lower()
         except Exception: pass
+        tgt = {'ff':'firefox','fx':'firefox','nightly':'firefox','chr':'chrome','canary':'chrome'}.get(tgt, tgt)
+        hit = lambda b: tgt in ('all','any','*') or b == '?' or b.startswith(tgt)   # target a browser/version; unknown UA ('?') always matches
+        tq = [(q,b) for (q,b) in list(pollers) if hit(b)]
+        conn = ', '.join(sorted({b for _,b in pollers})) or 'none'
         if rid is not None: pending[rid] = queue.Queue()
-        for q in list(pollers): q.put(msg)
+        for q,_b in tq: q.put(msg)
         if rid is None:
-            hint = '' if pollers else '  → no FF client connected. install ext: a bri deploy   (or in FF: open http://127.0.0.1:1234/a.user.js with Tampermonkey)\n'
-            c.send(f'sent to {len(pollers)} pollers\n{hint}'.encode())
+            hint = '' if tq else f'  → no {tgt} client (connected: {conn}). FF ext: a bri deploy\n'
+            c.send(f'sent to {len(tq)}/{len(pollers)} pollers (target={tgt}; connected: {conn})\n{hint}'.encode())
         else:
             out, end = [], time.time()+8
             while time.time() < end:
@@ -246,13 +174,23 @@ def cmd_serve():
             c.send(('\n'.join(out) or '{"error":"no response"}').encode()+b'\n')
         c.close()
 
-def main():
+def main(browser='none'):
+    # The :1234/:1235 bridge is browser-AGNOSTIC: one server drives Firefox (bri-ext)
+    # and Chrome (bri-chrome) at the same time. So `serve` launches NO browser by default — only
+    # Firefox needs a managed (-marionette-free, monitor-pinned) launch via _ff_restart; Chrome is
+    # user-launched with a persistent extension. `a bri serve ff` = also (re)start Firefox. This
+    # keeps the Chrome and Firefox serve paths from conflicting (no surprise FF, no double-poller).
+    ff = browser in ('ff', 'firefox')
     s = socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
     try: s.bind(('127.0.0.1',PORT))
-    except OSError: log(f'[*] :{PORT} taken — bri already running, just restarting FF'); _ff_restart(); return
+    except OSError:
+        log(f'[*] :{PORT} already running — bridge serves Chrome + Firefox both' + (', restarting FF' if ff else ''))
+        if ff: _ff_restart()
+        return
     threading.Thread(target=cmd_serve, daemon=True).start()
     s.listen(50); log(f'[*] http on :{PORT} | log: {LOG}')
-    _ff_restart()  # ensure FF visible on monitors (kills stale headless instance)
+    if ff: _ff_restart()  # ensure FF visible on monitors (kills stale headless instance)
+    else:  log('[*] no browser launched (serves Chrome + FF both). Chrome: open the browser + focus an http(s) tab to wake bri-chrome, then `a extload reload`. Firefox: `a bri serve ff` (or `a bri deploy`).')
     while True:
         c,addr = s.accept()
         threading.Thread(target=handle, args=(c,addr), daemon=True).start()
@@ -310,7 +248,7 @@ def _ff_restart():
     # fork (not thread) — subscribe must survive client process exit, before FF Popen so window::new isn't missed.
     if m and os.fork() == 0:
         os.setsid(); _ff_move(m); os._exit(0)
-    subprocess.Popen(['firefox-nightly','http://127.0.0.1:1234/a.user.js'],env=env,stdout=-3,stderr=-3,start_new_session=True)
+    subprocess.Popen(['firefox-nightly'],env=env,stdout=-3,stderr=-3,start_new_session=True)
 
 def _mon():
     import subprocess, os
@@ -377,7 +315,11 @@ def _hl(host='', code=None):
     return body if code is None else body.replace('__CODE__', json.dumps(code.upper()))
 
 def client(args):
-    a = args[0]
+    import os
+    to = args[0][1:] if args and args[0].startswith('@') else ''   # @firefox / @chrome / @all / @firefox/145 — target a browser (CLI default: firefox)
+    if to: args = args[1:]
+    to = to or os.environ.get('BRI_TO') or 'firefox'
+    a = args[0] if args else ''
     if a == 'cdp':
         if len(args) < 2: print("bri cdp <url> | bri cdp eval <js>  (suffer-mode: needs chrome --remote-debugging-port=9222 --remote-allow-origins='*')"); return
         if args[1] == 'eval' and len(args) > 2:
@@ -463,16 +405,17 @@ def client(args):
     if a.startswith('{'):
         msg = a
     else:
+        RID = int(time.time()*1000) % 10**9          # unique per invocation — id:1 reuse cross-routed slow frames' replies into the NEXT command's window
         if a.startswith(('http://','https://')): j = {'action':'navigate','url':a}  # no id: page unloads
-        elif a=='text':  j = {'id':1,'action':'text','sel':args[1] if len(args)>1 else 'body'}
-        elif a=='click': j = {'id':1,'action':'click','sel':args[1]}
-        elif a=='type':  j = {'id':1,'action':'type','sel':args[1],'text':args[2]}
-        elif a=='keys':  j = {'id':1,'action':'keys','sel':args[1],'keys':args[2]}
-        elif a=='url':   j = {'id':1,'action':'url'}
-        elif a=='hint':  j = {'id':1,'action':'eval','code':_hl(args[1] if len(args)>1 else '')}
+        elif a=='text':  j = {'id':RID,'action':'text','sel':args[1] if len(args)>1 else 'body'}
+        elif a=='click': j = {'id':RID,'action':'click','sel':args[1]}
+        elif a=='type':  j = {'id':RID,'action':'type','sel':args[1],'text':args[2]}
+        elif a=='keys':  j = {'id':RID,'action':'keys','sel':args[1],'keys':args[2]}
+        elif a=='url':   j = {'id':RID,'action':'url'}
+        elif a=='hint':  j = {'id':RID,'action':'eval','code':_hl(args[1] if len(args)>1 else '')}
         elif a in ('hint-click','hc'):
             if len(args)<2: sys.stderr.write('usage: a bri hint-click <CODE> [host]\n'); sys.exit(1)
-            j = {'id':1,'action':'eval','code':_hl(args[2] if len(args)>2 else '', args[1])}
+            j = {'id':RID,'action':'eval','code':_hl(args[2] if len(args)>2 else '', args[1])}
         # NOT recommended — prefer text/html/url. PNG is lossy for any text-bearing
         # page, heavy (200KB+), and requires a vision model to parse. Use only when
         # the rendered pixels themselves are the artifact (canvas, layout bug, etc).
@@ -480,7 +423,7 @@ def client(args):
             import base64, time as _t
             out = args[1] if len(args)>1 else f'/tmp/bri-{int(_t.time())}.png'
             s = socket.socket(); s.connect(('127.0.0.1', CMD))
-            s.sendall(json.dumps({'id':1,'action':'screenshot'}).encode()+b'\n')
+            s.sendall(json.dumps({'id':int(time.time()*1000)%10**9,'action':'screenshot','to':to}).encode()+b'\n')
             buf=b''
             while True:
                 ch=s.recv(1<<16)
@@ -500,14 +443,16 @@ def client(args):
                 "  mon:     bri.py + Firefox CPU/RAM/tabs snapshot\n"
                 "  raw {json} supports all 9 actions + custom fields — use for "
                 "eval/wait/html or any control the shortcuts hide.\n"); sys.exit(1)
+        if to != 'all': j['to'] = to   # CLI targets firefox by default; @all (or BRI_TO=all) broadcasts to every browser
         msg = json.dumps(j)
     s = socket.socket()
     try: s.connect(('127.0.0.1', CMD))
     except OSError: sys.stderr.write("x bridge not running — start it: a bri\n"); sys.exit(1)
-    s.sendall((msg+'\n').encode()); sys.stdout.write(s.recv(1<<20).decode())
+    s.sendall((msg+'\n').encode())
+    while (ch := s.recv(1<<16)): sys.stdout.write(ch.decode(errors='replace'))
 
-MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
-  serve            start bridge (:1234 http, :1235 cmd) + launch FF on monitor
+MENU = """a bri <cmd>     extension bridge to Firefox/Chrome (bri-ext / bri-chrome)
+  serve [ff]       start bridge (:1234 http, :1235 cmd) — serves Chrome+FF both; add 'ff' to also launch Firefox on monitor
   deploy           rebuild lib/bri-ext xpi + install + restart FF (zero-click)
   restart          quit + relaunch FF Nightly
   screen [name|-]  list outputs / pin FF to sway output (no arg=show, -=clear)
@@ -528,7 +473,7 @@ MENU = """a bri <cmd>     userscript bridge to Firefox (Tampermonkey or bri-ext)
                    ! avoid if possible — prefer text/html/url (text is the
                      artifact, PNG is lossy + heavy + needs a vision model)
   '{json}'         raw passthrough — full 9-action protocol
-first run: a bri serve   then: a bri deploy"""
+first run — Firefox: a bri serve ff then a bri deploy   ·   Chrome: a bri serve then load bri-chrome (a extload)"""
 
 if __name__=='__main__':
     args = sys.argv[1:]
@@ -554,5 +499,5 @@ if __name__=='__main__':
                     print(f"      {p[0]} {p[1]} — {note}")
         except FileNotFoundError: pass
         print(f"\n{MENU}")
-    elif args[0] == 'serve': main()
+    elif args[0] == 'serve': main(args[1] if len(args) > 1 else 'none')
     else: client(args)
