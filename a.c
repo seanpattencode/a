@@ -102,6 +102,10 @@ _perf_lim() { local f="$D/adata/git/perf/$(cat "$D/adata/local/.device" 2>/dev/n
 _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
     [[ $l -gt 0 && $e -gt $l ]] && { echo -e "\033[31m✗ PERF KILL\033[0m: sh a.c $1 ${e}us > ${l}us" >&2; exit 1; }
     echo -e "${e}us" >&2;}
+_tok_chk() { local f="$D/adata/git/perf/tok.txt" t c;c=$(head -1 "$f" 2>/dev/null||:)  # entropy deadman: human-only cap, see warning in file
+    [[ "$c" =~ ^[0-9]+$ ]] || c=250000  # no cap file → hardcoded floor; never fail open
+    t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
+    [[ $t -le $c ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: a.c+lib = $t > cap $c tok — simplify, don't raise ($f)" >&2;sed 1d "$f" >&2 2>/dev/null;exit 1; };}
 _Q=-DSRC="\"$D\"";[[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
 _abin() { [[ "$D" == *"/adata/worktrees/"*||"$D" == *"/adata/forks/"* ]]&&ABIN="$D"||ABIN="$D/adata/local"
     BIN="$HOME/.local/bin";mkdir -p "$ABIN" "$BIN";}
@@ -119,7 +123,7 @@ _checkers() {
 }
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
-build) _PT=${EPOCHREALTIME/./}
+build) _PT=${EPOCHREALTIME/./};_tok_chk
     _abin; rm -f "$ABIN/.chk" "$ABIN/i_cache.txt"
     printf '%s' $$ > "$ABIN/.bld"
     _build_fix() {
@@ -148,7 +152,7 @@ build) _PT=${EPOCHREALTIME/./}
         fi
     ) >&- 2>&- &
     ;;
-check) _PT=${EPOCHREALTIME/./}
+check) _PT=${EPOCHREALTIME/./};_tok_chk
     _abin; _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
     [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; [[ -d /data/data/com.termux/files/usr/bin ]]&&ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; }
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
