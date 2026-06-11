@@ -622,11 +622,11 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     static char af[64][P];int na=0,ne=0;   /* archived / edited this session → receipts; push deferred to exit */
     for(;;){
     int bynew=!strcmp(srt,"new")||!strcmp(srt,"date"),bydue=!strcmp(srt,"due");
-    int lim=4,cnt=-1;char dir[P],top[P];*top=0;   /* all-mode shows 4 each; cnt + top (current item's file) feed the strip + [o] */
+    int lim=4,cnt=-1;char dir[P],top[P],topt[2048];*top=0;*topt=0;   /* all-mode shows 4 each; cnt + top/topt (current item's file/text) feed the strip + [o]/[m]/[s] */
     if(tty&&pg>=0)printf("\033[H\033[2J");
     if(PG(0)){snprintf(dir,P,"%s/notes",SROOT);int nn=load_notes(dir,NULL);cnt=nn;qsort(gn,(size_t)nn,sizeof(GN),gncmp);
     if(pg>=0){if(nn){int ix=nn-1;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="",b2[B];if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
-        snprintf(b2,B,"  %sn1 %-14s%s %s",DM,fr,X,gn[ix].t);snprintf(top,P,"%s",gn[ix].p);place1(b2);}}   /* gncmp asc → newest at end */
+        snprintf(b2,B,"  %sn1 %-14s%s %s",DM,fr,X,gn[ix].t);snprintf(top,P,"%s",gn[ix].p);snprintf(topt,2048,"%s",gn[ix].t);place1(b2);}}   /* gncmp asc → newest at end */
     else{printf("%s━━ NOTES (%d)%s %snewest%s\n",BO,nn,X,DM,X);
     for(int i=0;i<nn&&i<lim;i++){int ix=nn-1-i;const char*u=strrchr(gn[ix].p,'_');char fr[24],ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,24);
         printf("  %sn%d %-14s%s %s\n",DM,i+1,fr,X,gn[ix].t);}
@@ -636,7 +636,7 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     else if(bydue){int dl[1024];for(int i=0;i<nt;i++){int v=task_dl(T[i].d);dl[i]=v<0?1000000:v;}
         for(int i=1;i<nt;i++){Tk k=T[i];int kd=dl[i],j=i-1;while(j>=0&&dl[j]>kd){T[j+1]=T[j];dl[j+1]=dl[j];j--;}T[j+1]=k;dl[j+1]=kd;}}
     if(pg>=0){if(nt){char fr[24],b2[B];task_front(T[0].d,fr,24);
-        snprintf(b2,B,"  %st1%s %s %sP%s%s %s",DM,X,fr,DM,T[0].p,X,T[0].t);snprintf(top,P,"%s",T[0].d);place1(b2);}}
+        snprintf(b2,B,"  %st1%s %s %sP%s%s %s",DM,X,fr,DM,T[0].p,X,T[0].t);snprintf(top,P,"%s",T[0].d);snprintf(topt,2048,"%s",T[0].t);place1(b2);}}
     else{printf("\n%s━━ TASKS (%d)%s — %s%s%s  %ssort: a flow pri|new|due%s\n",BO,nt,X,BO,bynew?"created":bydue?"deadline":"priority",X,DM,X);
     for(int i=0;i<nt&&i<lim;i++){char fr[24];task_front(T[i].d,fr,24);
         printf("  %st%d%s %s %sP%s%s %s\n",DM,i+1,X,fr,DM,T[i].p,X,T[i].t);}
@@ -693,7 +693,7 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     if(*st){printf("  \033[32m%s\033[0m",st);*st=0;}printf("\033[K\n");   /* status row always emitted (even empty) so menu rows never shift */
     static const char*CT[]={"note","task","prompt","note","note"};const char*ct=CT[pg<0?0:pg];char tc=pg==1?'t':pg==2?'p':'n';
     #define K(s) "[\033[1;33m" s "\033[0m]"
-    printf("  " K("e") " archive  " K("o") " edit  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("i") "deate convo  " K("s") "end p1  " K("l") " g's prompt  " K("x") " archive by id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "uit\033[K\n> \033[J",ct);fflush(stdout);
+    printf("  " K("e") " archive  " K("o") " edit  " K("m") "ove↑  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("i") "deate convo  " K("s") "end p1  " K("l") " g's prompt  " K("x") " archive by id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "uit\033[K\n> \033[J",ct);fflush(stdout);
     #undef K
     int ch=key1();
     if(ch==27||ch==3||ch=='q')return flow_exit(af,na,ne);   /* esc / q / ^C exit */
@@ -701,6 +701,11 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     if(ch=='k'){pg=pg<0?4:(pg+4)%5;continue;}
     if(ch=='a'){pg=pg<0?0:-1;continue;}
     if(ch>='1'&&ch<='3'){srt=ch=='1'?"pri":ch=='2'?"new":"due";continue;}
+    if(ch=='m'){if(pg==0&&*topt){char d2[P];snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);char*np=task_add(d2,topt,50000);   /* [m]ove↑ the ladder: note→task, task→prompt — source archived, exit receipt covers it */
+            do_archive(top);if(na<64)snprintf(af[na],P,"%s",fa_last);na++;edit_st(np,st,"note→task");ne++;}
+        else if(pg==1&&*topt){char d2[P];snprintf(d2,P,"%s/prompts",SROOT);mkdirp(d2);char*np=note_save(d2,topt);
+            do_archive(top);if(na<64)snprintf(af[na],P,"%s",fa_last);na++;edit_st(np,st,"task→prompt");ne++;}
+        else snprintf(st,256,"m: note→task / task→prompt only (prompt: [s]end runs it)");continue;}
     if(ch=='e'){if(pg>=0&&pg<=2){char id[3]={tc,'1',0};   /* gmail e: top of current page goes, next promotes into view */
             if(flow_archive(id,srt)){if(na<64)snprintf(af[na],P,"%s",fa_last);na++;snprintf(st,128,"✓ archived %s — next up",id);}else snprintf(st,128,"nothing to archive");}
         else snprintf(st,128,"e: not a list page");continue;}
