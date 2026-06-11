@@ -171,54 +171,16 @@ if __name__ == "__main__":
     args = [a for a in sys.argv if not a.startswith("--")]
 
     if len(args) < 2:
-        # omnibox: live filter over (1) books in index.txt, (2) the other subcommands.
-        # Selecting a book → read it. Selecting an action → prints its usage.
-        IDX = ADATA / "git" / "books" / "index.txt"
-        rows = [l for l in (IDX.read_text().splitlines() if IDX.exists() else []) if l.strip()]
-        actions = [
-            ("a book add <file>",        "register a local file → upload to a-gdrive:books/, append to index.txt"),
-            ("a book push <name>",       "rclone copy adata/books/<name>/ to a-gdrive:books/<name>/"),
-            ("a book pull <substr>",     "rclone copy a-gdrive:books/<name>/ back to local adata/books/"),
-            ("a book read <name>",       "open in e -r at saved position; Ctrl-T speaks line; quit saves pos"),
-            ("a book index",             "print the books index (column-aligned)"),
-            ("a book transcribe <name>", "OCR PDF pages to text (calibre + claude)"),
-            ("a book translate <name>",  "translate pages to target language"),
-            ("a book explain <name>",    "annotate obscure terms in each page"),
-            ("a book chat <name>",       "interactive Q&A against the book's processed output"),
-            ("a book serve [start|stop]","calibre server on this device"),
-            ("a book sync",              "rclone bidirectional sync of adata/books/"),
-            ("a book archive <substr>",  "toggle hidden .<name>: saved, not listed"),
-        ]
-        pos_by = {p[1]: ((p[4].strip() if len(p) >= 5 else "") or "0") for l in rows for p in [l.split("\t")] if len(p) >= 2}
-        local = [d.name for d in DATA_DIR.iterdir() if d.is_dir() and d.name[0] != '.'] if DATA_DIR.exists() else []
-        W = 36  # fixed name column so the .ext lines up; longer titles get cut with …
-        items = []
-        for name in sorted(set(pos_by) | set(local)):
-            src = next((DATA_DIR / name).glob("source.*"), None) if (DATA_DIR / name).is_dir() else None
-            ext = src.suffix[1:] if src else "?"
-            nm = name if len(name) <= W else name[:W-1] + "…"
-            items.append(f"📖 {nm:<{W}} .{ext:<5} open book (pos {pos_by.get(name, '0')})\t{name}\tread")
-            items.append(f"🧠 {nm:<{W}} .{ext:<5} load to claude\t{name}\tchat")
-        for label, desc in actions:
-            items.append(f"⚙  {label}\t{desc}\tact")
-        if not shutil.which("fzf"):
-            for i, it in enumerate(items): print(f"  {i:2}. " + it.split("\t")[0])
-            try: key, cols = "", items[int(input("# "))].split("\t")
-            except: sys.exit(0)
-        else:
-            prev = f'head -c 4000 {DATA_DIR}/{{2}}/output/*.txt 2>/dev/null||echo no text yet'
-            r = subprocess.run(["fzf","--height","80%","--reverse","--prompt","a book > ","--with-nth","1","--delimiter","\t","--info","inline",
-                "--bind","left:up,right:down","--preview",prev,"--preview-window","right:50%:wrap","--expect","ctrl-x",
-                "--header","←/→ flip books · Enter selects · ^X archive · Esc cancels","--ansi"],
-                input="\n".join(items), capture_output=True, text=True)
-            if r.returncode != 0: sys.exit(0)
-            key, _, sel = r.stdout.partition("\n")
-            cols = sel.strip().split("\t")
-        if cols[-1] in ("read", "chat"):
-            sys.argv = sys.argv[:1] + ["archive" if key == "ctrl-x" else cols[-1], cols[1]]
-            args = [a for a in sys.argv if not a.startswith("--")]
-        else:
-            print(cols[0].lstrip("⚙ ").strip()); print(f"  {cols[1]}"); sys.exit(0)
+        # tty gets the C pager (lib/book.c, rules: adata/git/mem/tui.md); this path = pipes/help
+        print("a book              list TUI: j/k move, spc/b page, o read, c chat, e archive, / filter, q quit\n"
+              "a book add <file>   register a local file → upload to a-gdrive:books/, append to index.txt\n"
+              "a book push|pull <name>  rclone copy to/from a-gdrive:books/<name>/\n"
+              "a book read <name>  open in e -r at saved position; Ctrl-T speaks line; quit saves pos\n"
+              "a book chat <name>  interactive Q&A against the book's processed output\n"
+              "a book transcribe|translate|explain <name>  OCR / translate / annotate pages\n"
+              "a book list | index | serve [start|stop] | sync\n"
+              "a book archive <substr>  toggle hidden .<name>: saved, not listed")
+        sys.exit(0)
 
     cmd = args[1]
     if cmd == "list": cmd_list(show_all=True)
