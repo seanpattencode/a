@@ -1,14 +1,15 @@
 {
   "manifest_version": 2,
   "name": "a-bridge",
-  "version": "0.8",
-  "description": "HTTP long-poll bridge for `a` automation. Interchangeable with the Tampermonkey userscript in lib/bri.py \u2014 pick either (or run both). Deps: Firefox Nightly + xpinstall.signatures.required=false in user.js. Wins vs userscript: extension-context fetch, eval works on chatgpt.com.",
+  "version": "0.9",
+  "description": "HTTP long-poll bridge for `a` automation. The SINGLE poll connection lives in background.js (one connection, not tab-throttled); content.js runs dispatched commands per-frame. Deps: Firefox Nightly + xpinstall.signatures.required=false in user.js.",
   "permissions": [
     "<all_urls>",
     "storage",
     "notifications",
     "tabs",
-    "activeTab"
+    "activeTab",
+    "webNavigation"
   ],
   "options_ui": {"page": "options.html"},
   "user_scripts": {"api_script": "api.js"},
