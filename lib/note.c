@@ -618,7 +618,7 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     for(int i=2;i<argc;i++){if(!strcmp(argv[i],"v")||!strcmp(argv[i],"verbose"))verbose=1;else if(!strcmp(argv[i],"all"))pg=-1;
         else if(isdigit((unsigned char)argv[i][0])&&!argv[i][1])pg=(argv[i][0]-'0')%5;else srt=argv[i];}
     #define PG(i) (pg<0||pg==(i))
-    char st[256]="";   /* action result, shown above the next menu — survives the clear-screen redraw */
+    char st[256]="",lw[256]="";   /* action result + last-sent window — [w] jumps there */
     static char af[64][P];int na=0,ne=0;   /* archived / edited this session → receipts; push deferred to exit */
     for(;;){
     int bynew=!strcmp(srt,"new")||!strcmp(srt,"date"),bydue=!strcmp(srt,"due");
@@ -701,6 +701,8 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     if(ch=='k'){pg=pg<0?4:(pg+4)%5;continue;}
     if(ch=='a'){pg=pg<0?0:-1;continue;}
     if(ch>='1'&&ch<='3'){srt=ch=='1'?"pri":ch=='2'?"new":"due";continue;}
+    if(ch=='w'){if(*lw){flow_exit(af,na,ne);tm_go(lw);}   /* [w]: flush receipts, then jump into the last-sent session (tm_go execs — flow ends, `a flow` re-enters) */
+        snprintf(st,256,"w: nothing sent yet");continue;}
     if(ch=='m'){if(pg==0&&*topt){char d2[P];snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);char*np=task_add(d2,topt,50000);   /* [m]ove↑ the ladder: note→task, task→prompt — source archived, exit receipt covers it */
             do_archive(top);if(na<64)snprintf(af[na],P,"%s",fa_last);na++;edit_st(np,st,"note→task");ne++;}
         else if(pg==1&&*topt){char d2[P];snprintf(d2,P,"%s/prompts",SROOT);mkdirp(d2);char*np=note_save(d2,topt);
@@ -750,10 +752,11 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     if(ch=='s'){if(pg==2&&*top){size_t tl2;char*tx=readf(top,&tl2);   /* [s]end: dispatch top prompt candidate → a j claude window; archive ONLY on confirmed spawn */
             if(tx){char*t2=tx;if(!strncmp(t2,"Text: ",6))t2+=6;char*nl=strchr(t2,'\n');if(nl)*nl=0;
                 setenv("A_FPJ",t2,1);free(tx);char o[256]="";
-                /* TMUX= forces a j's detached new-window path — with TMUX set it would SPLIT the active pane (hijacks whatever the human is looking at). "win ?" prints even on failed spawn: archive only on a real index. */
-                pcmd("TMUX= a j \"$A_FPJ\" 2>&1",o,256);char*w=strstr(o,"→ tmux win");
+                /* a c (not a j): the dispatched prompt becomes a first-class claude SESSION — resumable, named claude-*, purpose visible in the windows page. TMUX= forces the detached new-window path (with TMUX set it would SPLIT the active pane). "win ?" prints even on failed spawn: archive only on a real index. */
+                pcmd("TMUX= a c \"$A_FPJ\" 2>&1",o,256);char*w=strstr(o,"→ win");
                 if(w&&!strstr(w,"win ?")){w[strcspn(w,"\n")]=0;do_archive(top);if(na<64)snprintf(af[na],P,"%s",fa_last);na++;
-                    snprintf(st,256,"%s — p1 archived",w);}
+                    char*nm=strstr(w," · ");if(nm)snprintf(lw,256,"%s",nm+4);
+                    snprintf(st,256,"%s — p1 archived · [w] go there",w);}
                 else{o[strcspn(o,"\n")]=0;snprintf(st,256,"x not sent: %.200s",o);}}}
         else snprintf(st,128,"s: prompts page only");continue;}
     if(ch=='c'){char buf[B];   /* gmail c: compose — new item of the current page's type (note elsewhere); instant return, new item renders as top */
