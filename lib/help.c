@@ -170,18 +170,18 @@ static int cmd_done(int argc,char**argv){AB;
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
         FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}}
     if(getenv("TMUX")){char ts[B]="",dl[B]="",cu[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
-        char*ck[16],*cc[16],*cx[16];int ncu=0;
+        char*ck[16],*cc[16],*cx[16];int ncu=0;char*me=msg;
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
-            if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);}}
+            if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);if(b+sizeof(t)+2>me)me=b+sizeof(t)+2;}}
         TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");
         #undef TAG
+        while(*me==' ')me++;
         /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */
         for(char*ent=cu;*ent&&ncu<16;){char*nx=strstr(ent,"||");if(nx)*nx=0;
             char*p1=strstr(ent,"::"),*p2=p1?strstr(p1+2,"::"):0;
             if(p2){*p1=*p2=0;while(*ent==' ')ent++;ck[ncu]=ent;cc[ncu]=p1+2;cx[ncu++]=p2+2;}
             if(!nx)break;ent=nx+2;}
-        if(dl[0]){char*cms=strstr(msg,"</diff>");cms=cms?cms+7:msg;while(*cms==' ')cms++;
-            char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(cms,"\n"),cms,dl);fclose(cf);}}
+        if(dl[0]){char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(me,"\n"),me,dl);fclose(cf);}}
         char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
@@ -195,7 +195,9 @@ static int cmd_done(int argc,char**argv){AB;
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
             if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\necho;printf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
             else fputs("echo;printf '\\033[2mno test command\\033[0m\\n'\n",sf);
-            fputs("while :;do\necho;printf '\\033[1;35m=== actions (key) ===\\033[0m\\n'\n",sf);
+            fputs("while :;do\necho\n",sf);
+            if(*me)fprintf(sf,"printf '\\033[1;32m=== agent report ===\\033[0m\\n';cat<<'A_RPT'\n%s\nA_RPT\n",me);
+            fputs("printf '\\033[1;35m=== actions (key) ===\\033[0m\\n'\n",sf);
             if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push\\033[0m\\n'\n",dl);
             if(dl[0]&&tp)fputs("printf '\\033[1;33m[p]\\033[0m tell agent: push prompt\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;33m[c]\\033[0m crunch the code\\n'\n",sf);
