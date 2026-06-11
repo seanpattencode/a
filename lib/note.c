@@ -521,17 +521,30 @@ static const char*PROPOSE_DEFAULT=
 "PROMPT: <a prompt to hand a coding agent to accomplish a task>\n"
 "Give 4-8 items, mixed across tags. Specific and non-obvious. No preamble, no other text.\n"
 "(Edit this lens with `a flow` -> [e], e.g. act as von Neumann / Torvalds / a security paranoid.)\n";
-static void propose_ensure(char*tpl,int sz){snprintf(tpl,(size_t)sz,"%s/common/prompts/propose.txt",SROOT);
-    struct stat st;if(stat(tpl,&st)){char d[P];snprintf(d,P,"%s/common/prompts",SROOT);mkdirp(d);writef(tpl,PROPOSE_DEFAULT);}}
+static const char*IDEATE_DEFAULT=
+"You are an ideation partner for Sean (the human typing). Hold a live conversation that produces\n"
+"NEW notes, tasks, and prompt candidates — and sharpens the existing ones listed below.\n"
+"The moment an item crystallizes, SAVE it yourself and show the receipt:\n"
+"  a note <text>        raw idea/observation — his words verbatim, plus a context note if needed\n"
+"  a task add <text>    concrete actionable task\n"
+"  a prompt c <text>    prompt ready to hand a coding agent (include file/symbol pointers)\n"
+"Short turns. One sharp question at a time. Push vague toward concrete; challenge weak ideas.\n"
+"(Edit this lens: a flow -> common/prompts/ideate.txt)\n";
+static void prompt_ensure(char*tpl,int sz,const char*nm,const char*def){snprintf(tpl,(size_t)sz,"%s/common/prompts/%s.txt",SROOT,nm);
+    struct stat st;if(stat(tpl,&st)){char d[P];snprintf(d,P,"%s/common/prompts",SROOT);mkdirp(d);writef(tpl,def);}}
+static void pick_book(char*bk,int sz){char bc[P];bk[0]=0;
+    snprintf(bc,P,"ls -1 '%s/books' 2>/dev/null|grep -v '\\.py$'|fzf --prompt='book as context (esc=none)> ' --height=45%%",AROOT);
+    FILE*bp=popen(bc,"r");if(bp){if(fgets(bk,sz,bp))bk[strcspn(bk,"\n")]=0;pclose(bp);}}
+static char*book_txt(const char*book,size_t*bl){char bf[P];snprintf(bf,P,"%s/books/%s/output/explained.txt",AROOT,book);
+    if(access(bf,R_OK))snprintf(bf,P,"%s/books/%s/output/%s.txt",AROOT,book,book);
+    if(access(bf,R_OK)){char od[P];snprintf(od,P,"%s/books/%s/output",AROOT,book);DIR*bd=opendir(od);struct dirent*be;bf[0]=0;   /* fallback: any .txt in output/ */
+        if(bd){while((be=readdir(bd)))if(strstr(be->d_name,".txt")){snprintf(bf,P,"%s/%s",od,be->d_name);break;}closedir(bd);}}
+    return bf[0]?readf(bf,bl):NULL;}
 static void propose_run(const char*seed,const char*model,const char*book){
-    char tpl[P];propose_ensure(tpl,P);size_t tl;char*tc=readf(tpl,&tl);if(!tc)return;
+    char tpl[P];prompt_ensure(tpl,P,"propose",PROPOSE_DEFAULT);size_t tl;char*tc=readf(tpl,&tl);if(!tc)return;
     char pf[P];snprintf(pf,P,"%s/a_propose_%d.txt",TMP,(int)getpid());
     FILE*f=fopen(pf,"w");if(!f){free(tc);return;}
-    if(book&&*book){char bf[P];snprintf(bf,P,"%s/books/%s/output/explained.txt",AROOT,book);   /* load the ENTIRE book as context */
-        if(access(bf,R_OK))snprintf(bf,P,"%s/books/%s/output/%s.txt",AROOT,book,book);
-        if(access(bf,R_OK)){char od[P];snprintf(od,P,"%s/books/%s/output",AROOT,book);DIR*bd=opendir(od);struct dirent*be;bf[0]=0;  /* fallback: any .txt in output/ */
-            if(bd){while((be=readdir(bd)))if(strstr(be->d_name,".txt")){snprintf(bf,P,"%s/%s",od,be->d_name);break;}closedir(bd);}}
-        size_t bl=0;char*bc=bf[0]?readf(bf,&bl):NULL;
+    if(book&&*book){size_t bl=0;char*bc=book_txt(book,&bl);   /* load the ENTIRE book as context */
         if(bc){fprintf(f,"=== BOOK CONTEXT: %s ===\nDraw ideas, angles, and methods from this entire work:\n%s\n=== END BOOK ===\n\n",book,bc);free(bc);printf("  loaded book: %s (%zu KB)\n",book,bl/1024);}
         else printf("  (book '%s' had no readable text)\n",book);}
     fputs(tc,f);fprintf(f,"\nSEED: %s\n",seed);fclose(f);free(tc);
@@ -549,13 +562,13 @@ static void propose_run(const char*seed,const char*model,const char*book){
 /* instant edit receipt: blob URL is deterministic (repo slug cached once). The flocked add+commit is
    BACKGROUNDED — sync holds that lock for seconds during pushes, a foreground flock froze o→ESC.
    add/commit never touch the worktree (no stale redraw); the rebase that does stays exit-only. */
-static void edit_st(const char*f,char*st){
+static void edit_st(const char*f,char*st,const char*vb){
     static char rp[128];if(!*rp){char c[B];snprintf(c,B,"git -C '%s' remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##'",SROOT);
         pcmd(c,rp,128);rp[strcspn(rp,"\n")]=0;if(!*rp)snprintf(rp,128,"-");}
     const char*rel=f;size_t sl=strlen(SROOT);if(!strncmp(f,SROOT,sl)&&f[sl]=='/')rel=f+sl+1;
-    char c[B];snprintf(c,B,"flock /tmp/.a_git.lock -c \"git -C '%s' add '%s'&&git -C '%s' commit -qm 'flow edit'\" >/dev/null 2>&1 &",SROOT,f,SROOT);(void)!system(c);
-    if(*rp!='-')snprintf(st,256,"✓ edited → https://github.com/%s/blob/main/%s  (pushes on exit)",rp,rel);
-    else snprintf(st,256,"✓ edited %s (local)",rel);}
+    char c[B];snprintf(c,B,"flock /tmp/.a_git.lock -c \"git -C '%s' add '%s'&&git -C '%s' commit -qm 'flow %s'\" >/dev/null 2>&1 &",SROOT,f,SROOT,vb);(void)!system(c);
+    if(*rp!='-')snprintf(st,256,"✓ %s → https://github.com/%s/blob/main/%s  (pushes on exit)",vb,rp,rel);
+    else snprintf(st,256,"✓ %s %s (local)",vb,rel);}
 /* archive a flow item by its display id (n1..n4 notes, t1..t4 tasks, p1..p4 prompts); re-applies the active sort so the id matches the screen */
 static int flow_archive(const char*id,const char*srt){
     int num=atoi(id+1);if(num<1||num>4)return 0;char dd[P];
@@ -680,7 +693,7 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     if(*st){printf("  \033[32m%s\033[0m",st);*st=0;}printf("\033[K\n");   /* status row always emitted (even empty) so menu rows never shift */
     static const char*CT[]={"note","task","prompt","note","note"};const char*ct=CT[pg<0?0:pg];char tc=pg==1?'t':pg==2?'p':'n';
     #define K(s) "[\033[1;33m" s "\033[0m]"
-    printf("  " K("e") " archive  " K("o") " edit  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("l") " g's prompt  " K("x") " archive by id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "/esc quit\033[K\n> \033[J",ct);fflush(stdout);
+    printf("  " K("e") " archive  " K("o") " edit  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("i") "deate convo  " K("s") "end p1  " K("l") " g's prompt  " K("x") " archive by id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "uit\033[K\n> \033[J",ct);fflush(stdout);
     #undef K
     int ch=key1();
     if(ch==27||ch==3||ch=='q')return flow_exit(af,na,ne);   /* esc / q / ^C exit */
@@ -697,26 +710,53 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
             if(flow_archive(ib,srt)){if(na<64)snprintf(af[na],P,"%s",fa_last);na++;snprintf(st,128,"✓ archived %s",ib);}else snprintf(st,128,"x no %s",ib);}continue;}
     if(ch=='g'){char sb[B];printf("  seed> ");fflush(stdout);
         if(fgets(sb,B,stdin)&&sb[0]!='\n'){sb[strcspn(sb,"\n")]=0;
-            char book[256]="",bc[P];snprintf(bc,P,"ls -1 '%s/books' 2>/dev/null|grep -v '\\.py$'|fzf --prompt='book as context (esc=none)> ' --height=45%%",AROOT);
-            FILE*bp=popen(bc,"r");if(bp){if(fgets(book,256,bp))book[strcspn(book,"\n")]=0;pclose(bp);}
+            char book[256];pick_book(book,256);
             propose_run(sb,"opus",book[0]?book:NULL);}acted=1;}
+    if(ch=='i'){char tpl[P];prompt_ensure(tpl,P,"ideate",IDEATE_DEFAULT);   /* [i]deate: interactive claude convo partner — book + pending items in context, saves via a note/task/prompt c as you talk; quit → back here, new items rendered */
+        char book[256];pick_book(book,256);
+        char pf2[P];snprintf(pf2,P,"%s/a_ideate_%d.txt",TMP,(int)getpid());FILE*f=fopen(pf2,"w");
+        if(f){size_t l2;char*tc=readf(tpl,&l2);if(tc){fputs(tc,f);free(tc);}
+            char dd2[P];snprintf(dd2,P,"%s/notes",SROOT);int n2=load_notes(dd2,NULL);qsort(gn,(size_t)n2,sizeof(GN),gncmp);
+            fprintf(f,"\n=== PENDING NOTES (%d, newest 50) ===\n",n2);
+            for(int i2=n2-1;i2>=0&&i2>n2-51;i2--)fprintf(f,"n: %s\n",gn[i2].t);
+            snprintf(dd2,P,"%s/tasks",SROOT);int t3=load_tasks(dd2);
+            fprintf(f,"=== TASKS (%d, top 50 by priority) ===\n",t3);
+            for(int i2=0;i2<t3&&i2<50;i2++)fprintf(f,"t: P%s %s\n",T[i2].p,T[i2].t);
+            snprintf(dd2,P,"%s/prompts",SROOT);int p3=load_notes(dd2,NULL);qsort(gn,(size_t)p3,sizeof(GN),gncmp);
+            fprintf(f,"=== PROMPT CANDIDATES (%d) ===\n",p3);
+            for(int i2=p3-1;i2>=0;i2--)fprintf(f,"p: %s\n",gn[i2].t);
+            if(book[0]){size_t bl=0;char*bc2=book_txt(book,&bl);
+                if(bc2){fprintf(f,"=== BOOK: %s — draw angles and methods from this entire work ===\n%s\n",book,bc2);free(bc2);}}
+            fclose(f);
+            char cm2[B];snprintf(cm2,B,"claude --dangerously-skip-permissions --model opus --effort max --append-system-prompt-file '%s'",pf2);
+            (void)!system(cm2);unlink(pf2);snprintf(st,256,"✓ ideation ended — new items below");}
+        continue;}
     if(ch=='o'){if(*top){char f[P+8];struct stat sb;   /* gmail o: open the shown item in e -w (writes on quit/ESC) → instant back, edited text on screen, url receipt in status */
             if(!stat(top,&sb)&&S_ISDIR(sb.st_mode))snprintf(f,P+8,"%s/task",top);else snprintf(f,P+8,"%s",top);
             int off=0;{FILE*fp=fopen(f,"r");char h[7]={0};if(fp){(void)!fread(h,1,6,fp);fclose(fp);off=!strcmp(h,"Text: ")?6:0;}}
             /* cursor lands AFTER "Text: " (+6): o-then-type must edit the value — at byte 0 the insert
                breaks the kv key and the note silently drops from the pending list (the it-didnt-change bug) */
             char cm[P+24];snprintf(cm,P+24,"e -w %s'%s'",off?"+6 ":"",f);(void)!system(cm);
-            edit_st(f,st);ne++;}
+            edit_st(f,st,"edited");ne++;}
         else snprintf(st,128,"o: nothing to edit");continue;}
-    if(ch=='l'){char tpl[P];propose_ensure(tpl,P);   /* edit the prompt [g] generates with */
+    if(ch=='l'){char tpl[P];prompt_ensure(tpl,P,"propose",PROPOSE_DEFAULT);   /* edit the prompt [g] generates with */
         char cmd[P+8];snprintf(cmd,P+8,"e -w '%s'",tpl);(void)!system(cmd);
-        edit_st(tpl,st);ne++;continue;}
-    if(ch=='c'){char buf[B];   /* gmail c: compose — new item of the current page's type (note elsewhere) */
+        edit_st(tpl,st,"edited");ne++;continue;}
+    if(ch=='s'){if(pg==2&&*top){size_t tl2;char*tx=readf(top,&tl2);   /* [s]end: dispatch top prompt candidate → a j claude window; archive ONLY on confirmed spawn */
+            if(tx){char*t2=tx;if(!strncmp(t2,"Text: ",6))t2+=6;char*nl=strchr(t2,'\n');if(nl)*nl=0;
+                setenv("A_FPJ",t2,1);free(tx);char o[256]="";
+                /* TMUX= forces a j's detached new-window path — with TMUX set it would SPLIT the active pane (hijacks whatever the human is looking at). "win ?" prints even on failed spawn: archive only on a real index. */
+                pcmd("TMUX= a j \"$A_FPJ\" 2>&1",o,256);char*w=strstr(o,"→ tmux win");
+                if(w&&!strstr(w,"win ?")){w[strcspn(w,"\n")]=0;do_archive(top);if(na<64)snprintf(af[na],P,"%s",fa_last);na++;
+                    snprintf(st,256,"%s — p1 archived",w);}
+                else{o[strcspn(o,"\n")]=0;snprintf(st,256,"x not sent: %.200s",o);}}}
+        else snprintf(st,128,"s: prompts page only");continue;}
+    if(ch=='c'){char buf[B];   /* gmail c: compose — new item of the current page's type (note elsewhere); instant return, new item renders as top */
         printf("  new %s> ",ct);fflush(stdout);
         if(fgets(buf,B,stdin)&&buf[0]!='\n'){buf[strcspn(buf,"\n")]=0;char d2[P],*path;
             if(pg==1){snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);path=task_add(d2,buf,50000);}
             else{snprintf(d2,P,"%s/%s",SROOT,pg==2?"prompts":"notes");mkdirp(d2);path=note_save(d2,buf);}
-            printf("  ");fflush(stdout);note_url(path,ct,NULL);}acted=1;}   /* prints: saved → <commit url> */
+            edit_st(path,st,"added");ne++;}continue;}
     if(!acted)continue;   /* unknown key → just redraw */
     printf("  %sany key=back  esc=quit%s",DM,X);fflush(stdout);
     if((ch=key1())==27||ch=='q')return flow_exit(af,na,ne);

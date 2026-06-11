@@ -24,7 +24,8 @@ static void tm_rename(const char*n){char c[160];snprintf(c,160,"tmux rename-wind
 static int tm_new(const char *w, const char *wd, const char *cmd) {
     tm_ensure_sess();if(tm_has(w))return 1;char c[B*2],ev[P+16]="";
     const char*xa=getenv("A_CTX");if(xa&&xa[0])snprintf(ev,sizeof(ev),"-e A_CTX='%s' ",xa);
-    if(getenv("TMUX")&&cmd&&*cmd){
+    const char*tj=getenv("TMUX");   /* TMUX= (empty) = explicit not-in-tmux: callers force the detached new-window path */
+    if(tj&&*tj&&cmd&&*cmd){
         snprintf(c,sizeof(c),"tmux split-window -vb -l 90%% %s-c '%s' '%s'",ev,wd,cmd);return system(c)?1:2;}
     if(cmd&&*cmd)snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s' '%s'",ev,w,wd,cmd);
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
