@@ -1,6 +1,6 @@
 /* help */
 static const char *HELP_SHORT =
-    "\033[1;33ma flow\033[0m          Triage: notes/tasks/prompts \xe2\x86\x92 agents\n"   /* highlighted: flow is the home loop */
+    "\033[1;33ma f\033[0m|flow        Triage: notes/tasks/prompts \xe2\x86\x92 agents\n"   /* highlighted: flow is the home loop */
     "a j \"prompt\"     Job: worktree + agent\n"
     "a a|c|co|g|ai   Default/claude/codex/gemini/aider\n"
     "a <#>           Open project by number\n"
@@ -185,7 +185,7 @@ static int cmd_done(int argc,char**argv){AB;
         char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\n",sp,np);fputs("echo \"✓ done: $(cat .a_done 2>/dev/null)\";echo;a diff\n",sf);
+        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\n",sp,np);fputs("echo '✓ done';echo;a diff\n",sf);
             if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
             {FILE*nf=fopen(np,"w");if(nf){
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking opus (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
@@ -197,18 +197,18 @@ static int cmd_done(int argc,char**argv){AB;
             else fputs("echo;printf '\\033[2mno test command\\033[0m\\n'\n",sf);
             fputs("while :;do\necho\n",sf);
             if(*me)fprintf(sf,"printf '\\033[1;32m=== agent report ===\\033[0m\\n';cat<<'A_RPT'\n%s\nA_RPT\n",me);
-            fputs("printf '\\033[1;35m=== actions (key) ===\\033[0m\\n'\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push\\033[0m\\n'\n",dl);
-            if(dl[0]&&tp)fputs("printf '\\033[1;33m[p]\\033[0m tell agent: push prompt\\n'\n",sf);
+            fputs("if [ -z \"$M\" ];then printf '\\033[1;35m=== actions (key) ===\\033[0m\\n'\n",sf);
+            if(dl[0]&&tp)fputs("printf '\\033[1;33m[p]\\033[0m tell agent: push (recommended)\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;33m[c]\\033[0m crunch the code\\n'\n",sf);
-            if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run test\\n'\n",sf);
-            fputs("printf '\\033[1;33m[n]\\033[0m suggest next step (opus)\\n'\n",sf);
-            fputs("printf '\\033[1;33m[b]\\033[0m suggest next + book/effort\\n'\n",sf);
             fputs("printf '\\033[1;36m[s]\\033[0m bash shell here (your own testing)\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;35m[e]\\033[0m talk to agent\\n'\n",sf);
             for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;33m[%s]\\033[0m %%s: \\033[32m%%s\\033[0m\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
+            fputs("printf '\\033[1;33m[o]\\033[0m more\\n'\nelse printf '\\033[1;35m=== more (key) ===\\033[0m\\n'\n",sf);
+            if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push\\033[0m\\n'\n",dl);
+            if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run test\\n'\n",sf);
+            fputs("printf '\\033[1;33m[n]\\033[0m suggest next step (opus)\\n'\nprintf '\\033[1;33m[b]\\033[0m suggest next + book/effort\\n'\nfi\n",sf);
             fputs("printf '\\033[2mpress a key (other=close)\\033[0m '\nread -rsn1 k </dev/tty;echo\n",sf);
-            if(dl[0])fprintf(sf,"[ \"$k\" = y ]&&{ A_PANE='%s' a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",tp?tp:"");
+            if(dl[0])fprintf(sf,"[ \"$k$M\" = y1 ]&&{ A_PANE='%s' a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",tp?tp:"");
             if(dl[0]&&tp)fprintf(sf,"[ \"$k\" = p ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,PP,tp);
             if(tp)fprintf(sf,"[ \"$k\" = c ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,CR,tp);
             if(ts[0])fputs("[ \"$k\" = r ]&&{ printf '\\033[1;33m$ \\033[0m%s\\n' \"$TS\";eval \"$TS\" 2>&1;}\n",sf);
@@ -217,7 +217,7 @@ static int cmd_done(int argc,char**argv){AB;
             fputs("[ \"$k\" = s ]&&exec ${SHELL:-bash}\n",sf);
             if(tp)fprintf(sf,"[ \"$k\" = e ]&&tmux select-pane -t '%s'\n",tp);
             for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %s ]&&{ %s;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",ck[i],cx[i]);
-            fputs("case \"$k\" in r|n|b) ;; *) break;; esac\ndone\n",sf);
+            fputs("case \"$k\" in o) M=1;; r|n|b) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
             char c[P*2];
             /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */
