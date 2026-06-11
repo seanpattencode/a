@@ -738,7 +738,7 @@ int main(int argc, char **argv) {
     init_paths();G_argc=argc;G_argv=argv;
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
-    if (argc < 2) { perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }
+    if (argc < 2) { if(isatty(1)&&getenv("TMUX")){CWD(w);execlp("tmux","tmux","new-window","-c",w,"a","i",(char*)0);} perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
     alog(acmd, wd);
