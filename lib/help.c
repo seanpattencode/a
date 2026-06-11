@@ -1,5 +1,6 @@
 /* help */
 static const char *HELP_SHORT =
+    "\033[1;33ma flow\033[0m          Triage: notes/tasks/prompts \xe2\x86\x92 agents\n"   /* highlighted: flow is the home loop */
     "a j \"prompt\"     Job: worktree + agent\n"
     "a a|c|co|g|ai   Default/claude/codex/gemini/aider\n"
     "a <#>           Open project by number\n"
@@ -11,7 +12,7 @@ static const char *HELP_FULL =
     "AGENTS  a c|co|g|ai  a <key>++  a all  a agent\n"
     "PROJ    a <#>  a add/remove/move/scan  a create <name>\n"
     "GIT     a push [msg]  a pr [title]  a pull/diff/revert\n"
-    "NOTES   a n \"text\"  a task\n"
+    "NOTES   a n \"text\"  a task  a flow\n"
     "REMOTE  a ssh [<#>]  a run <#> \"task\"\n"
     "CODE    a cat [1|2|3]  (1=all 2=skip my/ 3=first10+last5)\n"
     "SYSTEM  a ls/kill/attach  a hub  a config/sync/update/perf";
