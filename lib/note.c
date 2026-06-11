@@ -616,7 +616,7 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
        (continue, not re-exec): page + sort survive, no respawn. */
     const char*srt="pri";int verbose=0,pg=(tty&&isatty(0))?0:-1;   /* a flow [pri|new|due] [v] [all|0-4] */
     for(int i=2;i<argc;i++){if(!strcmp(argv[i],"v")||!strcmp(argv[i],"verbose"))verbose=1;else if(!strcmp(argv[i],"all"))pg=-1;
-        else if(isdigit((unsigned char)argv[i][0])&&!argv[i][1])pg=(argv[i][0]-'0')%5;else srt=argv[i];}
+        else if(isdigit((unsigned char)argv[i][0])&&!argv[i][1])pg=(argv[i][0]-'0')%4;else srt=argv[i];}
     #define PG(i) (pg<0||pg==(i))
     char st[256]="",lw[256]="";   /* action result + last-sent window — [w] jumps there */
     static char af[64][P];int na=0,ne=0;   /* archived / edited this session → receipts; push deferred to exit */
@@ -671,13 +671,6 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
                 char ab[256]="";if(sid)win_about(sid,ab,256);
                 printf("       %s↳ %.76s%s\n",DM,ab[0]?ab:"(shell)",X);}}
         if(wp)pclose(wp);if(!any)printf("  %s(no tmux windows)%s\n",DM,X);}}
-    /* COMMON PROMPTS — common instructions of how to act, not specific tasks (kept; managed by `a prompt`) */
-    if(PG(4)){char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);
-    static char pf[256][P];int np=listdir(pdir,pf,256),shown=0;
-    printf("\n%s━━ COMMON PROMPTS%s %s(common/prompts — how to act, not tasks)%s\n",BO,X,DM,X);
-    for(int i=0;i<np;i++){char*b=strrchr(pf[i],'/');b=b?b+1:pf[i];
-        if(!strstr(b,".txt"))continue;printf("  %s\n",b);shown++;}
-    if(!shown)printf("  %s(none)%s\n",DM,X);}
     /* one-keypress menu — act on key-down, no Enter; always on-screen with its page's content.
        Key letters bright yellow: deliberate monochrome exception — on a phone the eye must FIND
        the key, not read labels. Keys follow GMAIL conventions (the email shortcuts billions
@@ -687,18 +680,18 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
        page's type. No shifted keys: shift is a chord on a phone keyboard. */
     if(!tty||!isatty(0))return 0;   /* web/pipe = static render only */
     if(pg>=0){struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);printf("\033[%d;1H",(w.ws_row>8?w.ws_row:24)-4);}else putchar('\n');   /* pin menu to bottom rows: fixed position across flips */
-    if(pg>=0){static const char*PN[]={"NOTES","TASKS","PROMPTS","WINDOWS","COMMON PROMPTS"};   /* identity line IN the pinned strip: long wrapped items scroll the top header off a phone screen; the bottom strip is the only place guaranteed in view. \033[K per line: overflowed content scrolls old text into these rows — overprint must erase to EOL */
-        printf("%s━━ %d/5 %s",BO,pg+1,PN[pg]);if(cnt>=0)printf(" (%d)",cnt);
+    if(pg>=0){static const char*PN[]={"NOTES","TASKS","PROMPT CANDIDATES","WINDOWS"};   /* identity line IN the pinned strip: long wrapped items scroll the top header off a phone screen; the bottom strip is the only place guaranteed in view. \033[K per line: overflowed content scrolls old text into these rows — overprint must erase to EOL */
+        printf("%s━━ %d/4 %s",BO,pg+1,PN[pg]);if(cnt>=0)printf(" (%d)",cnt);
         if(pg==1)printf(" — %s",bynew?"created":bydue?"deadline":"priority");printf("%s\033[K\n",X);}
     if(*st){printf("  \033[32m%s\033[0m",st);*st=0;}printf("\033[K\n");   /* status row always emitted (even empty) so menu rows never shift */
-    static const char*CT[]={"note","task","prompt","note","note"};const char*ct=CT[pg<0?0:pg];char tc=pg==1?'t':pg==2?'p':'n';
+    static const char*CT[]={"note","task","prompt","note"};const char*ct=CT[pg<0?0:pg];char tc=pg==1?'t':pg==2?'p':'n';
     #define K(s) "[\033[1;33m" s "\033[0m]"
     printf("  " K("e") " archive  " K("o") " edit  " K("m") "ove↑  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("i") "deate convo  " K("s") "end p1  " K("d") "ue " K("r") "ank  " K("l") " g's prompt  " K("x") " arch id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "uit\033[K\n> \033[J",ct);fflush(stdout);
     #undef K
     int ch=key1();
     if(ch==27||ch==3||ch=='q')return flow_exit(af,na,ne);   /* esc / q / ^C exit */
-    if(ch=='j'){pg=pg<0?0:(pg+1)%5;continue;}
-    if(ch=='k'){pg=pg<0?4:(pg+4)%5;continue;}
+    if(ch=='j'){pg=pg<0?0:(pg+1)%4;continue;}
+    if(ch=='k'){pg=pg<0?3:(pg+3)%4;continue;}
     if(ch=='a'){pg=pg<0?0:-1;continue;}
     if(ch>='1'&&ch<='3'){srt=ch=='1'?"pri":ch=='2'?"new":"due";continue;}
     if(ch=='w'){if(*lw){flow_exit(af,na,ne);tm_go(lw);}   /* [w]: flush receipts, then jump into the last-sent session (tm_go execs — flow ends, `a flow` re-enters) */
