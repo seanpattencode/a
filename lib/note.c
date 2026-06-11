@@ -5,9 +5,9 @@ static void do_archive(const char *p) {
 }
 static char* note_save(const char *d, const char *t) {
     struct timespec tp; clock_gettime(CLOCK_REALTIME,&tp); time_t now=tp.tv_sec;
-    static char fn[P]; char ts[32],buf[B]; strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&now));
+    static char fn[P]; char ts[32]; strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&now));
     snprintf(fn,P,"%s/%08x_%s.%09ld.txt",d,(unsigned)(tp.tv_nsec^(unsigned)now),ts,tp.tv_nsec);
-    snprintf(buf,B,"Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n",t,DEV,ts); writef(fn,buf);
+    FILE*f=fopen(fn,"w"); if(f){fprintf(f,"Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n",t,DEV,ts);fclose(f);}
     return fn;
 }
 static char rdir[P],ltd[P]="";

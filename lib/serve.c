@@ -475,11 +475,11 @@ static void _handle(int c){
         /* POST /note: extract c= param, run a note */
         int isnote=!strncmp(req,"POST /note",10);
         char*q=strstr(body,isnote?"c=":"q=");if(!q){_sresp(c,400,"text/plain","no param",8);return;}
-        q+=2;char cmd[512];int ci=0;
-        for(;q[ci]&&q[ci]!='&'&&ci<510;ci++){
-            if(q[ci]=='+')cmd[ci]=' ';
-            else if(q[ci]=='%'&&q[ci+1]&&q[ci+2]){char h[3]={q[ci+1],q[ci+2],0};cmd[ci]=(char)strtol(h,NULL,16);q+=2;}
-            else cmd[ci]=q[ci];}cmd[ci]=0;
+        q+=2;char*cmd=q,*w=q;   /* in-place: decoded ≤ encoded */
+        for(;*q&&*q!='&';q++){
+            if(*q=='+')*w++=' ';
+            else if(*q=='%'&&q[1]&&q[2]){char h[3]={q[1],q[2],0};*w++=(char)strtol(h,NULL,16);q+=2;}
+            else *w++=*q;}*w=0;
         if(isnote){char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);char*nf=note_save(nd,cmd);
             char m[256]="";note_url(nf,"note",m); /* gh PUT → real url (works even when local trails); no fork, no 30s freeze */
             _sresp(c,200,"text/plain",m,(int)strlen(m));return;}
