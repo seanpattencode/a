@@ -360,6 +360,10 @@ static void _handle(int c){
         if(pp){pp+=4;int i=0;for(;pp[i]>='0'&&pp[i]<='9'&&i<23;i++)po[i]=pp[i];po[i]=0;}
         if(nm[0]&&!strchr(nm,'/')&&!strstr(nm,"..")&&!fork()){int n=open("/dev/null",O_WRONLY);if(n>=0)dup2(n,1);execlp("a","a","book","pos",nm,po,(char*)0);_exit(1);}
         _sresp(c,200,"text/plain","ok",2);return;}
+    if(!strncmp(req,"GET /bookarchive",16)){char nm[128];_qn(req,nm);  /* dot-prefix rename = archive; restore: a book archive <substr> */
+        if(!nm[0]||nm[0]=='.'||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
+        char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
+        if(rename(fr,to)){_sresp(c,404,"text/plain","x",1);return;}_redir(c,"/book");return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];_qn(req,nm);
         if(!nm[0]){
             char bd[P];snprintf(bd,P,"%s/books",AROOT);
@@ -379,7 +383,7 @@ static void _handle(int c){
                 if(!has){snprintf(tf,P,"%s/%s/output/%s.txt",bd,names[i],names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
                 char xt[8]="";for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);if(!access(tf,R_OK)){snprintf(xt,8,"%s",ex[k]);break;}}
-                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],names[i],xt);}
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><a class=c href=\"/bookarchive?n=%s\" title=\"archive (hide)\">\xe2\x9c\x95</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],names[i],names[i],xt);}
             _sdoc(c,h,hl);free(h);return;}
         if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);

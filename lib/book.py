@@ -11,7 +11,7 @@ ADATA = ROOT / "adata"
 DATA_DIR = ADATA / "books"
 
 def pick_book():
-    books = sorted(p.parent.name for p in DATA_DIR.glob("*/source.*"))
+    books = sorted(p.parent.name for p in DATA_DIR.glob("[!.]*/source.*"))
     if not books: print("No books in", DATA_DIR); sys.exit(1)
     for i, b in enumerate(books, 1): print(f"{i}. {b}")
     return DATA_DIR / books[int(input("Select: ")) - 1]
@@ -134,7 +134,7 @@ def _gdrive_info():
     return f"gdrive ({remotes[0]}): https://drive.google.com/drive/search?q=adata%2Fbooks"
 
 def cmd_list(show_all=False):
-    books = sorted(p.parent.name for p in DATA_DIR.glob("*/source.*"))
+    books = sorted(p.parent.name for p in DATA_DIR.glob("[!.]*/source.*"))
     if not books: print("No books in", DATA_DIR); return
     limit=len(books) if show_all else 4
     for b in books[:limit]:
@@ -187,9 +187,10 @@ if __name__ == "__main__":
             ("a book chat <name>",       "interactive Q&A against the book's processed output"),
             ("a book serve [start|stop]","calibre server on this device"),
             ("a book sync",              "rclone bidirectional sync of adata/books/"),
+            ("a book archive <substr>",  "toggle hidden .<name>: saved, not listed"),
         ]
         pos_by = {p[1]: ((p[4].strip() if len(p) >= 5 else "") or "0") for l in rows for p in [l.split("\t")] if len(p) >= 2}
-        local = [d.name for d in DATA_DIR.iterdir() if d.is_dir()] if DATA_DIR.exists() else []
+        local = [d.name for d in DATA_DIR.iterdir() if d.is_dir() and d.name[0] != '.'] if DATA_DIR.exists() else []
         W = 36  # fixed name column so the .ext lines up; longer titles get cut with …
         items = []
         for name in sorted(set(pos_by) | set(local)):
@@ -202,18 +203,19 @@ if __name__ == "__main__":
             items.append(f"⚙  {label}\t{desc}\tact")
         if not shutil.which("fzf"):
             for i, it in enumerate(items): print(f"  {i:2}. " + it.split("\t")[0])
-            try: cols = items[int(input("# "))].split("\t")
+            try: key, cols = "", items[int(input("# "))].split("\t")
             except: sys.exit(0)
         else:
             prev = f'head -c 4000 {DATA_DIR}/{{2}}/output/*.txt 2>/dev/null||echo no text yet'
             r = subprocess.run(["fzf","--height","80%","--reverse","--prompt","a book > ","--with-nth","1","--delimiter","\t","--info","inline",
-                "--bind","left:up,right:down","--preview",prev,"--preview-window","right:50%:wrap",
-                "--header","←/→ flip books · Enter selects · Esc cancels","--ansi"],
+                "--bind","left:up,right:down","--preview",prev,"--preview-window","right:50%:wrap","--expect","ctrl-x",
+                "--header","←/→ flip books · Enter selects · ^X archive · Esc cancels","--ansi"],
                 input="\n".join(items), capture_output=True, text=True)
             if r.returncode != 0: sys.exit(0)
-            cols = r.stdout.strip().split("\t")
+            key, _, sel = r.stdout.partition("\n")
+            cols = sel.strip().split("\t")
         if cols[-1] in ("read", "chat"):
-            sys.argv = sys.argv[:1] + [cols[-1], cols[1]]
+            sys.argv = sys.argv[:1] + ["archive" if key == "ctrl-x" else cols[-1], cols[1]]
             args = [a for a in sys.argv if not a.startswith("--")]
         else:
             print(cols[0].lstrip("⚙ ").strip()); print(f"  {cols[1]}"); sys.exit(0)
@@ -222,6 +224,12 @@ if __name__ == "__main__":
     if cmd == "list": cmd_list(show_all=True)
     elif cmd == "install": subprocess.run(["brew","install","--cask","calibre"] if sys.platform=="darwin" else ["sudo","apt-get","install","-y","calibre"])
     elif cmd == "sync": cmd_sync()
+    elif cmd == "archive":  # toggle dot-prefix: data stays, every lister already skips dotdirs
+        n = args[2] if len(args) > 2 else sys.exit("Usage: a book archive <substr>")
+        m = [DATA_DIR/n] if (DATA_DIR/n).is_dir() else [d for d in DATA_DIR.iterdir() if d.is_dir() and n in d.name]
+        if len(m) != 1: sys.exit(f"x {len(m)} matches" + "".join(f"\n  {d.name}" for d in m[:9]))
+        t = m[0].with_name(m[0].name[1:] if m[0].name[0] == '.' else '.' + m[0].name)
+        m[0].rename(t); print("+ restored " + t.name if t.name[0] != '.' else "+ " + t.name)
     elif cmd == "lib":
         import json; subprocess.run("pkill -9 -f /opt/calibre;sleep 2",shell=True); p=os.path.expanduser('~/.config/calibre/global.py.json'); json.dump({**json.load(open(p)),'library_path':os.path.expanduser('~/calibre-lib')},open(p,'w'))
     elif cmd == "serve": w=Path.home()/'.local/bin/calibre'; w.exists() or (w.parent.mkdir(parents=True,exist_ok=True),w.write_text('#!/bin/sh\nsystemctl --user stop calibre-server 2>/dev/null\n/usr/bin/calibre "$@"\nsystemctl --user start calibre-server 2>/dev/null\n'),w.chmod(0o755)); subprocess.run(["systemctl","--user","--no-pager",args[2] if len(args)>2 else "status","calibre-server"])
@@ -296,7 +304,7 @@ if __name__ == "__main__":
         if not shutil.which("ebook-convert"): print("install calibre (ebook-convert not found)"); sys.exit(1)
         a = args[2] if len(args) > 2 else "all"
         if (DATA_DIR / a).is_dir(): books, fmt = [DATA_DIR / a], None        # one book by name
-        else: books, fmt = sorted(d for d in DATA_DIR.iterdir() if d.is_dir()), (None if a == "all" else a.lstrip("."))
+        else: books, fmt = sorted(d for d in DATA_DIR.iterdir() if d.is_dir() and d.name[0] != '.'), (None if a == "all" else a.lstrip("."))
         done = skip = fail = 0
         for bd in books:
             src = next(bd.glob("source.*"), None)
