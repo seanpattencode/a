@@ -363,7 +363,7 @@ static void _handle(int c){
     if(!strncmp(req,"GET /bookarchive",16)){char nm[128];_qn(req,nm);  /* dot-prefix rename = archive; restore: a book archive <substr> */
         if(!nm[0]||nm[0]=='.'||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
-        if(rename(fr,to)){_sresp(c,404,"text/plain","x",1);return;}_redir(c,"/book");return;}
+        if(rename(fr,to)){_sresp(c,404,"text/plain","x",1);return;}_sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];_qn(req,nm);
         if(!nm[0]){
             char bd[P];snprintf(bd,P,"%s/books",AROOT);
@@ -376,14 +376,18 @@ static void _handle(int c){
                 "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:15px/1.3 system-ui}h3{color:#6cf;padding:14px 16px 6px;margin:0}"
                 ".r{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1a1a1a}.r:hover{background:#161616}"
                 ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9cf;text-decoration:none}.r.x .t{color:#5a6b7a}"
-                ".c{flex:none;color:#6a9;text-decoration:none;font-size:15px}.s{flex:none;width:48px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}</style>" TAPJS "<h3>books (%d)</h3>",n);
+                ".c{flex:none;color:#6a9;text-decoration:none;font-size:15px}.s{flex:none;width:48px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}</style>"
+                /* archive on press, confirm in place (no nav/reload): registered before TAPJS so stopImmediatePropagation owns a.x */
+                "<script>function _ax(e){var a=e.target.closest('a.x');if(!a)return;e.preventDefault();e.stopImmediatePropagation();"
+                "if(e.type!='pointerdown')return;fetch(a.href).then(function(r){if(r.ok){a.closest('.r').style.opacity=.35;a.outerHTML='<span class=c>\xe2\x9c\x93</span>'}else a.textContent='\xe2\x9c\x97'},function(){a.textContent='\xe2\x9c\x97'})}"
+                "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true)</script>" TAPJS "<h3>books (%d)</h3>",n);
             const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};
             for(int i=0;i<n&&hl<cap-1024;i++){
                 char tf[P];snprintf(tf,P,"%s/%s/output/explained.txt",bd,names[i]);int has=!access(tf,R_OK);
                 if(!has){snprintf(tf,P,"%s/%s/output/%s.txt",bd,names[i],names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
                 char xt[8]="";for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);if(!access(tf,R_OK)){snprintf(xt,8,"%s",ex[k]);break;}}
-                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><a class=c href=\"/bookarchive?n=%s\" title=\"archive (hide)\">\xe2\x9c\x95</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],names[i],names[i],xt);}
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><a class=\"c x\" href=\"/bookarchive?n=%s\" title=\"archive (hide)\">\xe2\x9c\x95</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],names[i],names[i],xt);}
             _sdoc(c,h,hl);free(h);return;}
         if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
