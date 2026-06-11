@@ -693,7 +693,7 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     if(*st){printf("  \033[32m%s\033[0m",st);*st=0;}printf("\033[K\n");   /* status row always emitted (even empty) so menu rows never shift */
     static const char*CT[]={"note","task","prompt","note","note"};const char*ct=CT[pg<0?0:pg];char tc=pg==1?'t':pg==2?'p':'n';
     #define K(s) "[\033[1;33m" s "\033[0m]"
-    printf("  " K("e") " archive  " K("o") " edit  " K("m") "ove↑  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("i") "deate convo  " K("s") "end p1  " K("l") " g's prompt  " K("x") " archive by id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "uit\033[K\n> \033[J",ct);fflush(stdout);
+    printf("  " K("e") " archive  " K("o") " edit  " K("m") "ove↑  " K("c") " new %s   " K("j") "next " K("k") "prev " K("a") "ll\033[K\n  " K("g") "enerate  " K("i") "deate convo  " K("s") "end p1  " K("d") "ue " K("r") "ank  " K("l") " g's prompt  " K("x") " arch id  sort " K("1") "pri " K("2") "new " K("3") "due  " K("q") "uit\033[K\n> \033[J",ct);fflush(stdout);
     #undef K
     int ch=key1();
     if(ch==27||ch==3||ch=='q')return flow_exit(af,na,ne);   /* esc / q / ^C exit */
@@ -703,6 +703,18 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
     if(ch>='1'&&ch<='3'){srt=ch=='1'?"pri":ch=='2'?"new":"due";continue;}
     if(ch=='w'){if(*lw){flow_exit(af,na,ne);tm_go(lw);}   /* [w]: flush receipts, then jump into the last-sent session (tm_go execs — flow ends, `a flow` re-enters) */
         snprintf(st,256,"w: nothing sent yet");continue;}
+    if(ch=='d'){if(pg==1&&*top){char ib[64];printf("  due (6-20 or 2026-6-20 17:00, default 23:59)> ");fflush(stdout);   /* [d]ue on t1 — dl_norm + deadline.txt, commit receipt */
+            if(fgets(ib,64,stdin)&&ib[0]!='\n'){ib[strcspn(ib,"\n")]=0;task_todir(top);
+                char dn[32],df[P];dl_norm(ib,dn,32);snprintf(df,P,"%s/deadline.txt",top);writef(df,dn);
+                edit_st(top,st,"deadline");ne++;}}
+        else snprintf(st,256,"d: tasks page only");continue;}
+    if(ch=='r'){if(pg==1&&*top){char ib[16];printf("  rank: +/++ up  -/-- down  digits exact> ");fflush(stdout);   /* [r]ank t1 — each +/- halves/doubles the 5-digit priority (lower = higher) */
+            if(fgets(ib,16,stdin)&&ib[0]!='\n'){int pv=atoi(T[0].p);
+                if(ib[0]=='+'){for(char*q=ib;*q=='+';q++)pv/=2;}
+                else if(ib[0]=='-'){for(char*q=ib;*q=='-';q++)pv=pv?pv*2:1;}
+                else if(isdigit((unsigned char)ib[0]))pv=atoi(ib);else pv=-1;
+                if(pv>=0){if(pv>99999)pv=99999;task_repri(0,pv);snprintf(st,256,"✓ now P%05d — %.180s",pv,T[0].t);ne++;}}}
+        else snprintf(st,256,"r: tasks page only");continue;}
     if(ch=='m'){if(pg==0&&*topt){char d2[P];snprintf(d2,P,"%s/tasks",SROOT);mkdirp(d2);char*np=task_add(d2,topt,50000);   /* [m]ove↑ the ladder: note→task, task→prompt — source archived, exit receipt covers it */
             do_archive(top);if(na<64)snprintf(af[na],P,"%s",fa_last);na++;edit_st(np,st,"note→task");ne++;}
         else if(pg==1&&*topt){char d2[P];snprintf(d2,P,"%s/prompts",SROOT);mkdirp(d2);char*np=note_save(d2,topt);
