@@ -452,24 +452,29 @@ static void _handle(int c){
         free(txt);
         size_t cap=el+4096;char*pg=malloc(cap);int hl=snprintf(pg,cap,
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
-            "<style>html,body{margin:0;background:#0b0b0b}html{scrollbar-width:none;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}#bk{white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:26px 18px;max-width:760px;margin:0 auto}#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}</style>"
+            "<style>html,body{margin:0;background:#0b0b0b;overflow:hidden;height:100%%;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}"
+            /* true pagination: bk is a fixed full-screen clipped box; flipping sets bk.scrollTop by whole screens, body never scrolls */
+            "#bk{position:fixed;top:0;bottom:0;left:0;right:0;max-width:760px;margin:0 auto;overflow:hidden;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:0 18px;box-sizing:border-box}"
+            "#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}</style>"
             "<div id=hud></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,H=hud,ns=[].slice.call(K.childNodes),T=0,bs=[],co=P;"
             "for(var i=0;i<ns.length;i++){bs.push(T);T+=ns[i].length||0;}"
             "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
-            "function O(){var x=K.getBoundingClientRect().left+18,o;for(var y=4;y<100;y+=10){o=C(x,y);if(o!=null)return o;}return co;}"
-            "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();scrollBy(0,c.top-4);}"
-            "function S(){var b='pos='+co,u='/book?n='+encodeURIComponent(N);if(navigator.sendBeacon)navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'}));else fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
-            /* paginated, not scroll: viewport-sized line-grid pages; flip on pointer DOWN (depress, not lift) / wheel / keys; scrollTo is sync = sub-ms, paint next vsync */
-            "var PO=K.getBoundingClientRect().top+scrollY,lh=parseFloat(getComputedStyle(K).lineHeight),ph=Math.max(lh,Math.floor((innerHeight-8)/lh)*lh),pg=0,fm=0;"
-            "function G(p){p=Math.max(0,p);var t=performance.now(),y=p?PO+p*ph-6:0;scrollTo(0,y);if(p&&scrollY<y-1)p=Math.max(0,Math.round((scrollY-PO+6)/ph));pg=p;fm=performance.now()-t;}"
+            "function O(){var r=K.getBoundingClientRect(),x=r.left+18,o;for(var y=2;y<120;y+=8){o=C(x,r.top+y);if(o!=null)return o;}return co;}"
+            "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.round(K.scrollTop/ph());}"
+            "function S(){co=O();var b='pos='+co,u='/book?n='+encodeURIComponent(N);if(navigator.sendBeacon)navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'}));else fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
+            /* true pagination: whole-screen pages via bk.scrollTop (body can't scroll); flip on pointer DOWN (depress, not lift)/wheel/keys — scrollTop is sync = sub-ms, paints next vsync */
+            "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,fm=0,st;"
+            "function ph(){return Math.max(lh,Math.floor(K.clientHeight/lh)*lh);}"
+            "function NP(){return Math.max(0,Math.ceil((K.scrollHeight-K.clientHeight)/ph()));}"
+            "function G(p){p=Math.max(0,Math.min(p,NP()));var t=performance.now();K.scrollTop=p*ph();pg=p;fm=performance.now()-t;H.textContent='pg '+(pg+1)+'/'+(NP()+1)+' · '+fm.toFixed(2)+'ms';clearTimeout(st);st=setTimeout(S,400);}"
             "addEventListener('pointerdown',function(e){G(pg+(e.clientX<innerWidth/3?-1:1));e.preventDefault();});"
             "addEventListener('wheel',function(e){G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
             "addEventListener('keydown',function(e){var k=e.key;if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
-            "requestAnimationFrame(function(){if(P>0){R(P);pg=Math.max(0,Math.floor((scrollY-PO+6)/ph));scrollTo(0,pg?PO+pg*ph-6:0);}H.textContent='pg '+(pg+1)+' · start '+P+' / '+T;});"
-            "var st;addEventListener('scroll',function(){co=O();H.textContent='pg '+(pg+1)+' · '+co+' / '+T+' · '+fm.toFixed(2)+'ms';clearTimeout(st);st=setTimeout(S,500);});"
+            "addEventListener('resize',function(){G(pg);});"
+            "requestAnimationFrame(function(){if(P>0){R(P);K.scrollTop=pg*ph();}H.textContent='pg '+(pg+1)+'/'+(NP()+1);});"
             "addEventListener('pagehide',S);addEventListener('visibilitychange',function(){if(document.hidden)S();});"
             "</script>",nm,pos);
         _sdoc(c,pg,hl);free(pg);return;}
