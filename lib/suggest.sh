@@ -21,7 +21,6 @@ cat "$LENS" > "$OUT"
 for f in $SR/mem/index.txt $SR/mem/*.md $SR/mem/i.txt; do echo -e "\n=== /a DOC: $(basename "$f") ==="; cat "$f"; done >> "$OUT"
 for f in $HOME/i/*.md; do echo -e "\n=== /i DOC: $(basename "$f") ==="; cat "$f"; done >> "$OUT"
 for f in $HOME/u/*.md; do echo -e "\n=== /u DOC: $(basename "$f") ==="; cat "$f"; done >> "$OUT"
-echo -e "\n=== /u DOC: me.txt (Sean's typed messages - NEWEST 100KB ONLY) ===" >> "$OUT"; tail -c 100000 $HOME/u/me.txt >> "$OUT"
 if [ "$BOOK" != "-" ] && ls $HOME/a/adata/books/"$BOOK"/transcriptions/*.txt >/dev/null 2>&1; then
     echo -e "\n=== BOOK: $BOOK (full transcription) ===" >> "$OUT"
     for f in $(ls $HOME/a/adata/books/"$BOOK"/transcriptions/*.txt | sort); do cat "$f"; echo; done >> "$OUT"
@@ -30,15 +29,21 @@ echo -e "\n=== ALL PENDING TASKS (lower P = higher priority) ===" >> "$OUT"
 for d in $SR/tasks/*/; do n=$(basename "$d"); [ "$n" = ".archive" ] && continue
     printf "P%s " "${n:0:5}"; find "$d" -name '*.txt' -type f -exec cat {} + 2>/dev/null | tr '\n' ' '; echo; done >> "$OUT"
 echo -e "\n=== PREVIOUS SUGGESTIONS — DO NOT REPEAT OR RESTATE ANY OF THESE ===" >> "$OUT"
-for f in $SR/suggestions/*.txt $SR/suggestions/.archive/*.txt; do [ -f "$f" ] && head -1 "$f" | sed 's/^Text: //'; done >> "$OUT" 2>/dev/null
+ls -t $SR/suggestions/*.txt $SR/suggestions/.archive/*.txt 2>/dev/null | head -200 | while IFS= read -r f; do head -1 "$f" | sed 's/^Text: //'; done >> "$OUT"
 echo -e "\n=== ALL PENDING NOTES (deduplicated, oldest first, newest last) ===" >> "$OUT"
 declare -A SEEN
 for f in $(ls $SR/notes/*.txt | awk -F_ '{print $NF" "$0}' | sort | cut -d' ' -f2-); do
     h=$(md5sum "$f" | cut -d' ' -f1); [ -n "${SEEN[$h]}" ] && continue; SEEN[$h]=1
     u=$(basename "$f"); printf "[%s] " "${u:9:13}"; tr '\n' ' ' < "$f"; echo; done >> "$OUT"
+# me.txt is the ELASTIC cut: gets whatever budget remains under the gate (max 100KB), shrinking
+# automatically as notes/suggestions grow. Last position = newest typed messages nearest the instruction.
+GATE=2700000   # measured: 2,647,201 ran (963k real tokens), 2,747,201 bounced — true CLI limit ~2.72MB
+ME=$((GATE - $(wc -c < "$OUT") - 1000)); [ "$ME" -gt 100000 ] && ME=100000
+if [ "$ME" -gt 5000 ]; then echo -e "\n=== /u DOC: me.txt (Sean's typed messages - NEWEST ${ME} BYTES) ===" >> "$OUT"; tail -c "$ME" $HOME/u/me.txt >> "$OUT"
+else echo "! no room for me.txt this run (corpus grew) - consider trimming docs or notes"; fi
 echo -e "\n=== END OF CORPUS ===\nNow produce the 11 suggestions exactly as specified at the top: 11 lines, literal TASK: / PROMPT: / NOTE: prefixes, each ending [grounded in: ...]. Do not repeat previous suggestions." >> "$OUT"
-SZ=$(wc -c < "$OUT"); echo "corpus: $SZ bytes (gate ~$((SZ/2860))k of 1000k)"
-[ "$SZ" -gt 2650000 ] && { echo "x corpus over the ~2.65MB CLI gate - cut docs or book"; exit 1; }
+SZ=$(wc -c < "$OUT"); echo "corpus: $SZ bytes (gate $GATE)"
+[ "$SZ" -gt "$GATE" ] && { echo "x corpus over the CLI gate even after me.txt cut - trim docs or book"; exit 1; }
 env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT claude -p --dangerously-skip-permissions --model claude-fable-5 --effort max --strict-mcp-config \
     --system-prompt "You are a single-shot idea generator. Follow the instructions in the user message exactly. Do not use any tools. Output only the requested lines." \
     < "$OUT" > "$RES"
