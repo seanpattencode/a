@@ -399,6 +399,13 @@ static void _handle(int c){
             static char names[4096][128];int n=0;DIR*d=opendir(bd);struct dirent*e;
             if(d){while((e=readdir(d))&&n<4096){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
                 char dp[P];snprintf(dp,P,"%s/%s",bd,e->d_name);struct stat st;if(!stat(dp,&st)&&S_ISDIR(st.st_mode))snprintf(names[n++],128,"%s",e->d_name);}closedir(d);}
+            {char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);  /* merge synced index: registered-elsewhere books appear, pull on open */
+             if(ix){for(char*l=ix;l<ix+il&&n<4096;){char*e2=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e2?e2:ix+il;
+                char*t1=memchr(l,'\t',(size_t)(lim-l)),*t2=t1?memchr(t1+1,'\t',(size_t)(lim-t1-1)):0;
+                if(t1&&t2&&t2>t1+1&&(size_t)(t2-t1-1)<127){char bn[128];snprintf(bn,128,"%.*s",(int)(t2-t1-1),t1+1);
+                    int dup=0;for(int i=0;i<n;i++)if(!strcmp(names[i],bn)){dup=1;break;}
+                    if(!dup&&bn[0]&&bn[0]!='.')snprintf(names[n++],128,"%s",bn);}
+                if(e2)l=e2+1;else break;}free(ix);}}
             qsort(names,(size_t)n,128,_scmp);
             int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
                 "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
@@ -423,7 +430,12 @@ static void _handle(int c){
         if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/%s.txt",AROOT,nm,nm);
         if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/source.txt",AROOT,nm);
         size_t tl=0;char*txt=readf(tf,&tl);
-        if(!txt){_sresp(c,404,"text/plain","no text — a book transcribe first",34);return;}
+        if(!txt){char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);int reg=0;  /* in synced index but not local: pull in bg, page retries */
+            if(ix){char pat[140];snprintf(pat,140,"\t%s\t",nm);reg=!!strstr(ix,pat);free(ix);}
+            if(reg){if(!fork()){int z=open("/dev/null",O_WRONLY);if(z>=0){dup2(z,1);dup2(z,2);}execlp("a","a","book","pull",nm,(char*)0);_exit(1);}
+                char b[512];int bl=snprintf(b,512,"<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=5><body style=\"background:#0b0b0b;color:#6cf;font:16px ui-monospace,monospace;padding:40px\">syncing %s from cloud\xe2\x80\xa6 auto-retrying</body>",nm);
+                _sdoc(c,b,bl);return;}
+            _sresp(c,404,"text/plain","no text — a book transcribe first",34);return;}
         long pos=0;{char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);  /* saved offset = index.txt col5 */
             if(ix){char*l=ix;while(l<ix+il){char*e=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e?e:ix+il;
                 char*t1=memchr(l,'\t',(size_t)(lim-l)),*t2=t1?memchr(t1+1,'\t',(size_t)(lim-t1-1)):0;
@@ -440,7 +452,7 @@ static void _handle(int c){
         free(txt);
         size_t cap=el+4096;char*pg=malloc(cap);int hl=snprintf(pg,cap,
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
-            "<style>html,body{margin:0;background:#0b0b0b}#bk{white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:26px 18px;max-width:760px;margin:0 auto}#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}</style>"
+            "<style>html,body{margin:0;background:#0b0b0b}html{scrollbar-width:none;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}#bk{white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:26px 18px;max-width:760px;margin:0 auto}#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}</style>"
             "<div id=hud></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
@@ -450,8 +462,14 @@ static void _handle(int c){
             "function O(){var x=K.getBoundingClientRect().left+18,o;for(var y=4;y<100;y+=10){o=C(x,y);if(o!=null)return o;}return co;}"
             "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();scrollBy(0,c.top-4);}"
             "function S(){var b='pos='+co,u='/book?n='+encodeURIComponent(N);if(navigator.sendBeacon)navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'}));else fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
-            "requestAnimationFrame(function(){if(P>0)R(P);H.textContent='start '+P+' / '+T;});"
-            "var st;addEventListener('scroll',function(){co=O();H.textContent='pos '+co+' / '+T;clearTimeout(st);st=setTimeout(S,500);});"
+            /* paginated, not scroll: viewport-sized line-grid pages; flip on pointer DOWN (depress, not lift) / wheel / keys; scrollTo is sync = sub-ms, paint next vsync */
+            "var PO=K.getBoundingClientRect().top+scrollY,lh=parseFloat(getComputedStyle(K).lineHeight),ph=Math.max(lh,Math.floor((innerHeight-8)/lh)*lh),pg=0,fm=0;"
+            "function G(p){p=Math.max(0,p);var t=performance.now(),y=p?PO+p*ph-6:0;scrollTo(0,y);if(p&&scrollY<y-1)p=Math.max(0,Math.round((scrollY-PO+6)/ph));pg=p;fm=performance.now()-t;}"
+            "addEventListener('pointerdown',function(e){G(pg+(e.clientX<innerWidth/3?-1:1));e.preventDefault();});"
+            "addEventListener('wheel',function(e){G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
+            "addEventListener('keydown',function(e){var k=e.key;if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
+            "requestAnimationFrame(function(){if(P>0){R(P);pg=Math.max(0,Math.floor((scrollY-PO+6)/ph));scrollTo(0,pg?PO+pg*ph-6:0);}H.textContent='pg '+(pg+1)+' · start '+P+' / '+T;});"
+            "var st;addEventListener('scroll',function(){co=O();H.textContent='pg '+(pg+1)+' · '+co+' / '+T+' · '+fm.toFixed(2)+'ms';clearTimeout(st);st=setTimeout(S,500);});"
             "addEventListener('pagehide',S);addEventListener('visibilitychange',function(){if(document.hidden)S();});"
             "</script>",nm,pos);
         _sdoc(c,pg,hl);free(pg);return;}
