@@ -1,6 +1,6 @@
 static void bg_backup_jsonl(void) {
     char c[B]; snprintf(c, B, "nohup sh -c 'D=%s/backup/%s;mkdir -p $D&&"
-        "find ~/.claude/projects -name \"*.jsonl\" 2>/dev/null|while read f;do cp -n \"$f\" $D/ 2>/dev/null;done;"
+        "find ~/.claude/projects -name \"*.jsonl\" 2>/dev/null|while read f;do cp -u \"$f\" $D/ 2>/dev/null;done;"  /* -u: growing sessions must re-stage; -n froze first-sync prefix */
         "r=$(rclone listremotes 2>/dev/null|grep \"^a-gdrive\"|head -1|tr -d \":\");"
         "[ -n \"$r\" ]&&rclone copy $D \"$r:adata/backup/%s/\" --include \"*.jsonl\" --include \"*.log\" -q"
         "' </dev/null >/dev/null 2>&1 &", AROOT, DEV, DEV);
