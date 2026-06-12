@@ -74,7 +74,8 @@ static void hub_timer(hub_t *j, int on) {
         char svc[P]; snprintf(svc,P,"%s/a-%s.service",sd,j->n); writef(svc,buf);
         snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Timer]\nOnCalendar=%s\nPersistent=true\n[Install]\nWantedBy=timers.target\n",j->n,j->s);
         char tmr[P]; snprintf(tmr,P,"%s/a-%s.timer",sd,j->n); writef(tmr,buf);
-        snprintf(buf,B*2,"systemctl --user daemon-reload;systemctl --user enable --now a-%s.timer >/dev/null 2>&1",j->n);
+        /* stop+stamp=now, else Persistent catch-up fires a rescheduled live timer instantly */
+        snprintf(buf,B*2,"systemctl --user stop a-%s.timer 2>/dev/null;touch %s/.local/share/systemd/timers/stamp-a-%s.timer 2>/dev/null;systemctl --user daemon-reload;systemctl --user enable --now a-%s.timer >/dev/null 2>&1",j->n,HOME,j->n,j->n);
     } else {
         snprintf(buf,B*2,"systemctl --user disable --now a-%s.timer >/dev/null 2>&1;rm -f '%s/a-%s.timer' '%s/a-%s.service';systemctl --user daemon-reload",j->n,sd,j->n,sd,j->n);
     }
