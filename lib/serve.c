@@ -322,11 +322,11 @@ static void _handle(int c){
                 char*b=strstr(req,"\r\n\r\n");b=b?b+4:(char*)"";
                 int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","x",1);return;}
                 pid_t ch=fork();
-                if(!ch){dup2(pp[1],1);dup2(pp[1],2);close(pp[0]);close(pp[1]);signal(SIGCHLD,SIG_DFL);execl(hp,hp,b,(char*)0);_exit(1);}
-                close(pp[1]);size_t cap=65536,ol=0;char*o=malloc(cap);
-                {int r;while((r=(int)read(pp[0],o+ol,cap-1-ol))>0){ol+=(size_t)r;if(ol+4096>cap)o=realloc(o,cap*=2);}}
-                close(pp[0]);waitpid(ch,0,0);o[ol]=0;
-                _sresp(c,200,"text/plain; charset=utf-8",o,(int)ol);free(o);return;}}
+                if(!ch){dup2(pp[1],1);dup2(pp[1],2);close(pp[0]);close(pp[1]);signal(SIGCHLD,SIG_DFL);signal(SIGPIPE,SIG_DFL);execl(hp,hp,b,(char*)0);_exit(1);}
+                close(pp[1]);
+                {static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nCache-Control:no-store\r\nAccess-Control-Allow-Origin:*\r\nConnection:close\r\n\r\n";(void)!write(c,SH,sizeof SH-1);}
+                char sb[4096];int r;while((r=(int)read(pp[0],sb,4096))>0)if(write(c,sb,(size_t)r)<0)break; /* stream as produced; client gone -> child SIGPIPEs */
+                close(pp[0]);waitpid(ch,0,0);return;}}
         if(strncmp(req,"GET /",5)){_sresp(c,404,"text/plain","x",1);return;}
         char rel[P];int i=0;const char*q=req+5;
         for(;*q&&*q!=' '&&*q!='?'&&i<P-12;q++)rel[i++]=*q;
