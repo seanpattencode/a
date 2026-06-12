@@ -69,15 +69,18 @@ static void hub_timer(hub_t *j, int on) {
     }
 #else
     char sd[P]; snprintf(sd,P,"%s/.config/systemd/user",HOME); mkdirp(sd);
+    int bt=!strcmp(j->s,"boot"); /* Schedule "boot" = long-running service: starts at boot (linger), Restart=always. oneshot+nohup dies with the cgroup. */
     if(on){
-        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Service]\nType=oneshot\nEnvironment=PATH=%s\nExecStart=/bin/bash -lc '%s'\n",j->n,getenv("PATH"),j->p);
+        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Service]\nType=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash -lc '%s'\n%s",j->n,bt?"simple":"oneshot",getenv("PATH"),j->p,bt?"Restart=always\nRestartSec=5\n[Install]\nWantedBy=default.target\n":"");
         char svc[P]; snprintf(svc,P,"%s/a-%s.service",sd,j->n); writef(svc,buf);
+        if(bt)snprintf(buf,B*2,"systemctl --user daemon-reload;systemctl --user enable a-%s.service >/dev/null 2>&1;systemctl --user restart a-%s.service",j->n,j->n);
+        else{
         snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Timer]\nOnCalendar=%s\nPersistent=true\n[Install]\nWantedBy=timers.target\n",j->n,j->s);
         char tmr[P]; snprintf(tmr,P,"%s/a-%s.timer",sd,j->n); writef(tmr,buf);
         /* stop+stamp=now, else Persistent catch-up fires a rescheduled live timer instantly */
-        snprintf(buf,B*2,"systemctl --user stop a-%s.timer 2>/dev/null;touch %s/.local/share/systemd/timers/stamp-a-%s.timer 2>/dev/null;systemctl --user daemon-reload;systemctl --user enable --now a-%s.timer >/dev/null 2>&1",j->n,HOME,j->n,j->n);
+        snprintf(buf,B*2,"systemctl --user stop a-%s.timer 2>/dev/null;touch %s/.local/share/systemd/timers/stamp-a-%s.timer 2>/dev/null;systemctl --user daemon-reload;systemctl --user enable --now a-%s.timer >/dev/null 2>&1",j->n,HOME,j->n,j->n);}
     } else {
-        snprintf(buf,B*2,"systemctl --user disable --now a-%s.timer >/dev/null 2>&1;rm -f '%s/a-%s.timer' '%s/a-%s.service';systemctl --user daemon-reload",j->n,sd,j->n,sd,j->n);
+        snprintf(buf,B*2,"systemctl --user disable --now a-%s.timer a-%s.service >/dev/null 2>&1;rm -f '%s/a-%s.timer' '%s/a-%s.service';systemctl --user daemon-reload",j->n,j->n,sd,j->n,sd,j->n);
     }
 #endif
     (void)!system(buf);
@@ -95,7 +98,7 @@ static void hub_timers(void){
 #elif defined(__APPLE__)
     pcmd("launchctl list 2>/dev/null",HUB_TL,sizeof(HUB_TL));
 #else
-    pcmd("systemctl --user list-timers --all 2>/dev/null",HUB_TL,sizeof(HUB_TL));
+    pcmd("systemctl --user list-timers --all 2>/dev/null;systemctl --user list-units --type=service --state=running --no-legend 2>/dev/null",HUB_TL,sizeof(HUB_TL));
 #endif
 }
 static int hub_on(hub_t*j){char p[96];
@@ -104,7 +107,7 @@ static int hub_on(hub_t*j){char p[96];
 #elif defined(__APPLE__)
     snprintf(p,96,"a-%s",j->n);
 #else
-    snprintf(p,96,"a-%s.timer",j->n);
+    snprintf(p,96,"a-%s.%s",j->n,strcmp(j->s,"boot")?"timer":"service");
 #endif
     return(!strcmp(j->d,DEV))?j->en&&strstr(HUB_TL,p)!=NULL:j->en;}
 static void hub_trunc(char*o,int sz,const char*s,int cw){snprintf(o,(size_t)sz,"%.*s",cw,s);}
@@ -149,7 +152,7 @@ static int cmd_hub(int argc, char **argv) {
     if(!sub||!strcmp(sub,"all"))return hub_list(sub&&!strcmp(sub,"all"),NULL);
 
     if(!strcmp(sub,"add")) {
-        if(argc<6) { fprintf(stderr,"Usage: a hub add <name> <sched> <cmd...>\n"); return 1; }
+        if(argc<6) { fprintf(stderr,"Usage: a hub add <name> <sched|boot> <cmd...>\n"); return 1; }
         hub_t j={.en=1}; snprintf(j.n,64,"%s",argv[3]); snprintf(j.s,32,"%s",argv[4]);
         char cmd[B]=""; ajoin(cmd,B,argc,argv,5);
         snprintf(j.p,512,"%s",cmd); snprintf(j.d,64,"%s",DEV);

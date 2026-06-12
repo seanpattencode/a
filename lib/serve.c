@@ -25,6 +25,11 @@ static void _sha1(const unsigned char*d,size_t n,unsigned char out[20]){
     for(int i=0;i<5;i++)for(int j=0;j<4;j++)out[i*4+j]=(unsigned char)(hh[i]>>(24-j*8));
 }
 static char*_shtml;static int _shlen;
+static char _sdir[P]; /* a serve <port> <dir> = static site only; UI (incl /ws shell) never exposed */
+static const char*_mime(const char*p){const char*e=strrchr(p,'.');e=e?e+1:"";
+    return !strcmp(e,"html")?"text/html; charset=utf-8":!strcmp(e,"css")?"text/css":!strcmp(e,"js")?"text/javascript":
+        !strcmp(e,"png")?"image/png":!strcmp(e,"svg")?"image/svg+xml":!strcmp(e,"jpg")||!strcmp(e,"jpeg")?"image/jpeg":
+        !strcmp(e,"ico")?"image/x-icon":!strcmp(e,"json")?"application/json":"text/plain";}
 #define SYNC_HTML "<span style=color:#888>sync <span class=sa>%s</span></span> <button style=\"background:#000;color:#888;border:1px solid #333;padding:0 6px;font:inherit;cursor:pointer\" onclick=\"fetch('/api/sync',{method:'POST'});let p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{document.querySelectorAll('.sa').forEach(s=>s.textContent=t);if(t!='syncing')clearInterval(p)}),1000)\">sync</button>"
 /* ARCH #32: list pages navigate on finger/mouse DOWN, not lift-off. delegated so it covers links added later (e.g. /dash EventSource). skips #/onclick links. */
 #define TAPJS "<script>addEventListener('pointerdown',function(e){var a=e.target.closest('a[href]');if(a&&!a.onclick&&a.getAttribute('href')[0]!='#'){e.preventDefault();a.click()}},true)</script>"
@@ -308,6 +313,30 @@ static void _handle(int c){
     req[n]=0;
     {char*e=strchr(req,'\r');int L=e?(int)(e-req):0;if(L>159)L=159;memcpy(_rl,req,(size_t)L);_rl[L]=0;}
     int one=1;setsockopt(c,IPPROTO_TCP,TCP_NODELAY,&one,4);
+    if(_sdir[0]){ /* static site mode: files only, no UI routes */
+        if(!strncmp(req,"POST /",6)){ /* hook: executable site/.post/<name> gets body as $1, stdout back */
+            char nm[64];int i=0;const char*q=req+6;
+            for(;*q&&*q!=' '&&*q!='/'&&*q!='?'&&i<63;q++)nm[i++]=*q;nm[i]=0;
+            char hp[P*2];snprintf(hp,P*2,"%s/.post/%s",_sdir,nm);
+            if(i&&!strchr(nm,'.')&&!access(hp,X_OK)){
+                char*b=strstr(req,"\r\n\r\n");b=b?b+4:(char*)"";
+                int pp[2];if(pipe(pp)){_sresp(c,500,"text/plain","x",1);return;}
+                pid_t ch=fork();
+                if(!ch){dup2(pp[1],1);dup2(pp[1],2);close(pp[0]);close(pp[1]);signal(SIGCHLD,SIG_DFL);execl(hp,hp,b,(char*)0);_exit(1);}
+                close(pp[1]);size_t cap=65536,ol=0;char*o=malloc(cap);
+                {int r;while((r=(int)read(pp[0],o+ol,cap-1-ol))>0){ol+=(size_t)r;if(ol+4096>cap)o=realloc(o,cap*=2);}}
+                close(pp[0]);waitpid(ch,0,0);o[ol]=0;
+                _sresp(c,200,"text/plain; charset=utf-8",o,(int)ol);free(o);return;}}
+        if(strncmp(req,"GET /",5)){_sresp(c,404,"text/plain","x",1);return;}
+        char rel[P];int i=0;const char*q=req+5;
+        for(;*q&&*q!=' '&&*q!='?'&&i<P-12;q++)rel[i++]=*q;
+        rel[i]=0;
+        if(strstr(rel,"..")||rel[0]=='.'||strstr(rel,"/.")){_sresp(c,400,"text/plain","x",1);return;}
+        char fp[P*2];snprintf(fp,P*2,"%s/%s%s",_sdir,rel,(!i||rel[i-1]=='/')?"index.html":"");
+        size_t fl=0;char*fd2=readf(fp,&fl);
+        if(!fd2){snprintf(fp,P*2,"%s/%s/index.html",_sdir,rel);fd2=readf(fp,&fl);} /* /x -> /x/index.html */
+        if(!fd2){_sresp(c,404,"text/plain","not found",9);return;}
+        _sresph(c,200,_mime(fp),fd2,(int)fl,"no-cache");free(fd2);return;}
     /* new full-page route? add a GET handler below + one nav link in ui_full.html line 9 (<div id=wm>). docs auto-list via /docs. */
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
@@ -667,9 +696,11 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     (void)!system("for h in after-new-window after-rename-window after-kill-pane session-window-changed;do tmux set-hook -g $h 'run-shell -b \"echo x > /tmp/a_dash.fifo\"' 2>/dev/null;done");
     {const char*op=getenv("PATH")?:"";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
-    printf("> generating HTML...\n");_html_gen();_prompt_gen();
-    if(!_shtml){puts("x HTML generation failed");return 1;}
-    printf("+ %d bytes cached\n",_shlen);
+    if(argc>3){if(!realpath(argv[3],_sdir)||!dexists(_sdir)){printf("x no dir %s\n",argv[3]);return 1;}
+        printf("+ site %s\n",_sdir);}
+    else{printf("> generating HTML...\n");_html_gen();_prompt_gen();
+        if(!_shtml){puts("x HTML generation failed");return 1;}
+        printf("+ %d bytes cached\n",_shlen);}
     int fd=socket(AF_INET,SOCK_STREAM,0);
     int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,4);
     struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port),.sin_addr={htonl(INADDR_ANY)}};
