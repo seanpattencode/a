@@ -1,6 +1,6 @@
 static void bg_backup_jsonl(void) {
     char c[B]; snprintf(c, B, "nohup sh -c 'D=%s/backup/%s;mkdir -p $D&&"
-        "find ~/.claude/projects -name \"*.jsonl\" 2>/dev/null|while read f;do cp -u \"$f\" $D/ 2>/dev/null;done;"  /* -u: growing sessions must re-stage; -n froze first-sync prefix */
+        "find ~/.claude/projects -name \"*.jsonl\" 2>/dev/null|while read f;do [ \"$f\" -nt \"$D/$(basename \"$f\")\" ]&&cp \"$f\" $D/ 2>/dev/null;done;"  /* -nt: growing sessions re-stage (cp -n froze first-sync prefix; cp -u absent on mac) */
         "r=$(rclone listremotes 2>/dev/null|grep \"^a-gdrive\"|head -1|tr -d \":\");"
         "[ -n \"$r\" ]&&rclone copy $D \"$r:adata/backup/%s/\" --include \"*.jsonl\" --include \"*.log\" -q"
         "' </dev/null >/dev/null 2>&1 &", AROOT, DEV, DEV);
@@ -159,7 +159,10 @@ static int cmd_sync(int argc, char **argv) { AB;
     {char rc[64];pcmd("rclone listremotes 2>/dev/null|grep a-gdrive|head -1|tr -d ':'",rc,64);rc[strcspn(rc,"\n")]=0;
     if(rc[0]){char cd[P],bd[P];snprintf(cd,P,"%s/context",AROOT);snprintf(bd,P,"%s/books",AROOT);mkdirp(cd);mkdirp(bd);
         snprintf(c,B,"rclone copy '%s' '%s:adata/context/' -q -L 2>/dev/null;rclone copy '%s:adata/context/' '%s' -q 2>/dev/null",cd,rc,rc,cd);(void)!system(c);
-        snprintf(c,B,"rclone copy '%s' '%s:adata/books/' --include '*/output/*.txt' -q -L 2>/dev/null;rclone copy '%s:adata/books/' '%s' --include '*/output/*.txt' -q 2>/dev/null",bd,rc,rc,bd);(void)!system(c);
+        /* archived books are dot-renamed locally; the pull leg must NOT recreate them from the cloud's
+           old visible names (resurrection bug), and the push leg must not upload dotted dirs */
+        snprintf(c,B,"cd '%s'&&ls -d .[!.]*/ 2>/dev/null|sed 's|^\\.\\(.*\\)/$|- \\1/**|'>/tmp/.bk_arc;printf '+ */output/*.txt\\n- *\\n'>>/tmp/.bk_arc",bd);(void)!system(c);
+        snprintf(c,B,"rclone copy '%s' '%s:adata/books/' --filter '- .*/**' --filter '+ */output/*.txt' --filter '- *' -q -L 2>/dev/null;rclone copy '%s:adata/books/' '%s' --filter-from /tmp/.bk_arc -q 2>/dev/null",bd,rc,rc,bd);(void)!system(c);
         puts("✓ context + books");}}
     if (argc > 2 && !strcmp(argv[2], "all")) {
         puts("\n--- Broadcasting to SSH hosts ---");
