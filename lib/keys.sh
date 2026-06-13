@@ -58,7 +58,7 @@ AHK
         exit 0
     fi
     # keyd (right shift → Ctrl+PageDown) — first, doesn't need DBUS
-    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nrightshift = overloadt(shift, C-pagedown, 200)\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift = Ctrl+PageDown" || warn "keyd skipped"
+    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nrightshift = overloadt(shift, C-pagedown, 200)\n\n[control]\ntab = C-pagedown\n\n[control+shift]\ntab = C-pageup\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → right shift/C-tab = Ctrl+PageDown, C-S-tab = Ctrl+PageUp" || warn "keyd skipped"
     # GNOME bits — skip silently if no DBUS session
     command -v gsettings >/dev/null && gsettings list-schemas >/dev/null 2>&1 || { info "no GNOME session — skipping capslock/Hyper bindings"; exit 0; }
     OPTS=$(gsettings get org.gnome.desktop.input-sources xkb-options 2>/dev/null)
