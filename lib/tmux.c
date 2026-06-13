@@ -20,7 +20,7 @@ static void tm_go(const char *w) {
     char c[B];const char*op=getenv("TMUX")?"switch-client":"attach-session";
     snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
-static void tm_rename(const char*n){char c[160];snprintf(c,160,"tmux rename-window '%s'",n);(void)!system(c);}
+static void tm_rename(const char*n){const char*p=getenv("TMUX_PANE");char c[200];snprintf(c,200,"tmux rename-window -t '%s' '%s'",p?p:"",n);(void)!system(c);}  /* -t pane: bare rename hits session-current window (clobbered keeper on restore) */
 static int tm_new(const char *w, const char *wd, const char *cmd) {
     tm_ensure_sess();if(tm_has(w))return 1;char c[B*2],ev[P+16]="";
     const char*xa=getenv("A_CTX");if(xa&&xa[0])snprintf(ev,sizeof(ev),"-e A_CTX='%s' ",xa);
