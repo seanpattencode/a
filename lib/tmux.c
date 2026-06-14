@@ -124,6 +124,7 @@ static void tm_ensure_conf(void) {
         "bind -n C-j " SSHIF "'send C-j' 'previous-window'\n"
         "bind -n C-PageDown " SSHIF "'if-shell \"a fl n #{pane_id}\" next-window' 'next-window'\n"
         "bind -n C-PageUp " SSHIF "'if-shell \"a fl p #{pane_id}\" previous-window' 'previous-window'\n"
+        "bind -n PPage if -F '#{alternate_on}' 'send PPage' 'copy-mode -e ; send -X -N \"#{pane_height}\" scroll-up'\n"
         "bind-key -n C-n new-window\n"
         "bind -n C-t " SSHIF "'send C-t' 'new-window'\n"
         "bind-key -n C-y split-window -fh\n"
@@ -149,8 +150,9 @@ static void tm_ensure_conf(void) {
         fprintf(f,"set-environment -g CLAUDE_CODE_TMPDIR \"%s/.tmp\"\n",HOME);
     if (cc) fprintf(f, "set -s copy-command \"%s\"\n", cc);
     {const char*cm[]={"copy-mode","copy-mode-vi",NULL};
-    for(int i=0;cm[i];i++) cc?fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel \"%s\"\n",cm[i],cc)
-        :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);}
+    for(int i=0;cm[i];i++){ cc?fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel \"%s\"\n",cm[i],cc)
+        :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);
+        fprintf(f,"bind -T %1$s PPage send -X -N '#{pane_height}' scroll-up\nbind -T %1$s NPage send -X -N '#{pane_height}' scroll-down\nbind -T %1$s WheelUpPane send -X -N '#{pane_height}' scroll-up\nbind -T %1$s WheelDownPane send -X -N '#{pane_height}' scroll-down\n",cm[i]);}}
     fclose(f);
     char uconf[P]; snprintf(uconf, P, "%s/.tmux.conf", HOME);
     char *uc = readf(uconf, NULL);
