@@ -361,16 +361,22 @@ if(Build.VERSION.SDK_INT>=34)startForeground(1,nt,android.content.pm.ServiceInfo
 val s=(resources.displayMetrics.density*40).toInt();val px=IntArray(s*s);render(px,s,s)
 val bmp=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);bmp.setPixels(px,0,s,0,0,s,s)
 val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager
-fun mk(dx:Int,tint:Int,lab:String,act:()->Unit):View{val fl=FrameLayout(this)
+val pf=getSharedPreferences("bub",0);var ox=pf.getInt("ox",(resources.displayMetrics.density*6).toInt());var oy=pf.getInt("oy",0);var dx0=0f;var dy0=0f;var bx=0;var by=0
+fun relay(){vs.forEach{val lp=it.layoutParams as WindowManager.LayoutParams;lp.x=ox;lp.y=(it.tag as Int)+oy;wm.updateViewLayout(it,lp)}}
+fun mk(dy:Int,tint:Int,lab:String,drag:Boolean,act:()->Unit):View{val fl=FrameLayout(this)
  val w=ImageView(this);w.setImageBitmap(bmp);if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP)
  val tv=TextView(this);tv.text=lab;tv.setTextColor(Color.WHITE);tv.textSize=10f;tv.gravity=Gravity.CENTER
  fl.addView(w,FrameLayout.LayoutParams(s,s));fl.addView(tv,FrameLayout.LayoutParams(s,s))
- fl.setOnTouchListener{_,e->when(e.action){MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);act();true};MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();true};else->false}}
+ fl.setOnTouchListener{_,e->when(e.action){
+  MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);if(drag){dx0=e.rawX;dy0=e.rawY;bx=ox;by=oy}else act();true}
+  MotionEvent.ACTION_MOVE->{if(drag){ox=bx+(dx0-e.rawX).toInt();oy=by+(e.rawY-dy0).toInt();relay()};true}
+  MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();if(drag)pf.edit().putInt("ox",ox).putInt("oy",oy).apply();true}
+  else->false}}
  val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
- lp.gravity=Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL;lp.x=dx;lp.y=(resources.displayMetrics.density*6).toInt();wm.addView(fl,lp);return fl}
+ lp.gravity=Gravity.END or Gravity.CENTER_VERTICAL;lp.x=ox;lp.y=dy+oy;fl.tag=dy;wm.addView(fl,lp);return fl}
 fun sc(fwd:Boolean){val i=Sc.inst;if(i==null){android.widget.Toast.makeText(this,"Enable scroll access in Setup",android.widget.Toast.LENGTH_SHORT).show();startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}else i.scroll(fwd)}
 val h=(s+16)/2
-vs=listOf(mk(-5*h,0xFF1565C0.toInt(),"drop"){dismiss()},mk(-3*h,0xFF00ACC1.toInt(),"up"){sc(false)},mk(-h,0xFFFB8C00.toInt(),"down"){sc(true)},mk(h,0xFF2E7D32.toInt(),"home"){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(3*h,0,"next"){cycle()},mk(5*h,0xFF6A1B9A.toInt(),"tmux"){tmuxNext()})}
+vs=listOf(mk(-6*h,0xFF1565C0.toInt(),"drop",false){dismiss()},mk(-4*h,0xFF00ACC1.toInt(),"up",false){sc(false)},mk(-2*h,0xFFFB8C00.toInt(),"down",false){sc(true)},mk(0,0xFF2E7D32.toInt(),"home",false){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(2*h,0,"next",false){cycle()},mk(4*h,0xFF6A1B9A.toInt(),"tmux",false){tmuxNext()},mk(6*h,0xFFAD1457.toInt(),"move",true){})}
 override fun onDestroy(){super.onDestroy();val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager;vs.forEach{try{wm.removeView(it)}catch(e:Exception){}}}}
 '''
 NC=r'''#include <jni.h>
@@ -1038,6 +1044,38 @@ object NativeKB {
     external fun getLabels(): String
 }
 
+// Dict: shared continuous dictation (both IMEs) — partials stream as composing text, finals commit,
+// auto-relisten on result/error until toggled off (no silence timeout). Raw editors (inputType
+// TYPE_NULL: terminals like termux) can't compose — stream append-only tails there; NEVER delete
+// (termux deletes = async key events that can eat pre-existing content). Revisions may dup a few
+// boundary chars; content is never lost.
+class Dict(private val svc: InputMethodService, private val ui: () -> Unit) {
+    var listening = false; private var sr: SpeechRecognizer? = null; private var sent = 0
+    private val ic get() = svc.currentInputConnection
+    private val raw get() = svc.currentInputEditorInfo?.inputType == android.text.InputType.TYPE_NULL
+    private fun put(s: String, fin: Boolean) {
+        if (raw) { val t = if (fin) "$s " else s
+            if (t.length > sent) { ic?.commitText(t.substring(sent), 1); sent = t.length }
+            if (fin) sent = 0 }
+        else { if (fin) ic?.commitText("$s ", 1) else ic?.setComposingText(s, 1); sent = if (fin) 0 else s.length }
+    }
+    private fun seal() { if (sent > 0) { ic?.finishComposingText(); ic?.commitText(" ", 1); sent = 0 } }
+    fun toggle() { if (listening) stop() else start() }
+    fun stop() { listening = false; sent = 0; ic?.finishComposingText(); try { sr?.destroy() } catch (e: Exception) {}; sr = null; ui() }
+    private fun start() {
+        if (svc.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) { svc.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${svc.packageName}")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)); return }
+        listening = true; ui()
+        val ri = android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true).putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 6000)
+        sr = SpeechRecognizer.createSpeechRecognizer(svc)
+        sr!!.setRecognitionListener(object : RecognitionListener {
+            override fun onPartialResults(b: android.os.Bundle?) { b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { put(it, false) } }
+            override fun onResults(b: android.os.Bundle?) { val r = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull(); if (r != null && r.isNotBlank()) put(r, true) else seal(); if (listening) sr?.startListening(ri) }
+            override fun onError(c: Int) { seal(); if (listening) Handler(Looper.getMainLooper()).postDelayed({ if (listening) sr?.startListening(ri) }, 150) }
+            override fun onEndOfSpeech() {}; override fun onReadyForSpeech(b: android.os.Bundle?) {}; override fun onBeginningOfSpeech() {}; override fun onRmsChanged(r: Float) {}; override fun onBufferReceived(b: ByteArray?) {}; override fun onEvent(c: Int, b: android.os.Bundle?) {}
+        }); sr!!.startListening(ri)
+    }
+}
+
 class InstantNdkService : InputMethodService(), android.view.textservice.SpellCheckerSession.SpellCheckerSessionListener {
     private lateinit var kbView: NdkKeyboardView
     private var root: android.widget.LinearLayout? = null
@@ -1050,9 +1088,8 @@ class InstantNdkService : InputMethodService(), android.view.textservice.SpellCh
 
     override fun onCreateInputView(): View { sc = (getSystemService(android.content.Context.TEXT_SERVICES_MANAGER_SERVICE) as? android.view.textservice.TextServicesManager)?.newSpellCheckerSession(null, null, this, true); kbView = NdkKeyboardView(this); root = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF000000.toInt()); addView(kbView) }; return root!! }
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting)
-        val bub = (getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any { it.service.className == "com.aios.a.BubbleService" }
-        root?.setPadding(0, 0, 0, if (bub) (resources.displayMetrics.density * 52).toInt() else 0)
-        kbView.requestLayout(); fix = null; fixWord = ""; skip = ""; word = "" }
+        fix = null; fixWord = ""; skip = ""; word = "" }
+    override fun onFinishInputView(f: Boolean) { kbView.rec.stop(); super.onFinishInputView(f) }
 
     fun sendChar(c: Char) = when (c) {
         '\b' -> { word = word.dropLast(1); currentInputConnection?.deleteSurroundingText(1, 0) }
@@ -1087,18 +1124,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     }}
 
     private val toolbarH = 0f
-    private var listening = false
-    private fun startTranscription() {
-        listening = true; invalidate()
-        val sr = SpeechRecognizer.createSpeechRecognizer(svc)
-        val stop = { listening = false; invalidate(); sr.destroy() }
-        sr.setRecognitionListener(object : RecognitionListener {
-            override fun onResults(b: android.os.Bundle?) { b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { svc.currentInputConnection?.commitText("$it ", 1) }; stop() }
-            override fun onError(c: Int) { stop() }
-            override fun onEndOfSpeech() {}; override fun onReadyForSpeech(b: android.os.Bundle?) {}; override fun onBeginningOfSpeech() {}; override fun onRmsChanged(r: Float) {}; override fun onBufferReceived(b: ByteArray?) {}; override fun onPartialResults(b: android.os.Bundle?) {}; override fun onEvent(c: Int, b: android.os.Bundle?) {}
-        })
-        sr.startListening(android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))
-    }
+    val rec = Dict(svc) { invalidate() }
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         NativeKB.init(w, h - toolbarH.toInt())
         for (r in 0 until 5) NativeKB.setRowFudge(r, prefs.getInt("fudge$r", 20).toFloat())
@@ -1114,7 +1140,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val c = NativeKB.onTouch(e.action, e.x, e.y - toolbarH)
-        if (e.action == MotionEvent.ACTION_DOWN && c == 3) { startTranscription(); return true }
+        if (e.action == MotionEvent.ACTION_DOWN && c == 3) { rec.toggle(); return true }
         if (e.action == MotionEvent.ACTION_DOWN && c != 0) {
             svc.sendChar(c.toChar())
             handler.removeCallbacks(holdCheck)
@@ -1144,7 +1170,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
             val isPressed = i == pressed
             if (isPressed && debugRed) canvas.drawRoundRect(bounds[b] - hf, bounds[b+1] + rf, bounds[b+2] + hf, bounds[b+3] + rf, 8f, 8f, pressPaint)
             else canvas.drawRoundRect(bounds[b]+4, bounds[b+1]+4, bounds[b+2]-4, bounds[b+3]-4, 8f, 8f, if (isPressed) pressPaint else keyPaint)
-            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (listening) "●" else "🎤"; else -> ch.toString() }
+            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (rec.listening) "●" else "🎤"; else -> ch.toString() }
             canvas.drawText(label, (bounds[b] + bounds[b+2]) / 2, (bounds[b+1] + bounds[b+3]) / 2 + 16, textPaint)
             inRow++; if (row < rowSizes.size && inRow >= rowSizes[row]) { row++; inRow = 0 }
         }
@@ -1194,6 +1220,32 @@ class SettingsActivity : android.app.Activity() {
         layout.addView(android.widget.CheckBox(this).apply { text = "Debug: Red flash"; isChecked = prefs.getBoolean("debug_red", true); setOnCheckedChangeListener { _, c -> prefs.edit().putBoolean("debug_red", c).apply() } })
         setContentView(layout)
     }
+}
+
+// VoiceLine: a SECOND IME in this same APK (own entry in Android's keyboard picker, label "a voice
+// line") — literally ONE LINE tall: a dictation toggle + enter. The point is giving screen height
+// back to the content while still allowing input. Continuous dictation à la Cap: partials stream
+// into the field as composing text, finalized phrases commit, auto-relisten until tapped off.
+class VoiceLineService : InputMethodService() {
+    private var v: VoiceLineView? = null
+    val rec = Dict(this) { v?.invalidate() }
+    override fun onEvaluateFullscreenMode() = false
+    override fun onCreateInputView(): View { v = VoiceLineView(this); return v!! }
+    override fun onFinishInputView(f: Boolean) { rec.stop(); super.onFinishInputView(f) }
+    fun enter() { currentInputConnection?.finishComposingText(); val a = currentInputEditorInfo?.imeOptions?.and(android.view.inputmethod.EditorInfo.IME_MASK_ACTION) ?: 0
+        if (a != 0 && a != android.view.inputmethod.EditorInfo.IME_ACTION_NONE) currentInputConnection?.performEditorAction(a) else currentInputConnection?.commitText("\n", 1) }
+    fun bksp() { currentInputConnection?.finishComposingText(); currentInputConnection?.deleteSurroundingText(1, 0) }
+}
+class VoiceLineView(private val svc: VoiceLineService) : View(svc) {
+    private val t = Paint().apply { color = Color.WHITE; textSize = 40f; textAlign = Paint.Align.CENTER; isAntiAlias = true; typeface = Typeface.MONOSPACE }
+    private val f = Paint()
+    override fun onMeasure(ws: Int, hs: Int) = setMeasuredDimension(MeasureSpec.getSize(ws), (resources.displayMetrics.density * 46).toInt())
+    override fun onDraw(c: Canvas) { c.drawColor(0xFF000000.toInt()); val h = height.toFloat(); val d = width * 0.56f; val m = width * 0.78f
+        if (svc.rec.listening) { f.color = 0xFF7F1010.toInt(); c.drawRect(0f, 0f, d, h, f) }
+        c.drawText(if (svc.rec.listening) "● tap to stop" else "🎤 tap to dictate", d / 2f, h / 2f + 14f, t)
+        f.color = 0xFF222222.toInt(); c.drawRect(d, 0f, m - 2f, h, f); c.drawRect(m, 0f, width.toFloat(), h, f)
+        c.drawText("⌫", (d + m) / 2f, h / 2f + 14f, t); c.drawText("↵", (m + width) / 2f, h / 2f + 14f, t) }
+    override fun onTouchEvent(e: MotionEvent): Boolean { if (e.action == MotionEvent.ACTION_DOWN) { when { e.x < width * 0.56f -> svc.rec.toggle(); e.x < width * 0.78f -> svc.bksp(); else -> svc.enter() }; invalidate() }; return true }
 }
 '''
 KC=r'''// Instant Keyboard - Native C implementation
@@ -1376,7 +1428,7 @@ JNIEXPORT void JNICALL Java_com_aios_a_BubbleService_render(JNIEnv*e,jobject o,j
  for(int y=0;y<h;y++)for(int x=0;x<w;x++){float dx=(float)x-c,dy=(float)y-c;p[y*w+x]=sqrtf(dx*dx+dy*dy)<=r?(jint)0xFFFF2020:0;}
  (*e)->ReleaseIntArrayElements(e,a,p,0);}
 '''
-MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><activity android:name=".Cap" android:exported="true" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"/><service android:name=".BubbleService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="bubble"/></service><service android:name=".Sc" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/acc"/></service><receiver android:name=".Boot" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver></application></manifest>'
+MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:label="a kb" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><service android:name=".VoiceLineService" android:label="a voice line" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><activity android:name=".Cap" android:exported="true" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"/><service android:name=".BubbleService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="bubble"/></service><service android:name=".Sc" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/acc"/></service><receiver android:name=".Boot" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver></application></manifest>'
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
 # launcher deep-links: each web box = manifest shortcut "a <box>" -> .M --es nav <box> (sync with KT `web`); a-Home + Pixel launcher search both surface these
 BOX="note task term home proj op dash stream job book docs cloud prompt".split()
