@@ -36,7 +36,9 @@ static void init_db(void) {
     }
     snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
     if (!fexists(p)) {
+        /* c/claude sessions hardcode opus 4.8 max: fable is better but political issues temporarily mean it must switch off (https://www.anthropic.com/news/fable-mythos-access). l/o stay plain = follow the claude default. */
         const char *C = "claude --dangerously-skip-permissions";
+        const char *CM = "claude --dangerously-skip-permissions --model opus --effort max";
         const char *X = "codex -c model_reasoning_effort=\"xhigh\" --model gpt-5.5 --dangerously-bypass-approvals-and-sandbox";
         char buf[B*4]; snprintf(buf, sizeof(buf),
             "g|gemini|gemini --yolo\ngemini|gemini|gemini --yolo\n"
@@ -45,7 +47,7 @@ static void init_db(void) {
             "a|aider|OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral\n"
             "cp|claude-p|%s \"{CLAUDE_PROMPT}\"\nlp|claude-p|%s \"{CLAUDE_PROMPT}\"\n"
             "gp|gemini-p|gemini --yolo \"{GEMINI_PROMPT}\"\n"
-            "cop|codex-p|%s \"{CODEX_PROMPT}\"\n", C, C, C, C, X, X, C, C, X);
+            "cop|codex-p|%s \"{CODEX_PROMPT}\"\n", CM, CM, C, C, X, X, C, C, X);
         writef(p, buf);
     }
 }
