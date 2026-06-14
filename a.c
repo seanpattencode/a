@@ -241,7 +241,7 @@ install)
             if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd 2>/dev/null && ok "pkgs"
                 $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone tcc cppcheck cbmc frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
-        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass gh rclone cronie termux-services && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
+        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone cronie termux-services && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
     esac
     _ensure_cc
@@ -255,7 +255,7 @@ install)
         [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && "$cmd" --version &>/dev/null && { ok "$cmd"; return; }
         [[ -n "$p" ]] && warn "$cmd broken ($p), reinstalling"; info "Installing $cmd..."
         if ! command -v npm &>/dev/null; then warn "$cmd skipped (no npm)"
-        else local ns=""; [[ -z "$SUDO" && $EUID -ne 0 ]] && { mkdir -p "$HOME/.local/lib";ns="--prefix=$HOME/.local";}; $SUDO npm install -g $ns "$pkg"&&ok "$cmd"||warn "$cmd failed"; fi
+        else local ns=""; [[ -z "$SUDO" && $EUID -ne 0 && "$OS" != termux ]] && ns="--prefix=$HOME/.local"; $SUDO npm install -g $ns "$pkg"&&ok "$cmd"||warn "$cmd failed"; fi
     }
     _cok(){ command -v claude &>/dev/null && claude --version 2>&1|grep -q 'Claude Code'; }
     _cok&&ok "claude"||{ info "Installing claude...";curl -fsSL https://claude.ai/install.sh|bash||:

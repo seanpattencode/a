@@ -7,7 +7,7 @@
 #define SMUX " -oControlMaster=auto -oControlPath=%%d/.ssh/a-%%C -oControlPersist=300"
 #define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"
 static void ssh_parse(const char*h,char*hp,char*port){
-    snprintf(hp,256,"%s",h);char*c=strrchr(hp,':');if(c){snprintf(port,8,"%s",c+1);*c=0;}else snprintf(port,8,"22");}
+    snprintf(hp,256,"%s",*h=='@'?h+1:h);char*c=strrchr(hp,':');snprintf(port,8,"%s",c?c+1:"22");if(c)*c=0;}
 static const char*ssh_scope(const char*ip){/* lan if RFC1918, else wan */
     int a,b;if(sscanf(ip,"%d.%d",&a,&b)!=2)return"wan";
     return(a==10||(a==172&&b>=16&&b<=31)||(a==192&&b==168))?"lan":"wan";}
