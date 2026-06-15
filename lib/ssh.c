@@ -67,7 +67,7 @@ static int cmd_ssh(int argc,char**argv){
                 fprintf(tp,"%-22s %s%s%s\n",H[i].name,H[i].host,H[i].pw[0]?" [pw]":"",s?" (self)":"");}
             static const char*km[]={"add","all","self","start","stop","status","setup","key","auth","rm","pw","mv","info","os","ping",0};
             for(int i=0;km[i];i++)fprintf(tp,"%-22s · command\n",km[i]);fclose(tp);}
-        char c[P+160];snprintf(c,sizeof c,"fzf --reverse --height=90%% --prompt='ssh> ' --header='type to filter · ↵ select · esc cancel' <'%s'",tf);
+        char c[P+B];snprintf(c,sizeof c,"fzf --reverse --height=90%% --prompt='ssh> ' --header=\"type to filter · ↵ select · esc cancel$(F=%s/description.txt;[ -s $F ]&&echo&&cat $F)\" <'%s'",dir,tf);
         char sel[256]="";FILE*fp=popen(c,"r");int got=fp&&fgets(sel,256,fp);if(fp)pclose(fp);unlink(tf);
         if(!got||!*sel){putchar('\n');return 0;}
         sel[strcspn(sel," \t\n")]=0;  /* first token = host/command name */
