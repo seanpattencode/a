@@ -89,7 +89,10 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
     static char wb[32768];size_t wl=0;
-    {FILE*p=popen("tmux list-windows -aF '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
+    {const char*ft=getenv("A_FILT_TAG");  /* -t TMS not -a: grouped a-<pid> sessions re-list the same windows. win view adds pane tail */
+    FILE*p=popen(ft&&strstr(ft,"win")?
+        "tmux lsw -t '"TMS"' -F '#{window_id} #W' 2>/dev/null|while read -r i w;do printf '%s\twin\t%s · %s\n' \"$w\" \"$i\" \"$(tmux capturep -pt $i -S -50 2>/dev/null|awk '/[a-z]/&&!/tokens|bypass/{gsub(/^ +| +$/,\"\");s=$0\" \"s}END{print substr(s,1,250)}')\";done"
+        :"tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static const char*acts[]={"tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",
@@ -163,9 +166,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(na)FP("%s \033[36m⮌ switch → win %s (just fired)\033[0m\033[K\n",sel==0?" >":"  ",lastidx);
         for(int i=0;i<show;i++){int j=top+i,gj=j+na,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
-            char*desc=t2?t2+1:(t?t+1:"");int dl=(int)strlen(desc);
+            char*desc=t2?t2+1:(t?t+1:"");int dl=(int)strnlen(desc,50);
             if(ml>W-7-dl)ml=W-7-dl;FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
-            if(*desc)FP("\033[%dG\033[90m%s\033[0m",W-dl,desc);FP("\n");}
+            if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dl,dl,desc);FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+1):1,plen+blen+3);
         #undef FP
         (void)!write(STDOUT_FILENO,fb,(size_t)fl);}
@@ -208,6 +211,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             snprintf(jstat,sizeof jstat,"→ win %s · %s/%s",lastidx,ia,ie);buf[0]=0;blen=0;sel=-1;continue;}  /* sel=-1: nothing selected, so one ↓ lands on the switch row (no accidental switch) */
         if(do_pick&&na&&sel==0){IRST;char c[64];snprintf(c,64,"tmux select-window -t %s",lastwin);(void)!system(c);return 0;}
         if(do_pick&&nm&&sel>=na&&sel-na<nm){char*m=fm[sel-na],cmd[256];
+            {char*wt=strstr(m,"\twin\t@");if(wt){IRST;char wc[64];snprintf(wc,64,"tmux selectw -t %.*s",(int)strcspn(wt+5," "),wt+5);(void)!system(wc);return 0;}}
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
             else{int cl=tab?(int)(tab-m):(int)strlen(m);snprintf(cmd,256,"%.*s",cl,m);}
