@@ -428,6 +428,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/handoff.c"
 #include "lib/piper.c"
 #include "lib/checkin.c"
+#include "lib/pedal.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
@@ -696,7 +697,7 @@ static const cmd_t CMDS[] = {
     {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
     {"o",cmd_op},{"once",cmd_run_once},{"op",cmd_op},{"operator",cmd_op},
-    {"p",cmd_push},{"perf",cmd_perf},{"piper",cmd_piper},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
+    {"p",cmd_push},{"pedal",cmd_pedal},{"perf",cmd_perf},{"piper",cmd_piper},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},{"q",cmd_q},
     {"ref",cmd_ref},{"relay",cmd_relay},{"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
