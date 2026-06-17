@@ -225,12 +225,12 @@ install)
             ok "tmux + node + gh + rclone" ;;
         debian)
             if [[ -n "$SUDO" ]]; then export DEBIAN_FRONTEND=noninteractive
-                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone tcc gcc cppcheck 2>/dev/null; $SUDO apt install -yqq cbmc frama-c-base 2>/dev/null || true
+                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone tcc gcc cppcheck adb 2>/dev/null; $SUDO apt install -yqq cbmc frama-c-base 2>/dev/null || true
                 command -v gh &>/dev/null||{ curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg|$SUDO tee /etc/apt/keyrings/gh.gpg>/dev/null&&echo "deb [signed-by=/etc/apt/keyrings/gh.gpg] https://cli.github.com/packages stable main"|$SUDO tee /etc/apt/sources.list.d/gh.list>/dev/null&&$SUDO apt update -qq&&$SUDO apt install -yqq gh;}||true; ok "pkgs"
                 command -v infer &>/dev/null||{ V="v1.2.0";curl -sSL "https://github.com/facebook/infer/releases/download/$V/infer-linux-x86_64-$V.tar.xz"|tar -xJ -C /tmp/&&$SUDO mv "/tmp/infer-linux-x86_64-$V" /usr/local/lib/infer&&$SUDO ln -sf /usr/local/lib/infer/bin/infer /usr/local/bin/infer&&ok "infer"||warn "infer";}
             fi; install_node; [[ -z "$SUDO" ]] && { command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; } ;;
         arch)
-            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone github-cli tcc gcc cppcheck cbmc frama-c 2>/dev/null && ok "pkgs"
+            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone github-cli tcc gcc cppcheck cbmc frama-c android-tools 2>/dev/null && ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi ;;
         fedora)
             # Two-step install: core (must succeed) then optional analyzers (best-effort).
@@ -238,10 +238,10 @@ install)
             # tcc isn't in default Fedora repos. --skip-unavailable + --setopt=install_weak_deps=False
             # keeps the optional step bounded. Without splitting, one missing pkg aborted the
             # whole transaction and left node/zstd uninstalled.
-            if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd 2>/dev/null && ok "pkgs"
+            if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd android-tools 2>/dev/null && ok "pkgs"
                 $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone tcc cppcheck cbmc frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
-        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone cronie termux-services && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
+        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone cronie termux-services android-tools && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
     esac
     _ensure_cc
