@@ -427,6 +427,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/h.c"
 #include "lib/handoff.c"
 #include "lib/piper.c"
+#include "lib/checkin.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
@@ -685,7 +686,7 @@ static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
     {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},{"ai",cmd_all},
     {"all",cmd_all},
-    {"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
+    {"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
