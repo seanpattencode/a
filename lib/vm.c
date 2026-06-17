@@ -75,7 +75,7 @@ static int cmd_vm(int argc, char **argv) {
 #else
         const char*getcreds="cat ~/.claude/.credentials.json 2>/dev/null";
 #endif
-        snprintf(cmd,B,"%s | sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'sh ~/a/lib/claude_login.sh' 2>&1",getcreds,pw,port,usr);
+        snprintf(cmd,B,"%s | sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'sh ~/a/lib/claude_login.c' 2>&1",getcreds,pw,port,usr);
         system(cmd);
         printf("> running claude on codebase...\n");
         snprintf(cmd,B,"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p %s %s 'export PATH=$HOME/.local/bin:$PATH && cd ~/a && claude -p --dangerously-skip-permissions \"Read the codebase with a cat 3. Describe what this project is and list all commands.\"' 2>&1",pw,port,usr);

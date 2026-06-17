@@ -1,6 +1,7 @@
-#!/bin/sh
-# lib/claude_login.sh — install claude-code + apply oauth creds. Idempotent.
-# Usage: sh claude_login.sh <creds.json>  OR  cat creds.json | sh claude_login.sh
+#if 0
+# lib/claude_login.c — install claude-code + apply oauth creds (idempotent). BOOTSTRAP script: run on a bare remote via
+#   sh ~/a/lib/claude_login.c <creds.json>   OR   cat creds.json | sh ~/a/lib/claude_login.c
+# Polyglot per IDEAS #130/#131: bootstrap shell lives in a .c via the if-trick (NOT a standalone .sh); stays sh-runnable before `a` exists on the box.
 set -e
 S="$HOME/.claude/.credentials.json"
 mkdir -p "$HOME/.claude" && chmod 700 "$HOME/.claude"
@@ -12,3 +13,6 @@ grep -q '.local/bin' "$HOME/.bashrc" 2>/dev/null || sed -i '1iexport PATH=$HOME/
 export PATH="$HOME/.local/bin:$PATH"
 unset ANTHROPIC_API_KEY
 claude -p 'Reply with exactly the word PONG' 2>&1 | tail -1
+exit 0
+#endif
+int main(void) { return 0; }
