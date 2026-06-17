@@ -1,3 +1,4 @@
+#if 0
 #!/bin/bash
 # a keys on|off — caps→summon, right-shift→tmux next-window (mac: CGEventTap subprocess)
 set -e
@@ -112,3 +113,7 @@ SWIFT
     info "GRANT: System Settings → Accessibility → remove old a-keys, then 'a keys' to re-prompt" ;;
 *)  warn "unsupported OS — run $ABIN/a-launch manually" ;;
 esac
+
+exit 0
+#endif
+int main(void){return 0;}

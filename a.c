@@ -165,7 +165,7 @@ analyze) _ensure_cc;_warn_flags
     find "$D" -maxdepth 1 -name '*.plist' -delete;;
 shell) _shell_funcs;;
 clean) rm -f "$D/adata/local/a";;
-keys) bash "$D/lib/keys.sh" "${2:-on}";;
+keys) bash "$D/lib/keys.c" "${2:-on}";;
 install)
     BIN="$HOME/.local/bin"; mkdir -p "$BIN"; export PATH="$BIN:$PATH"
     if [[ "$OSTYPE" == darwin* ]]; then OS=mac
@@ -221,7 +221,7 @@ install)
             brew tap hudochenkov/sshpass 2>/dev/null; brew install git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null||brew upgrade git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null
             /opt/homebrew/bin/python3 -m pip install -q --break-system-packages pyobjc-framework-Quartz 2>/dev/null
             command -v clang &>/dev/null || { xcode-select --install 2>/dev/null; warn "Run 'xcode-select --install' then retry"; }
-            sh "$D/lib/keys.sh" on 2>/dev/null || :
+            sh "$D/lib/keys.c" on 2>/dev/null || :
             ok "tmux + node + gh + rclone" ;;
         debian)
             if [[ -n "$SUDO" ]]; then export DEBIAN_FRONTEND=noninteractive
