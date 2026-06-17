@@ -49,6 +49,7 @@ static void prompt_freshness(FILE*f){
 static int write_prompt_file(const char *path, const char *wd, const char *extra) {
     FILE *f=fopen(path,"w");if(!f)return 0;
     prompt_freshness(f);
+    {struct timespec ts;clock_gettime(CLOCK_REALTIME,&ts);struct tm*lt=localtime(&ts.tv_sec);char d[40],z[8];strftime(d,40,"%a %Y-%m-%d %H:%M:%S",lt);strftime(z,8,"%Z",lt);fprintf(f,"Current time: %s.%09ld %s (check vs market hours)\n",d,ts.tv_nsec,z);}
     const char *dp=dprompt(),*cp=cfget("claude_prefix");
     if(dp[0])fprintf(f,"%s\n",dp);
     if(cp[0])fprintf(f,"%s\n",cp);
