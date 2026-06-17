@@ -231,10 +231,10 @@ static int cmd_ssh(int argc,char**argv){
         for(int i=0;i<ns;i++){char o[B];int l=(int)read(S[i].fd,o,B-1);o[l>0?l:0]=0;close(S[i].fd);waitpid(S[i].pid,NULL,0);
             printf("\n%s %s\n",o[0]=='+'?"✓":"x",S[i].nm);if(o[1])printf("%s",o+1);}
         return 0;}
-    /* resolve host by # or name */
-    int idx=-1;
+    /* resolve host by # or name; "<name> <scope>" → exact host "<name>-<scope>" (n1 lan → n1-lan, dodges the bare rotating-IP entry) */
+    int idx=-1,ci=3;char cn[160];cn[0]=0;if(argc>3)snprintf(cn,160,"%s-%s",sub,argv[3]);
     if(isdigit((unsigned char)*sub))idx=atoi(sub);
-    else{for(int i=0;i<nh;i++)if(strcasestr(H[i].name,sub)){idx=i;break;}}
+    else for(int i=0;i<nh;i++){if(cn[0]&&!strcasecmp(H[i].name,cn)){idx=i;ci=4;break;}if(idx<0&&strcasestr(H[i].name,sub))idx=i;}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
     /* fast TCP probe; on fail switch to: explicit Fallback, else the -wan sibling of a dead -lan, else <name>-relay */
@@ -253,7 +253,7 @@ static int cmd_ssh(int argc,char**argv){
             if(fgets(pw,256,stdin)){pw[strcspn(pw,"\n")]=0;if(pw[0]){snprintf(H[idx].pw,256,"%s",pw);ssh_savex(dir,H[idx].name,H[idx].host,pw,0,0);}}}}
     {char cmd[B]="",c[B*3],cd[64]="",cs[B]="",opts[B];
         {char cwd[P];size_t hl=strlen(HOME);if(getcwd(cwd,P)&&!strncmp(cwd,HOME,hl)&&cwd[hl]=='/'){char*p=cwd+hl+1;char*s=strchr(p,'/');if(s)*s=0;if(*p&&*p!='.')snprintf(cd,64,"cd ~/%s 2>/dev/null;",p);}}
-        for(int i=3;i<argc;i++){int l=(int)strlen(cmd);snprintf(cmd+l,(size_t)(B-l),"%s%s",l?" ":"",argv[i]);}
+        for(int i=ci;i<argc;i++){int l=(int)strlen(cmd);snprintf(cmd+l,(size_t)(B-l),"%s%s",l?" ":"",argv[i]);}
         if(cmd[0])snprintf(cs,B," 'bash -c '\"'\"'%sexport PATH=$HOME/.local/bin:$PATH; %s'\"'\"''",cd,cmd);
         else{const char*ts=getenv("A_TMUX_SESSION");char tx[256];
             if(ts&&ts[0])snprintf(tx,256,"tmux attach -t %s \\; refresh-client 2>/dev/null||tmux new -A -s %s",ts,ts);
