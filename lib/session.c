@@ -56,34 +56,5 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     return r;
 }
 
-/* a resume [mins]  menu of recent claude conversations; pick # to resume one, or a=restore all active within the last N hours. */
-static int cmd_resume(int c,char**v){perf_disarm();
-    if(!getenv("TMUX")){fputs("x need tmux\n",stderr);return 1;}
-    char m[16];snprintf(m,16,"%d",c>2?atoi(v[2]):0);setenv("A_RM",m,1);
-    return system(
-      "P=\"$HOME/.claude/projects\";mins=${A_RM:-0};sel=\"\";all=\"\";hr=\"\";tmp=$(mktemp)\n"
-      "ag(){ a=$(($1-$2));[ $a -lt 3600 ]&&echo $((a/60))m||{ [ $a -lt 86400 ]&&echo $((a/3600))h||echo $((a/86400))d;};}\n"
-      "RES(){ tmux new-window -n \"r-${2##*/}\" -c \"$2\" \"claude --dangerously-skip-permissions --resume $1\";}\n"
-      "echo \"note: pick # for one, or a=restore all active in the last N hours\"\n"
-      "while :;do\n"
-      " :>\"$tmp\";i=0;filt=\"\";now=$(date +%s)\n"
-      " [ \"$mins\" -gt 0 ] 2>/dev/null&&filt=$(find \"$P\" -name '*.jsonl' -mmin -\"$mins\" 2>/dev/null)\n"
-      " echo\n"
-      " for f in $(ls -t \"$P\"/*/*.jsonl 2>/dev/null|head -150);do\n"
-      "  [ \"$mins\" -gt 0 ] 2>/dev/null&&{ case \"$filt\" in *\"$f\"*);;*)continue;;esac;}\n"
-      "  h=$(grep -c '\"role\":\"user\",\"content\":\"' \"$f\");[ \"$h\" -ge 2 ]||continue\n"
-      "  w=$(grep -m1 -oE '\"cwd\":\"[^\"]+' \"$f\"|sed 's/.*\"cwd\":\"//');[ -d \"$w\" ]||continue\n"
-      "  p=$(grep -m1 -oE '\"role\":\"user\",\"content\":\"[^\"]+' \"$f\"|sed 's/.*content\":\"//'|cut -c1-50)\n"
-      "  t=$(stat -c %Y \"$f\" 2>/dev/null||stat -f %m \"$f\" 2>/dev/null)\n"
-      "  s=${f##*/};s=${s%.jsonl};i=$((i+1));echo \"$s|$w\">>\"$tmp\"\n"
-      "  printf '%2d) %4s %3dt %-12s %s\\n' \"$i\" \"$(ag $now ${t:-$now})\" \"$h\" \"${w##*/}\" \"$p\"\n"
-      "  [ \"$i\" -ge 20 ]&&break\n"
-      " done\n"
-      " [ \"$i\" = 0 ]&&echo \"(none)\"\n"
-      " [ -n \"$all\" ]&&{ n=0;while IFS='|' read -r s w;do RES \"$s\" \"$w\";n=$((n+1));done<\"$tmp\";echo \"+ restored $n from last ${hr}h\";break;}\n"
-      " printf '# pick #, a=restore by hours, q quit: '\n"
-      " read -r x </dev/tty||break\n"
-      " case \"$x\" in ''|q)break;;a)printf 'restore all active within how many hours ago: ';read -r hr </dev/tty;[ \"$hr\" -ge 1 ] 2>/dev/null&&{ mins=$((hr*60));all=1;}||hr=\"\";;*[!0-9]*);;*)[ \"$x\" -ge 1 ]&&[ \"$x\" -le \"$i\" ]&&{ sel=$(sed -n \"${x}p\" \"$tmp\");break;};;esac\n"
-      "done\n"
-      "rm -f \"$tmp\"\n"
-      "[ -n \"$sel\" ]&&RES \"${sel%%|*}\" \"${sel#*|}\"\n");}
+/* a resume / a res — resume agents (interactive pick or reboot save/restore); merged into lib/res.py */
+static int cmd_resume(int c,char**v){fallback_py("res",c,v);return 0;}
