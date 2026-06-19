@@ -77,7 +77,7 @@ w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(thi
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null);if(url.startsWith("http"))loaded=true}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
-val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE};nv.visibility=View.VISIBLE
+val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE}
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
 // each localhost "box" is its own menu item. The web UI is an SPA, so we PRELOAD it once (onResume, while the selector covers it) and switch views with JS (navpage) → INSTANT nav, no reload. spaR = routes that are SPA views (serve.c: / /jobs /note /tasks /term); others fall back to a full load. native Notes/Note removed — web /note replaces them.
 val web=listOf("note" to "/note","task" to "/tasks","term" to "/term","home" to "/","proj" to "/p","op" to "/op","dash" to "/dash","stream" to "/stream","job" to "/jobs","book" to "/book","docs" to "/docs","cloud" to "/cloud","prompt" to "/prompt")
@@ -1044,8 +1044,19 @@ object NativeKB {
     external fun getLabels(): String
 }
 
-// Dict: shared continuous dictation (both IMEs) — partials stream as composing text, finals commit,
-// auto-relisten on result/error until toggled off (no silence timeout). Raw editors (inputType
+// Clip: persisted history of everything committed via the keyboard (dictation finals, typed lines)
+// + whatever is on the system clipboard when opened. Newest-first, capped, survives IME restarts so
+// nothing said/typed/copied is ever lost. The 📋 key (left of mic) shows it; tap an entry to re-insert.
+object Clip {
+    private val items = ArrayList<String>(); private var f: java.io.File? = null
+    fun init(c: android.content.Context) { if (f != null) return; f = java.io.File(c.filesDir, "clip.txt"); try { f!!.readText().split("\u0000").forEach { if (it.isNotBlank()) items.add(it) } } catch (e: Exception) {} }
+    fun add(s: String) { val t = s.trim(); if (t.isEmpty() || t == items.firstOrNull()) return; items.remove(t); items.add(0, t); while (items.size > 40) items.removeAt(items.size - 1); try { f?.writeText(items.joinToString("\u0000")) } catch (e: Exception) {} }
+    fun list(): List<String> = items
+}
+// Dict: shared continuous dictation (both IMEs) — partials stream as composing text, finals commit.
+// API33+ uses an on-device (Gboard-speed) SpeechRecognizer in EXTRA_SEGMENTED_SESSION mode: each
+// sentence arrives via onSegmentResults and commits as completed while the session keeps listening
+// (no per-utterance restart, no overwrite); pre-33 falls back to the old restart loop. Raw editors (inputType
 // TYPE_NULL: terminals like termux) can't compose — stream append-only tails there; NEVER delete
 // (termux deletes = async key events that can eat pre-existing content). Revisions may dup a few
 // boundary chars; content is never lost.
@@ -1058,18 +1069,24 @@ class Dict(private val svc: InputMethodService, private val ui: () -> Unit) {
             if (t.length > sent) { ic?.commitText(t.substring(sent), 1); sent = t.length }
             if (fin) sent = 0 }
         else { if (fin) ic?.commitText("$s ", 1) else ic?.setComposingText(s, 1); sent = if (fin) 0 else s.length }
+        if (fin) { Clip.add(s); ui() }  // refresh the live clipboard list so the new sentence shows the instant it commits
     }
     private fun seal() { if (sent > 0) { ic?.finishComposingText(); ic?.commitText(" ", 1); sent = 0 } }
     fun toggle() { if (listening) stop() else start() }
     fun stop() { listening = false; sent = 0; ic?.finishComposingText(); try { sr?.destroy() } catch (e: Exception) {}; sr = null; ui() }
     private fun start() {
         if (svc.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) { svc.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${svc.packageName}")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)); return }
-        listening = true; ui()
-        val ri = android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true).putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 6000)
-        sr = SpeechRecognizer.createSpeechRecognizer(svc)
+        Clip.init(svc); listening = true; ui()
+        val seg = android.os.Build.VERSION.SDK_INT >= 33  // API33+: segmented session emits each sentence via onSegmentResults & keeps going — commits as completed, no restart, no overwrite
+        val ri = android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true).putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        if (seg) ri.putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS).putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000).putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1000).putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000).putExtra(RecognizerIntent.EXTRA_ENABLE_FORMATTING, RecognizerIntent.FORMATTING_OPTIMIZE_QUALITY)
+        else ri.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 6000)
+        sr = if (android.os.Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(svc)) SpeechRecognizer.createOnDeviceSpeechRecognizer(svc) else SpeechRecognizer.createSpeechRecognizer(svc)  // on-device neural engine = Gboard speed, no network round-trip
         sr!!.setRecognitionListener(object : RecognitionListener {
             override fun onPartialResults(b: android.os.Bundle?) { b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { put(it, false) } }
-            override fun onResults(b: android.os.Bundle?) { val r = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull(); if (r != null && r.isNotBlank()) put(r, true) else seal(); if (listening) sr?.startListening(ri) }
+            override fun onSegmentResults(b: android.os.Bundle) { b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf { it.isNotBlank() }?.let { put(it, true) } }
+            override fun onEndOfSegmentedSession() { seal(); if (listening) sr?.startListening(ri) }
+            override fun onResults(b: android.os.Bundle?) { val r = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull(); if (r != null && r.isNotBlank()) put(r, true) else seal(); if (!seg && listening) sr?.startListening(ri) }
             override fun onError(c: Int) { seal(); if (listening) Handler(Looper.getMainLooper()).postDelayed({ if (listening) sr?.startListening(ri) }, 150) }
             override fun onEndOfSpeech() {}; override fun onReadyForSpeech(b: android.os.Bundle?) {}; override fun onBeginningOfSpeech() {}; override fun onRmsChanged(r: Float) {}; override fun onBufferReceived(b: ByteArray?) {}; override fun onEvent(c: Int, b: android.os.Bundle?) {}
         }); sr!!.startListening(ri)
@@ -1080,30 +1097,30 @@ class InstantNdkService : InputMethodService(), android.view.textservice.SpellCh
     private lateinit var kbView: NdkKeyboardView
     private var root: android.widget.LinearLayout? = null
     private var sc: android.view.textservice.SpellCheckerSession? = null
-    private var fix: String? = null; private var fixWord = ""; private var skip = ""; private var word = ""
+    private var fix: String? = null; private var fixWord = ""; private var skip = ""; private var word = ""; private var typed = ""
 
     override fun onEvaluateFullscreenMode() = false
     override fun onGetSuggestions(r: Array<out android.view.textservice.SuggestionsInfo>?) { r?.firstOrNull()?.let { if (it.suggestionsCount > 0) fix = it.getSuggestionAt(0) } }
     override fun onGetSentenceSuggestions(r: Array<out android.view.textservice.SentenceSuggestionsInfo>?) {}
 
-    override fun onCreateInputView(): View { sc = (getSystemService(android.content.Context.TEXT_SERVICES_MANAGER_SERVICE) as? android.view.textservice.TextServicesManager)?.newSpellCheckerSession(null, null, this, true); kbView = NdkKeyboardView(this); root = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF000000.toInt()); addView(kbView) }; return root!! }
+    override fun onCreateInputView(): View { Clip.init(this); sc = (getSystemService(android.content.Context.TEXT_SERVICES_MANAGER_SERVICE) as? android.view.textservice.TextServicesManager)?.newSpellCheckerSession(null, null, this, true); kbView = NdkKeyboardView(this); root = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF000000.toInt()); addView(kbView) }; return root!! }
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo?, restarting: Boolean) { super.onStartInputView(info, restarting)
         fix = null; fixWord = ""; skip = ""; word = "" }
     override fun onFinishInputView(f: Boolean) { kbView.rec.stop(); super.onFinishInputView(f) }
 
     fun sendChar(c: Char) = when (c) {
-        '\b' -> { word = word.dropLast(1); currentInputConnection?.deleteSurroundingText(1, 0) }
-        '\n' -> { word = ""; val a = currentInputEditorInfo?.imeOptions?.and(android.view.inputmethod.EditorInfo.IME_MASK_ACTION) ?: 0
+        '\b' -> { word = word.dropLast(1); typed = typed.dropLast(1); currentInputConnection?.deleteSurroundingText(1, 0) }
+        '\n' -> { word = ""; if (typed.isNotBlank()) Clip.add(typed); typed = ""; val a = currentInputEditorInfo?.imeOptions?.and(android.view.inputmethod.EditorInfo.IME_MASK_ACTION) ?: 0
             if (a != 0 && a != android.view.inputmethod.EditorInfo.IME_ACTION_NONE) currentInputConnection?.performEditorAction(a)
             else currentInputConnection?.commitText("\n", 1) }
         ' ' -> { if (fix != null && word.equals(fixWord, true) && word.lowercase() != skip) { currentInputConnection?.deleteSurroundingText(word.length, 0); currentInputConnection?.commitText("$fix ", 1); skip = word.lowercase() }
-            else currentInputConnection?.commitText(" ", 1); word = ""; fix = null; null }
+            else currentInputConnection?.commitText(" ", 1); word = ""; fix = null; typed += " "; null }
         '\u0001' -> { NativeKB.toggleMode(); kbView.invalidate(); null }
         '\u0002' -> { NativeKB.toggleShift(); kbView.invalidate(); null }
         else -> { val out = if (NativeKB.getShift() == 1 && c in 'a'..'z') c.uppercaseChar() else c
             currentInputConnection?.commitText(out.toString(), 1)
             if (NativeKB.getShift() == 1 && c in 'a'..'z') { NativeKB.clearShift(); kbView.invalidate() }
-            word += out; if (word.length >= 2) { fixWord = word; fix = null; sc?.getSuggestions(android.view.textservice.TextInfo(word), 3) }; null }
+            word += out; typed += out; if (word.length >= 2) { fixWord = word; fix = null; sc?.getSuggestions(android.view.textservice.TextInfo(word), 3) }; null }
     }
 }
 
@@ -1125,6 +1142,22 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
 
     private val toolbarH = 0f
     val rec = Dict(svc) { invalidate() }
+    // clipboard history: 📋 key — OR active dictation — fills the keyboard area with a live tappable list
+    // (newest-first, read fresh each draw). Each dictated sentence appends the instant it commits, so you
+    // watch it fill as you talk while the text field fills above. Row 0 = ⏹ stop (dictating) / ✕ close; tap an entry to re-insert.
+    var clipMode = false
+    private val clipPaint = Paint().apply { color = Color.WHITE; textSize = 38f; isAntiAlias = true }
+    private val rowH get() = resources.displayMetrics.density * 50
+    private fun cmgr() = svc.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    private fun loadClip() { try { cmgr().primaryClip?.getItemAt(0)?.coerceToText(svc)?.toString()?.let { Clip.add(it) } } catch (e: Exception) {} }
+    private fun drawClip(canvas: Canvas) { canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
+        canvas.drawText(if (rec.listening) "⏹  stop" else "✕  close", 24f, rowH * 0.64f, clipPaint)
+        val items = Clip.list()
+        for (i in 0 until minOf(items.size, (height / rowH).toInt() - 1)) canvas.drawText(items[i].replace("\n", " ").take(46), 24f, rowH * (i + 1) + rowH * 0.64f, clipPaint) }
+    private fun tapClip(y: Float) { val row = (y / rowH).toInt()
+        if (row == 0) { if (rec.listening) rec.stop() else clipMode = false }
+        else { val items = Clip.list(); if (row - 1 < items.size) { val s = items[row - 1]; svc.currentInputConnection?.commitText(s, 1); try { cmgr().setPrimaryClip(android.content.ClipData.newPlainText("a", s)) } catch (e: Exception) {} }; if (!rec.listening) clipMode = false }
+        invalidate() }
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         NativeKB.init(w, h - toolbarH.toInt())
         for (r in 0 until 5) NativeKB.setRowFudge(r, prefs.getInt("fudge$r", 20).toFloat())
@@ -1139,8 +1172,10 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
+        if (clipMode || rec.listening) { if (e.action == MotionEvent.ACTION_DOWN) tapClip(e.y); return true }
         val c = NativeKB.onTouch(e.action, e.x, e.y - toolbarH)
         if (e.action == MotionEvent.ACTION_DOWN && c == 3) { rec.toggle(); return true }
+        if (e.action == MotionEvent.ACTION_DOWN && c == 4) { clipMode = true; loadClip(); invalidate(); return true }
         if (e.action == MotionEvent.ACTION_DOWN && c != 0) {
             svc.sendChar(c.toChar())
             handler.removeCallbacks(holdCheck)
@@ -1152,6 +1187,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     }
 
     override fun onDraw(canvas: Canvas) {
+        if (clipMode || rec.listening) { drawClip(canvas); return }
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
         canvas.save(); canvas.translate(0f, toolbarH)
         NativeKB.getBounds(bounds)
@@ -1161,7 +1197,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
         val rowCount = NativeKB.getRowCount()
         val debugRed = prefs.getBoolean("debug_red", true)
         val hf = NativeKB.getHFudge()
-        val rowSizes = if (mode == 1) intArrayOf(11, 10, 8, 5) else intArrayOf(11, 10, 9, 9, 4)
+        val rowSizes = if (mode == 1) intArrayOf(12, 10, 8, 5) else intArrayOf(12, 10, 9, 9, 4)
         var row = 0; var inRow = 0
         for (i in labels.indices) {
             val b = i * 4
@@ -1170,7 +1206,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
             val isPressed = i == pressed
             if (isPressed && debugRed) canvas.drawRoundRect(bounds[b] - hf, bounds[b+1] + rf, bounds[b+2] + hf, bounds[b+3] + rf, 8f, 8f, pressPaint)
             else canvas.drawRoundRect(bounds[b]+4, bounds[b+1]+4, bounds[b+2]-4, bounds[b+3]-4, 8f, 8f, if (isPressed) pressPaint else keyPaint)
-            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (rec.listening) "●" else "🎤"; else -> ch.toString() }
+            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (rec.listening) "●" else "🎤"; '\u0004' -> "📋"; else -> ch.toString() }
             canvas.drawText(label, (bounds[b] + bounds[b+2]) / 2, (bounds[b+1] + bounds[b+3]) / 2 + 16, textPaint)
             inRow++; if (row < rowSizes.size && inRow >= rowSizes[row]) { row++; inRow = 0 }
         }
@@ -1253,8 +1289,8 @@ KC=r'''// Instant Keyboard - Native C implementation
 #include <string.h>
 #include <time.h>
 
-static const char* ABC[] = {"1234567890\003","qwertyuiop","asdfghjkl","\002zxcvbnm\b","\001 .\n"};
-static const char* SYM[] = {"1234567890\003","@#$_&-+()/","*\"':;!?\b","\001, .\n"};
+static const char* ABC[] = {"1234567890\004\003","qwertyuiop","asdfghjkl","\002zxcvbnm\b","\001 .\n"};
+static const char* SYM[] = {"1234567890\004\003","@#$_&-+()/","*\"':;!?\b","\001, .\n"};
 static int symMode = 0, shift = 0, pressedKey = -1, kbWidth, kbHeight;
 static float keyW, rowH, bounds[44][4], rowFudge[5] = {0}, hFudge = 0;
 static long pressTime = 0;
@@ -1272,7 +1308,7 @@ static void computeBounds() {
         for (int i = 0; i < n; i++) {
             float w = keyW, x = i * keyW;
             int rr = symMode ? r : r - 1; // row index for layout calc (skip num row logic)
-            if (r == 0) { float nkw = kbWidth/(float)n; w = nkw; x = i*nkw; } // num row: n keys (10 digits + mic) fill width
+            if (r == 0) { float nkw = kbWidth/(float)n; w = nkw; x = i*nkw; } // num row: n keys (10 digits + clipboard + mic) fill width
             else if (rr == 0) { /* qwerty row: simple */ }
             else if (rr == 1 && !symMode) x = keyW * 0.5f + i * keyW;
             else if (rr == 2) {
