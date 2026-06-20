@@ -88,6 +88,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     char*lines[2048];int n=0;
     for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
+    {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);size_t wl;char*wr=readf(wp,&wl);
+     if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
+        if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
     static char wb[32768];size_t wl=0;
     {const char*ft=getenv("A_FILT_TAG");  /* -t TMS not -a: grouped a-<pid> sessions re-list the same windows. win view adds pane tail */
     FILE*p=popen(ft&&strstr(ft,"win")?
