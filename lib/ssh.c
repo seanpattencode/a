@@ -6,6 +6,7 @@
    secondary for Android. */
 #define SMUX " -oControlMaster=auto -oControlPath=%%d/.ssh/a-%%C -oControlPersist=300"
 #define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"
+static int m_pick(const char*,const char*const*,int,char*,size_t);
 static void ssh_parse(const char*h,char*hp,char*port){
     snprintf(hp,256,"%s",*h=='@'?h+1:h);char*c=strrchr(hp,':');snprintf(port,8,"%s",c?c+1:"22");if(c)*c=0;}
 static const char*ssh_scope(const char*ip){/* lan if RFC1918, else wan */
@@ -61,15 +62,15 @@ static int cmd_ssh(int argc,char**argv){
         size_t dl=strlen(DEV);
         if(!nh){puts("  (none) — a ssh add");return 0;}
         if(!isatty(0)){for(int i=0;i<nh;i++)printf("  %s: %s\n",H[i].name,H[i].host);return 0;}
-        char tf[P];snprintf(tf,P,"%s/.ssh_pick",DDIR);FILE*tp=fopen(tf,"w");  /* type-to-search: single-digit menus break past 9 (1 vs 10) */
-        if(tp){fprintf(tp,"%-22s ↵ default host\n","default");
-            for(int i=0;i<nh;i++){int s=!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-';
-                fprintf(tp,"%-22s %s%s%s\n",H[i].name,H[i].host,H[i].pw[0]?" [pw]":"",s?" (self)":"");}
-            static const char*km[]={"add","all","self","start","stop","status","setup","key","auth","rm","pw","mv","info","os","ping",0};
-            for(int i=0;km[i];i++)fprintf(tp,"%-22s · command\n",km[i]);fclose(tp);}
-        char c[P+B];snprintf(c,sizeof c,"fzf --reverse --height=90%% --prompt='ssh> ' --header=\"type to filter · ↵ select · esc cancel$(F=%s/description.txt;[ -s $F ]&&echo&&cat $F)\" <'%s'",dir,tf);
-        char sel[256]="";FILE*fp=popen(c,"r");int got=fp&&fgets(sel,256,fp);if(fp)pclose(fp);unlink(tf);
-        if(!got||!*sel){putchar('\n');return 0;}
+        static char ib[64][512],sel[256];static const char*it[64];int ni=0;sel[0]=0;
+        #define SA(...) do{if(ni<64){snprintf(ib[ni],512,__VA_ARGS__);it[ni]=ib[ni];ni++;}}while(0)
+        SA("default\tdefault host");
+        for(int i=0;i<nh;i++){int s=!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-';
+            SA("%s\t%s%s%s",H[i].name,H[i].host,H[i].pw[0]?" [pw]":"",s?" (self)":"");}
+        static const char*km[]={"add","all","self","start","stop","status","setup","key","auth","rm","pw","mv","info","os","ping",0};
+        for(int i=0;km[i];i++)SA("%s\tcommand",km[i]);raw_enter();int got=m_pick("ssh",it,ni,sel,sizeof sel)>0;raw_exit();putchar('\n');
+        #undef SA
+        if(!got||!*sel)return 0;
         sel[strcspn(sel," \t\n")]=0;  /* first token = host/command name */
         if(!strcmp(sel,"default")){const char*d=cfget("default_ssh");if(*d)execvp("a",(char*[]){"a","ssh",(char*)d,NULL});return 0;}
         execvp("a",(char*[]){"a","ssh",sel,NULL});return 1;}
