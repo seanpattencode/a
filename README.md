@@ -1,5 +1,10 @@
 # a
 
+> "The system we want to improve can thus be visualized as a trained human being together with his artifacts, language, and methodology."
+>
+> "…a way of life in an integrated domain where hunches, cut-and-try, intangibles, and the human 'feel for a situation' usefully co-exist with powerful concepts, streamlined terminology and notation, sophisticated methods, and high-powered electronic aids."
+> — Douglas Engelbart, *Augmenting Human Intellect*, 1962
+
 AI agent manager. Human-AI interaction accelerator. Personal device computer fleet operator. 
 
 ## Install
