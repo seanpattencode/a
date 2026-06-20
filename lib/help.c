@@ -77,14 +77,14 @@ static void gen_icache(void) {
     fputs("scp\tsend file (tui pick file/host/dir)\n"
     "diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\n"
     "jobs\tlist jobs\ndash\tdashboard\nperf\tperformance\n"
-    "ui\tweb dashboard\nterm\tterminal (a ui /term)\n"
-    "webview\tnative window (localhost:1111)\n"
+    "ui\tweb dashboard\n"
+    "webview\tnative window\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
     "cal add\tadd event\nhub add\tadd\nhub run\trun\nhub rm\trm\nhub log\tlog\n"
     "note\tnotes\nnote l\tlist\nnote r\treview\ntasks\ttasks\nssh add\tadd host\nssh all\tall hosts\n"
     "task add\tadd\ntask l\tlist\ntask r\treview\ntask rank\trank\n"
     "prompt\tdefault prompt\npow\tpower\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
-    "tutorial\tguided intro\no\toperator\nop\toperator\noperator\toperator\n",f);
+    "tutorial\tguided intro\noperator\toperator\n",f);
     char sd[P]; snprintf(sd, P, "%s/ssh", SROOT);
     char sp[32][P]; int sn = listdir(sd, sp, 32);
     for (i=0;i<sn;i++) {
@@ -115,6 +115,7 @@ static void gen_icache(void) {
                 fprintf(f,"open %s\t%s · app\n",dn,nm);}}
         closedir(d);}}
 #endif
+    {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);char*wd=readf(wp,0);if(wd){fputs(wd,f);free(wd);}}
     fclose(f);
     if(!fork()){char ad[P],fp2[P],ln[256];snprintf(ad,P,"%s/git/activity",AROOT);
         DIR*d=opendir(ad);if(!d)_exit(0);FC ct[1024];int nc=0;struct dirent*e;
@@ -161,8 +162,8 @@ static void gen_icache(void) {
 static int cmd_help(int c,char**v){(void)c;(void)v;
     char p[P];snprintf(p,P,"%s/help_cache.txt",DDIR);
     if(catf(p)<0){init_db();load_cfg();printf("%s\n",HELP_SHORT);list_all(1,0);}return 0;}
-static int cmd_help_full(int c,char**v){(void)c;(void)v;init_db();load_cfg();printf("%s\n",HELP_FULL);list_all(1,0);return 0;}
 static int cmd_hi(int c,char**v){(void)c;(void)v;for(int i=1;i<=10;i++)printf("%d\n",i);puts("hi");return 0;}
+static int cmd_help_full(int c,char**v){(void)c;(void)v;init_db();load_cfg();printf("%s\n",HELP_FULL);list_all(1,0);return 0;}
 
 static int cmd_done(int argc,char**argv){AB;
     char p[P],msg[B]="";snprintf(p,P,"%s/.done",DDIR);ajoin(msg,B,argc,argv,2);

@@ -3,8 +3,7 @@
    mem/tui.md (book.c model): j/k+arrows, e archive (line → .archive.txt, instant promote), c compose
    (dl_norm shorthand). Past grey, cursor starts at next upcoming. Exit: receipts re-read from
    .archive.txt + one cal-scoped commit URL (rule 2, ARCH #13). Args/no-tty: add | ai | <name> | dump. */
-typedef struct{char ln[200];int fi;}CEv;
-static char CFp[64][P];
+/* CEv typedef + CFp + prototypes live at note.c top — flow's CAL page needs them before this file */
 static int cev_cmp(const void*a,const void*b){return strcmp(((const CEv*)a)->ln,((const CEv*)b)->ln);}
 static int cal_load(const char*d,CEv*ev,int max){
     int n=0,nf=0;DIR*dd=opendir(d);struct dirent*e;
@@ -16,16 +15,16 @@ static int cal_load(const char*d,CEv*ev,int max){
             p=nl?nl+1:p+strlen(p);}
         free(c);nf++;}
     if(dd)closedir(dd);qsort(ev,(size_t)n,sizeof(CEv),cev_cmp);return n;}
-static int cal_write(const char*d,const char*raw){   /* "[6-14] [15:00] text" — date optional, no date = today. NEVER reject text: a wiped error reads as 'broken' */
+static char*cal_write(const char*d,const char*raw){   /* "[6-14] [15:00] text" — date optional, no date = today. NEVER reject text: a wiped error reads as 'broken'. Returns event file path (flow's receipt) or NULL */
     char dn[32];dl_norm(raw,dn,32);const char*t=raw;
     if(!strncmp(dn,"20",2)){t=raw+strcspn(raw," ");t+=strspn(t," ");
         size_t k=strcspn(t," ");if(memchr(t,':',k)){t+=k;t+=strspn(t," ");}}   /* time token → date, not text */
     else{time_t now=time(NULL);strftime(dn,32,"%Y-%m-%d 23:59",localtime(&now));}
-    if(!*t){puts("x empty — a cal add [6-14] [15:00] text");return 0;}
-    struct timespec ts;clock_gettime(CLOCK_REALTIME,&ts);char tb[32],tf[P],b[256];
+    if(!*t){puts("x empty — a cal add [6-14] [15:00] text");return NULL;}
+    struct timespec ts;clock_gettime(CLOCK_REALTIME,&ts);static char tf[P];char tb[32],b[256];
     strftime(tb,32,"%Y%m%dT%H%M%S",localtime(&ts.tv_sec));
     snprintf(tf,P,"%s/%s.%09ld_%s.txt",d,tb,ts.tv_nsec,DEV);
-    snprintf(b,256,"%s %s\n",dn,t);writef(tf,b);printf("✓ %s %s\n",dn,t);return 1;}
+    snprintf(b,256,"%s %s\n",dn,t);writef(tf,b);printf("✓ %s %s\n",dn,t);return tf;}
 static void cal_disp(const char*ln,char*o,size_t sz){int y,mo,dy,h,mi,off=0;   /* display only — storage stays sortable ISO. 23:59 = default = dateless, hide it */
     if(sscanf(ln,"%d-%d-%d %d:%d %n",&y,&mo,&dy,&h,&mi,&off)>=5&&off){struct tm t={0};t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=dy;mktime(&t);
         int l=(int)strftime(o,sz,"%b %-d",&t);int h12=h%12?h%12:12;
@@ -91,9 +90,10 @@ static int cmd_cal(int c,char**v){perf_disarm();
     {char af[P];snprintf(af,P,"%s/.archive.txt",d);char*ac=readf(af,NULL);   /* ground truth, not memory of the write */
     for(int i=0;i<na;i++)printf(ac&&strstr(ac,arc[i])?"✓ archived %s\n":"\033[31m✗ NOT archived: %s\033[0m\n",arc[i]);
     free(ac);}
-    if(na||nadd){char cm[B],r[256]="";
-        snprintf(cm,B,"cd '%s'&&git add cal&&git commit -qm 'cal: %d archived, %d added'>/dev/null 2>&1&&echo \"$(git remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##') $(git rev-parse --short HEAD)\"",SROOT,na,nadd);
-        pcmd(cm,r,256);r[strcspn(r,"\n")]=0;char*sp=strchr(r,' ');
-        if(sp&&r[0]!=' '){*sp=0;printf("  ✓ → https://github.com/%s/commit/%s  (syncing)\n",r,sp+1);sync_bg();}
-        else puts("  ! local only (commit failed or no remote)");}
+    if(na||nadd){char cm[B],rp[128]="";   /* flocked like edit_st: a bare exit commit races flow/sync (index.lock); blob URL is deterministic, no hash dance */
+        snprintf(cm,B,"flock /tmp/.a_git.lock -c \"git -C '%s' add cal&&git -C '%s' commit -qm 'cal: %d archived, %d added'\" >/dev/null 2>&1 &",SROOT,SROOT,na,nadd);(void)!system(cm);
+        snprintf(cm,B,"git -C '%s' remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##'",SROOT);pcmd(cm,rp,128);rp[strcspn(rp,"\n")]=0;
+        if(*rp)printf("  ✓ cal: %d archived, %d added → https://github.com/%s/blob/main/cal/.archive.txt  (syncing)\n",na,nadd,rp);
+        else printf("  ✓ cal: %d archived, %d added (local)\n",na,nadd);
+        sync_bg();}
     return 0;}

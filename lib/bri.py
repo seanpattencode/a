@@ -21,6 +21,8 @@ Drive shortcuts (bridge must already be running in another process):
   bri type <sel> <s> type into element (handles contenteditable like rich-textarea)
   bri keys <sel> <k> dispatch keydown/keyup (e.g. "Enter" to submit)
   bri url            return current URL
+  bri grab [host]    full innerText of the tab whose URL has <host> — the select-all+copy
+                     equivalent; no host = focused tab, --html = full DOM instead of text
   bri deploy         rebuild lib/bri-ext xpi + restart Firefox (zero-click extension bump)
   bri restart        quit + relaunch Firefox Nightly (clears tab leaks)
   bri mon            snapshot bri.py + Firefox CPU/RAM/tabs/connections
@@ -175,6 +177,9 @@ def cmd_serve():
         c.close()
 
 def main(browser='none'):
+    import os  # bri-chrome/instant-preload.js is an untracked dedup copy (canonical: bri-ext/, tok cap) — restore on fresh clones; manifest content_scripts need the real file
+    _ip = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bri-chrome', 'instant-preload.js')
+    if not os.path.exists(_ip): open(_ip, 'wb').write(open(_ip.replace('bri-chrome', 'bri-ext'), 'rb').read())
     # The :1234/:1235 bridge is browser-AGNOSTIC: one server drives Firefox (bri-ext)
     # and Chrome (bri-chrome) at the same time. So `serve` launches NO browser by default — only
     # Firefox needs a managed (-marionette-free, monitor-pinned) launch via _ff_restart; Chrome is
@@ -337,6 +342,24 @@ def client(args):
         subprocess.Popen(['firefox-nightly','--new-tab',url], env=env, stdout=-3, stderr=-3, start_new_session=True)
         sys.stdout.write(f'+ job tab: {url}\n  drive: a bri hint brijob={jid} | hint-click <C> brijob={jid} | save <url>\n'); return
     if a == 'mon':     _mon(); return
+    if a in ('grab', 'copy'):  # select-all+copy equivalent: full innerText (or --html) of the tab whose URL contains <host>
+        host = next((x for x in args[1:] if not x.startswith('--')), '')
+        prop = 'document.documentElement.outerHTML' if '--html' in args else 'document.body.innerText'
+        guard = (f'if(!location.href.toLowerCase().includes({json.dumps(host.lower())}))return null;'
+                 if host else 'if(!document.hasFocus())return null;')   # no host → the focused tab
+        code = f'(()=>{{if(window.top!==window)return null;{guard}return {prop};}})()'
+        s = socket.socket(); s.connect(('127.0.0.1', CMD))
+        s.sendall((json.dumps({'id': int(time.time()*1000) % 10**9, 'action': 'eval', 'code': code, 'to': to}) + '\n').encode())
+        buf = b''
+        while (ch := s.recv(1 << 16)): buf += ch
+        best = ''   # many tabs reply (most null); the target tab's innerText is the longest
+        for line in buf.decode(errors='replace').splitlines():
+            try: v = json.loads(line).get('value')
+            except Exception: v = None
+            if isinstance(v, str) and len(v) > len(best): best = v
+        if best: sys.stdout.write(best + '\n')
+        else: sys.stderr.write(f'x no text — is the {host or "focused"} tab open, logged in, and active? (discarded tabs read blank until clicked)\n'); sys.exit(1)
+        return
     if a == 'save':  # generic URL log (replaces the per-site dr.sh appenders); a bri <N> reopens
         import datetime, urllib.parse, os
         if len(args) < 2: sys.stderr.write('usage: a bri save <url> [note...]\n'); sys.exit(1)
@@ -465,6 +488,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome (bri-ext / bri-chro
   type <sel> <s>   type into element (handles contenteditable)
   keys <sel> <k>   dispatch keydown/keyup (e.g. Enter)
   url              current URL
+  grab [host]      select-all+copy equiv: full innerText of the tab whose URL has <host> (--html=DOM, no host=focused)
   new <id> [url]   open a job tab tagged #brijob=<id> (default chatgpt.com) for parallel jobs
   hint [match]     label clickable els on tabs whose URL contains <match> (host or brijob=<id>)
   hint-click <C>   click element C (re-enumerates; optional [match] filter, same as hint)

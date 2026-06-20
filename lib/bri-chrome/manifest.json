@@ -8,7 +8,8 @@
   "background": { "service_worker": "sw.js" },
   "action": { "default_title": "bri-chrome — click for options" },
   "options_ui": { "page": "options.html", "open_in_tab": true },
+  "chrome_url_overrides": { "newtab": "newtab.html" },
   "content_scripts": [
-    { "matches": ["<all_urls>"], "js": ["instant-preload.js", "pageflip.js"], "run_at": "document_idle", "all_frames": false }
+    { "matches": ["<all_urls>"], "exclude_matches": ["http://localhost:1111/*", "http://127.0.0.1:1111/*"], "js": ["instant-preload.js", "pageflip.js"], "run_at": "document_idle", "all_frames": false }
   ]
 }

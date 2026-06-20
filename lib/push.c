@@ -189,8 +189,9 @@ static int cmd_diff(int argc, char **argv) { AB;
     int ti=0,td=0,ta=0,tb=0; printf("\n"); HR;
     #define TC(x) ((x)>0?"\033[48;2;26;84;42m":(x)<0?"\033[48;2;117;34;27m":"\033[48;2;70;70;70m")
     for(int j=0;j<nf;j++){int tk=(fs[j].ab-fs[j].db)/4,st=fs[j].sb/4;
-        if(st)printf("%s: +%d/-%d lines, %s%+d tok (%+.3f%% of file)\033[0m\n",bname(fs[j].name),fs[j].al,fs[j].dl,TC(tk),tk,tk*100.0/st);
-        else printf("%s: +%d/-%d lines, %s%+d tok (new)\033[0m\n",bname(fs[j].name),fs[j].al,fs[j].dl,TC(tk),tk);
+        const char*W=(abs(tk)>100&&abs(tk)*10>st)?"\033[1;33m⚠ ":"";
+        if(st)printf("%s%s: +%d/-%d lines, %s%+d tok (%+.3f%% of file)\033[0m\n",W,bname(fs[j].name),fs[j].al,fs[j].dl,TC(tk),tk,tk*100.0/st);
+        else printf("%s%s: +%d/-%d lines, %s%+d tok (new)\033[0m\n",W,bname(fs[j].name),fs[j].al,fs[j].dl,TC(tk),tk);
         ti+=fs[j].al;td+=fs[j].dl;ta+=fs[j].ab;tb+=fs[j].db;}
     int nt=(ta-tb)/4; HR; if(ws)printf("%s: %d file%s, %+d lines, %s%+d tok (%+.3f%% of repo)\033[0m\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,TC(nt),nt,(ta-tb)*100.0/ws);
     else printf("%s: %d file%s, %+d lines, %s%+d tok\033[0m\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,TC(nt),nt);

@@ -93,10 +93,25 @@ static void prompt_preview(const char*path){ /* confirm load: first 6 + last 3 l
     printf("\033[2m  ... (%d lines) ...\033[0m\n",tot-9);
     char*q=d;for(int c=0;*q&&c<tot-3;q++)c+=*q=='\n';
     fputs(q,stdout);if(n&&d[n-1]!='\n')putchar('\n');free(d);}
+/* a prompt (bare,tty) → viewer TUI (tui.md): j/k pick, o view file, u unified, e edit, q quit. View delegates to less (universal j/k/q); menu loop is C/1ms. Activate stays `a prompt <name>`. Mirrors /prompt html. */
+static int prompt_tui(const char*d){char p[64][P];int n=listdir(d,p,64);if(n<1){puts("no prompts");return 0;}int s=0;raw_enter();
+    for(int c;;){struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);
+        printf("\033[H\033[2J  prompt files\033[K\n\n");
+        for(int i=0;i<n;i++)printf("  %s %s\033[K\n",i==s?">":" ",bname(p[i]));
+        printf("\033[%d;1H  j/k move  o view  u unified  e edit  q quit\033[K",w.ws_row>6?w.ws_row:24);fflush(stdout);
+        if((c=raw_key())=='q'||c==27||c==3||c<0)break;
+        else if(c=='j')s=(s+1)%n; else if(c=='k')s=(s-1+n)%n;
+        else{raw_exit();char x[P+16];
+            if(c=='u')(void)!system("a prompt show 2>/dev/null|less -R");
+            else if(c=='e'){execlp("e","e",p[s],(char*)0);execlp("vi","vi",p[s],(char*)0);}
+            else{snprintf(x,sizeof x,"less -- '%s'",p[s]);(void)!system(x);}
+            raw_enter();}}
+    raw_exit();printf("\033[H\033[2J");return 0;}
 static int cmd_prompt(int argc, char **argv) {
     init_db();load_cfg();
     char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
     const char*act=cfget("prompt");if(!*act)act="default";
+    if(!(argc>2)&&isatty(1)){perf_disarm();return prompt_tui(d);}  /* bare `a prompt` on a tty = TUI; piped / `a prompt list` keep the plain list */
     const char*sub=argc>2?argv[2]:"";
     /* DISTINCTION: prompt CANDIDATES (a prompt c [text]) = suggested prompts that could accomplish a *task*
        — an appendable list like notes/tasks (lives in SROOT/prompts, note-file format so `a flow`/load_notes reads it).

@@ -225,12 +225,12 @@ install)
             ok "tmux + node + gh + rclone" ;;
         debian)
             if [[ -n "$SUDO" ]]; then export DEBIAN_FRONTEND=noninteractive
-                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone tcc gcc cppcheck adb 2>/dev/null; $SUDO apt install -yqq cbmc frama-c-base 2>/dev/null || true
+                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone rsync tcc gcc cppcheck adb 2>/dev/null; $SUDO apt install -yqq cbmc frama-c-base 2>/dev/null || true
                 command -v gh &>/dev/null||{ curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg|$SUDO tee /etc/apt/keyrings/gh.gpg>/dev/null&&echo "deb [signed-by=/etc/apt/keyrings/gh.gpg] https://cli.github.com/packages stable main"|$SUDO tee /etc/apt/sources.list.d/gh.list>/dev/null&&$SUDO apt update -qq&&$SUDO apt install -yqq gh;}||true; ok "pkgs"
                 command -v infer &>/dev/null||{ V="v1.2.0";curl -sSL "https://github.com/facebook/infer/releases/download/$V/infer-linux-x86_64-$V.tar.xz"|tar -xJ -C /tmp/&&$SUDO mv "/tmp/infer-linux-x86_64-$V" /usr/local/lib/infer&&$SUDO ln -sf /usr/local/lib/infer/bin/infer /usr/local/bin/infer&&ok "infer"||warn "infer";}
             fi; install_node; [[ -z "$SUDO" ]] && { command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; } ;;
         arch)
-            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone github-cli tcc gcc cppcheck cbmc frama-c android-tools 2>/dev/null && ok "pkgs"
+            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone rsync github-cli tcc gcc cppcheck cbmc frama-c android-tools 2>/dev/null && ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi ;;
         fedora)
             # Two-step install: core (must succeed) then optional analyzers (best-effort).
@@ -239,9 +239,9 @@ install)
             # keeps the optional step bounded. Without splitting, one missing pkg aborted the
             # whole transaction and left node/zstd uninstalled.
             if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd android-tools 2>/dev/null && ok "pkgs"
-                $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone tcc cppcheck cbmc frama-c 2>/dev/null || :
+                $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone rsync tcc cppcheck cbmc frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
-        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone cronie termux-services android-tools && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
+        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone rsync cronie termux-services android-tools && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
     esac
     _ensure_cc
@@ -727,19 +727,9 @@ static void perf_arm(const char *cmd) {
 static void perf_disarm(void) { struct itimerval z={{0,0},{0,0}};setitimer(ITIMER_REAL,&z,NULL);signal(SIGALRM,SIG_DFL); }
 static struct timespec gt0;
 static void gt_print(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
-    long us=(t.tv_sec-gt0.tv_sec)*1000000L+(t.tv_nsec-gt0.tv_nsec)/1000;
-    struct stat st;char p[P];DIR*d;struct dirent*e;
-    snprintf(p,P,"%s/a.c",SDIR);long ac=!stat(p,&st)?st.st_size/4:0;
-    long dt[2]={0,0};const char*dn[]={"lib","my"};
-    for(int i=0;i<2;i++){snprintf(p,P,"%s/%s",SDIR,dn[i]);d=opendir(p);if(d){
-        while((e=readdir(d))){if(e->d_name[0]=='.')continue;snprintf(p,P,"%s/%s/%s",SDIR,dn[i],e->d_name);
-            if(!stat(p,&st)&&S_ISREG(st.st_mode))dt[i]+=st.st_size;}closedir(d);}}
-    long ct=0;const char*cn=G_argc>1?G_argv[1]:"";
-    snprintf(p,P,"%s/lib/%s.c",SDIR,cn);if(!stat(p,&st))ct=st.st_size/4;
-    if(ct)fprintf(stderr,"%ldus tokens %s.c:%ld a.c:%ld lib:%ld my:%ld\n",us,cn,ct,ac,dt[0]/4,dt[1]/4);
-    else fprintf(stderr,"%ldus tokens a.c:%ld lib:%ld my:%ld\n",us,ac,dt[0]/4,dt[1]/4);}
+    fprintf(stderr,"%ldus\n",(t.tv_sec-gt0.tv_sec)*1000000L+(t.tv_nsec-gt0.tv_nsec)/1000);}
 int main(int argc, char **argv) {
-    init_paths();G_argc=argc;G_argv=argv;
+    init_paths();
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
     if (argc < 2) { if(isatty(1)&&getenv("TMUX")){CWD(w);execlp("tmux","tmux","new-window","-c",w,"a","i",(char*)0);} perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }

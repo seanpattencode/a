@@ -3,51 +3,105 @@
    e renames to .<name> (hidden everywhere, data stays); exit prints stat-verified receipts.
    Anything with args, or no tty, falls through to lib/book.py. */
 static int bk_cmp(const void*a,const void*b){return strcasecmp((const char*)a,(const char*)b);}
+static char bk_nm[4096][128],bk_ad[4096][96],bk_ak[4096][96];   /* name + resolved author display/key */
+static int bk_srctag(const char*a){char b[64];int j=0;   /* download-source tag, not an author */
+    for(const char*p=a;*p&&j<63;p++)if(isalnum((unsigned char)*p))b[j++]=(char)tolower((unsigned char)*p);b[j]=0;
+    return strstr(b,"libgen")||strstr(b,"annasarchive")||strstr(b,"bokxyz")||strstr(b,"zlibrary")||!strcmp(b,"zlib");}
+static void bk_norm(const char*a,char*o,int n){char t[12][32];int c=0;   /* alnum tokens lowercased + SORTED */
+    for(const char*p=a;*p&&c<12;){while(*p&&!isalnum((unsigned char)*p))p++;if(!*p)break;
+        int l=0;while(*p&&isalnum((unsigned char)*p)&&l<31)t[c][l++]=(char)tolower((unsigned char)*p),p++;t[c][l]=0;if(l)c++;}
+    for(int i=1;i<c;i++){char x[32];strcpy(x,t[i]);int j=i-1;for(;j>=0&&strcmp(t[j],x)>0;j--)strcpy(t[j+1],t[j]);strcpy(t[j+1],x);}
+    int k=0;for(int i=0;i<c&&k<n-2;i++){for(int z=0;t[i][z]&&k<n-2;z++)o[k++]=t[i][z];if(i+1<c)o[k++]=' ';}o[k]=0;}
+/* clean authors w/o metadata: author = the ---segment RECURRING library-wide (titles unique, authors repeat); tie->last */
+static void bk_resolve(char nm[][128],int n){static char fk[4096][96],lk[4096][96];
+    for(int i=0;i<n;i++){fk[i][0]=lk[i][0]=0;const char*f=strstr(nm[i],"---");if(!f)continue;
+        const char*L=f;for(const char*q=f;(q=strstr(q,"---"));q+=3)L=q;
+        char s[96];int fl=(int)(f-nm[i]);if(fl>95)fl=95;memcpy(s,nm[i],(size_t)fl);s[fl]=0;bk_norm(s,fk[i],96);
+        const char*a=L+3;while(*a=='-')a++;bk_norm(a,lk[i],96);}
+    for(int i=0;i<n;i++){const char*f=strstr(nm[i],"---"),*L=f;int cf=0,cl=0;
+        if(!f){strcpy(bk_ad[i],"\xc2\xb7 unknown");strcpy(bk_ak[i],"~");continue;}
+        for(const char*q=f;(q=strstr(q,"---"));q+=3)L=q;
+        for(int j=0;j<n;j++){if((fk[j][0]&&!strcmp(fk[j],fk[i]))||(lk[j][0]&&!strcmp(lk[j],fk[i])))cf++;
+            if(lk[i][0]&&((fk[j][0]&&!strcmp(fk[j],lk[i]))||(lk[j][0]&&!strcmp(lk[j],lk[i]))))cl++;}
+        int useL=lk[i][0]&&(cl>=cf||!fk[i][0]);const char*r=useL?L+3:nm[i];int rl=useL?(int)strlen(r):(int)(f-nm[i]);
+        while(*r=='-'){r++;rl--;}char*key=useL?lk[i]:fk[i];
+        if(!key[0]||bk_srctag(key)){strcpy(bk_ad[i],"\xc2\xb7 unknown");strcpy(bk_ak[i],"~");}
+        else{if(rl>95)rl=95;memcpy(bk_ad[i],r,(size_t)rl);bk_ad[i][rl]=0;strcpy(bk_ak[i],key);}}}
+static char (*g_ak)[96];   /* set before qsort of an index[] by resolved-author key */
+static int g_akcmp(const void*pa,const void*pb){return strcmp(g_ak[*(const int*)pa],g_ak[*(const int*)pb]);}
+/* over-long names get middle-… so beginning AND end show (end-truncation would hide the title) */
+static void bk_mid(char*s,int w){int l=(int)strlen(s);if(l<=w||w<8)return;int h=(w-3)/2;
+    char*e=s+l-(w-3-h);while((*e&0xC0)==(char)0x80)e++;
+    memmove(s+h+3,e,strlen(e)+1);memcpy(s+h,"\xe2\x80\xa6",3);}
+/* cloud follows local rename (bg moveto) — else sync pull resurrects old name */
+static void bk_cloudmv(const char*a,const char*b){if(fork())return;
+    int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
+    execl("/bin/sh","sh","-c","r=$(rclone listremotes 2>/dev/null|grep a-gdrive|head -1);"
+        "[ -n \"$r\" ]&&exec rclone moveto \"${r}adata/books/$0\" \"${r}adata/books/$1\"",a,b,(char*)0);_exit(0);}
 static int cmd_book(int argc,char**argv){
     if(argc>2||!isatty(0)||!isatty(1))fallback_py("book",argc,argv);
-    perf_disarm();init_db();
-    static char nm[4096][128];int n=0;char bd[P];snprintf(bd,P,"%s/books",AROOT);
+    perf_disarm();init_db();signal(SIGCHLD,SIG_IGN);   /* bk_cloudmv children: no zombies while the pager runs */
+    char (*nm)[128]=bk_nm;int n=0;char bd[P];snprintf(bd,P,"%s/books",AROOT);
     {DIR*d=opendir(bd);struct dirent*e;struct stat st;char p[P];
      while(d&&(e=readdir(d))&&n<4096){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
         snprintf(p,P,"%s/%s",bd,e->d_name);if(!stat(p,&st)&&S_ISDIR(st.st_mode))snprintf(nm[n++],128,"%s",e->d_name);}
      if(d)closedir(d);}
     if(!n){puts("x no books — a book add <file>");return 1;}
     qsort(nm,(size_t)n,128,bk_cmp);
-    char ft[64]="";int cur=0,fm=0,na=0;static char arc[64][128];
-    /* raw mode once for the whole loop — per-key TCSAFLUSH (key1) discards type-ahead, eating omnibox chars */
+    bk_resolve(nm,n);g_ak=bk_ak;   /* clean authors once; per-keypress reads stay O(1) */
+    char ft[64]="";int cur=0,fm=0,na=0,sm=0;static char arc[64][128];   /* sm: name|author sort */
+    /* raw mode once (per-key reset would eat omnibox type-ahead) */
     struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSANOW,&rt);
     for(;;){
         static int ix[4096];int m=0;for(int i=0;i<n;i++)if(!*ft||strcasestr(nm[i],ft))ix[m++]=i;
-        if(cur>=m)cur=m?m-1:0;
+        if(sm)qsort(ix,(size_t)m,sizeof(int),g_akcmp);
+        /* author mode: header row before each author run (Lb: book idx, -1=header→Lh) */
+        static int Lb[5000];static const char*Lh[5000];int nl=0;char pk[96]="";
+        for(int i=0;i<m&&nl<4996;i++){
+            if(sm&&strcmp(bk_ak[ix[i]],pk)){Lh[nl]=bk_ad[ix[i]];Lb[nl++]=-1;strcpy(pk,bk_ak[ix[i]]);}
+            Lh[nl]=0;Lb[nl++]=ix[i];}
+        if(cur>=nl)cur=nl?nl-1:0;
+        while(cur<nl&&Lb[cur]<0)cur++;if(cur>=nl){cur=nl-1;while(cur>0&&Lb[cur]<0)cur--;}
         struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);int rows=w.ws_row>10?w.ws_row:24,cols=w.ws_col>20?w.ws_col:80;
         printf("\033[H\033[2J");
-        int ps=rows-3,p0=ps>0?(cur/ps)*ps:0;   /* gmail inbox: a page of the filtered list, cursor inverse */
-        for(int i=p0;i<p0+ps&&i<m;i++){char ln[160];snprintf(ln,160,"%s",nm[ix[i]]);
-            if((int)strlen(ln)>cols-1)ln[cols-1]=0;printf(i==cur?"\033[7m%s\033[0m\n":"%s\n",ln);}
+        static const char mn[]="[j/k]move [spc/b]page [s]ort [o]read [c]chat [e]archive [/]filter [q]quit";
+        int mr=((int)sizeof(mn)-1+cols-1)/cols;   /* wrapped menu rows (overflow scrolls row1 off) */
+        int ps=rows-1-mr,p0=ps>0?(cur/ps)*ps:0;
+        for(int i=p0;i<p0+ps&&i<nl;i++){
+            if(Lb[i]<0){char h[128];const char*a=Lh[i];int j=0;for(;a[j]&&j<cols-3&&j<120;j++)h[j]=a[j]=='-'?' ':a[j];h[j]=0;
+                printf("\033[1;36m%s\033[0m\n",h);continue;}   /* author header */
+            char ln[280];snprintf(ln,280,"%s",nm[Lb[i]]);bk_mid(ln,cols-1);
+            printf(i==cur?"\033[7m%s\033[0m\n":"%s\n",ln);}
         if(!m)printf("no match: %s\n",ft);
-        printf("\033[%d;1H\033[90m%d/%d%s%s%s\033[0m\n[j/k]move [spc/b]page [o]read [c]chat [e]archive [/]filter [q]quit",
-            rows-1,m?cur+1:0,m,(*ft||fm)?"  filter:":"",ft,fm?"_":"");
+        int cb=0;for(int i=0;i<=cur&&i<nl;i++)if(Lb[i]>=0)cb++;
+        printf("\033[%d;1H\033[90m%d/%d  %s%s%.*s%s\033[0m\n%s",
+            rows-mr,m?cb:0,m,sm?"by-author  ":"by-name  ",(*ft||fm)?"filter:":"",cols>30?cols-30:14,ft,fm?"_":"",mn);
         fflush(stdout);
         char kc=0;if(read(0,&kc,1)!=1)break;int k=kc,ar=0;
         if(k==27){struct pollfd pf={0,POLLIN,0};   /* arrows = ESC[A/B → k/j (lone ESC stays quit/exit-filter) */
             if(poll(&pf,1,10)>0){char s[2]={0,0};
-                if(read(0,s,1)==1&&s[0]=='['&&read(0,s+1,1)==1)k=s[1]=='A'?(ar=1,'k'):s[1]=='B'?(ar=1,'j'):0;else k=0;}}
+                if(read(0,s,1)!=1)k=0;
+                else if(s[0]=='[')k=read(0,s+1,1)==1&&s[1]=='A'?(ar=1,'k'):s[1]=='B'?(ar=1,'j'):0;
+                else k=s[0];}}   /* ESC then a fast real key (or Alt+key): keep the key, drop the ESC */
         if(fm&&!ar){if(k=='\r'||k=='\n'||k==27)fm=0;
             else if(k==127||k==8){size_t l=strlen(ft);if(l)ft[l-1]=0;}
             else if(k>=32&&k<127&&strlen(ft)<63){size_t l=strlen(ft);ft[l]=(char)k;ft[l+1]=0;cur=0;}
             continue;}
         if(k=='q'||k==27)break;
-        else if(k=='j'&&cur<m-1)cur++;
-        else if(k=='k'&&cur>0)cur--;
-        else if(k==' '&&m){cur+=rows-3;if(cur>=m)cur=m-1;}
-        else if(k=='b'&&m){cur-=rows-3;if(cur<0)cur=0;}
+        else if(k=='j'){int t=cur+1;while(t<nl&&Lb[t]<0)t++;if(t<nl)cur=t;}   /* next book, skipping header rows */
+        else if(k=='k'){int t=cur-1;while(t>=0&&Lb[t]<0)t--;if(t>=0)cur=t;}
+        else if(k==' '&&m){cur+=ps;if(cur>=nl)cur=nl-1;}
+        else if(k=='b'&&m){cur-=ps;if(cur<0)cur=0;}
+        else if(k=='s'){sm^=1;cur=0;}   /* toggle name <-> author grouping */
         else if(k=='/'){fm=1;ft[0]=0;cur=0;}
-        else if((k=='o'||k=='\r'||k=='\n')&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","read",nm[ix[cur]],0};fallback_py("book",4,av);}
-        else if(k=='c'&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","chat",nm[ix[cur]],0};fallback_py("book",4,av);}
-        else if(k=='e'&&m){char fr[P],to[P];int i=ix[cur];
+        else if((k=='o'||k=='\r'||k=='\n')&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","read",nm[Lb[cur]],0};fallback_py("book",4,av);}
+        else if(k=='c'&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","chat",nm[Lb[cur]],0};fallback_py("book",4,av);}
+        else if(k=='e'&&m){char fr[P],to[P];int i=Lb[cur];
             snprintf(fr,P,"%s/%s",bd,nm[i]);snprintf(to,P,"%s/.%s",bd,nm[i]);
-            if(!rename(fr,to)){snprintf(arc[na<64?na:63],128,"%s",nm[i]);if(na<64)na++;
-                memmove(nm[i],nm[i+1],(size_t)(n-1-i)*128);n--;}}   /* instant promote: next book fills the screen */
+            if(!rename(fr,to)){char cd[140];snprintf(cd,140,".%s",nm[i]);bk_cloudmv(nm[i],cd);
+                snprintf(arc[na<64?na:63],128,"%s",nm[i]);if(na<64)na++;
+                memmove(nm[i],nm[i+1],(size_t)(n-1-i)*128);   /* author arrays stay in lockstep */
+                memmove(bk_ad[i],bk_ad[i+1],(size_t)(n-1-i)*96);memmove(bk_ak[i],bk_ak[i+1],(size_t)(n-1-i)*96);n--;}}
     }
     tcsetattr(0,TCSANOW,&ot);
     printf("\033[H\033[2J");   /* exit receipts (tui.md rule 2): stat = ground truth, not memory of the rename */

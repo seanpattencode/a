@@ -8,7 +8,7 @@
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
 <div id=v_index class=v style="align-items:center">
   <form id=omni style="margin-top:9vh"><input id=qi autofocus placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:#4af"></form>
-  <div style="display:flex;gap:12px;align-items:center;margin-top:10px"><select id=ag class=f style="font-size:14px;padding:6px"><option value=c>claude</option><option value=co>codex</option></select><select id=dev class=f style="font-size:14px;padding:6px">__DO__</select><span id=qh style="color:#345;font-size:15px">tap a page · or type a command / prompt</span></div>
+  <div style="display:flex;gap:12px;align-items:center;margin-top:10px"><select id=ag class=f style="font-size:14px;padding:6px"><option value=c>claude</option><option value=co>codex</option><option value=note>note</option></select><select id=dev class=f style="font-size:14px;padding:6px">__DO__</select><span id=qh style="color:#345;font-size:15px">tap a page · or type a command / prompt</span></div>
   <div id=qo style="width:90vw;max-width:800px;margin-top:24px;max-height:78vh;overflow-y:auto"></div>
 </div>
 __MY__
@@ -110,8 +110,9 @@ qi.oninput=function(){var v=qi.value.toLowerCase();_cs=0;
   if(raw&&!ph&&!ch&&!/^\d+$/.test(v)&&!PAGES.some(function(p){return p[1]===v||p[0]==='/'+v})&&!views['/'+v]&&!_cmds.some(function(c){return c[0]===tok}))
     ci='<div style="padding:10px 16px;color:#4af;font-size:18px">↵ → '+(dev.value?dev.value+' · ':'')+ag.selectedOptions[0].text+': '+raw.replace(/</g,'&lt;')+'</div>';
   qo.innerHTML=ph+ch+ci;hl()};ag.onchange=dev.onchange=qi.oninput;show(views[location.pathname]?location.pathname:'/');
-qi.onkeydown=function(e){var it=_sg();if(!it.length)return;if(e.key==='ArrowDown'){e.preventDefault();_cs=Math.min(_cs+1,it.length-1)}else if(e.key==='ArrowUp'){e.preventDefault();_cs=Math.max(_cs-1,0)}else if(e.key==='Tab'&&it[_cs]){e.preventDefault();qi.value=it[_cs].dataset.c||it[_cs].textContent;qi.oninput();return}else return;hl()};
+qi.onkeydown=function(e){if(e.ctrlKey&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();ag.selectedIndex=(ag.selectedIndex+(e.key==='ArrowUp'?ag.length-1:1))%ag.length;qi.oninput();return}var it=_sg();if(!it.length)return;if(e.key==='ArrowDown'){e.preventDefault();_cs=Math.min(_cs+1,it.length-1)}else if(e.key==='ArrowUp'){e.preventDefault();_cs=Math.max(_cs-1,0)}else if(e.key==='Tab'&&it[_cs]){e.preventDefault();qi.value=it[_cs].dataset.c||it[_cs].textContent;qi.oninput();return}else return;hl()};
 omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw;if(!v)return;
+  if(ag.value=='note'){qi.value='';qo.innerHTML='<div style="padding:10px 16px;color:#fa0;font-size:17px">⟳ note… '+raw.replace(/</g,'&lt;')+'</div>';fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(raw)}).then(function(r){return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);qo.innerHTML='<div style="padding:10px 16px;color:#4a4;font-size:17px">✓ note saved'+(m?' → <a href="'+m[0]+'" target=_blank style=color:#4af>'+m[0]+'</a>':'')+'</div>';qi.focus()}).catch(function(){qo.innerHTML='<div style="padding:10px 16px;color:#f44;font-size:16px">✗ note save failed</div>'});return;}
   var pm=PAGES.filter(function(p){return p[1]===v||p[0]===v||p[0]==='/'+v});if(pm.length){qi.value='';navpage(pm[0][0]);return}
   if(views['/'+v]){go('/'+v);qi.value='';return}
   /* Enter takes the HIGHLIGHTED suggestion (pages first in DOM = first by default) — what you see is what runs */

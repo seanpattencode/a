@@ -1,6 +1,6 @@
 /* data */
 static const char *dprompt(void) {
-    static char b[B*4]; const char*a=cfget("prompt");if(!*a)a="default";
+    static char b[B*16]; const char*a=cfget("prompt");if(!*a)a="default";  /* B*4 truncated default.txt past ~16KB (cut the greats list mid-name); 64KB headroom */
     char p[P]; snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,a);
     char *d=readf(p,NULL); b[0]=0; if(d){snprintf(b,sizeof(b),"%s ",d);free(d);} return b;
 }

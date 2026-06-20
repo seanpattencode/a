@@ -1,6 +1,6 @@
 static const char *BENCH_CMDS[] = {
     "i","help","task","ls","add","agent","copy","done","docs",
-    "hi","move","prompt","remove","repo","send","set","setup",
+    "move","prompt","remove","repo","send","set","setup",
     "uninstall","watch",/* "x" kills tmux server, destroys active dev sessions */
     "e","kill","revert","deps","hub",
     "jobs","mono","ssh","work","ask","login","gdrive","email","ui","attach",

@@ -191,7 +191,9 @@ if __name__ == "__main__":
         m = [DATA_DIR/n] if (DATA_DIR/n).is_dir() else [d for d in DATA_DIR.iterdir() if d.is_dir() and n in d.name]
         if len(m) != 1: sys.exit(f"x {len(m)} matches" + "".join(f"\n  {d.name}" for d in m[:9]))
         t = m[0].with_name(m[0].name[1:] if m[0].name[0] == '.' else '.' + m[0].name)
-        m[0].rename(t); print("+ restored " + t.name if t.name[0] != '.' else "+ " + t.name)
+        o = m[0].name; m[0].rename(t); print("+ restored " + t.name if t.name[0] != '.' else "+ " + t.name)
+        subprocess.Popen(["rclone","moveto",f"a-gdrive:adata/books/{o}",f"a-gdrive:adata/books/{t.name}"],
+            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)  # cloud follows, else any sync pull resurrects the old name
     elif cmd == "lib":
         import json; subprocess.run("pkill -9 -f /opt/calibre;sleep 2",shell=True); p=os.path.expanduser('~/.config/calibre/global.py.json'); json.dump({**json.load(open(p)),'library_path':os.path.expanduser('~/calibre-lib')},open(p,'w'))
     elif cmd == "serve": w=Path.home()/'.local/bin/calibre'; w.exists() or (w.parent.mkdir(parents=True,exist_ok=True),w.write_text('#!/bin/sh\nsystemctl --user stop calibre-server 2>/dev/null\n/usr/bin/calibre "$@"\nsystemctl --user start calibre-server 2>/dev/null\n'),w.chmod(0o755)); subprocess.run(["systemctl","--user","--no-pager",args[2] if len(args)>2 else "status","calibre-server"])

@@ -25,6 +25,9 @@ package com.aios.a
 import android.app.Activity;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*
 import java.io.File;import java.io.OutputStream;import java.net.Socket
 private const val BASE="http://127.0.0.1:1112"
+// "next tmux session" that works locally AND inside an `a ssh` (nested) session: if the foreground pane is ssh/mosh,
+// inject the prefix+n as keystrokes into that pane so they ride the ssh pipe to the REMOTE tmux; else switch locally.
+const val TMUXNEXT="C=\$(tmux display -p '#{pane_current_command}');[ \"\$C\" = ssh ]||[ \"\$C\" = mosh ]&&tmux send-keys C-b n||tmux next-window"
 // All a-logic shells out to the termux `a` install (the device's real terminal); the APK is a UI caller. RUN_COMMAND also cold-starts termux if it crashed. arg passed as $1 (no injection).
 fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
@@ -73,7 +76,7 @@ private fun atlas(sz:Float):IntArray{val p=Paint().apply{textSize=sz;color=-1;is
 @android.annotation.SuppressLint("ClickableViewAccessibility")
 override fun onCreate(b:Bundle?){super.onCreate(b)
 WebView.setWebContentsDebuggingEnabled(true)
-w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(this@M,"A")
+w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(this@M,"A");setBackgroundColor(Color.BLACK)
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null);if(url.startsWith("http"))loaded=true}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
@@ -346,7 +349,7 @@ private fun queue()=getSharedPreferences("bub",0).getString("q","")!!.split("\n"
 private fun fg():String?{val u=getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
  val e=System.currentTimeMillis();val s=u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST,e-86400000L,e)?:return null
  return s.maxByOrNull{it.lastTimeUsed}?.packageName}
-private fun tmuxNext(){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService");i.action="com.termux.RUN_COMMAND";i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc","tmux next-window"));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)startForegroundService(i) else startService(i)}catch(e:Exception){}}
+private fun tmuxNext(){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService");i.action="com.termux.RUN_COMMAND";i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",TMUXNEXT));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)startForegroundService(i) else startService(i)}catch(e:Exception){}}
 private fun recent():List<String>{val u=getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager;val e=System.currentTimeMillis();val st=u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST,e-604800000L,e)?:return emptyList();return st.sortedByDescending{it.lastTimeUsed}.map{it.packageName}.distinct().filter{it!=packageName&&packageManager.getLaunchIntentForPackage(it)!=null}.take(10)}
 private fun cycle(){val p=getSharedPreferences("bub",0);var q=queue();if(q.size<2){q=recent();p.edit().putString("q",q.joinToString("\n")).putInt("idx",0).apply()};if(q.isEmpty())return
  val idx=(p.getInt("idx",0)+1)%q.size;p.edit().putInt("idx",idx).apply()
@@ -1156,7 +1159,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
         val items = Clip.list()
         for (i in 0 until minOf(items.size, (height / rowH).toInt() - 1)) canvas.drawText(items[i].replace("\n", " ").take(46), 24f, rowH * (i + 1) + rowH * 0.64f, clipPaint) }
     private fun tapClip(x: Float, y: Float) { val row = (y / rowH).toInt()
-        if (row == 0) { if (rec.listening) { if (x > width * 0.45f) txRun(svc, "tmux next-window") else rec.stop() } else clipMode = false }
+        if (row == 0) { if (rec.listening) { if (x > width * 0.45f) txRun(svc, TMUXNEXT) else rec.stop() } else clipMode = false }
         else { val items = Clip.list(); if (row - 1 < items.size) { val s = items[row - 1]; svc.currentInputConnection?.commitText(s, 1); try { cmgr().setPrimaryClip(android.content.ClipData.newPlainText("a", s)) } catch (e: Exception) {} }; if (!rec.listening) clipMode = false }
         invalidate() }
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
@@ -1177,7 +1180,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
         val c = NativeKB.onTouch(e.action, e.x, e.y - toolbarH)
         if (e.action == MotionEvent.ACTION_DOWN && c == 3) { rec.toggle(); return true }
         if (e.action == MotionEvent.ACTION_DOWN && c == 4) { clipMode = true; loadClip(); invalidate(); return true }
-        if (e.action == MotionEvent.ACTION_DOWN && c == 5) { txRun(svc, "tmux next-window"); return true }  // ⏭ num-row key: switch to next tmux window/session
+        if (e.action == MotionEvent.ACTION_DOWN && c == 5) { txRun(svc, TMUXNEXT); return true }  // ⏭ num-row key: switch to next tmux window/session
         if (e.action == MotionEvent.ACTION_DOWN && c != 0) {
             svc.sendChar(c.toChar())
             handler.removeCallbacks(holdCheck)

@@ -1,0 +1,8 @@
+<!doctype html><meta charset=utf-8>
+<!-- New tab = the a-server :1111 page, embedded. No redirect, no service worker, no extra permissions
+     — those three were what kept breaking (NTP self-redirect blocked; new perms need a hard reload).
+     a-server sends no X-Frame-Options/CSP so it frames fine. FROZEN file: change the new tab by editing
+     the :1111 page server-side, never here. -->
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{display:block;border:0;width:100vw;height:100vh}</style>
+<iframe src="http://localhost:1111/" allow="clipboard-read; clipboard-write"></iframe>
+<script>addEventListener('load',()=>{var f=document.querySelector('iframe');f.focus();})</script>

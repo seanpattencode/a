@@ -247,7 +247,7 @@ static int cmd_ssh(int argc,char**argv){
                 if(ws&&!ws[4]&&(size_t)(ws-H[i].name)==bl&&!strncasecmp(H[i].name,H[idx].name,bl)){f=i;break;}}
             if(f<0){char rn[160];snprintf(rn,160,"%s-relay",H[idx].name);for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){f=i;break;}}
             if(f>=0){idx=f;ssh_parse(H[idx].host,hp,port);}}}
-    if(!H[idx].pw[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
+    if(!H[idx].pw[0]&&!H[idx].jump[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");
         if(system(tc)){char pw[256];printf("Password for %s: ",H[idx].name);
             if(fgets(pw,256,stdin)){pw[strcspn(pw,"\n")]=0;if(pw[0]){snprintf(H[idx].pw,256,"%s",pw);ssh_savex(dir,H[idx].name,H[idx].host,pw,0,0);}}}}
