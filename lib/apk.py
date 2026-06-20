@@ -1131,7 +1131,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     private val pressPaint = Paint()
     private val textPaint = Paint().apply { color = Color.WHITE; textSize = 48f; textAlign = Paint.Align.CENTER; isAntiAlias = true }
     private fun updatePressPaint() { pressPaint.color = if (prefs.getBoolean("debug_red", true)) 0xFFFF0000.toInt() else 0xFF606060.toInt() }
-    private val bounds = FloatArray(44 * 4)
+    private val bounds = FloatArray(48 * 4)
     private val handler = Handler(Looper.getMainLooper())
     private val holdCheck = object : Runnable { override fun run() {
         val c = NativeKB.checkHold()
@@ -1152,10 +1152,11 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     private fun loadClip() { try { cmgr().primaryClip?.getItemAt(0)?.coerceToText(svc)?.toString()?.let { Clip.add(it) } } catch (e: Exception) {} }
     private fun drawClip(canvas: Canvas) { canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
         canvas.drawText(if (rec.listening) "⏹  stop" else "✕  close", 24f, rowH * 0.64f, clipPaint)
+        if (rec.listening) canvas.drawText("⏭  next session", width * 0.45f, rowH * 0.64f, clipPaint)  // voice-tmux: switch session without stopping dictation
         val items = Clip.list()
         for (i in 0 until minOf(items.size, (height / rowH).toInt() - 1)) canvas.drawText(items[i].replace("\n", " ").take(46), 24f, rowH * (i + 1) + rowH * 0.64f, clipPaint) }
-    private fun tapClip(y: Float) { val row = (y / rowH).toInt()
-        if (row == 0) { if (rec.listening) rec.stop() else clipMode = false }
+    private fun tapClip(x: Float, y: Float) { val row = (y / rowH).toInt()
+        if (row == 0) { if (rec.listening) { if (x > width * 0.45f) txRun(svc, "tmux next-window") else rec.stop() } else clipMode = false }
         else { val items = Clip.list(); if (row - 1 < items.size) { val s = items[row - 1]; svc.currentInputConnection?.commitText(s, 1); try { cmgr().setPrimaryClip(android.content.ClipData.newPlainText("a", s)) } catch (e: Exception) {} }; if (!rec.listening) clipMode = false }
         invalidate() }
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
@@ -1172,10 +1173,11 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
-        if (clipMode || rec.listening) { if (e.action == MotionEvent.ACTION_DOWN) tapClip(e.y); return true }
+        if (clipMode || rec.listening) { if (e.action == MotionEvent.ACTION_DOWN) tapClip(e.x, e.y); return true }
         val c = NativeKB.onTouch(e.action, e.x, e.y - toolbarH)
         if (e.action == MotionEvent.ACTION_DOWN && c == 3) { rec.toggle(); return true }
         if (e.action == MotionEvent.ACTION_DOWN && c == 4) { clipMode = true; loadClip(); invalidate(); return true }
+        if (e.action == MotionEvent.ACTION_DOWN && c == 5) { txRun(svc, "tmux next-window"); return true }  // ⏭ num-row key: switch to next tmux window/session
         if (e.action == MotionEvent.ACTION_DOWN && c != 0) {
             svc.sendChar(c.toChar())
             handler.removeCallbacks(holdCheck)
@@ -1197,7 +1199,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
         val rowCount = NativeKB.getRowCount()
         val debugRed = prefs.getBoolean("debug_red", true)
         val hf = NativeKB.getHFudge()
-        val rowSizes = if (mode == 1) intArrayOf(12, 10, 8, 5) else intArrayOf(12, 10, 9, 9, 4)
+        val rowSizes = if (mode == 1) intArrayOf(13, 10, 8, 5) else intArrayOf(13, 10, 9, 9, 4)
         var row = 0; var inRow = 0
         for (i in labels.indices) {
             val b = i * 4
@@ -1206,7 +1208,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
             val isPressed = i == pressed
             if (isPressed && debugRed) canvas.drawRoundRect(bounds[b] - hf, bounds[b+1] + rf, bounds[b+2] + hf, bounds[b+3] + rf, 8f, 8f, pressPaint)
             else canvas.drawRoundRect(bounds[b]+4, bounds[b+1]+4, bounds[b+2]-4, bounds[b+3]-4, 8f, 8f, if (isPressed) pressPaint else keyPaint)
-            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (rec.listening) "●" else "🎤"; '\u0004' -> "📋"; else -> ch.toString() }
+            val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (rec.listening) "●" else "🎤"; '\u0004' -> "📋"; '\u0005' -> "⏭"; else -> ch.toString() }
             canvas.drawText(label, (bounds[b] + bounds[b+2]) / 2, (bounds[b+1] + bounds[b+3]) / 2 + 16, textPaint)
             inRow++; if (row < rowSizes.size && inRow >= rowSizes[row]) { row++; inRow = 0 }
         }
@@ -1289,10 +1291,10 @@ KC=r'''// Instant Keyboard - Native C implementation
 #include <string.h>
 #include <time.h>
 
-static const char* ABC[] = {"1234567890\004\003","qwertyuiop","asdfghjkl","\002zxcvbnm\b","\001 .\n"};
-static const char* SYM[] = {"1234567890\004\003","@#$_&-+()/","*\"':;!?\b","\001, .\n"};
+static const char* ABC[] = {"1234567890\005\004\003","qwertyuiop","asdfghjkl","\002zxcvbnm\b","\001 .\n"};
+static const char* SYM[] = {"1234567890\005\004\003","@#$_&-+()/","*\"':;!?\b","\001, .\n"};
 static int symMode = 0, shift = 0, pressedKey = -1, kbWidth, kbHeight;
-static float keyW, rowH, bounds[44][4], rowFudge[5] = {0}, hFudge = 0;
+static float keyW, rowH, bounds[48][4], rowFudge[5] = {0}, hFudge = 0;
 static long pressTime = 0;
 static char pressedChar = 0;
 
@@ -1308,7 +1310,7 @@ static void computeBounds() {
         for (int i = 0; i < n; i++) {
             float w = keyW, x = i * keyW;
             int rr = symMode ? r : r - 1; // row index for layout calc (skip num row logic)
-            if (r == 0) { float nkw = kbWidth/(float)n; w = nkw; x = i*nkw; } // num row: n keys (10 digits + clipboard + mic) fill width
+            if (r == 0) { float nkw = kbWidth/(float)n; w = nkw; x = i*nkw; } // num row: n keys (10 digits + tmux-next + clipboard + mic) fill width
             else if (rr == 0) { /* qwerty row: simple */ }
             else if (rr == 1 && !symMode) x = keyW * 0.5f + i * keyW;
             else if (rr == 2) {
@@ -1369,7 +1371,7 @@ JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_getShift(JNIEnv* e, jclass c) { 
 JNIEXPORT jint JNICALL Java_com_aios_a_NativeKB_getPressed(JNIEnv* e, jclass c) { return pressedKey; }
 JNIEXPORT jfloat JNICALL Java_com_aios_a_NativeKB_getHFudge(JNIEnv* e, jclass c) { return hFudge; }
 JNIEXPORT jfloat JNICALL Java_com_aios_a_NativeKB_getRowFudge(JNIEnv* e, jclass c, jint row) { return (row >= 0 && row < 5) ? rowFudge[row] : 0; }
-JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_getBounds(JNIEnv* e, jclass c, jfloatArray out) { (*e)->SetFloatArrayRegion(e, out, 0, 44*4, (jfloat*)bounds); }
+JNIEXPORT void JNICALL Java_com_aios_a_NativeKB_getBounds(JNIEnv* e, jclass c, jfloatArray out) { (*e)->SetFloatArrayRegion(e, out, 0, 48*4, (jfloat*)bounds); }
 JNIEXPORT jstring JNICALL Java_com_aios_a_NativeKB_getLabels(JNIEnv* e, jclass c) {
     static char buf[64]; int rows = symMode ? 4 : 5; const char** L = symMode ? SYM : ABC; int i = 0;
     for (int r = 0; r < rows; r++) for (int j = 0; L[r][j]; j++) { char ch = L[r][j]; buf[i++] = (shift && ch >= 'a' && ch <= 'z') ? ch - 32 : ch; }
