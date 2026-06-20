@@ -72,9 +72,9 @@ static int cmd_note(int argc, char **argv) {
         raw_exit();if(i>=n)puts("Done");return 0;}
     if(argc>2&&!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
-    if(argc>3&&!strcmp(argv[2],"-u")){char t[B]="";ajoin(t,B,argc,argv,3);  /* -u: save + print commit URL via gh API (apk) */
+    if(argc>3&&!strcmp(argv[2],"-u")){char t[B*100]="";ajoin(t,sizeof t,argc,argv,3);  /* -u: save + print commit URL via gh API (apk) */
         note_url(note_save(dir,t),"note",NULL);return 0;}
-    {char t[B]="";ajoin(t,B,argc,argv,2);snprintf(rdir,P,"%s",dir);rapid_note(t);
+    {char t[B*100]="";ajoin(t,sizeof t,argc,argv,2);snprintf(rdir,P,"%s",dir);rapid_note(t);  /* B*100 cap → long notes ok */
         rapid("n> ",rapid_note);
         for(int i=0;i<nfn;i++){printf("[%d/%d] ",i+1,nfn);fflush(stdout);note_url(nfs[i],"note",NULL);}  /* show each note's url at end */
         return 0;}
