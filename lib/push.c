@@ -1,6 +1,34 @@
 #define PUSHCMD "{ git push -u origin HEAD 2>&1||{ git pull --rebase --autostash origin HEAD 2>&1&&git push -u origin HEAD 2>&1||{ git rebase --abort 2>/dev/null;echo PUSH_CONFLICT;};}; }"
+/* tok-increase rule (baseline = origin/main, tok=bytes/4): new a.c|lib file <=200 tok; extending <= max(200, 5% of module); no lib/ module >50k. Fills v[] (one violation/line), returns count. No-op outside this repo (origin/main has no a.c/lib). Override at push: A_TOK_OK=1. */
+static const char *TOK_RULE_MSG =
+    "If a change is vs main a new file, it cannot be more than 200 tok. If extending existing, it cannot be over 200 tok or 5% of the existing module, whichever is larger. No module is allowed over 50k tok in /lib. This forces simplicity and increases maintainability. Changes that are too large are too likely to contain error and or be too complex to maintian for the long term. Simplify the code or the problem if you hit these limits, or split into smaller modules of independent /lib components if that is impossible. This also ensures that the add drop ability to add and remove /lib should work with greater reliability, but care should be taken to ensure that they follow the pattern of independently able to do useful work but can be combined to do more useful things as the unix philosophy recommends. Try to shorten and simplify its practically always possible, and stop and ask human if it is something that cannot be resolved after that.";
+static int tok_rule(const char *cwd, char *v, int vsz) {
+    v[0]=0; int vl=0,n=0; char c[B],o[64];
+    snprintf(c,B,"cd '%s'&&git rev-parse --verify -q origin/main >/dev/null 2>&1&&echo y",cwd);
+    pcmd(c,o,64); if(o[0]!='y') return 0;   /* only enforce where origin/main exists */
+    char list[B*4];
+    snprintf(c,B,"cd '%s'&&{ git diff --name-only origin/main -- a.c lib 2>/dev/null;git ls-files --others --exclude-standard -- a.c lib 2>/dev/null; }|sort -u",cwd);
+    pcmd(c,list,(int)sizeof(list));
+    for(char *p=list;*p;){
+        char *e=strchr(p,'\n'); if(e)*e=0;
+        if(*p){
+            snprintf(c,B,"cd '%s'&&git show 'origin/main:%s' 2>/dev/null|wc -c",cwd,p);
+            pcmd(c,o,64); long base=atol(o)/4;
+            char fp[P]; struct stat st; snprintf(fp,P,"%s/%s",cwd,p);
+            long cur=(stat(fp,&st)==0)?(long)st.st_size/4:0;
+            if(base==0){ if(cur>200&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  NEW    %s: %ld tok > 200 (new file)\n",p,cur);n++;} }
+            else{ long d=cur-base,cap=base*5/100; if(cap<200)cap=200;
+                if(d>cap&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  EXTEND %s: +%ld tok > %ld (max(200, 5%% of %ld))\n",p,d,cap,base);n++;} }
+            if(strstr(p,"lib/")&&cur>50000&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  MODULE %s: %ld tok > 50000\n",p,cur);n++;}
+        }
+        if(e)p=e+1; else break;
+    }
+    return n;
+}
 static int cmd_push(int argc, char **argv) { AB;
     char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
+    {char v[B*2];if(!getenv("A_TOK_OK")&&tok_rule(cwd,v,(int)sizeof(v))){
+        printf("\033[31m✗ TOK INCREASE RULE\033[0m\n%s\n%s\n(override: A_TOK_OK=1 a push)\n",v,TOK_RULE_MSG);return 1;}}
     if(argc>2&&!strcmp(argv[2],"-f")){
         char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
         if(!nl){puts("x no .commit (after a done)");free(cs);return 1;}
@@ -199,6 +227,7 @@ static int cmd_diff(int argc, char **argv) { AB;
     if(!filt){char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
      if(nl){*nl=0;printf("\n\033[36mcommit:\033[0m %s \033[32m→ a push -f\033[0m\n",cs);}free(cs);}
     if(!fk&&!sel&&!filt) puts("\ndiff # = last #");
+    {char v[B*2];if(tok_rule(cwd,v,(int)sizeof(v)))printf("\n\033[31m✗ TOK INCREASE RULE\033[0m (will block a push):\n%s",v);}
     return 0;
     #undef FS
     #undef DS
