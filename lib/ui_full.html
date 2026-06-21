@@ -7,7 +7,7 @@
 <style>*{font-family:system-ui}[data-go]{touch-action:manipulation;cursor:pointer}.b{padding:16px 24px;font-size:24px;background:#000;color:#4af;border:2px solid #4af;border-radius:8px;cursor:pointer}.n{font-size:28px;color:#4af;cursor:pointer;padding:20px 40px;border:2px solid #4af;border-radius:12px}.f{background:#000;color:#fff;border:1px solid #333;border-radius:8px}.ni{padding:6px 0;color:#aaa;border-bottom:1px solid #222;display:flex;align-items:center}.nx{background:none;border:1px solid #555;color:#888;padding:12px 20px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px}.sb{background:#0b0f1a;color:#9cf;border:1px solid #2a3a5a;border-radius:6px;padding:6px 12px;margin-right:6px;cursor:pointer;font:13px monospace}.pg{padding:16px 26px;font-size:21px;color:#4af;background:#0b0f1a;border:1px solid #2a3a5a;border-radius:12px;cursor:pointer;touch-action:manipulation}.pg:active{background:#13203a}.v{position:absolute;inset:0;height:100vh;display:flex;flex-direction:column;visibility:hidden}.v.on{visibility:visible}</style>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
 <div id=v_index class=v style="align-items:center">
-  <form id=omni style="margin-top:9vh"><input id=qi autofocus placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:#4af"></form>
+  <form id=omni autocomplete=off style="margin-top:9vh"><input id=qi autofocus autocomplete=off autocapitalize=off autocorrect=off spellcheck=false placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:#4af"></form>
   <div style="display:flex;gap:12px;align-items:center;margin-top:10px"><select id=ag class=f style="font-size:14px;padding:6px"><option value=c>claude</option><option value=co>codex</option><option value=note>note</option></select><select id=dev class=f style="font-size:14px;padding:6px">__DO__</select><span id=qh style="color:#345;font-size:15px">tap a page · or type a command / prompt</span></div>
   <div id=qo style="width:90vw;max-width:800px;margin-top:24px;max-height:78vh;overflow-y:auto"></div>
 </div>
@@ -97,6 +97,7 @@ var _cmds=__CMDS__,_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
 var PAGES=[['/p','a proj'],['/op','a op'],['/dash','a dash'],['/stream','a stream'],['/jobs','a jobs'],['/note','a note'],['/tasks','a tasks'],['/flow','a flow'],['/term','a term'],['/book','a book'],['/docs','a docs'],['/cloud','a cloud'],['/prompt','a prompt']];
+function gsearch(){var q=qi.value.trim();if(q)window.open('https://www.google.com/search?q='+encodeURIComponent(q),'_blank')}
 function pfreq(r){try{return +(localStorage['pf'+r]||0)}catch(e){return 0}}
 function navpage(r){try{localStorage['pf'+r]=pfreq(r)+1}catch(e){}if(views[r])go(r);else location.href=r}
 function _sg(){return qo.querySelectorAll('[data-p],[data-c]')}
@@ -105,11 +106,12 @@ qi.oninput=function(){var v=qi.value.toLowerCase();_cs=0;
   var pg=PAGES.slice().sort(function(a,b){return pfreq(b[0])-pfreq(a[0])});
   if(v)pg=pg.filter(function(p){return p[1].indexOf(v)>=0||p[0].slice(1).indexOf(v)>=0});
   var ph=pg.length?'<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:16px">'+pg.map(function(p){return '<div class=pg data-p="'+p[0]+'" onclick="navpage(this.dataset.p)">'+p[1]+'</div>'}).join('')+'</div>':'';
-  var ch='';if(v)ch=_cmds.filter(function(c){return c[0].indexOf(v)>=0}).slice(0,10).map(function(c,i){return '<div data-c="'+c[0]+'" style="padding:8px 16px;color:'+(i?'#555':'#4af')+';cursor:pointer;font-size:18px" onclick="qi.value=this.dataset.c;omni.requestSubmit()">a '+c[0]+(c[1]?' <span style=color:#333>'+c[1]+'</span>':'')+'</div>'}).join('');
+  var ch='';if(v)ch=_cmds.filter(function(c){return c[0].indexOf(v)>=0}).slice(0,10).map(function(c,i){var w=c[0].slice(0,8)==='web http';return '<div data-c="'+c[0]+'" style="padding:8px 16px;color:'+(i?'#555':'#4af')+';cursor:pointer;font-size:18px" onclick="'+(w?"window.open(this.dataset.c.slice(4),'_blank')":"qi.value=this.dataset.c;omni.requestSubmit()")+'">'+(w?'↗ '+c[0].slice(4):'a '+c[0])+(c[1]?' <span style=color:#333>'+c[1]+'</span>':'')+'</div>'}).join('');
   var raw=qi.value.trim(),tok=v.split(' ')[0],ci='';
   if(raw&&!ph&&!ch&&!/^\d+$/.test(v)&&!PAGES.some(function(p){return p[1]===v||p[0]==='/'+v})&&!views['/'+v]&&!_cmds.some(function(c){return c[0]===tok}))
     ci='<div style="padding:10px 16px;color:#4af;font-size:18px">↵ → '+(dev.value?dev.value+' · ':'')+ag.selectedOptions[0].text+': '+raw.replace(/</g,'&lt;')+'</div>';
-  qo.innerHTML=ph+ch+ci;hl()};ag.onchange=dev.onchange=qi.oninput;show(views[location.pathname]?location.pathname:'/');
+  var gs=raw?'<div style="padding:8px 16px;color:#7a7;cursor:pointer;font-size:16px" onclick="gsearch()">&#x1F50D; google: '+raw.replace(/</g,'&lt;')+'</div>':'';
+  qo.innerHTML=ph+ch+ci+gs;hl()};ag.onchange=dev.onchange=qi.oninput;show(views[location.pathname]?location.pathname:'/');
 qi.onkeydown=function(e){if(e.ctrlKey&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();ag.selectedIndex=(ag.selectedIndex+(e.key==='ArrowUp'?ag.length-1:1))%ag.length;qi.oninput();return}var it=_sg();if(!it.length)return;if(e.key==='ArrowDown'){e.preventDefault();_cs=Math.min(_cs+1,it.length-1)}else if(e.key==='ArrowUp'){e.preventDefault();_cs=Math.max(_cs-1,0)}else if(e.key==='Tab'&&it[_cs]){e.preventDefault();qi.value=it[_cs].dataset.c||it[_cs].textContent;qi.oninput();return}else return;hl()};
 omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw;if(!v)return;
   if(ag.value=='note'){qi.value='';qo.innerHTML='<div style="padding:10px 16px;color:#fa0;font-size:17px">⟳ note… '+raw.replace(/</g,'&lt;')+'</div>';fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(raw)}).then(function(r){return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);qo.innerHTML='<div style="padding:10px 16px;color:#4a4;font-size:17px">✓ note saved'+(m?' → <a href="'+m[0]+'" target=_blank style=color:#4af>'+m[0]+'</a>':'')+'</div>';qi.focus()}).catch(function(){qo.innerHTML='<div style="padding:10px 16px;color:#f44;font-size:16px">✗ note save failed</div>'});return;}
@@ -119,6 +121,7 @@ omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw;if(!v
   var sg=_sg();
   if(sg.length&&!/^\d+$/.test(v)&&!_cmds.some(function(c){return c[0]===v.split(' ')[0]})){var s=sg[_cs]||sg[0];
     if(s.dataset.p){qi.value='';navpage(s.dataset.p);return}
+    if(s.dataset.c&&s.dataset.c.slice(0,8)==='web http'){window.open(s.dataset.c.slice(4),'_blank');qi.value='';qi.oninput();return}
     v=raw=s.dataset.c;}
   var tok=v.split(' ')[0],isagent=false;if(!/^\d+$/.test(v)&&!_cmds.some(function(c){return c[0]===tok})){isagent=true;qh.textContent='→ '+(dev.value?dev.value+' · ':'')+ag.selectedOptions[0].text+': '+raw;qh.style.color='#4af';v=(dev.value?'ssh '+dev.value+' a ':'')+ag.value+' '+raw+(dev.value?' ; echo --- windows --- ; tmux lsw -t a 2>&1 | tail -8':'');}else if(dev.value)v='ssh '+dev.value+' a '+v;qh.style.color='#345';
   var dv=dev.value;if(isagent)fetch('/api/savep',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent((dv||'local')+'\t'+ag.value+'\t'+raw)});

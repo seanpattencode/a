@@ -115,7 +115,6 @@ static void gen_icache(void) {
                 fprintf(f,"open %s\t%s · app\n",dn,nm);}}
         closedir(d);}}
 #endif
-    {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);char*wd=readf(wp,0);if(wd){fputs(wd,f);free(wd);}}
     fclose(f);
     if(!fork()){char ad[P],fp2[P],ln[256];snprintf(ad,P,"%s/git/activity",AROOT);
         DIR*d=opendir(ad);if(!d)_exit(0);FC ct[1024];int nc=0;struct dirent*e;
@@ -147,15 +146,16 @@ static void gen_icache(void) {
             "sqlite3 $T \"$Q\" 2>/dev/null;done;"
 #endif
             "rm -f $T");
-        FILE*sp=popen(cm,"r");if(sp){FILE*wf=fopen(fp2,"w");if(wf){
-            unsigned char uh[4096]={0};char sl[1024];
+        FILE*sp=popen(cm,"r");if(sp){char tp[P];snprintf(tp,P,"%s.tmp",fp2);FILE*wf=fopen(tp,"w");if(wf){
+            unsigned char uh[4096]={0};char sl[1024];int nw=0;
             while(fgets(sl,1024,sp)){sl[strcspn(sl,"\n")]=0;
                 char*u=sl,*t=strchr(sl,'|');if(!t)continue;*t++=0;
                 char*hu=u;{char*s=strstr(u,"://");if(s){hu=s+3;if(!strncmp(hu,"www.",4))memmove(hu,hu+4,strlen(hu+4)+1);}}
                 unsigned h=5381;for(char*p=hu;*p;p++)h=h*33+*p;h%=32768;
                 if(uh[h/8]&(1<<(h%8)))continue;uh[h/8]|=1<<(h%8);
-                if(t[0])fprintf(wf,"web %s\t%s · web\n",u,t);}
-            fclose(wf);}pclose(sp);}}
+                if(t[0]){fprintf(wf,"web %s\t%s · web\n",u,t);nw++;}}
+            fclose(wf);if(nw)rename(tp,fp2);else unlink(tp);}  /* sticky: never wipe a good cache on a transient empty/locked query */
+            pclose(sp);}}
         _exit(0);}
 }
 
