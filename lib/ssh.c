@@ -22,13 +22,13 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
     if(k&&v&&v[0])snprintf(d+l,(size_t)(B-l),"%s: %s\n",k,v);
     writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);}
 static int ssh_idx(const char*a,const void*H_,int nh){
-    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],path[P];}ht;const ht*H=(const ht*)H_;/* layout MUST match host_t in cmd_ssh or the stride is wrong */
+    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}ht;const ht*H=(const ht*)H_;/* layout MUST match host_t in cmd_ssh or the stride is wrong */
     if(isdigit((unsigned char)*a))return atoi(a);
     for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,a))return i;return -1;}
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
-    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],path[P];}host_t;
+    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}host_t;
     host_t H[32];int nh=0,arc=0;
     char paths[32][P];int np=listdir(dir,paths,32);
     for(int i=np-1;i>=0&&nh<32;i--){
@@ -41,7 +41,8 @@ static int cmd_ssh(int argc,char**argv){
         snprintf(H[nh].pw,256,"%s",p?p:"");
         snprintf(H[nh].jump,256,"%s",j?j:"");
         snprintf(H[nh].jpw,256,"%s",jp?jp:"");
-        {const char*fb=kvget(&kv,"Fallback");snprintf(H[nh].fb,128,"%s",fb?fb:"");}
+        {const char*fb=kvget(&kv,"Fallback");snprintf(H[nh].fb,128,"%s",fb?fb:"");
+         const char*hn=kvget(&kv,"Hint");snprintf(H[nh].hint,256,"%s",hn?hn:"");}
         snprintf(H[nh].path,P,"%s",paths[i]);nh++;}
     const char*sub=argc>2?argv[2]:NULL;
     /* list */
@@ -257,14 +258,15 @@ static int cmd_ssh(int argc,char**argv){
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
     /* fast TCP probe; on fail switch to: explicit Fallback, else the -wan sibling of a dead -lan, else <name>-relay */
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
-        snprintf(pb,B,"nc -z -w1 %s %s 2>/dev/null",ph,port);
+        snprintf(pb,B,"timeout 1 bash -c 'exec 3<>/dev/tcp/%s/%s' 2>/dev/null",ph,port);
         if(system(pb)){int f=-1;
             if(H[idx].fb[0])for(int i=0;i<nh;i++)if(!strcmp(H[i].name,H[idx].fb)){f=i;break;}
             char*ls=strstr(H[idx].name,"-lan");size_t bl=ls&&!ls[4]?(size_t)(ls-H[idx].name):0;
             if(f<0&&bl)for(int i=0;i<nh;i++){char*ws=strstr(H[i].name,"-wan");
                 if(ws&&!ws[4]&&(size_t)(ws-H[i].name)==bl&&!strncasecmp(H[i].name,H[idx].name,bl)){f=i;break;}}
             if(f<0){char rn[160];snprintf(rn,160,"%s-relay",H[idx].name);for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){f=i;break;}}
-            if(f>=0){idx=f;ssh_parse(H[idx].host,hp,port);}}}
+            if(f>=0){idx=f;ssh_parse(H[idx].host,hp,port);}
+            else if(H[idx].hint[0])fprintf(stderr,"! %s unreachable — %s\n",H[idx].name,H[idx].hint);}}
     if(!H[idx].pw[0]&&!H[idx].jump[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");
         if(system(tc)){char pw[256];printf("Password for %s: ",H[idx].name);
