@@ -630,6 +630,35 @@ static void _handle(int c){
         for(;;){int n=poll(pf,2,5000);if(n<=0||(pf[1].revents&(POLLHUP|POLLERR|POLLIN)))break;
             if(pf[0].revents&POLLIN){char b[4096];while(read(ifd,b,4096)>0){}DEMIT;}}
         close(ifd);close(c);_exit(0);}
+    if(!strncmp(req,"GET /dev/open",13)){   /* tunnel to a device's own `a serve` (:1111), then 302 there */
+        char nm[64]="";{const char*q=strstr(req,"?h=");if(q){q+=3;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)nm[i]=q[i];nm[i]=0;}}
+        if(!nm[0]){_sresp(c,400,"text/plain","no host",7);return;}
+        unsigned hh=5381;for(const char*s=nm;*s;s++)hh=hh*33u+(unsigned char)*s;int lp=8100+(int)(hh%400);   /* deterministic local port per host */
+        struct sockaddr_in la={.sin_family=AF_INET,.sin_port=htons((uint16_t)lp),.sin_addr={htonl(INADDR_LOOPBACK)}};
+        int up=0;{int s=socket(AF_INET,SOCK_STREAM,0);if(s>=0){up=connect(s,(void*)&la,sizeof la)==0;close(s);}}   /* already tunneled? reuse */
+        if(!up){
+            char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
+            char host[256]="",pw[256]="";
+            for(int i=0;i<n;i++){kvs_t kv=kvfile(paths[i]);const char*k=kvget(&kv,"Name");
+                if(k&&!strcmp(k,nm)){const char*h2=kvget(&kv,"Host"),*p=kvget(&kv,"Password");if(h2)snprintf(host,256,"%s",h2);if(p)snprintf(pw,256,"%s",p);break;}}
+            if(!host[0]){_sresp(c,404,"text/plain","no such device",14);return;}
+            char hp[256],rp[8];ssh_parse(host,hp,rp);
+            char opts[200];snprintf(opts,200,"-N -oStrictHostKeyChecking=accept-new -oConnectTimeout=8 -oExitOnForwardFailure=yes -L %d:127.0.0.1:1111",lp);
+            char cmd[B];ssh_pre(cmd,B,pw[0]?pw:NULL,opts,rp,hp);
+            if(!fork()){setsid();int z=open("/dev/null",O_RDWR);if(z>=0){dup2(z,0);dup2(z,1);dup2(z,2);}execl("/bin/sh","sh","-c",cmd,(char*)NULL);_exit(127);}
+            for(int t=0;t<60&&!up;t++){int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)break;up=connect(s,(void*)&la,sizeof la)==0;close(s);if(!up)usleep(100000);}}
+        if(!up){_sresp(c,504,"text/plain","tunnel failed (is `a serve` up on that device?)",47);return;}
+        char url[64];snprintf(url,64,"http://127.0.0.1:%d/",lp);_redir(c,url);return;}
+    if(!strncmp(req,"GET /dev",8)&&(req[8]==' '||req[8]=='?'||req[8]=='\r')){   /* device list — each opens its own served html over ssh */
+        char*h=malloc(1<<16);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
+        int hl=snprintf(h,1<<16,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>devices</title>"
+            "<style>body{margin:0;background:#000;color:#ddd;font:15px ui-monospace,monospace;padding:14px}h1{font-size:15px;color:#6cf;margin:2px 0 12px;font-weight:normal}a.d{display:block;color:#9cf;text-decoration:none;padding:13px 14px;margin:7px 0;border:1px solid #233;border-radius:7px;background:#0a0a0a}a.d:active{background:#13320f;color:#9f9}small{color:#666;font-size:12px}</style>"
+            "<h1>devices &mdash; open each one's own <code>a serve</code> over ssh</h1>");
+        char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
+        for(int i=0;i<n&&hl<(1<<16)-512;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
+            if(!nm)continue;hl+=snprintf(h+hl,(size_t)((1<<16)-hl),"<a class=d href=\"/dev/open?h=%s\">%s <small>%s</small></a>",nm,nm,ho?ho:"");}
+        if(n<=0)hl+=snprintf(h+hl,(size_t)((1<<16)-hl),"<p><small>no devices &mdash; add with <code>a ssh add</code></small></p>");
+        _sresp(c,200,"text/html",h,hl);free(h);return;}
     if(!strncmp(req,"GET /stream/s",13)){
         char dev[64]="";{const char*q=strstr(req,"?dev=");if(q){q+=5;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)dev[i]=q[i];dev[i]=0;}}
         pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}

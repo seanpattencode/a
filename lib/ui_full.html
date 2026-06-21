@@ -96,7 +96,7 @@ window.onfocus=function(){qi.style.borderColor='#555'};window.onblur=function(){
 var _cmds=__CMDS__,_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
-var PAGES=[['/p','a proj'],['/op','a op'],['/dash','a dash'],['/stream','a stream'],['/jobs','a jobs'],['/note','a note'],['/tasks','a tasks'],['/flow','a flow'],['/term','a term'],['/book','a book'],['/docs','a docs'],['/cloud','a cloud'],['/prompt','a prompt']];
+var PAGES=[['/p','a proj'],['/op','a op'],['/dash','a dash'],['/stream','a stream'],['/dev','a devices'],['/jobs','a jobs'],['/note','a note'],['/tasks','a tasks'],['/flow','a flow'],['/term','a term'],['/book','a book'],['/docs','a docs'],['/cloud','a cloud'],['/prompt','a prompt']];
 function gsearch(){var q=qi.value.trim();if(q)window.open('https://www.google.com/search?q='+encodeURIComponent(q),'_blank')}
 function pfreq(r){try{return +(localStorage['pf'+r]||0)}catch(e){return 0}}
 function navpage(r){try{localStorage['pf'+r]=pfreq(r)+1}catch(e){}if(views[r])go(r);else location.href=r}

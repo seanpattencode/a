@@ -195,6 +195,23 @@ static int cmd_ssh(int argc,char**argv){
             if(o[0]){ssh_savex(dir,h->name,h->host,h->pw,"OS",o);printf("✓ %s\n",h->name);}
             else printf("x %s\n",h->name);}
         return 0;}
+    /* tunnel — view a device's OWN `a serve` (or any port) over ssh: forward its loopback port here.
+       a ssh tunnel <host> [rport=1111] [lport=auto]  →  ssh -N -L lport:127.0.0.1:rport <host>; open http://127.0.0.1:lport
+       rport defaults to 1111 (every device's `a serve`); lport auto-picks a free local port (1111 is this box's own serve). */
+    if(!strcmp(sub,"tunnel")&&argc>3){
+        int x=ssh_idx(argv[3],H,nh);
+        if(x<0||x>=nh){printf("x No host %s\n",argv[3]);return 1;}
+        const char*rport=argc>4?argv[4]:"1111";char lport[8];
+        if(argc>5)snprintf(lport,8,"%s",argv[5]);
+        else{int p=8111;for(;p<8200;p++){int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)break;
+            struct sockaddr_in la={.sin_family=AF_INET,.sin_port=htons((uint16_t)p),.sin_addr={htonl(INADDR_LOOPBACK)}};
+            int ok=bind(s,(void*)&la,sizeof la)==0;close(s);if(ok)break;}
+            snprintf(lport,8,"%d",p);}
+        char hp[256],port[8];ssh_parse(H[x].host,hp,port);
+        char opts[256];snprintf(opts,256,"-N -oStrictHostKeyChecking=accept-new -oConnectTimeout=8 -L %s:127.0.0.1:%s",lport,rport);
+        char c[B];ssh_pre(c,B,H[x].pw[0]?H[x].pw:NULL,opts,port,hp);
+        printf("→ http://127.0.0.1:%s  (%s :%s over ssh · Ctrl-C to close)\n",lport,H[x].name,rport);fflush(stdout);
+        execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 
     /* hb — show/set homebox (the box captures + `a sw homebox` target). `a ssh hb` prints which
        computer homebox points at + the pickable host list; `a ssh hb <name|#>` repoints it. */
