@@ -25,9 +25,11 @@ package com.aios.a
 import android.app.Activity;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*
 import java.io.File;import java.io.OutputStream;import java.net.Socket
 private const val BASE="http://127.0.0.1:1112"
-// "next tmux session" that works locally AND inside an `a ssh` (nested) session: if the foreground pane is ssh/mosh,
-// inject the prefix+n as keystrokes into that pane so they ride the ssh pipe to the REMOTE tmux; else switch locally.
-const val TMUXNEXT="C=\$(tmux display -p '#{pane_current_command}');[ \"\$C\" = ssh ]||[ \"\$C\" = mosh ]&&tmux send-keys C-b n||tmux next-window"
+// "next tmux session" that works locally AND inside an `a ssh` session. Targets the ATTACHED client's session
+// (not the ambiguous implicit "current", which the grouped per-client sessions mis-resolve from a detached RUN_COMMAND).
+// `a ssh` runs via sshpass, so the pane's foreground command is ssh/mosh/sshpass — inject prefix+n as keystrokes so they ride
+// the ssh pipe to the REMOTE tmux (verified switching ubuntu's window); otherwise switch the local tmux.
+const val TMUXNEXT="S=\$(tmux list-clients -F '#{client_session}'|head -1);[ -n \"\$S\" ]||S=\$(tmux display -p '#{session_name}');C=\$(tmux display -t \"\$S\" -p '#{pane_current_command}');case \"\$C\" in ssh|mosh|sshpass)tmux send-keys -t \"\$S\" C-b n;;*)tmux next-window -t \"\$S\";;esac"
 // All a-logic shells out to the termux `a` install (the device's real terminal); the APK is a UI caller. RUN_COMMAND also cold-starts termux if it crashed. arg passed as $1 (no injection).
 fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
