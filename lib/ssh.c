@@ -266,7 +266,19 @@ static int cmd_ssh(int argc,char**argv){
                 if(ws&&!ws[4]&&(size_t)(ws-H[i].name)==bl&&!strncasecmp(H[i].name,H[idx].name,bl)){f=i;break;}}
             if(f<0){char rn[160];snprintf(rn,160,"%s-relay",H[idx].name);for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){f=i;break;}}
             if(f>=0){idx=f;ssh_parse(H[idx].host,hp,port);}
-            else if(H[idx].hint[0])fprintf(stderr,"! %s unreachable — %s\n",H[idx].name,H[idx].hint);}}
+            else{char stem[64];snprintf(stem,64,"%s",H[idx].name);char*sd=strchr(stem,'-');if(sd)*sd=0;
+                const char*at=strchr(H[idx].host,'@');int ul=at?(int)(at-H[idx].host):0;
+                char rc[B*2];snprintf(rc,B*2,
+                    "B=$(ifconfig 2>/dev/null|awk '/inet (10\\.|192\\.168\\.|172\\.)/{sub(/.*inet /,\"\");sub(/ .*/,\"\");sub(/\\.[0-9]+$/,\".\");print;exit}');[ -z \"$B\" ]&&exit;"
+                    "for i in $(seq 1 254);do (timeout 1 bash -c \"exec 3<>/dev/tcp/${B}$i/22\" 2>/dev/null&&"
+                    "h=$(sshpass -p '%s' ssh -oConnectTimeout=2 -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null %.*s@${B}$i hostname 2>/dev/null)&&"
+                    "[ \"$h\" = '%s' ]&&echo ${B}$i)& done;wait",H[idx].pw,ul,H[idx].host,stem);
+                fprintf(stderr,"! %s scanning...\n",H[idx].name);
+                FILE*rf=popen(rc,"r");char ip[64]={0};if(rf){(void)!fgets(ip,63,rf);pclose(rf);ip[strcspn(ip,"\n")]=0;}
+                if(ip[0]){char nh[256];snprintf(nh,256,"%.*s@%s",ul,H[idx].host,ip);
+                    snprintf(H[idx].host,256,"%s",nh);ssh_savex(dir,H[idx].name,nh,H[idx].pw,"Hint",H[idx].hint);
+                    ssh_parse(nh,hp,port);fprintf(stderr,"✓ %s → %s\n",H[idx].name,nh);}
+                else if(H[idx].hint[0])fprintf(stderr,"! %s — %s\n",H[idx].name,H[idx].hint);}}}
     if(!H[idx].pw[0]&&!H[idx].jump[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");
         if(system(tc)){char pw[256];printf("Password for %s: ",H[idx].name);
