@@ -20,7 +20,8 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
     int l=snprintf(d,B,"Name: %s\nHost: %s\n",n,h);
     if(pw&&pw[0])l+=snprintf(d+l,(size_t)(B-l),"Password: %s\n",pw);
     if(k&&v&&v[0])snprintf(d+l,(size_t)(B-l),"%s: %s\n",k,v);
-    writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);}
+    writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);
+    char g[B];snprintf(g,B,"flock /tmp/.a_git.lock sh -c \"cd %1$s;git add ssh/%2$s.txt&&git commit -qm ssh:%2$s&&git push -q\" 2>/dev/null &",SROOT,n);(void)!system(g);}
 static int ssh_idx(const char*a,const void*H_,int nh){
     typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}ht;const ht*H=(const ht*)H_;/* layout MUST match host_t in cmd_ssh or the stride is wrong */
     if(isdigit((unsigned char)*a))return atoi(a);
