@@ -1,5 +1,6 @@
-# a dictate — live streaming dictation. Tap F5: words appear at the cursor AS you speak (warm faster-whisper GPU
-# server, --latency-msec=30 mic, settles recognized words, only the tail moves). Tap F5 again: stop.
+# a dictate — live streaming dictation. Tap F5: words appear at the cursor AS you speak (warm sherpa-onnx Parakeet
+# TDT 0.6b server, CPU ~0.2s/tick, --latency-msec=30 mic, settles recognized words, only the tail moves). F5 again: stop.
+# Model auto-downloads to ~/.cache/a_dictate on first run.
 # Voice commands (say them): "enter" -> newline, "stop" -> stop dictation. a dictate bind: binds F5 (sway), synced.
 S=/tmp/a_dictate R=$S.ctl srv=/tmp/a_dictate_srv.py
 if [ "$1" = bind ]; then c=$HOME/.config/sway/config
@@ -8,10 +9,10 @@ if [ "$1" = bind ]; then c=$HOME/.config/sway/config
 cat > $srv.tmp <<'PY'
 import os,subprocess,threading,time
 import numpy as np
-from faster_whisper import WhisperModel
-try: M=WhisperModel("base.en",device="cuda",compute_type="float16")
-except Exception: M=WhisperModel("base.en",device="cpu",compute_type="int8")
-R="/tmp/a_dictate.ctl"; ON="/tmp/a_dictate.on"; MK="[dictating... say 'enter'=newline, 'stop'=end, or F5 to turn off]"
+import sherpa_onnx
+D=os.path.expanduser("~/.cache/a_dictate/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")
+REC=sherpa_onnx.OfflineRecognizer.from_transducer(encoder=D+"/encoder.int8.onnx",decoder=D+"/decoder.int8.onnx",joiner=D+"/joiner.int8.onnx",tokens=D+"/tokens.txt",num_threads=6,model_type="nemo_transducer",debug=False)
+R="/tmp/a_dictate.ctl"; ON="/tmp/a_dictate.on"; MK="[enter|stop|F5]"
 typed=""
 def yd(*a): subprocess.run(["ydotool",*a])
 def emit(new):
@@ -22,8 +23,7 @@ def emit(new):
     typed=new
 def tx(buf):
     a=np.frombuffer(buf,np.int16).astype(np.float32)/32768.0
-    s,_=M.transcribe(a,language="en")
-    return " ".join(x.text.strip() for x in s).strip()
+    s=REC.create_stream(); s.accept_waveform(16000,a); REC.decode_stream(s); return s.result.text.strip()
 def norm(w): return w.strip(".,!?;:").lower()
 stop=threading.Event()
 def worker():
@@ -60,6 +60,9 @@ while 1:
 PY
 cmp -s $srv.tmp $srv 2>/dev/null && rm -f $srv.tmp || { mv $srv.tmp $srv; pkill -f a_dictate_srv.py 2>/dev/null; sleep .4; }
 [ -p $R ] || { rm -f $R; mkfifo $R; }
+PD=$HOME/.cache/a_dictate/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8
+[ -d "$PD" ] || { python3 -c "import sherpa_onnx" 2>/dev/null || pip install -q sherpa-onnx; mkdir -p $HOME/.cache/a_dictate
+  ( cd $HOME/.cache/a_dictate && wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2 && tar xf *.tar.bz2 && rm -f *.tar.bz2 ); }
 pgrep -f a_dictate_srv.py >/dev/null 2>&1 || setsid python3 $srv >$S.log 2>&1 </dev/null
 if [ -f $S.on ]; then rm -f $S.on; echo stop > $R
 else : > $S.on; echo start > $R; fi
