@@ -268,6 +268,9 @@ static void hl_kw(const char*s){for(const char*p=s;*p;){const char*e;  /* [brack
 static int cmd_task(int argc,char**argv){
     perf_disarm();
     char dir[P];snprintf(dir,P,"%s/tasks",SROOT);mkdirp(dir);const char*sub=argc>2?argv[2]:NULL;
+    if(sub){char k[40];snprintf(k,40,"|%s|",sub);  /* free text → add; a bare verb (l/r/new/sync/do…) fires only alone, arg-cmds always; stops "a t llm…"/"a t 5 …" being eaten as subcommands */
+        int cmd=strstr("|add|a|pri|deadline|d|",k)||(argc==3&&(strstr("|top|new|v|vision|help|-h|h|rank|m|l|r|rev|review|t|due|bench|sync|flag|f|s|p|do|0|1|",k)||strspn(sub,"0123456789")==strlen(sub)));
+        if(!cmd)return task_add_p(dir,argc,argv,2);}
     if(!sub||!strcmp(sub,"top")||!strcmp(sub,"new")){int n=load_tasks(dir);
         int bynew=sub&&!strcmp(sub,"new");if(bynew)qsort(T,(size_t)n,sizeof(Tk),tcmp_new);
         int k=argc>3&&isdigit((unsigned char)argv[3][0])?atoi(argv[3]):4;if(k>n)k=n;  /* default top 4 */
@@ -505,16 +508,6 @@ static int cmd_task(int argc,char**argv){
         size_t l;char*r=readf(pf,&l);if(!r){printf("x No prompt: %s\n",pf);return 1;}
         while(l>0&&(r[l-1]=='\n'||r[l-1]==' '))r[--l]=0;
         printf("Prompt: %s\n",pf);execvp("a",(char*[]){"a","c",r,NULL});return 1;}
-    if(argc>4&&isdigit(argv[3][0])){
-        int n=load_tasks(dir),x=atoi(argv[3])-1;
-        if(x>=0&&x<n){
-        task_todir(T[x].d);
-        char sd[P];snprintf(sd,P,"%s/%s",T[x].d,sub);mkdirp(sd);
-        struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);
-        char ts[32],fn[P];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
-        char t[B]="";ajoin(t,B,argc,argv,4);
-        snprintf(fn,P,"%s/%s.%09ld_%s.txt",sd,ts,tp.tv_nsec,DEV);writef(fn,t);
-        printf("✓ %s: %.40s\n",sub,t);return 0;}}
     return task_add_p(dir,argc,argv,2);
 }
 /* a flow v: what each tmux window is about = its claude session's first user prompt (session id is in pane_start_command) */
