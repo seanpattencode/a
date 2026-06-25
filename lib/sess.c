@@ -176,7 +176,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             }while(p<hll);}
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s\033[0m\033[K\n",jstat);
-        else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config\033[0m\033[K\n");
+        else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[36m%.2fms\033[0m\033[K\n", _rms());
         else if(plen)FP("%s> %s\033[K\n",prefix,buf);
         else{int W=ws.ws_col?ws.ws_col:80,mi=sel-na;FP("> %s\033[K\n",buf);
             if(mi>=0&&mi<nm){char*m=fm[mi],*tb=strchr(m,'\t');FP("\033[90m↵ run: %.*s\033[0m\033[K\n",tb?(int)(tb-m):(int)strlen(m),m);}

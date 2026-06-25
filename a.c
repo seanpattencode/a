@@ -729,6 +729,7 @@ static struct timespec gt0;
 static void gt_print(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     fprintf(stderr,"%ldus\n",(t.tv_sec-gt0.tv_sec)*1000000L+(t.tv_nsec-gt0.tv_nsec)/1000);}
 int main(int argc, char **argv) {
+    clock_gettime(CLOCK_MONOTONIC, &_t0);
     init_paths();
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
