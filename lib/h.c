@@ -11,7 +11,7 @@ static int cmd_h(int c,char**v){(void)c;(void)v;perf_disarm();
     for(;;){const hm*m=stk[sp];char b[B];int l=0;
         l+=snprintf(b+l,(size_t)(B-l),"\033[2J\033[H\033[1;36m%s\033[0m\n\n",ttl[sp]);
         for(int i=0;m[i].l;i++)l+=snprintf(b+l,(size_t)(B-l),"  \033[1;32m%c\033[0m  %-15s \033[90m%s\033[0m%s\n",m[i].k,m[i].l,m[i].d,m[i].s?"  \033[90m›\033[0m":"");
-        l+=snprintf(b+l,(size_t)(B-l),"\n\033[90m  key=select · esc/q=%s · \033[36m%.2fms\033[0m\n",sp?"back":"quit",_rms());
+        l+=snprintf(b+l,(size_t)(B-l),"\n\033[90m  key=select · esc/q=%s · \033[37m%.2fms\033[0m\n",sp?"back":"quit",_rms());
         (void)!write(1,b,(size_t)l);
         char ch;if(read(0,&ch,1)!=1)break;
         if(ch==27){int av=0;usleep(20000);ioctl(0,FIONREAD,&av);if(av){char d[8];(void)!read(0,d,(size_t)(av<8?av:8));continue;}}
