@@ -1147,6 +1147,14 @@ function startContinuousDebugMonitoring() {
   chrome.storage.onChanged.addListener(c=>c.pageflip&&apply(c.pageflip.newValue));
 })();
 ''',
+"clickdown.js": r'''// clickdown (SHARED) — open links on PRESS not release, for speed. Plain primary click, no mods, same-tab http(s) <a href> only.
+// Tradeoff by design (#32 act-on-press): a drag/text-select STARTING on a link navigates. Toggle chrome.storage.sync.clickdown (default ON).
+(()=>{let on=true;chrome.storage.sync.get({clickdown:true},d=>on=d.clickdown);
+chrome.storage.onChanged.addListener(c=>c.clickdown&&(on=c.clickdown.newValue));
+addEventListener('mousedown',e=>{if(on&&!e.button&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
+const a=e.target.closest&&e.target.closest('a[href]');
+if(a&&a.target!=='_blank'&&!a.hasAttribute('download')&&/^https?:/.test(a.href)){e.preventDefault();location.href=a.href;}}},true);})();
+''',
 }
 ICONS={
 "icon16.png": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAiklEQVR4nGP0WR/AQApgIkn1SNXAgsYX5BBI0Un++ffH9Xc3dj/cS9gGdwW3TXc3Tzo/1VzSjJGRkbAGGR7pJ1+eMjAwfPr5SYCdn7AGBgYGBob/DAwMDAyM//9jkUPX8OjzY1leWQYGBgF2/o+/PmJqQPf0zge70nRT3BVcjzw99h+bFYyDL/EBAI+3KYtvPAM2AAAAAElFTkSuQmCC",
@@ -1197,7 +1205,7 @@ FF={
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["pageflip.js"],
+      "js": ["pageflip.js", "clickdown.js"],
       "run_at": "document_idle"
     }
   ]
@@ -1389,6 +1397,7 @@ button:hover{background:#444}
 <label><input type=checkbox id=debugNotifications> Debug notifications</label>
 <label><input type=checkbox id=debugMode> Debug mode (console + overlay)</label>
 <label><input type=checkbox id=pageflip> Pageflip — ↓ next page / ↑ prev (one tap), ▲▼ buttons</label>
+<label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
 <div id=stat></div>
 <script src=options.js></script>
 ''',
@@ -1405,7 +1414,7 @@ $('cap').textContent = sup
     : '⚠ No Speculation Rules — prefetch fallback only';
 $('cap').className = sup ? 'ok' : 'warn';
 
-const defs = {enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true};
+const defs = {enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true};
 chrome.storage.sync.get(defs, items => {
   for (const k in defs) {
     $(k).checked = items[k];
@@ -1459,7 +1468,7 @@ CH={
   "options_ui": { "page": "options.html", "open_in_tab": true },
   "chrome_url_overrides": { "newtab": "newtab.html" },
   "content_scripts": [
-    { "matches": ["<all_urls>"], "exclude_matches": ["http://localhost:1111/*", "http://127.0.0.1:1111/*"], "js": ["instant-preload.js", "pageflip.js"], "run_at": "document_idle", "all_frames": false }
+    { "matches": ["<all_urls>"], "exclude_matches": ["http://localhost:1111/*", "http://127.0.0.1:1111/*"], "js": ["instant-preload.js", "pageflip.js", "clickdown.js"], "run_at": "document_idle", "all_frames": false }
   ]
 }
 ''',
@@ -1552,11 +1561,12 @@ chrome.runtime.onUserScriptMessage?.addListener((msg,_s,reply)=>{
 <label><input type=checkbox id=debugNotifications> Debug notifications — popup on each preload</label>
 <label><input type=checkbox id=debugMode> Debug mode — console logging + on-page overlay</label>
 <label><input type=checkbox id=pageflip> Pageflip — Down=next page, Up=prev (one tap), ▲▼ buttons</label>
+<label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
 <p><small>Changes take effect immediately, no reload.</small></p>
 <script src=options.js></script>
 ''',
 "options.js": r'''// bri-chrome options — instant-preload (prerender / debug notifications / debug mode) + pageflip. Persists in chrome.storage.sync.
-const defs={enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true};
+const defs={enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true};
 chrome.storage.sync.get(defs, items=>{
   for(const k in defs){const e=document.getElementById(k);e.checked=items[k];
     e.onchange=()=>chrome.storage.sync.set({[k]:e.checked});}
