@@ -71,9 +71,17 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
 }
 
 static FC fq[1024];int nfq;
-static int fq_get(const char*s){int b=0,bl=0;
-    for(int i=0;i<nfq;i++){int l=(int)strlen(fq[i].n);if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return !strncmp(s,"home\t",5)?0x7fffffff:strstr(s,"\tproject")?(1<<30)-atoi(s):b;}
+/* first-char index: a freq entry can only be a prefix of a line if their first chars match (case-insensit),
+ * so bucket entries by lowercased first char and scan only that bucket — provably identical result, O(bucket)
+ * not O(nfq). Most file/dir lines hit an empty bucket → instant. */
+static int fqhead[256];static int fqnext[1024];static unsigned char fqlen[1024];
+static void fq_index(void){for(int z=0;z<256;z++)fqhead[z]=-1;
+    for(int i=0;i<nfq;i++){fqlen[i]=(unsigned char)strlen(fq[i].n);int c=(unsigned char)fq[i].n[0];if(c>='A'&&c<='Z')c+=32;fqnext[i]=fqhead[c];fqhead[c]=i;}}
+static int fq_get(const char*s){int b=0,bl=0;int c=(unsigned char)s[0];if(c>='A'&&c<='Z')c+=32;
+    for(int i=fqhead[c];i>=0;i=fqnext[i]){int l=fqlen[i];if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return !strncmp(s,"home\t",5)?0x7fffffff:strstr(s,"\tproject")?(1<<30)-atoi(s):b;}
 static int ln_cmp(const void*a,const void*b){return fq_get(*(char*const*)b)-fq_get(*(char*const*)a);}
+typedef struct{char*s;int k,i;}LNK;  /* decorate-sort: fq_get is O(nfq); call it once per line, not per qsort comparison */
+static int lnk_cmp(const void*a,const void*b){const LNK*x=a,*y=b;return x->k!=y->k?y->k-x->k:x->i-y->i;}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
     perf_disarm(); init_db(); load_cfg();
@@ -85,6 +93,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);FILE*ff=fopen(fp,"r");if(ff){char ln[128];nfq=0;
         while(nfq<1024&&fgets(ln,128,ff)){char*c=strchr(ln,':');if(!c)continue;*c=0;
             snprintf(fq[nfq].n,64,"%s",ln);fq[nfq].c=atoi(c+1);nfq++;}fclose(ff);}}
+    fq_index();
     char*lines[2048];int n=0;
     for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
@@ -92,10 +101,15 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
      if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
     static char wb[32768];size_t wl=0;
-    {const char*ft=getenv("A_FILT_TAG");  /* -t TMS not -a: grouped a-<pid> sessions re-list the same windows. win view adds pane tail */
-    FILE*p=popen(ft&&strstr(ft,"win")?
-        "tmux lsw -t '"TMS"' -F '#{window_id} #W' 2>/dev/null|while read -r i w;do printf '%s\twin\t%s · %s\n' \"$w\" \"$i\" \"$(tmux capturep -pt $i -S -50 2>/dev/null|awk '/[a-z]/&&!/tokens|bypass/{gsub(/^ +| +$/,\"\");s=$0\" \"s}END{print substr(s,1,250)}')\";done"
-        :"tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
+    {const char*ft=getenv("A_FILT_TAG");int winview=ft&&strstr(ft,"win");  /* -t TMS not -a: grouped a-<pid> sessions re-list the same windows. win view adds pane tail */
+    if(winview){FILE*p=popen("tmux lsw -t '"TMS"' -F '#{window_id} #W' 2>/dev/null|while read -r i w;do printf '%s\twin\t%s · %s\n' \"$w\" \"$i\" \"$(tmux capturep -pt $i -S -50 2>/dev/null|awk '/[a-z]/&&!/tokens|bypass/{gsub(/^ +| +$/,\"\");s=$0\" \"s}END{print substr(s,1,250)}')\";done","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
+    else{/* fork-free fast path: read cached window list; a detached ≤1/s bg refresh keeps it warm so the tmux fork stays off the launch path */
+        char wc[P];snprintf(wc,P,"%s/win_cache.txt",DDIR);size_t cl;char*cw=readf(wc,&cl);
+        if(cw){if(cl>32767)cl=32767;memcpy(wb,cw,cl);wb[cl]=0;wl=cl;free(cw);}
+        else{FILE*p=popen("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
+        struct stat ws;if(stat(wc,&ws)!=0||time(0)-ws.st_mtime>=1){if(fork()==0){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
+            char cm[P*2];snprintf(cm,sizeof cm,"tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null>'%s.%ld'&&mv '%s.%ld' '%s'",wc,(long)getpid(),wc,(long)getpid(),wc);
+            execlp("sh","sh","-c",cm,(char*)0);_exit(0);}}}}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static const char*acts[]={"home\tmenu","tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",
@@ -107,7 +121,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         "m tier default\tm\tdefault tier","m tier fast\tm\tpriority/fast tier","m tier flex\tm\tflex tier (cheap, slow)",0};
     for(int i=0;acts[i]&&n<2048;i++)lines[n++]=(char*)acts[i];}
     if(!n){puts("Empty cache");free(raw);return 1;}
-    qsort(lines,(size_t)n,sizeof*lines,ln_cmp);
+    {static LNK lk[2048];for(int i=0;i<n;i++){lk[i].s=lines[i];lk[i].k=fq_get(lines[i]);lk[i].i=i;}
+     qsort(lk,(size_t)n,sizeof*lk,lnk_cmp);for(int i=0;i<n;i++)lines[i]=lk[i].s;}
     {char*f=getenv("A_FILT_TAG"),*t;int j=0;
     if(f){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))){
         char tg[64];char*t2=strchr(t+1,'\t');size_t tl=t2?(size_t)(t2-t-1):strlen(t+1);
