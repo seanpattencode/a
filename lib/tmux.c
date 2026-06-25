@@ -152,10 +152,10 @@ static void tm_ensure_conf(void) {
     if (access("/data/data/com.termux",F_OK)==0)
         fprintf(f,"set-environment -g CLAUDE_CODE_TMPDIR \"%s/.tmp\"\n",HOME);
     if (cc) fprintf(f, "set -s copy-command \"%s\"\n", cc);
-    {const char*cm[]={"copy-mode","copy-mode-vi",NULL};
+    {const char*cm[]={"copy-mode","copy-mode-vi",NULL};const char*wn="#{?#{e|>:#{client_width},100},#{pane_height},3}";
     for(int i=0;cm[i];i++){ cc?fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel \"%s\"\n",cm[i],cc)
         :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);
-        fprintf(f,"bind -T %1$s PPage send -X -N '#{pane_height}' scroll-up\nbind -T %1$s NPage send -X -N '#{pane_height}' scroll-down\nbind -T %1$s WheelUpPane send -X -N '#{pane_height}' scroll-up\nbind -T %1$s WheelDownPane send -X -N '#{pane_height}' scroll-down\n",cm[i]);}}
+        fprintf(f,"bind -T %1$s PPage send -X -N '#{pane_height}' scroll-up\nbind -T %1$s NPage send -X -N '#{pane_height}' scroll-down\nbind -T %1$s WheelUpPane send -X -N '%2$s' scroll-up\nbind -T %1$s WheelDownPane send -X -N '%2$s' scroll-down\n",cm[i],wn);}}
     fclose(f);
     char uconf[P]; snprintf(uconf, P, "%s/.tmux.conf", HOME);
     char *uc = readf(uconf, NULL);
