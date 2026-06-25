@@ -45,7 +45,3 @@ a.deb
 
 # macOS Finder metadata
 .DS_Store
-lib/bri-ext/*.xpi
-
-# dedup: bri-chrome copy restored from bri-ext by `a bri serve` (tok cap)
-lib/bri-chrome/instant-preload.js

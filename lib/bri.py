@@ -133,9 +133,9 @@ def handle(c, addr):
             if rid in pending: pending[rid].put(m)
         except Exception: pass
         http_send(c, '200 OK'); c.close(); return
-    if method == 'GET' and path == '/bridge.js':  # frozen-shell: bri-chrome SW fetches live bridge logic here each start (see sw.js bridgeSetup) → edit lib/bri-chrome/bridge.js, no repack/re-drag
-        import os; body = b''
-        try: body = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bri-chrome', 'bridge.js'), 'rb').read()
+    if method == 'GET' and path == '/bridge.js':  # frozen-shell: bri-chrome SW fetches live bridge logic here each start (see sw.js bridgeSetup) → edit lib/briext.py, then `a bri serve`
+        import os, briext; body = b''
+        try: body = open(os.path.join(briext.OUT, 'bri-chrome', 'bridge.js'), 'rb').read()
         except Exception as e: log(f'!! /bridge.js {e}')
         log(f'>> served /bridge.js ({len(body)}b)')
         http_send(c, '200 OK', body, 'application/javascript; charset=utf-8')
@@ -177,9 +177,7 @@ def cmd_serve():
         c.close()
 
 def main(browser='none'):
-    import os  # bri-chrome/instant-preload.js is an untracked dedup copy (canonical: bri-ext/, tok cap) — restore on fresh clones; manifest content_scripts need the real file
-    _ip = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'bri-chrome', 'instant-preload.js')
-    if not os.path.exists(_ip): open(_ip, 'wb').write(open(_ip.replace('bri-chrome', 'bri-ext'), 'rb').read())
+    import briext; briext.build()  # (re)generate BOTH extensions from the single source (lib/briext.py) into adata/local/ext — this is the auto-update
     # The :1234/:1235 bridge is browser-AGNOSTIC: one server drives Firefox (bri-ext)
     # and Chrome (bri-chrome) at the same time. So `serve` launches NO browser by default — only
     # Firefox needs a managed (-marionette-free, monitor-pinned) launch via _ff_restart; Chrome is
@@ -407,10 +405,10 @@ def client(args):
         f = f'{d}/bri-{name}.log'
         print(f'+ recording → {f}\n  drive workflow in another shell with `a bri <cmd>` then Ctrl-C\n')
         os.execvp('sh', ['sh', '-c', f'tail -F -n 0 {LOG} | tee {f!r}']); return
-    if a == 'deploy':  # zero-click rebuild+install of bri-ext + Firefox restart
-        import subprocess, shutil, os, glob
-        here = os.path.dirname(os.path.abspath(__file__))
-        extdir = os.path.join(here, 'bri-ext')
+    if a == 'deploy':  # zero-click rebuild+install of the FF extension + Firefox restart
+        import subprocess, shutil, os, glob, briext
+        briext.build()  # regenerate from single source first
+        extdir = os.path.join(briext.OUT, 'bri-ext')
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi']
                               + [f for f in glob.glob(f'{extdir}/*') if not f.endswith('.xpi')])
         # Prefer Nightly profile (active one); fall back to dev/release.

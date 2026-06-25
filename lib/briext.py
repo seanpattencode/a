@@ -1,4 +1,16 @@
-/*! instant.page v5.2.0 (modified for 0ms hover) - (C) 2019-2025 Alexandre Dieulot - https://instant.page/license */
+#!/usr/bin/env python3
+"""a briext  —  ONE script that generates BOTH browser extensions (Firefox MV2 + Chrome MV3)
+into adata/local/ext/ on demand. Mirrors `a apk`: single source file, makes the folder tree.
+Shared payload (instant-preload, pageflip, icons) is defined ONCE here so the two cannot drift.
+  a briext           generate -> adata/local/ext/{bri-ext,bri-chrome}, print load paths
+  a briext verify    generate, then diff -r vs lib/bri-ext + lib/bri-chrome (proof it matches)
+Edit this file to change either extension; rerun to redeploy. Firefox xpi: a bri deploy."""
+import os,sys,base64,subprocess
+ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUT=os.path.join(ROOT,"adata/local/ext")
+
+SHARED={
+"instant-preload.js": r'''/*! instant.page v5.2.0 (modified for 0ms hover) - (C) 2019-2025 Alexandre Dieulot - https://instant.page/license */
 
 let _chromiumMajorVersionInUserAgent = null
   , _speculationRulesType
@@ -1100,3 +1112,484 @@ function startContinuousDebugMonitoring() {
     updateDebugOverlay(`Links: ${preloadableLinks.length}/${links.length} | Loaded: ${_preloadedList.size}`);
   }, 2000);
 }
+''',
+"pageflip.js": r'''// pageflip — discrete viewport paging, SHARED by both extensions (FF bri-ext + Chrome bri-chrome). Down=next, Up=prev (one tap).
+// Universal step: detects the scroll container (window, or a large inner scrollable div) and the obscured
+// top/bottom band (fixed/sticky bars) via pixel probes re-run each flip — so sticky / hide-on-scroll headers
+// never skip content, on any site. ▲▼ buttons; skips text fields; toggle chrome.storage.sync.pageflip (default on).
+// Single source: lib/briext.py generates both — edit there, then `a briext`.
+(()=>{
+  if(window.__pf)return; window.__pf=1;
+  document.documentElement.style.scrollBehavior='auto';
+  let zones=[],active=false;
+  const cx=()=>Math.round(innerWidth/2);
+  // px obscured by pinned fixed/sticky bars from the top edge (fromTop=1) or bottom (0): first pixel showing flowing content.
+  const obsc=fromTop=>{const lim=Math.floor(innerHeight*0.5);for(let i=0;i<lim;i+=4){const y=fromTop?i:innerHeight-1-i;
+    const st=document.elementsFromPoint(cx(),y);if(!st.length)return i;
+    const t=st.find(e=>!(e.classList&&e.classList.contains('__pf_btn')));if(!t)return i;
+    const p=getComputedStyle(t).position;if(p!=='fixed'&&p!=='sticky')return i; // flowing content → edge is clear
+    // fixed/sticky obscures only if scrollable content sits behind it (else it's an in-flow sticky block, not a bar)
+    if(!st.slice(st.indexOf(t)+1).some(e=>{const q=getComputedStyle(e).position;return q!=='fixed'&&q!=='sticky';}))return i;}return 0;};
+  // scroll container: window (null) unless the document itself doesn't scroll and a large inner element does.
+  const scr=()=>{const se=document.scrollingElement||document.documentElement;if(se&&se.scrollHeight>se.clientHeight+2)return null;
+    let best=null,ba=0;for(const el of document.querySelectorAll('div,main,section,article,ul')){if(el.scrollHeight<=el.clientHeight+8)continue;
+      if(!/(auto|scroll)/.test(getComputedStyle(el).overflowY))continue;const r=el.getBoundingClientRect(),a=r.width*r.height;if(a>ba){ba=a;best=el;}}return best;};
+  const go=d=>{const s=scr();if(s){s.scrollBy(0,d*Math.max(1,s.clientHeight-8));return;}scrollBy(0,d*Math.max(1,innerHeight-obsc(1)-obsc(0)));};
+  const onkey=e=>{const t=e.target;if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable))return;
+    if(e.key==='ArrowDown'||(e.key===' '&&!e.shiftKey)){go(1);e.preventDefault();}else if(e.key==='ArrowUp'||(e.key===' '&&e.shiftKey)){go(-1);e.preventDefault();}};
+  const mk=(l,d,b)=>{const e=document.createElement('div');e.textContent=l;e.className='__pf_btn';
+    e.style.cssText=`position:fixed;right:12px;bottom:${b}px;width:52px;height:52px;z-index:2147483647;display:flex;align-items:center;justify-content:center;font:26px sans-serif;background:#000a;color:#fff;border-radius:11px;user-select:none;cursor:pointer`;
+    e.addEventListener('pointerdown',ev=>{go(d);ev.preventDefault();});document.body.appendChild(e);return e;};
+  const apply=on=>{
+    if(on&&!active){active=true;addEventListener('keydown',onkey,true);zones=[mk('▲',-1,74),mk('▼',1,14)];}
+    else if(!on&&active){active=false;removeEventListener('keydown',onkey,true);zones.forEach(z=>z.remove());zones=[];}};
+  chrome.storage.sync.get({pageflip:true},d=>apply(d.pageflip));
+  chrome.storage.onChanged.addListener(c=>c.pageflip&&apply(c.pageflip.newValue));
+})();
+''',
+}
+ICONS={
+"icon16.png": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAiklEQVR4nGP0WR/AQApgIkn1SNXAgsYX5BBI0Un++ffH9Xc3dj/cS9gGdwW3TXc3Tzo/1VzSjJGRkbAGGR7pJ1+eMjAwfPr5SYCdn7AGBgYGBob/DAwMDAyM//9jkUPX8OjzY1leWQYGBgF2/o+/PmJqQPf0zge70nRT3BVcjzw99h+bFYyDL/EBAI+3KYtvPAM2AAAAAElFTkSuQmCC",
+"icon48.png": "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAIAAADYYG7QAAACN0lEQVR4nO3Yv2sTYRgH8O97uUviXWiS0vYuDaJBbQcHDWmsSBUHUQSHglLcxE2cBUG6SsFJnKSI+AcUY13EyR9LnJpqhdKkifgjTY2hsWlyIbnrncN1qInwwhXfZni/08vz3PvwgRfuPY5cSU2ilyLsN6AzHEQLB9HCQbRwEC0cRAsH0cJBtHAQLRxEi7iXzQMHBqZGriXUeNgfbprNXDU/n3+ZKS/uDygWPDwzcV+R5K321spGNujrS6jxhBp/+vlZanWeNUggwt3kHUWSX315Pbv0xLRMAPGhk9Pj924ev/Hx11Jhs+BysrttpyPj0UC0WC8+/jTraABkyoup1ReEkKvHJt2NdQ86pSUBvP3x3rKt3fU3398BGNMSHuJhCjoaOgIgV8111Iv1om7qsigPByJMQRFFA1DWK92tSrMCQFM0diBR8Hg9XgC6oXd3G4YOICAp7ECS4HUWpm10dw3L2P0MC5BhtZ2FSKTuriRIANpWix3ItLZb2y0Ayr/OxTmservBDgRgrV4CoCpDHXVCyKA8CKBYX2MKylZzAEbDIx31WF/M7/Fvtmrr+jpTULr0AcD5g+dE4a8X4MVDFwCkS2nbtpmCFn5m8r8LqqzePnFLFHYuxInomcuxS6ZlzmVT7sYCIK5/6Q0HIg/OzgR9wVq79rX2rd8fjgailm09XHjkXCCsQQBCvtD10amkNtbvDzcMfXljeS77fKWadT1wr6D/kZ77hOUgWjiIFg6ihYNo6TnQH7GDr3b+0FoyAAAAAElFTkSuQmCC",
+"icon128.png": "iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAIAAABMXPacAAAGxUlEQVR4nO2cbWxTVRjHz73t1hdW2rVbV9gYONq9dLxubICDL0ZJVGIwJsYgEOMbISQmhoQPJibETDEaFYIxfjVK0BAFzSAaxA2MTAgDBuLkrevWsbKOjXV9XXvb64d9uT01W3t7L88ZPr9v55+eJ0/6y05P7zkdt/nYFoLAwUM38H8HBQCDAoBBAcCgAGBQADAoABgUAAwKAAYFAIMCgEEBwKAAYFAAMCgAGBQADAoABgUAgwKAQQHAoABgUAAwKAAYFAAMCgAGBQCDAoBBAcCgAGBQADAoABgUAAwKAAYFAIMCgEEBwKAAYFAAMCgAGBQADAoABgUAgwKAQQHAoABgUAAwKAAYFAAMCgAGBQCDAoBBAcCgAGC00A3kR7Wpeo2jqcFaX1lSadWX6jR6kaSjyVggFhic9PWOXr04cjGUCEO3mQfcXPm3lc0VTS/VvVhvrZv5ZYlUsmuo63DfkfH4g4fTWIHMAQFGrfGtpt1tCx/PfUpMiH3R+2WX76x6XSkF60uQWWfev6F9kakqr1kGrWFP89sVxorvbhxVqTGlYFqATqNrb9v3n+/+3fBwf9A7mZjkOd6mt9aWusw6M/WabQ1bQ4nQyf6fH0qzMmFawJsrXlsyfwkVdvq6jt783hcakoYcxzXZV+1wb68xPybNX1/+6j/jNzzBfrVblQ2729AGa/2mxU9Jk2Q6uf/CR5/2HKTefUKIKIo9I5f3nNn7m69TmhfxRbtW7lS91wJgV8ArjTuo5MClQ+eGu2eYIqSFA5cOXQn0SsN6a926BWuV708hGBXgsjjdtgZp8sfwubNDv886URTFg5c/n0pNScMtzucU7k85GBWwacmT0qFIxMN93+Y4937s/qmB09Kk0eauLKlUrDlFYVEAz/HrF6yXJtfH/vaFfLlX+MV7iko2VrYp0JkKsCjAZXGadfOlybm7My392Xgnvf6IX5qscTQr0JkKsChgedkyKrkyejXfIr2j16RDl8Vp0BoKaksdWBRQa3VJh1EhOpS175yVmw9uSYc8x7sszkI7UwEWBVBfvgaCgyIR8y3iDXrpsubFBTSlFswJ0PJah7FCmgxHhmXUGc78DCCELDItkt+WajAnoNxQznGcNBmJBmTUiSQjkWRUmtiN5QV1pg7MCSgz2KhkYmpCXqngVFA6LDeUyaujKswJoDaghJDg1KS8UsFEhoD5xfTjUhZgTkBJUQmVxISYvFLUxJLieTJ7UhPmBGTv1uNCXF4pSoCG0xRrimW2pRrMCdDwGioRREFeqVQ6RSVFPHPnH8wJ0HL0e5RKp+WVSom0AC0KmB1u9pfIriXm/X1OdZgTIKTpBUfDy2xSw9GrWUruaqYec0CA7HUje2IynZRXSj2YExBN0ptOg0bmU0xj5oZKSAuJFAqYjXAyRCXGIpkCDJkT2byyyJyAicznB4SQ7As/OVKqK82sPCGvjqowJyAQHaUSq84qow5HuFK9JbOynId6asOcgLH4GPU57JjnkFHHZrAV8UXS5F50pKDO1IE5AaIoDoUzzr+qTAtl1Kky0dcgvMEB+W2pBnMCCCF3JjJuElabqrVZzydmxWlZSiWeoKegttSBRQF9433SoZbXOvM/zl1ma5QOI8modxL/AnKjN+sORJN9dV4VijXFjWVuaXLt/rW0KPOZkqqwKOBeZIS6hrWxckNeFdY6WvUavTTpHj6vQGcqwKIAQkjXUMaPW6pMlSvLV+Q+fXPNM9JhIpXo9v+pTGdKw6iAXwdOU5vR7e6XudyelLY4mqmLvacHO2Ufq6kNowLG4w86fV3SpK609oXa52edaNaZd6/aJU1SYurY7R8V7U5JGBVACPmm70g8lXEYucO9jVpbKKx6a3vbPps+415Fh+eEP+uOEDuwK2A8Pv7V9a+lCUe4nSveeHfdO0stNdSL9Vr9szVPH3riM+pWnT/iz/1eOwjMHdFJ6fCcbLS5N2TeLG91tLQ6WgLRwJ2gJ5wIa3mt3Wh3WZzZB+4xIfbhhY+ZXf2nYVoAIeSTngM6jb4l63K53Wi3G+0zTIwJsfe632f553nTsLsETSOkhfbzH/xw67iYz3nuYGhwz5m9f41dV68xpZgDv5SfxmVxbnNvXW1fNfNmdCw+dvz2Tx2eE0LWnRQ2mTMCpllYsmCto7XR5q4yVZXqLXqNXkgL4WTEH/F7Jvp7Aj1XAlezb6OwzBwT8OjB+mfAIw8KAAYFAIMCgEEBwKAAYFAAMCgAGBQADAoABgUAgwKAQQHAoABgUAAwKAAYFAAMCgAGBQCDAoBBAcCgAGBQADAoABgUAAwKAAYFAPMvG5/baVXmjx8AAAAASUVORK5CYII=",
+}
+FF={
+"manifest.json": r'''{
+  "manifest_version": 2,
+  "name": "a-bridge",
+  "version": "0.9",
+  "description": "HTTP long-poll bridge for `a` automation. The SINGLE poll connection lives in background.js (one connection, not tab-throttled); content.js runs dispatched commands per-frame. Deps: Firefox Nightly + xpinstall.signatures.required=false in user.js.",
+  "permissions": [
+    "<all_urls>",
+    "storage",
+    "notifications",
+    "tabs",
+    "activeTab",
+    "webNavigation"
+  ],
+  "options_ui": {"page": "options.html"},
+  "user_scripts": {"api_script": "api.js"},
+  "browser_action": {"default_title": "bri-ext", "default_popup": "options.html", "default_icon": {"16":"icon16.png","48":"icon48.png"}},
+  "icons": {"16":"icon16.png","48":"icon48.png","128":"icon128.png"},
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "a-bridge@seanpatten",
+      "strict_min_version": "115.0"
+    }
+  },
+  "background": {"scripts": ["background.js"]},
+  "chrome_url_overrides": {"newtab": "newtab.html"},
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["instant-preload.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["pageflip.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}''',
+"background.js": r'''// a-bridge background — owns the SINGLE poll connection to the bridge. Previously every
+// content-script frame polled independently; two failures forced this redesign:
+//   1) Firefox caps persistent connections per server at 6. On Google sites every frame's
+//      poll is CSP-routed through here as a held connection, so >6 frames (Gmail main +
+//      its many subframes + other Google tabs) saturate the 6 slots — the target frame's
+//      poll never registers, so it can POST a hello but never RECEIVE a command. ONE
+//      background-owned poll = one connection, no saturation.
+//   2) Firefox throttles timers in background/unfocused tabs, starving a content-script
+//      poll loop. The persistent background page is NOT tab-throttled.
+// Flow: background long-polls; each command is fanned out to every frame of every tab via
+// tabs.sendMessage (message handlers fire even in throttled tabs); each frame's reply is
+// POSTed to /resp with the command id. open/screenshot are handled HERE (no fan-out).
+const POLL = 'http://127.0.0.1:1234/poll', RESP = 'http://127.0.0.1:1234/resp';
+const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(d)}).catch(()=>{});
+
+// open+focus a tab — deduped so a broadcast opens ONE tab (or focuses an existing one).
+// Match by NORMALIZED url (origin+path, no trailing slash / query / hash): real pages mutate their
+// URL (Yahoo /quote/ACN → /quote/ACN/, ?p=…), and exact-match would miss the prefetched tab → dupes.
+const _opening = new Map();
+const _norm = u => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/,''); }
+                     catch (e) { return u.split(/[?#]/)[0].replace(/\/+$/,''); } };
+function openTab(url, bg) {            // bg:true → load in background; dedup only the find-or-create,
+  const key = _norm(url);             // activate PER-CALL so a foreground flip always focuses even if a bg prefetch is in flight
+  if (!_opening.has(key)) _opening.set(key, (async () => {
+    const hit = (await browser.tabs.query({})).find(t => t.url && _norm(t.url) === key);
+    const tab = hit || await browser.tabs.create({url, active:false});
+    setTimeout(() => _opening.delete(key), 3000);
+    return tab.id;
+  })());
+  const p = _opening.get(key);
+  return bg ? p.then(id => ({id, focused:false}))
+            : p.then(async id => { await browser.tabs.update(id, {active:true}); return {id, focused:true}; });
+}
+
+// execute one command: open/screenshot run here; everything else fans out to all frames.
+async function run(cmd) {
+  const id = cmd.id;
+  if (cmd.action === 'open') {
+    try { return post({id, src:'background', ok:true, value: await openTab(cmd.url, cmd.bg)}); }
+    catch (e) { return post({id, src:'background', error:String(e)}); }
+  }
+  if (cmd.action === 'screenshot') {
+    try { return post({id, src:'background', ok:true, value: await browser.tabs.captureVisibleTab(null, {format: cmd.format||'png'})}); }
+    catch (e) { return post({id, src:'background', error:String(e)}); }
+  }
+  if (cmd.action === 'close') {   // close the tab matching cmd.url (deck flip) or the active tab; privileged → must live here
+    try { const ts = await browser.tabs.query(cmd.url ? {} : {active:true, currentWindow:true});
+      const t = cmd.url ? ts.find(x => x.url && _norm(x.url) === _norm(cmd.url)) : ts[0];
+      if (t) await browser.tabs.remove(t.id);
+      return post({id, src:'background', ok:true, value:{closed: t ? t.id : null}}); }
+    catch (e) { return post({id, src:'background', error:String(e)}); }
+  }
+  const tabs = await browser.tabs.query({});
+  await Promise.all(tabs.map(async (tab) => {
+    let frames = null;
+    try { frames = await browser.webNavigation.getAllFrames({tabId: tab.id}); } catch (e) {}
+    const fids = (frames && frames.length) ? frames.map(f => f.frameId) : [0];
+    await Promise.all(fids.map(async (fid) => {
+      try {
+        const out = await browser.tabs.sendMessage(tab.id, {__bri_cmd: cmd}, {frameId: fid});
+        if (out) await post({id, ...out});
+      } catch (e) { /* frame has no content script (about:/pdf/discarded) — skip silently */ }
+    }));
+  }));
+}
+
+// the one poll loop — re-registers immediately, runs the command without blocking the next poll
+async function loop() {
+  let r;
+  try { r = await fetch(POLL); } catch (e) { setTimeout(loop, 1500); return; }
+  if (r.status === 200) {
+    let cmd = null; try { cmd = await r.json(); } catch (e) {}
+    loop();                       // re-register the poll before dispatching
+    if (cmd) run(cmd).catch(()=>{});
+    return;
+  }
+  loop();                          // 204 (idle) → poll again
+}
+loop();
+post({src:'background', hello:'bri-ext background poll', v:'0.9'});
+
+// internal messages from the other content scripts (instant-preload.js etc.). open/screenshot
+// kept here too so any in-page caller still works, sharing the same dedup as the poll path.
+browser.runtime.onMessage.addListener(async (msg) => {
+  if (!msg) return;
+  if (msg.a === 'fetch') {
+    const r = await fetch(msg.url, msg.opts || {});
+    return {status: r.status, body: r.status === 200 ? await r.json() : null};
+  }
+  if (msg.action === 'open') return openTab(msg.url);
+  if (msg.action === 'screenshot')
+    return browser.tabs.captureVisibleTab(null, {format: msg.format || 'png'});
+  if (msg.type === 'preload-debug') {
+    const { debugNotifications } = await browser.storage.sync.get({debugNotifications: false});
+    if (!debugNotifications) return;
+    const d = msg.data, u = d.url.length > 60 ? d.url.slice(0,57)+'...' : d.url;
+    const nid = `preload-${Date.now()}`;
+    browser.notifications.create(nid, {type:'basic', iconUrl:'icon48.png', title:'Page Preloaded',
+      message:u, contextMessage:`${d.triggerType} | ${d.duration}ms${d.method?' | '+d.method:''}${d.attemptedPrerender?' (prerender)':''}`});
+    setTimeout(() => browser.notifications.clear(nid), 3000);
+  }
+});
+''',
+"content.js": r'''// a-bridge content script — runs in EVERY frame (all_frames). It no longer polls; the
+// SINGLE poll connection lives in background.js (see why there). This script just executes
+// one dispatched command in ITS OWN frame and returns the result to the background, which
+// POSTs it. Receiving a runtime message fires even in throttled/background tabs, so this
+// path works where a content-script poll loop would be starved.
+(() => {
+  const $ = s => document.querySelector(s);
+  const dispatch = async (m) => {
+    try {
+      switch (m.action) {
+        case 'navigate': if (self === top) top.location = m.url; return {ok:true};
+        case 'click':    $(m.sel).click(); return {ok:true};
+        case 'type':     { let e=$(m.sel);
+                           if (!e.isContentEditable && e.tagName==='DIV')
+                             e = e.querySelector('[contenteditable]') || e;
+                           e.focus();
+                           if (e.isContentEditable) document.execCommand('insertText',false,m.text);
+                           else e.value = m.text;
+                           e.dispatchEvent(new InputEvent('input',{bubbles:true,data:m.text,inputType:'insertText'}));
+                           return {ok:true}; }
+        case 'keys':     { const e=$(m.sel)||document.activeElement; e.focus();
+                           (Array.isArray(m.keys)?m.keys:[m.keys]).forEach(k=>{
+                             ['keydown','keyup'].forEach(t=>e.dispatchEvent(new KeyboardEvent(t,{key:k,bubbles:true,cancelable:true}))); });
+                           return {ok:true}; }
+        case 'text':     return {ok:true, value:$(m.sel).innerText};
+        case 'html':     return {ok:true, value:document.documentElement.outerHTML.slice(0,200000)};
+        case 'find':     { const need=(m.text||'').toLowerCase().trim();
+                           const sel=m.sel||'button, [role="button"], a, [tabindex]:not([tabindex="-1"])';
+                           const hits=[];
+                           const walk=root=>{
+                             for(const el of root.querySelectorAll(sel)){
+                               const t=((el.innerText||el.textContent||'')+' '+(el.getAttribute('aria-label')||'')).toLowerCase();
+                               if(!need||t.includes(need)) hits.push(el);
+                             }
+                             for(const el of root.querySelectorAll('*')) if(el.shadowRoot) walk(el.shadowRoot);
+                           };
+                           walk(document);
+                           if(m.click&&hits.length) hits[0].click();
+                           return {ok:true, value:{n:hits.length, first:(hits[0]?(hits[0].innerText||hits[0].getAttribute('aria-label')||'').trim().slice(0,80):null)}}; }
+        case 'eval':     { let c=m.code; try{if(window.trustedTypes&&trustedTypes.createPolicy){const tt=window._abp||(window._abp=trustedTypes.createPolicy('abridge',{createScript:s=>s}));c=tt.createScript(m.code);}}catch(e){}
+                           return {ok:true, value:await (async()=>eval(c))()}; }
+        case 'wait':     await new Promise(r=>setTimeout(r,m.ms||500)); return {ok:true};
+        case 'url':      return {ok:true, value:location.href};
+        default: return {error:'unknown action: '+m.action};
+      }
+    } catch (e) { return {error:String(e)}; }
+  };
+  // Background fans each command here as {__bri_cmd}. Return the tagged result; background POSTs it.
+  browser.runtime.onMessage.addListener((msg) => {
+    if (msg && msg.__bri_cmd) return dispatch(msg.__bri_cmd).then(out => ({src: location.href, ...out}));
+    // not ours → return undefined so other listeners (preload-debug etc.) still see it
+  });
+})();
+''',
+"api.js": r'''// bri-ext apiScript — exposes bridge_fetch to each registered userscript.
+// Routes HTTP through background (CSP-exempt) so the userscript can talk to
+// 127.0.0.1:1234 even when page CSP's connect-src would block window.fetch.
+// This is the GM_xmlhttpRequest equivalent, simplified to one call.
+browser.userScripts.onBeforeScript.addListener((script) => {
+  script.defineGlobals({
+    bridge_fetch: async (url, opts) =>
+      browser.runtime.sendMessage({a: 'fetch', url, opts: opts || {}}),
+  });
+});
+''',
+"options.html": r'''<!doctype html><meta charset=utf-8><title>bri-ext</title>
+<style>
+body{font:15px system-ui;width:380px;margin:0;padding:14px;background:#000;color:#fff}
+#cap{padding:.6em;border-radius:4px;margin-bottom:.6em;font-weight:600;color:#000}
+.ok{background:#2c2}.warn{background:#fa3}
+#live{white-space:pre-wrap;font:13px/1.5 ui-monospace,monospace;background:#000;color:#5f5;border:1px solid #555;padding:.6em;border-radius:4px;margin:.5em 0}
+label{display:block;margin:.7em 0;cursor:pointer;font-size:15px}
+input[type=checkbox]{width:1.3em;height:1.3em;accent-color:#2c2;vertical-align:-3px;margin-right:.5em}
+button{font:14px system-ui;padding:.3em .8em;background:#333;color:#fff;border:1px solid #666;border-radius:4px;cursor:pointer;float:right}
+button:hover{background:#444}
+#stat{color:#5f5;font-size:13px;min-height:1.2em;margin-top:.4em}
+</style>
+<div id=cap class=warn></div>
+<button id=refresh>↻ refresh</button>
+<div id=live>checking…</div>
+<label><input type=checkbox id=enablePrerender> Enable prerender (full page load)</label>
+<label><input type=checkbox id=debugNotifications> Debug notifications</label>
+<label><input type=checkbox id=debugMode> Debug mode (console + overlay)</label>
+<label><input type=checkbox id=pageflip> Pageflip — ↓ next page / ↑ prev (one tap), ▲▼ buttons</label>
+<div id=stat></div>
+<script src=options.js></script>
+''',
+"options.js": r'''const $ = id => document.getElementById(id);
+// Firefox has no Speculation Rules API (libxul.so: 0 'speculation_rules' strings
+// — not in Gecko at all, not just behind a pref). Always falls back to
+// <link rel=prefetch>; for true prerender use a Chromium browser.
+const sup = HTMLScriptElement.supports?.('speculationrules');
+const isFF = navigator.userAgent.includes('Firefox');
+$('cap').textContent = sup
+  ? '✓ Speculation Rules supported — full prerender available'
+  : isFF
+    ? '⚠ Firefox: no Speculation Rules API (not implemented in Gecko yet — no about:config flag). Using <link rel=prefetch> fallback, which is the best Firefox offers.'
+    : '⚠ No Speculation Rules — prefetch fallback only';
+$('cap').className = sup ? 'ok' : 'warn';
+
+const defs = {enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true};
+chrome.storage.sync.get(defs, items => {
+  for (const k in defs) {
+    $(k).checked = items[k];
+    $(k).onchange = e => chrome.storage.sync.set({[k]: e.target.checked}, () => {
+      $('stat').textContent = `${k} = ${e.target.checked}`;
+    });
+  }
+});
+
+const probe = `({host:location.host, ready:document.readyState,
+  inst: typeof _delayOnHover === 'number',
+  preloaded: typeof _preloadedList !== 'undefined' ? _preloadedList.size : null,
+  prefetch: document.querySelectorAll('link[rel=prefetch]').length,
+  specrules: document.querySelectorAll('script[type=speculationrules]').length})`;
+const refresh = () => chrome.tabs.query({active:true, currentWindow:true}, ([t]) => {
+  if (!t) return;
+  chrome.tabs.executeScript(t.id, {code: probe}, ([r]) => {
+    if (chrome.runtime.lastError || !r) {
+      $('live').textContent = `${t.url||'<no url>'}\n(extension can't access this URL — chrome://, about:, file://, or AMO)`;
+      return;
+    }
+    $('live').textContent = `${r.host} [${r.ready}]
+ext loaded:  ${r.inst ? '✓' : '✗ (script not active here)'}
+preloaded:   ${r.preloaded ?? '—'} urls this session
+link[rel=prefetch]:     ${r.prefetch}
+script[type=specrules]: ${r.specrules}`;
+  });
+});
+refresh();
+$('refresh').onclick = refresh;
+''',
+"newtab.html": r'''<!doctype html><style>html,body{margin:0;height:100vh;background:#000}</style><script src="newtab.js"></script>''',
+"newtab.js": r'''// Ctrl+T pins keyboard focus to the urlbar no matter what the page does (bugzilla 1411465);
+// a tabs.CREATEd tab focuses content. NTO's trick: spawn the real tab, remove this shell.
+browser.tabs.getCurrent().then(t => {
+  browser.tabs.create({url: 'http://localhost:1111/', index: t.index + 1});
+  browser.tabs.remove(t.id);
+});
+''',
+}
+CH={
+"manifest.json": r'''{
+  "manifest_version": 3,
+  "name": "bri-chrome",
+  "version": "0.8",
+  "description": "Chrome extension: a-bridge automation (HTTP long-poll :1234, eval via userScripts world) + instant-preload (hover prerender) + pageflip (Space/Down=next, Shift+Space/Up=prev). Toggle preload/pageflip in options. Dev hot-reload: a extload reload.",
+  "permissions": ["storage", "notifications", "userScripts"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "sw.js" },
+  "action": { "default_title": "bri-chrome — click for options" },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "chrome_url_overrides": { "newtab": "newtab.html" },
+  "content_scripts": [
+    { "matches": ["<all_urls>"], "exclude_matches": ["http://localhost:1111/*", "http://127.0.0.1:1111/*"], "js": ["instant-preload.js", "pageflip.js"], "run_at": "document_idle", "all_frames": false }
+  ]
+}
+''',
+"sw.js": r'''// bri-chrome service worker: open options on toolbar click + show debug-preload notifications (gated by the debugNotifications toggle).
+// dev hot-reload: hold a WS to the a-server; "reload" -> reload focused tab + the extension (picks up edited files on disk). Trigger: a extload reload.
+(function r(){let ws;try{ws=new WebSocket('ws://localhost:1111/extreload')}catch(e){return setTimeout(r,3000)}
+  ws.onmessage=e=>{if(e.data!=='reload')return;chrome.tabs.query({active:true,currentWindow:true},t=>{if(t[0])chrome.tabs.reload(t[0].id);chrome.runtime.reload()})};
+  ws.onclose=ws.onerror=()=>setTimeout(r,3000);})();
+chrome.action.onClicked.addListener(()=>chrome.runtime.openOptionsPage());
+chrome.runtime.onMessage.addListener(msg=>{
+  if(msg.type!=='preload-debug')return;
+  chrome.storage.sync.get({debugNotifications:false},({debugNotifications})=>{
+    if(!debugNotifications)return;
+    const d=msg.data, u=d.url.length>60?d.url.slice(0,57)+'...':d.url, id='preload-'+Date.now();
+    chrome.notifications.create(id,{type:'basic',iconUrl:'icon48.png',title:'Page Preloaded',
+      message:u,contextMessage:`${d.triggerType} | ${d.duration}ms${d.method?' | '+d.method:''}${d.attemptedPrerender?' (prerender)':''}`});
+    setTimeout(()=>chrome.notifications.clear(id),3000);
+  });
+});
+// a-bridge: register a USER_SCRIPT-world poller (bridge.js) with an eval-capable CSP — MV3 analog of bri-ext's
+// browser.userScripts path. Isolated world bypasses page CSP so eval works on chatgpt/claude. Needs Developer Mode (on for unpacked).
+async function bridgeSetup(){
+  if(!chrome.userScripts)return; // user-scripts toggle off
+  // Frozen-shell: --load-extension is dead in branded Chrome (2026, Canary incl.) and repack+re-drag
+  // to change logic is the scream. So this package is a stable SHELL — at each SW start it pulls the
+  // LIVE bridge logic from the bri server (:1234 /bridge.js) and registers it as a userScripts CODE
+  // string (userScripts is MV3's one sanctioned dynamic-code path). Edit lib/bri-chrome/bridge.js →
+  // `a extload reload` (restarts SW → re-fetch) = new logic live, no repack, no re-drag. Same path
+  // works once the shell is frozen (packed / policy force-install), since logic isn't in the crx.
+  // Falls back to the packaged bridge.js when the server is down (last-known-good).
+  let js=[{file:'bridge.js'}];
+  try{const r=await fetch('http://127.0.0.1:1234/bridge.js');if(r.ok){const code=await r.text();if(code.trim())js=[{code}];}}catch(e){}
+  try{
+    await chrome.userScripts.configureWorld({csp:"script-src 'self' 'unsafe-eval'",messaging:true});
+    await chrome.userScripts.unregister().catch(()=>{});
+    await chrome.userScripts.register([{id:'bri-bridge',matches:['<all_urls>'],js,runAt:'document_end',world:'USER_SCRIPT',allFrames:true}]);
+  }catch(e){console.error('bri bridge register failed',e);}
+}
+bridgeSetup();chrome.runtime.onStartup.addListener(bridgeSetup);
+// newtab → :1111 is handled entirely by newtab.html (iframe-embeds the a-server). Deliberately NOT in
+// the SW: a webNavigation/tabs redirect needs those permissions, and adding permissions to an unpacked
+// extension needs a HARD reload (chrome.runtime.reload / `a extload reload` won't grant them) — which
+// breaks the zero-touch reload workflow. Iframe in newtab.html needs no perms and no worker.
+// bridge.js networking + screenshot proxy (CSP-exempt SW context). USER_SCRIPT-world messages arrive on onUserScriptMessage.
+chrome.runtime.onUserScriptMessage?.addListener((msg,_s,reply)=>{
+  if(msg&&msg.a==='fetch'){fetch(msg.url,msg.opts||{}).then(async r=>reply({status:r.status,body:r.status===200?await r.json():null})).catch(e=>reply({status:0,error:String(e)}));return true;}
+  if(msg&&msg.action==='screenshot'){chrome.tabs.captureVisibleTab({format:msg.format||'png'}).then(reply).catch(()=>reply(null));return true;}
+});
+''',
+"bridge.js": r'''// a-bridge poller for Chrome — runs in the userScripts USER_SCRIPT world: DOM access + eval allowed
+// (sw.js configures that world's CSP with 'unsafe-eval', so eval works on chatgpt/claude despite page CSP).
+// Networking is routed through the service worker (chrome.runtime.sendMessage) to bypass page connect-src.
+// MV3 analog of lib/bri-ext/content.js; same /poll + /resp protocol, same dispatch actions.
+(()=>{
+  const POLL='http://127.0.0.1:1234/poll',RESP='http://127.0.0.1:1234/resp',$=s=>document.querySelector(s);
+  const xfer=(url,opts)=>chrome.runtime.sendMessage({a:'fetch',url,opts:opts||{}});
+  const dispatch=async m=>{try{switch(m.action){
+    case 'navigate':top.location=m.url;return{ok:true};
+    case 'click':$(m.sel).click();return{ok:true};
+    case 'type':{let e=$(m.sel);if(!e.isContentEditable&&e.tagName==='DIV')e=e.querySelector('[contenteditable]')||e;e.focus();
+      if(e.isContentEditable)document.execCommand('insertText',false,m.text);else e.value=m.text;
+      e.dispatchEvent(new InputEvent('input',{bubbles:true,data:m.text,inputType:'insertText'}));return{ok:true};}
+    case 'keys':{const e=$(m.sel)||document.activeElement;e.focus();
+      (Array.isArray(m.keys)?m.keys:[m.keys]).forEach(k=>['keydown','keyup'].forEach(t=>e.dispatchEvent(new KeyboardEvent(t,{key:k,bubbles:true,cancelable:true}))));return{ok:true};}
+    case 'text':return{ok:true,value:$(m.sel).innerText};
+    case 'html':return{ok:true,value:document.documentElement.outerHTML.slice(0,200000)};
+    case 'find':{const need=(m.text||'').toLowerCase().trim(),sel=m.sel||'button,[role="button"],a,[tabindex]:not([tabindex="-1"])',hits=[];
+      const walk=root=>{for(const el of root.querySelectorAll(sel)){const t=((el.innerText||el.textContent||'')+' '+(el.getAttribute('aria-label')||'')).toLowerCase();if(!need||t.includes(need))hits.push(el);}
+        for(const el of root.querySelectorAll('*'))if(el.shadowRoot)walk(el.shadowRoot);};
+      walk(document);if(m.click&&hits.length)hits[0].click();
+      return{ok:true,value:{n:hits.length,first:hits[0]?(hits[0].innerText||hits[0].getAttribute('aria-label')||'').trim().slice(0,80):null}};}
+    case 'eval':return{ok:true,value:await(async()=>eval(m.code))()};
+    case 'wait':await new Promise(r=>setTimeout(r,m.ms||500));return{ok:true};
+    case 'url':return{ok:true,value:location.href};
+    case 'screenshot':return{ok:true,value:await chrome.runtime.sendMessage({action:'screenshot',format:m.format})};
+    default:return{error:'unknown action: '+m.action};
+  }}catch(e){return{error:String(e)};}};
+  const post=d=>xfer(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:location.href,...d})});
+  post({hello:location.href,title:document.title,source:'chrome-userscript',v:'0.8'});
+  const loop=async()=>{try{const r=await xfer(POLL);const c=r&&r.status===200?r.body:null;
+    if(c){const out=await dispatch(c);await post({id:c.id,...out});}loop();}catch(e){setTimeout(loop,2000);}};
+  loop();
+})();
+''',
+"options.html": r'''<!doctype html><meta charset=utf-8><title>bri-chrome options</title>
+<!-- bri-chrome (Chrome): instant-preload + pageflip, no automation bridge. Standalone extension — the Firefox a-bridge is separate at lib/bri-ext (no shared source). -->
+<style>body{font:15px system-ui;padding:20px;max-width:34em}label{display:flex;gap:10px;align-items:center;font-size:16px;margin:.6em 0}small{color:#666}h3{margin-bottom:.2em}</style>
+<h3>bri-chrome</h3>
+<label><input type=checkbox id=enablePrerender> Instant preload — prerender links on hover (speculation rules)</label>
+<label><input type=checkbox id=debugNotifications> Debug notifications — popup on each preload</label>
+<label><input type=checkbox id=debugMode> Debug mode — console logging + on-page overlay</label>
+<label><input type=checkbox id=pageflip> Pageflip — Down=next page, Up=prev (one tap), ▲▼ buttons</label>
+<p><small>Changes take effect immediately, no reload.</small></p>
+<script src=options.js></script>
+''',
+"options.js": r'''// bri-chrome options — instant-preload (prerender / debug notifications / debug mode) + pageflip. Persists in chrome.storage.sync.
+const defs={enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true};
+chrome.storage.sync.get(defs, items=>{
+  for(const k in defs){const e=document.getElementById(k);e.checked=items[k];
+    e.onchange=()=>chrome.storage.sync.set({[k]:e.checked});}
+});
+''',
+"newtab.html": r'''<!doctype html><meta charset=utf-8>
+<!-- New tab = the a-server :1111 page, embedded. No redirect, no service worker, no extra permissions
+     — those three were what kept breaking (NTP self-redirect blocked; new perms need a hard reload).
+     a-server sends no X-Frame-Options/CSP so it frames fine. FROZEN file: change the new tab by editing
+     the :1111 page server-side, never here. -->
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{display:block;border:0;width:100vw;height:100vh}</style>
+<iframe src="http://localhost:1111/" allow="clipboard-read; clipboard-write"></iframe>
+<script>addEventListener('load',()=>{var f=document.querySelector('iframe');f.focus();})</script>
+''',
+}
+
+def build():
+    tg={"bri-ext":FF,"bri-chrome":CH}
+    for name,files in tg.items():
+        d=os.path.join(OUT,name); os.makedirs(d,exist_ok=True)
+        for fn,c in {**files,**SHARED}.items(): open(os.path.join(d,fn),"w",encoding="utf-8").write(c)
+        for fn,b in ICONS.items(): open(os.path.join(d,fn),"wb").write(base64.b64decode(b))
+    return [os.path.join(OUT,n) for n in tg]
+
+def main(argv):
+    paths=build()
+    if "verify" in argv[1:]:
+        for p in paths:
+            old=os.path.join(ROOT,"lib",os.path.basename(p))
+            print("=== diff -r %s  (-old +new) ==="%os.path.basename(p))
+            subprocess.run(["diff","-r",old,p])
+        print("\nclean diff above (besides intended dedup) = generated extensions match the working ones")
+    for p in paths: print("\u2713 "+p)
+    print("load: a extload "+paths[1]+"   |   firefox xpi: a bri deploy")
+
+if __name__=='__main__': main(sys.argv)   # `import briext; briext.build()` regenerates without running main

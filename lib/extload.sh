@@ -4,7 +4,8 @@
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # reload: poke the FIFO -> a-server WS -> bri-chrome service worker reloads the extension + focused tab (zero-click, like `a bri deploy` for Firefox).
 [ "$1" = reload ] && { [ -p /tmp/a_extreload.fifo ] && timeout 0.4 sh -c 'printf x>/tmp/a_extreload.fifo' 2>/dev/null && echo "↻ chrome reloaded" || echo "x no chrome connected — load it via 'a extload' + focus a browser tab to wake the worker"; exit 0; }
-D=$(realpath "${1:-$ROOT/lib/bri-chrome}") || exit 1
+[ -n "$1" ] || python3 "$ROOT/lib/briext.py" >/dev/null 2>&1  # regenerate from single source (lib/briext.py)
+D=$(realpath "${1:-$ROOT/adata/local/ext/bri-chrome}") || exit 1
 [ -f "$D/manifest.json" ] || { echo "x no manifest.json in $D"; exit 1; }
 C=$(command -v google-chrome-canary||command -v google-chrome-unstable||command -v google-chrome-stable||command -v chromium)||{ echo "x no chrome found"; exit 1; }
 printf %s "$D" | { wl-copy 2>/dev/null || xclip -sel clip 2>/dev/null; } || true
