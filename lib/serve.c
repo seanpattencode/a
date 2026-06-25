@@ -647,17 +647,69 @@ static void _handle(int c){
             char cmd[B];ssh_pre(cmd,B,pw[0]?pw:NULL,opts,rp,hp);
             if(!fork()){setsid();int z=open("/dev/null",O_RDWR);if(z>=0){dup2(z,0);dup2(z,1);dup2(z,2);}execl("/bin/sh","sh","-c",cmd,(char*)NULL);_exit(127);}
             for(int t=0;t<60&&!up;t++){int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)break;up=connect(s,(void*)&la,sizeof la)==0;close(s);if(!up)usleep(100000);}}
-        if(!up){_sresp(c,504,"text/plain","tunnel failed (is `a serve` up on that device?)",47);return;}
+        if(!up){_sresp(c,504,"text/plain","offline",7);return;}
+        {int s=socket(AF_INET,SOCK_STREAM,0),good=0;   /* ssh -L opens the local port even if remote :1111 is dead — verify it actually answers */
+         if(s>=0){struct timeval tv={3,0};setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
+            if(connect(s,(void*)&la,sizeof la)==0){const char g[]="GET / HTTP/1.0\r\nHost:x\r\n\r\n";(void)!write(s,g,sizeof g-1);char b[16];good=read(s,b,sizeof b)>0;}close(s);}
+         if(!good){static const char NS[]="<body style='background:#000;color:#f88;font:15px ui-monospace,monospace;padding:20px'>\xe2\x9c\x97 not serving \xe2\x80\x94 no <code>a serve</code> on :1111 of this device.<br><br><a style=color:#6cf href=/dev>\xe2\x86\x90 devices</a>";_sresp(c,503,"text/html",NS,sizeof NS-1);return;}}
         char url[64];snprintf(url,64,"http://127.0.0.1:%d/",lp);_redir(c,url);return;}
-    if(!strncmp(req,"GET /dev",8)&&(req[8]==' '||req[8]=='?'||req[8]=='\r')){   /* device list — each opens its own served html over ssh */
+/* timeout-bounded ssh serve-check → "serving"|"noserve"|"offline" (timeout 7 = hard cap so a stalled ssh handshake can't hang the row) */
+#define DEV_RCHECK " 'bash -c \"exec 3<>/dev/tcp/127.0.0.1/1111\" >/dev/null 2>&1 && echo SERVING || echo NOSERVE' 2>/dev/null"
+#define DEV_OPTS "-oStrictHostKeyChecking=accept-new -oConnectTimeout=4 -oNumberOfPasswordPrompts=1"
+    if(!strncmp(req,"GET /dev/probeall",17)){   /* ALL hosts in parallel server-side (one request → bypasses the browser's ~6-conn/origin limit) */
+        char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
+        signal(SIGCHLD,SIG_DFL);   /* serve runs SIGCHLD=IGN; restore so waitpid() works for these children */
+        struct{int fd;pid_t pid;char nm[128];}S[64];int ns=0;
+        for(int i=0;i<n&&ns<64;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");if(!nm)continue;
+            const char*ho=kvget(&kv,"Host"),*pw=kvget(&kv,"Password");char host[256],pwd[256];
+            snprintf(host,256,"%s",ho?ho:"");snprintf(pwd,256,"%s",pw?pw:"");if(!host[0])continue;
+            int pfd[2];if(pipe(pfd))continue;pid_t p=fork();
+            if(p==0){close(pfd[0]);char hp[256],rp[8];ssh_parse(host,hp,rp);
+                char cmd[B];int l=snprintf(cmd,B,"timeout 7 ");l+=ssh_pre(cmd+l,B-l,pwd[0]?pwd:NULL,DEV_OPTS,rp,hp);
+                snprintf(cmd+l,(size_t)(B-l),DEV_RCHECK);
+                char out[64]="";FILE*pp=popen(cmd,"r");if(pp){(void)!fgets(out,64,pp);pclose(pp);}
+                const char*r=strstr(out,"SERVING")?"serving":strstr(out,"NOSERVE")?"noserve":"offline";
+                (void)!write(pfd[1],r,strlen(r));close(pfd[1]);_exit(0);}
+            close(pfd[1]);S[ns].fd=pfd[0];S[ns].pid=p;snprintf(S[ns].nm,128,"%s",nm);ns++;}
+        char*h=malloc(1<<15);int hl=snprintf(h,1<<15,"{");
+        for(int i=0;i<ns;i++){char o[32]="";int r=(int)read(S[i].fd,o,31);o[r>0?r:0]=0;close(S[i].fd);waitpid(S[i].pid,NULL,0);
+            hl+=snprintf(h+hl,(size_t)((1<<15)-hl),"%s\"%s\":\"%s\"",i?",":"",S[i].nm,o[0]?o:"offline");}
+        hl+=snprintf(h+hl,(size_t)((1<<15)-hl),"}");
+        _sresp(c,200,"application/json",h,hl);free(h);return;}
+    if(!strncmp(req,"GET /dev/probe",14)){   /* single host (no tunnel): serving | noserve | offline — for on-click */
+        char nm[64]="";{const char*q=strstr(req,"?h=");if(q){q+=3;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)nm[i]=q[i];nm[i]=0;}}
+        char host[256]="",pw[256]="";
+        if(nm[0]){char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
+            for(int i=0;i<n;i++){kvs_t kv=kvfile(paths[i]);const char*k=kvget(&kv,"Name");
+                if(k&&!strcmp(k,nm)){const char*h2=kvget(&kv,"Host"),*p=kvget(&kv,"Password");if(h2)snprintf(host,256,"%s",h2);if(p)snprintf(pw,256,"%s",p);break;}}}
+        if(!host[0]){_sresp(c,200,"text/plain","offline",7);return;}
+        char hp[256],rp[8];ssh_parse(host,hp,rp);
+        char cmd[B];int l=snprintf(cmd,B,"timeout 7 ");l+=ssh_pre(cmd+l,B-l,pw[0]?pw:NULL,DEV_OPTS,rp,hp);
+        snprintf(cmd+l,(size_t)(B-l),DEV_RCHECK);
+        char out[64]="";FILE*pp=popen(cmd,"r");if(pp){(void)!fgets(out,64,pp);pclose(pp);}   /* SIGCHLD=IGN: gate on output, not exit code */
+        const char*r=strstr(out,"SERVING")?"serving":strstr(out,"NOSERVE")?"noserve":"offline";
+        _sresp(c,200,"text/plain",r,(int)strlen(r));return;}
+    if(!strncmp(req,"GET /dev",8)&&(req[8]==' '||req[8]=='?'||req[8]=='\r')){   /* device list — each opens its own served html over ssh; status dots probe on click / check-all */
         char*h=malloc(1<<16);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
         int hl=snprintf(h,1<<16,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>devices</title>"
-            "<style>body{margin:0;background:#000;color:#ddd;font:15px ui-monospace,monospace;padding:14px}h1{font-size:15px;color:#6cf;margin:2px 0 12px;font-weight:normal}a.d{display:block;color:#9cf;text-decoration:none;padding:13px 14px;margin:7px 0;border:1px solid #233;border-radius:7px;background:#0a0a0a}a.d:active{background:#13320f;color:#9f9}small{color:#666;font-size:12px}</style>"
-            "<h1>devices &mdash; open each one's own <code>a serve</code> over ssh</h1>");
+            "<style>body{margin:0;background:#000;color:#ddd;font:15px ui-monospace,monospace;padding:14px}h1{font-size:15px;color:#6cf;margin:2px 0 8px;font-weight:normal}"
+            "button{background:#0b0f1a;color:#9cf;border:1px solid #2a3a5a;border-radius:6px;padding:7px 14px;font:13px ui-monospace,monospace;cursor:pointer}#cs{color:#666;font-size:12px;margin-left:8px}"
+            "a.d{display:flex;align-items:center;gap:10px;color:#9cf;text-decoration:none;padding:12px 14px;margin:7px 0;border:1px solid #233;border-radius:7px;background:#0a0a0a}a.d:active{background:#13320f}a.d.dead{opacity:.45}"
+            ".st{flex:none;width:11px;height:11px;border-radius:50%%;background:#3a3a3a}.st.wait{background:#46c}.st.ok{background:#3c3}.st.no{background:#c93}.st.off{background:#333}"
+            ".nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}small{color:#666;font-size:12px}.msg{flex:none;color:#888;font-size:12px}</style>"
+            "<h1>devices &mdash; open each one's own <code>a serve</code> over ssh</h1>"
+            "<div><button onclick=checkAll()>\xe2\x9f\xb3 check all</button><span id=cs></span></div>");
         char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
-        for(int i=0;i<n&&hl<(1<<16)-512;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
-            if(!nm)continue;hl+=snprintf(h+hl,(size_t)((1<<16)-hl),"<a class=d href=\"/dev/open?h=%s\">%s <small>%s</small></a>",nm,nm,ho?ho:"");}
+        for(int i=0;i<n&&hl<(1<<16)-1024;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
+            if(!nm)continue;hl+=snprintf(h+hl,(size_t)((1<<16)-hl),"<a class=d data-h=\"%s\" href=# onclick=\"op(this);return false\"><span class=st></span><span class=nm>%s <small>%s</small></span><span class=msg></span></a>",nm,nm,ho?ho:"");}
         if(n<=0)hl+=snprintf(h+hl,(size_t)((1<<16)-hl),"<p><small>no devices &mdash; add with <code>a ssh add</code></small></p>");
+        hl+=snprintf(h+hl,(size_t)((1<<16)-hl),"%s",
+            "<script>function set(el,s,t){el.querySelector('.st').className='st '+s;el.querySelector('.msg').textContent=t||'';el.classList.toggle('dead',s=='no'||s=='off')}"
+            "function paint(el,t){set(el,t=='serving'?'ok':t=='noserve'?'no':'off',t=='serving'?'\\u25cf serving':t=='noserve'?'\\u2717 not serving':'\\u00b7 offline')}"
+            "function op(el){set(el,'wait','\\u27f3');fetch('/dev/probe?h='+encodeURIComponent(el.dataset.h)).then(function(r){return r.text()}).then(function(t){"
+            "if(t=='serving'){set(el,'ok','opening\\u2026');location.href='/dev/open?h='+encodeURIComponent(el.dataset.h)}else paint(el,t)},function(){set(el,'off','\\u00b7 error')})}"
+            "function checkAll(){var rows=[].slice.call(document.querySelectorAll('a.d')),cs=document.getElementById('cs');rows.forEach(function(el){set(el,'wait','\\u27f3')});cs.textContent=' checking '+rows.length+'\\u2026';"
+            "fetch('/dev/probeall').then(function(r){return r.json()}).then(function(m){rows.forEach(function(el){paint(el,m[el.dataset.h]||'offline')});cs.textContent=' done'},function(){cs.textContent=' error'})}</script>");
         _sresp(c,200,"text/html",h,hl);free(h);return;}
     if(!strncmp(req,"GET /stream/s",13)){
         char dev[64]="";{const char*q=strstr(req,"?dev=");if(q){q+=5;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)dev[i]=q[i];dev[i]=0;}}
