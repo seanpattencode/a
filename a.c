@@ -136,7 +136,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
     else
         _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
-    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; [[ -d /data/data/com.termux/files/usr/bin ]]&&ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; }; _perf_chk build
+    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
         T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q $_QT"
@@ -154,7 +154,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
     ;;
 check) _PT=${EPOCHREALTIME/./};_tok_chk
     _abin; _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
-    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; [[ -d /data/data/com.termux/files/usr/bin ]]&&ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; }
+    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
     _checkers
     if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] 2>/dev/null; exit 1
@@ -732,6 +732,7 @@ int main(int argc, char **argv) {
     init_paths();
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
+    if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);  /* multicall: `h` symlink = one-keypress home */
     if (argc < 2) { if(isatty(1)&&getenv("TMUX")){CWD(w);execlp("tmux","tmux","new-window","-c",w,"a","i",(char*)0);} perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
