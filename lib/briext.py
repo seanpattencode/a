@@ -1147,13 +1147,19 @@ function startContinuousDebugMonitoring() {
   chrome.storage.onChanged.addListener(c=>c.pageflip&&apply(c.pageflip.newValue));
 })();
 ''',
-"clickdown.js": r'''// clickdown (SHARED) — open links on PRESS not release, for speed. Plain primary click, no mods, same-tab http(s) <a href> only.
-// Tradeoff by design (#32 act-on-press): a drag/text-select STARTING on a link navigates. Toggle chrome.storage.sync.clickdown (default ON).
-(()=>{let on=true;chrome.storage.sync.get({clickdown:true},d=>on=d.clickdown);
-chrome.storage.onChanged.addListener(c=>c.clickdown&&(on=c.clickdown.newValue));
-addEventListener('mousedown',e=>{if(on&&!e.button&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
-const a=e.target.closest&&e.target.closest('a[href]');
-if(a&&a.target!=='_blank'&&!a.hasAttribute('download')&&/^https?:/.test(a.href)){e.preventDefault();location.href=a.href;}}},true);})();
+"clickdown.js": r'''// clickdown (SHARED) — act on PRESS not release. clickdown(ON): <a href> nav on mousedown (reversible, Back undoes).
+// clickdown2(opt-in): also replay click on press for [role=link]/row/listitem/gridcell/article/option (Gmail rows, Keep notes);
+//   EXCLUDES button/input/select/textarea/editable/menuitem/checkbox/switch — commits (Delete/Archive/Send) stay on release. #32
+(()=>{let on=true,ag=false;
+chrome.storage.sync.get({clickdown:true,clickdown2:false},d=>{on=d.clickdown;ag=d.clickdown2});
+chrome.storage.onChanged.addListener(c=>{c.clickdown&&(on=c.clickdown.newValue);c.clickdown2&&(ag=c.clickdown2.newValue)});
+addEventListener('mousedown',e=>{const t=e.target;if(!on||e.button||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey||!t.closest)return;
+const a=t.closest('a[href]');
+if(a&&a.target!=='_blank'&&!a.hasAttribute('download')&&/^https?:/.test(a.href)){e.preventDefault();location.href=a.href;return}
+if(!ag||t.closest('button,[role=button],input,select,textarea,[contenteditable],[role=menuitem],[role=checkbox],[role=switch],summary')||!t.closest('a[href],[role=link],[role=row],[role=listitem],[role=gridcell],[role=article],[role=option]'))return;
+e.preventDefault();const s=ev=>{ev.detail!==1337&&(ev.preventDefault(),ev.stopImmediatePropagation())};
+addEventListener('click',s,true);setTimeout(()=>removeEventListener('click',s,true),400);
+t.dispatchEvent(new MouseEvent('click',{view:window,bubbles:true,cancelable:true,detail:1337,clientX:e.clientX,clientY:e.clientY}))},true)})()
 ''',
 }
 ICONS={
@@ -1398,6 +1404,7 @@ button:hover{background:#444}
 <label><input type=checkbox id=debugMode> Debug mode (console + overlay)</label>
 <label><input type=checkbox id=pageflip> Pageflip — ↓ next page / ↑ prev (one tap), ▲▼ buttons</label>
 <label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
+<label><input type=checkbox id=clickdown2> Clickdown+ — also press-open JS/role=link nav (Amazon/Google); buttons excluded</label>
 <div id=stat></div>
 <script src=options.js></script>
 ''',
@@ -1414,7 +1421,7 @@ $('cap').textContent = sup
     : '⚠ No Speculation Rules — prefetch fallback only';
 $('cap').className = sup ? 'ok' : 'warn';
 
-const defs = {enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true};
+const defs = {enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true, clickdown2:false};
 chrome.storage.sync.get(defs, items => {
   for (const k in defs) {
     $(k).checked = items[k];
@@ -1459,7 +1466,7 @@ CH={
 "manifest.json": r'''{
   "manifest_version": 3,
   "name": "bri-chrome",
-  "version": "0.8",
+  "version": "1.1",
   "description": "Chrome extension: a-bridge automation (HTTP long-poll :1234, eval via userScripts world) + instant-preload (hover prerender) + pageflip (Space/Down=next, Shift+Space/Up=prev). Toggle preload/pageflip in options. Dev hot-reload: a extload reload.",
   "permissions": ["storage", "notifications", "userScripts"],
   "host_permissions": ["<all_urls>"],
@@ -1505,6 +1512,8 @@ async function bridgeSetup(){
     await chrome.userScripts.configureWorld({csp:"script-src 'self' 'unsafe-eval'",messaging:true});
     await chrome.userScripts.unregister().catch(()=>{});
     await chrome.userScripts.register([{id:'bri-bridge',matches:['<all_urls>'],js,runAt:'document_end',world:'USER_SCRIPT',allFrames:true}]);
+    // also inject into ALREADY-OPEN http tabs so the bridge goes live with NO manual reload (idempotent via window.__bri)
+    for(const t of await chrome.tabs.query({})) if(t.url&&/^https?:/.test(t.url)) chrome.userScripts.execute({target:{tabId:t.id},js,world:'USER_SCRIPT'}).catch(()=>{});
   }catch(e){console.error('bri bridge register failed',e);}
 }
 bridgeSetup();chrome.runtime.onStartup.addListener(bridgeSetup);
@@ -1522,7 +1531,7 @@ chrome.runtime.onUserScriptMessage?.addListener((msg,_s,reply)=>{
 // (sw.js configures that world's CSP with 'unsafe-eval', so eval works on chatgpt/claude despite page CSP).
 // Networking is routed through the service worker (chrome.runtime.sendMessage) to bypass page connect-src.
 // MV3 analog of lib/bri-ext/content.js; same /poll + /resp protocol, same dispatch actions.
-(()=>{
+(()=>{if(self!==top||window.__bri)return;window.__bri=1;  // top frame only + idempotent (SW re-injects into open tabs → no reload)
   const POLL='http://127.0.0.1:1234/poll',RESP='http://127.0.0.1:1234/resp',$=s=>document.querySelector(s);
   const xfer=(url,opts)=>chrome.runtime.sendMessage({a:'fetch',url,opts:opts||{}});
   const dispatch=async m=>{try{switch(m.action){
@@ -1562,11 +1571,12 @@ chrome.runtime.onUserScriptMessage?.addListener((msg,_s,reply)=>{
 <label><input type=checkbox id=debugMode> Debug mode — console logging + on-page overlay</label>
 <label><input type=checkbox id=pageflip> Pageflip — Down=next page, Up=prev (one tap), ▲▼ buttons</label>
 <label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
+<label><input type=checkbox id=clickdown2> Clickdown+ — also press-open JS/role=link nav (Amazon/Google); buttons excluded</label>
 <p><small>Changes take effect immediately, no reload.</small></p>
 <script src=options.js></script>
 ''',
 "options.js": r'''// bri-chrome options — instant-preload (prerender / debug notifications / debug mode) + pageflip. Persists in chrome.storage.sync.
-const defs={enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true};
+const defs={enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true, clickdown2:false};
 chrome.storage.sync.get(defs, items=>{
   for(const k in defs){const e=document.getElementById(k);e.checked=items[k];
     e.onchange=()=>chrome.storage.sync.set({[k]:e.checked});}
@@ -1591,7 +1601,54 @@ def build():
         for fn,b in ICONS.items(): open(os.path.join(d,fn),"wb").write(base64.b64decode(b))
     return [os.path.join(OUT,n) for n in tg]
 
+def chrome_install(chrome='google-chrome-unstable'):
+    # zero-drag Chrome install: pack a signed crx and force-install it via enterprise policy off a local
+    # file:// update manifest (Chrome blocks http extension downloads as insecure; file:// is trusted).
+    # Survives restart. Reuses the key → stable ID. Content scripts (clickdown/pageflip/preload) work from
+    # this alone; the automation bridge additionally needs the per-profile "Allow user scripts" toggle.
+    import subprocess,hashlib,json
+    build()
+    ext=os.path.join(OUT,'bri-chrome'); pem=os.path.join(OUT,'bri-chrome.pem'); crx=os.path.join(OUT,'bri-chrome.crx')
+    upd=os.path.join(OUT,'bri-chrome-update.xml')
+    cmd=[chrome,'--pack-extension='+ext,'--user-data-dir=/tmp/_abrpack','--no-first-run']
+    if os.path.exists(pem): cmd.append('--pack-extension-key='+pem)
+    subprocess.run(cmd,timeout=90,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    der=subprocess.run(['openssl','rsa','-in',pem,'-pubout','-outform','DER'],capture_output=True).stdout
+    ID=''.join(chr(97+int(c,16)) for c in hashlib.sha256(der).hexdigest()[:32])
+    ver=json.load(open(os.path.join(ext,'manifest.json')))['version']
+    open(upd,'w').write(
+      "<?xml version='1.0' encoding='UTF-8'?>\n<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>\n"
+      "<app appid='%s'><updatecheck codebase='file://%s' version='%s'/></app>\n</gupdate>\n"%(ID,crx,ver))
+    pol=json.dumps({"ExtensionInstallForcelist":["%s;file://%s"%(ID,upd)],"ExtensionInstallSources":["file:///*"]})
+    subprocess.run(['sudo','mkdir','-p','/etc/opt/chrome/policies/managed'],check=True)
+    subprocess.run(['sudo','tee','/etc/opt/chrome/policies/managed/bri-chrome.json'],input=pol.encode(),stdout=subprocess.DEVNULL,check=True)
+    print("✓ force-install policy set  id=%s  crx=%d bytes"%(ID,os.path.getsize(crx)))
+    print("  -> (re)start Chrome: it auto-installs bri-chrome, no drag.   remove: a briext uninstall")
+    return ID
+
+def chrome_uninstall():
+    import subprocess
+    subprocess.run(['sudo','rm','-f','/etc/opt/chrome/policies/managed/bri-chrome.json'])
+    print("✓ removed force-install policy (restart Chrome to drop the extension)")
+
+def chrome_restart(chrome='google-chrome-canary'):
+    # Chrome can't be restarted from inside the extension (scripts can't open chrome://restart; chrome.runtime.restart is ChromeOS-only),
+    # so do it from the terminal: SIGTERM the MAIN browser process (the one with no --type=) for a clean shutdown, then relaunch w/ session restore.
+    import subprocess,time
+    for pid in subprocess.run(['pgrep','-f','chrome-canary/chrome'],capture_output=True,text=True).stdout.split():
+        try: cl=open('/proc/%s/cmdline'%pid,'rb').read().split(b'\0')
+        except OSError: continue
+        if cl and cl[0].endswith(b'chrome-canary/chrome') and b'--type=' not in b' '.join(cl): subprocess.run(['kill','-TERM',pid])
+    for _ in range(80):
+        if not subprocess.run(['pgrep','-f','chrome-canary/chrome'],capture_output=True).stdout.strip(): break
+        time.sleep(0.1)
+    subprocess.Popen([chrome,'--restore-last-session'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+    print("✓ Canary restarted (session restore) — force-install picks up the new crx on boot")
+
 def main(argv):
+    if "install" in argv[1:]: return chrome_install()
+    if "uninstall" in argv[1:]: return chrome_uninstall()
+    if "restart" in argv[1:]: return chrome_restart()
     paths=build()
     if "verify" in argv[1:]:
         for p in paths:
