@@ -734,7 +734,7 @@ int main(int argc, char **argv) {
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
     if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);  /* multicall: `h` symlink = one-keypress home */
-    if (argc < 2) { if(isatty(1)&&getenv("TMUX")){CWD(w);execlp("tmux","tmux","new-window","-c",w,"a","i",(char*)0);} perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }
+    if (argc < 2) { perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }  /* in-place; new-window ~22ms on Pi, cmd_i alt-screens */
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
     alog(acmd, wd);

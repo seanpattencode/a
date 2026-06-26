@@ -133,10 +133,10 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     struct winsize ws;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
-    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1000h\033[?1006h",16);
+    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h",24);
     char buf[256]="";int blen=0,sel=0,cfgmode=0;char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="";
     static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
-    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!system("clear");free(raw)
+    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw)
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
