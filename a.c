@@ -148,7 +148,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         _checkers
         if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] >"$ABIN/.chk" 2>/dev/null
             [ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&printf '#!/bin/sh\nhead -80 %s/.chk;exit 1' "$ABIN">"$ABIN/a"&&chmod +x "$ABIN/a"
-        else $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
+        else { $CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null || $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil; }&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
         fi
     ) >&- 2>&- &
     ;;
@@ -158,7 +158,7 @@ check) _PT=${EPOCHREALTIME/./};_tok_chk
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
     _checkers
     if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] 2>/dev/null; exit 1
-    else ok "all checkers passed"; _perf_chk check; $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt" & fi
+    else ok "all checkers passed"; _perf_chk check; { $CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null || $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil; }&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt" & fi
     ;;
 analyze) _ensure_cc;_warn_flags
     $CC $WARN $_Q --analyze -Xanalyzer -analyzer-output=text -Xanalyzer -analyzer-checker=security,unix,nullability,optin.portability.UnixAPI -Xanalyzer -analyzer-disable-checker=security.insecureAPI.DeprecatedOrUnsafeBufferHandling "$D/a.c"
@@ -429,6 +429,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/piper.c"
 #include "lib/checkin.c"
 #include "lib/pedal.c"
+#include "lib/feed.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
@@ -690,7 +691,7 @@ static const cmd_t CMDS[] = {
     {"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
+    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"feedscan",cmd_feedscan},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},{"job",cmd_job},{"jobs",cmd_job},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
