@@ -82,19 +82,55 @@ static int fq_get(const char*s){int b=0,bl=0;int c=(unsigned char)s[0];if(c>='A'
 static int ln_cmp(const void*a,const void*b){return fq_get(*(char*const*)b)-fq_get(*(char*const*)a);}
 typedef struct{char*s;int k,i;}LNK;  /* decorate-sort: fq_get is O(nfq); call it once per line, not per qsort comparison */
 static int lnk_cmp(const void*a,const void*b){const LNK*x=a,*y=b;return x->k!=y->k?y->k-x->k:x->i-y->i;}
+/* sort-cache: `a i` scores+sorts ~1100 launcher entries every launch (~0.4ms). Memoize the sorted list and
+ * reuse it until an order-affecting input changes. ai_fpr = a cheap fingerprint of every such input:
+ * i_cache + web_cache + freq_cache (mtime:size), the window-set (content hash, so the ≤1s win refresh's
+ * spurious mtime bumps don't invalidate), and the build itself (__DATE__ __TIME__, so a rebuild — i.e. any
+ * change to acts[]/this code — invalidates). Same fingerprint ⇒ identical order ⇒ skip the rescore. */
+static void ai_fpr(char*out,int os,const char*icache){
+    struct stat si={0},se={0},sf={0};char p[P];
+    stat(icache,&si);
+    snprintf(p,P,"%s/web_cache.txt",DDIR);stat(p,&se);
+    snprintf(p,P,"%s/freq_cache.txt",DDIR);stat(p,&sf);
+    unsigned wh=5381;char wcp[P];snprintf(wcp,P,"%s/win_cache.txt",DDIR);
+    size_t wl=0;char*wb=readf(wcp,&wl);if(wb){for(size_t i=0;i<wl;i++)wh=((wh<<5)+wh)^(unsigned char)wb[i];free(wb);}
+    snprintf(out,os,"%s %s|%ld:%lld|%ld:%lld|%ld:%lld|%u",__DATE__,__TIME__,
+        (long)si.st_mtime,(long long)si.st_size,(long)se.st_mtime,(long long)se.st_size,
+        (long)sf.st_mtime,(long long)sf.st_size,wh);
+}
+/* write the fingerprint (line 0) + sorted lines to one file, atomically (temp+rename → no torn read). */
+static void ai_savesorted(char**lines,int n,const char*fpr){
+    char tp[P],dp[P];snprintf(tp,P,"%s/i_sorted.txt.%ld",DDIR,(long)getpid());
+    FILE*f=fopen(tp,"w");if(!f)return;
+    fputs(fpr,f);fputc('\n',f);
+    for(int i=0;i<n;i++){fputs(lines[i],f);fputc('\n',f);}
+    if(!fclose(f)){snprintf(dp,P,"%s/i_sorted.txt",DDIR);rename(tp,dp);}else unlink(tp);
+}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
     perf_disarm(); init_db(); load_cfg();
     CWD(cwd);
     char cache[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);
-    size_t len;char*raw=readf(cache,&len);
+    char*lines[2048];int n=0;const char*ft0=getenv("A_FILT_TAG");char ai_fprbuf[256];int ai_write=0;
+    if(!ft0){  /* sort-cache fast path: reuse the memoized sorted list unless an order-affecting input changed */
+        struct stat si,ss;char sshp[P];snprintf(sshp,P,"%s/ssh",SROOT);
+        if(stat(cache,&si)==0 && !(stat(sshp,&ss)==0&&ss.st_mtime>si.st_mtime)){
+            ai_fpr(ai_fprbuf,sizeof ai_fprbuf,cache);
+            char scp[P];snprintf(scp,P,"%s/i_sorted.txt",DDIR);FILE*cf=fopen(scp,"r");
+            if(cf){char l0[256];if(fgets(l0,sizeof l0,cf)){l0[strcspn(l0,"\n")]=0;
+                if(!strcmp(l0,ai_fprbuf)){static char sbuf[1<<20];size_t sl=fread(sbuf,1,sizeof sbuf-1,cf);sbuf[sl]=0;
+                    for(char*p=sbuf,*e=sbuf+sl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}}
+            fclose(cf);}}
+    }
+    size_t len=0;char*raw=0;
+    if(!n){  /* miss / filtered view: full read + score + sort, then memoize the result (saved after first paint) */
+    raw=readf(cache,&len);
     {struct stat c,s;char d[P];snprintf(d,P,"%s/ssh",SROOT);if(raw&&!stat(cache,&c)&&!stat(d,&s)&&s.st_mtime>c.st_mtime){free(raw);raw=0;}}
     if(!raw){gen_icache();raw=readf(cache,&len);if(!raw)return 1;}
     {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);FILE*ff=fopen(fp,"r");if(ff){char ln[128];nfq=0;
         while(nfq<1024&&fgets(ln,128,ff)){char*c=strchr(ln,':');if(!c)continue;*c=0;
             snprintf(fq[nfq].n,64,"%s",ln);fq[nfq].c=atoi(c+1);nfq++;}fclose(ff);}}
     fq_index();
-    char*lines[2048];int n=0;
     for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
     {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);size_t wl;char*wr=readf(wp,&wl);
@@ -123,13 +159,15 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     if(!n){puts("Empty cache");free(raw);return 1;}
     {static LNK lk[2048];for(int i=0;i<n;i++){lk[i].s=lines[i];lk[i].k=fq_get(lines[i]);lk[i].i=i;}
      qsort(lk,(size_t)n,sizeof*lk,lnk_cmp);for(int i=0;i<n;i++)lines[i]=lk[i].s;}
+    if(!ft0){ai_fpr(ai_fprbuf,sizeof ai_fprbuf,cache);ai_write=1;}  /* re-fingerprint (i_cache may have just regenerated) + arm the deferred save */
+    }
     {char*f=getenv("A_FILT_TAG"),*t;int j=0;
     if(f){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))){
         char tg[64];char*t2=strchr(t+1,'\t');size_t tl=t2?(size_t)(t2-t-1):strlen(t+1);
         if(tl>63)tl=63;memcpy(tg,t+1,tl);tg[tl]=0;
         if(strstr(f,tg))lines[j++]=lines[i];}n=j;}}
     int m_mode=0;{char*f=getenv("A_FILT_TAG");if(f&&!strcmp(f,"m"))m_mode=1;}
-    if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
+    if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);if(ai_write)ai_savesorted(lines,n,ai_fprbuf);free(raw);return 0;}
     struct winsize ws;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
@@ -189,7 +227,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dl,dl,desc);FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+1):1,plen+blen+3);
         #undef FP
-        (void)!write(STDOUT_FILENO,fb,(size_t)fl);}
+        (void)!write(STDOUT_FILENO,fb,(size_t)fl);if(ai_write){ai_savesorted(lines,n,ai_fprbuf);ai_write=0;}}
         char ch;
         if(m_mode){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,250);
             if(pr==0)continue; if(pr<0)break;}
