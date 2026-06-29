@@ -175,7 +175,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 p+=ch?ch:1;
             }while(p<hll);}
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
-        else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s\033[0m\033[K\n",jstat);
+        else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%.2fms\033[0m\033[K\n",jstat,_rms());
         else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%.2fms\033[0m\033[K\n", _rms());
         else if(plen)FP("%s> %s\033[K\n",prefix,buf);
         else{int W=ws.ws_col?ws.ws_col:80,mi=sel-na;FP("> %s\033[K\n",buf);
