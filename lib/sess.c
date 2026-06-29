@@ -175,6 +175,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     char buf[256]="";int blen=0,sel=0,cfgmode=0;char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="";
     static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw)
+    struct timespec tk=_t0;  /* per-frame timer: first paint shows cold render (since _t0); after each key, the footer shows that keystroke's key→repaint time */
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
@@ -204,6 +205,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         int em=m_mode?(ws.ws_row>hdr_rows+3?ws.ws_row-hdr_rows-3:1):maxshow;
         int avail=em-na>0?em-na:1,ms=sel-na,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
         int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
+        double fms;{struct timespec _n;clock_gettime(CLOCK_MONOTONIC,&_n);fms=(_n.tv_sec-tk.tv_sec)*1e3+(_n.tv_nsec-tk.tv_nsec)/1e6;}
         {char fb[B*4];int fl=0;
         #define FP(f,...) fl+=snprintf(fb+fl,fl<B*4?(size_t)(B*4-fl):0,f,##__VA_ARGS__)
         FP("\033[H\033[?25l");
@@ -213,8 +215,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 p+=ch?ch:1;
             }while(p<hll);}
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
-        else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%.2fms\033[0m\033[K\n",jstat,_rms());
-        else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%.2fms\033[0m\033[K\n", _rms());
+        else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%.2fms\033[0m\033[K\n",jstat,fms);
+        else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%.2fms\033[0m\033[K\n", fms);
         else if(plen)FP("%s> %s\033[K\n",prefix,buf);
         else{int W=ws.ws_col?ws.ws_col:80,mi=sel-na;FP("> %s\033[K\n",buf);
             if(mi>=0&&mi<nm){char*m=fm[mi],*tb=strchr(m,'\t');FP("\033[90m↵ run: %.*s\033[0m\033[K\n",tb?(int)(tb-m):(int)strlen(m),m);}
@@ -230,10 +232,11 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         (void)!write(STDOUT_FILENO,fb,(size_t)fl);if(ai_write){ai_savesorted(lines,n,ai_fprbuf);ai_write=0;}}
         char ch;
         if(m_mode){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,250);
-            if(pr==0)continue; if(pr<0)break;}
+            if(pr==0){clock_gettime(CLOCK_MONOTONIC,&tk);continue;} if(pr<0)break;}
         if(read(0,&ch,1)!=1) break;
+        clock_gettime(CLOCK_MONOTONIC,&tk);  /* key arrived → time the repaint it triggers */
         int do_pick=0;
-        if(ch=='\x1b'){int av;usleep(50000);ioctl(0,FIONREAD,&av);
+        if(ch=='\x1b'){int av;ioctl(0,FIONREAD,&av);if(!av){usleep(2000);ioctl(0,FIONREAD,&av);}  /* arrow-seq bytes are already buffered → instant; only a genuine lone ESC waits 2ms (was 50ms on every arrow) */
             if(!av){if(m_mode||prefix[0]||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
             char seq[2];if(read(0,seq,1)!=1)break;
             if(seq[0]=='['){if(read(0,seq+1,1)!=1)break;

@@ -8,13 +8,16 @@ static int cmd_h(int c,char**v){(void)c;(void)v;perf_disarm();
     const hm*stk[16];const char*ttl[16];int sp=0;stk[0]=M_top;ttl[0]="a · home";
     if(!isatty(0)){for(int i=0;M_top[i].l;i++)printf("%c  %-15s%s%s\n",M_top[i].k,M_top[i].l,M_top[i].d,M_top[i].s?" ›":"");return 0;}
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSANOW,&r);
+    struct timespec tk=_t0;  /* per-frame timer: cold render on first paint, key→repaint time after each keypress */
     for(;;){const hm*m=stk[sp];char b[B];int l=0;
+        double fms;{struct timespec _n;clock_gettime(CLOCK_MONOTONIC,&_n);fms=(_n.tv_sec-tk.tv_sec)*1e3+(_n.tv_nsec-tk.tv_nsec)/1e6;}
         l+=snprintf(b+l,(size_t)(B-l),"\033[2J\033[H\033[1;36m%s\033[0m\n\n",ttl[sp]);
         for(int i=0;m[i].l;i++)l+=snprintf(b+l,(size_t)(B-l),"  \033[1;32m%c\033[0m  %-15s \033[90m%s\033[0m%s\n",m[i].k,m[i].l,m[i].d,m[i].s?"  \033[90m›\033[0m":"");
-        l+=snprintf(b+l,(size_t)(B-l),"\n\033[90m  key=select · esc/q=%s · \033[37m%.2fms\033[0m\n",sp?"back":"quit",_rms());
+        l+=snprintf(b+l,(size_t)(B-l),"\n\033[90m  key=select · esc/q=%s · \033[37m%.2fms\033[0m\n",sp?"back":"quit",fms);
         (void)!write(1,b,(size_t)l);
         char ch;if(read(0,&ch,1)!=1)break;
-        if(ch==27){int av=0;usleep(20000);ioctl(0,FIONREAD,&av);if(av){char d[8];(void)!read(0,d,(size_t)(av<8?av:8));continue;}}
+        clock_gettime(CLOCK_MONOTONIC,&tk);  /* key arrived → time the repaint it triggers */
+        if(ch==27){int av=0;ioctl(0,FIONREAD,&av);if(!av){usleep(2000);ioctl(0,FIONREAD,&av);}if(av){char d[8];(void)!read(0,d,(size_t)(av<8?av:8));continue;}}
         if(ch==27||ch=='q'||ch==3){if(sp){sp--;continue;}break;}
         if((ch=='/'||ch==' ')&&sp==0){tcsetattr(0,TCSANOW,&o);(void)!write(1,"\033[2J\033[H",7);
             char pr[B];fputs("prompt> ",stdout);fflush(stdout);
