@@ -175,7 +175,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     char buf[256]="";int blen=0,sel=0,cfgmode=0;char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="";
     static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw)
-    struct timespec tk=_t0;  /* per-frame timer: first paint shows cold render (since _t0); after each key, the footer shows that keystroke's key→repaint time */
+    struct timespec tk=_t0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since _t0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
@@ -215,8 +215,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 p+=ch?ch:1;
             }while(p<hll);}
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
-        else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%.2fms\033[0m\033[K\n",jstat,fms);
-        else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%.2fms\033[0m\033[K\n", fms);
+        else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
+        else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s %.3fms\033[0m\033[K\n",act,fms);
         else if(plen)FP("%s> %s\033[K\n",prefix,buf);
         else{int W=ws.ws_col?ws.ws_col:80,mi=sel-na;FP("> %s\033[K\n",buf);
             if(mi>=0&&mi<nm){char*m=fm[mi],*tb=strchr(m,'\t');FP("\033[90m↵ run: %.*s\033[0m\033[K\n",tb?(int)(tb-m):(int)strlen(m),m);}
@@ -240,23 +240,23 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(!av){if(m_mode||prefix[0]||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
             char seq[2];if(read(0,seq,1)!=1)break;
             if(seq[0]=='['){if(read(0,seq+1,1)!=1)break;
-                if(seq[1]=='A'){if(sel>0)sel--;}
-                else if(seq[1]=='B'){if(sel<tot-1)sel++;}
-                else if(seq[1]=='<'){int mb=0,my=0;char mc;
+                if(seq[1]=='A'){if(sel>0)sel--;act="↑";}
+                else if(seq[1]=='B'){if(sel<tot-1)sel++;act="↓";}
+                else if(seq[1]=='<'){int mb=0,my=0;char mc;act="mouse";
                     while(read(0,&mc,1)==1&&mc!=';')mb=mb*10+mc-'0';
                     while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
                     if(mc=='M'){if(!mb){int rr=my-(m_mode?3:2);if(na&&rr==0){sel=0;do_pick=1;}
                         else{int ci=top+rr-na;if(ci>=0&&ci<nm){sel=ci+na;do_pick=1;}}}
                     else if(mb==64&&sel>0){sel--;}else if(mb==65&&sel<tot-1){sel++;}}}
-            } else if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;} else if(!m_mode)break;
-        } else if(ch=='\t'){if(sel<tot-1)sel++;}
-        else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;}
+            } else if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;act="esc";} else if(!m_mode)break;
+        } else if(ch=='\t'){if(sel<tot-1)sel++;act="↓";}
+        else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;act="⌫";}
         else if(ch=='\r'||ch=='\n')do_pick=1;
-        else if(ch==7&&!cfgmode){cfgmode=1;sel=0;buf[0]=0;blen=0;(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
+        else if(ch==7&&!cfgmode){cfgmode=1;sel=0;buf[0]=0;blen=0;act="config";(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
         else if(ch==3){if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
         else if(ch==4)break;
-        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;}}
+        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;act="filter";}}
         if(do_pick&&cfgmode&&nm&&sel<nm){char fld[16]="",val[32]="",ck[24];
             sscanf(fm[sel],"%15s %31s",fld,val);snprintf(ck,24,"i_%s",fld);cfset(ck,val);load_cfg();
             buf[0]=0;blen=0;sel=0;continue;}
