@@ -724,7 +724,7 @@ static void _handle(int c){
             if(!host[0])_exit(0);
             char hp[256],port[8];ssh_parse(host,hp,port);char pre[600];
             ssh_pre(pre,600,pw[0]?pw:NULL,"-oStrictHostKeyChecking=accept-new -oConnectTimeout=6",port,hp);
-            snprintf(gc,sizeof gc,"%s 'R=${XDG_RUNTIME_DIR:-/run/user/$(id -u)};W=$(ls $R/wayland-* 2>/dev/null|grep -v lock|head -1);XDG_RUNTIME_DIR=$R WAYLAND_DISPLAY=$(basename \"$W\") grim -s 0.4 - 2>/dev/null||screencapture -x -t jpg - 2>/dev/null||DISPLAY=:0 import -window root -resize 40%% jpg:- 2>/dev/null'",pre);remote=1;}
+            snprintf(gc,sizeof gc,"%s 'R=${XDG_RUNTIME_DIR:-/run/user/$(id -u)};W=$(ls $R/wayland-* 2>/dev/null|grep -v lock|head -1);XDG_RUNTIME_DIR=$R WAYLAND_DISPLAY=$(basename \"$W\") grim -s 0.25 - 2>/dev/null|magick png:- -quality 40 jpg:- 2>/dev/null||screencapture -x -t jpg - 2>/dev/null||DISPLAY=:0 import -window root -resize 25%% jpg:- 2>/dev/null||grim -s 0.25 - 2>/dev/null'",pre);remote=1;}  /* grainy JPEG: low-bw links just work + Chrome-safe; PNG-grim is the magick-less fallback */
         if(!remote){                                            /* local sway: derive env + focused output */
             const char*rt=getenv("XDG_RUNTIME_DIR");char rtb[64];
             if(!rt||!rt[0]){snprintf(rtb,64,"/run/user/%d",(int)getuid());rt=rtb;}
@@ -735,7 +735,8 @@ static void _handle(int c){
             char ob[64]="";
             {FILE*p=popen("S=$(ls $XDG_RUNTIME_DIR/sway-ipc.*.sock 2>/dev/null|head -1);SWAYSOCK=$S swaymsg -t get_outputs 2>/dev/null|python3 -c 'import sys,json;print(next((o[\"name\"] for o in json.load(sys.stdin) if o.get(\"focused\")),\"\"))' 2>/dev/null","r");
              if(p){if(fgets(ob,64,p))ob[strcspn(ob,"\n")]=0;pclose(p);}}
-            if(ob[0])snprintf(gc,sizeof gc,"grim -o '%s' -s 0.4 -",ob);else snprintf(gc,sizeof gc,"grim -s 0.4 -");}
+            const char*J=system("command -v magick>/dev/null 2>&1")?"":" | magick png:- -quality 60 jpg:-";  /* PNG multipart blanks Chrome after ~5s; JPEG is the MJPEG-correct, 5x-smaller format. PNG fallback if no magick */
+            if(ob[0])snprintf(gc,sizeof gc,"grim -o '%s' -s 0.4 -%s",ob,J);else snprintf(gc,sizeof gc,"grim -s 0.4 -%s",J);}
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:multipart/x-mixed-replace;boundary=f\r\nCache-Control:no-store\r\n\r\n";
         if(write(c,SH,sizeof SH-1)<0)_exit(0);
         for(;;){FILE*g=popen(gc,"r");if(!g)break;
@@ -743,7 +744,7 @@ static void _handle(int c){
             while((r=fread(tb,1,sizeof tb,g))>0){if(len+r>cap){size_t nc=(len+r)*2;char*nb=realloc(buf,nc);if(!nb){free(buf);buf=NULL;break;}buf=nb;cap=nc;}memcpy(buf+len,tb,r);len+=r;}
             pclose(g);
             if(buf&&len){const char*ct=(len>=2&&(unsigned char)buf[0]==0xff&&(unsigned char)buf[1]==0xd8)?"image/jpeg":"image/png";
-                char hd[64];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:%s\r\n\r\n",ct);
+                char hd[80];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:%s\r\nContent-Length:%zu\r\n\r\n",ct,len);
                 if(write(c,hd,(size_t)hl)<0||write(c,buf,len)<0||write(c,"\r\n",2)<0){free(buf);break;}}
             free(buf);if(!len)break;}
         close(c);_exit(0);}
