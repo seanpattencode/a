@@ -526,7 +526,7 @@ static int cmd_j(int c,char**v){
     if(c>2&&!strcmp(v[2],"-q")){perf_disarm();char ln[B],ob[4096];  /* rapid entry: each line spawns a detached claude win, stays in loop */
         for(fputs("j> ",stdout),fflush(stdout);fgets(ln,B,stdin);fputs("j> ",stdout),fflush(stdout)){
             ln[strcspn(ln,"\n")]=0;if(!*ln)continue;int p[2];if(pipe(p))continue;
-            if(!fork()){dup2(p[1],1);dup2(p[1],2);close(p[0]);unsetenv("TMUX");execlp("a","a","j",ln,(char*)0);_exit(127);}
+            if(!fork()){dup2(p[1],1);dup2(p[1],2);close(p[0]);execlp("a","a","j",ln,(char*)0);_exit(127);}
             close(p[1]);int t=0,r;while(t<4095&&(r=(int)read(p[0],ob+t,(size_t)(4095-t)))>0)t+=r;ob[t]=0;
             close(p[0]);wait(0);char*w=strstr(ob,"→ tmux win");if(w){char*e=strchr(w,'\n');if(e)*e=0;}puts(w?w:"+ sent");}
         return 0;}
