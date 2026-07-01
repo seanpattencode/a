@@ -40,7 +40,7 @@ const val TMUXNEXT="S=\$(tmux list-clients -F '#{client_session}'|head -1);[ -n 
 // All a-logic shells out to the termux `a` install (the device's real terminal); the APK is a UI caller. RUN_COMMAND also cold-starts termux if it crashed. arg passed as $1 (no injection).
 fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
-companion object{init{System.loadLibrary("anative")}}
+companion object{init{System.loadLibrary("anative")};@JvmStatic var su=false}
 private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0;private var cur="$BASE/";private var loaded=false;private var onSpa=true
 private var wsOut:OutputStream?=null;private var rt:LinearLayout?=null
 private fun bubOn()=(getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any{it.service.className=="com.aios.a.BubbleService"}
@@ -73,7 +73,7 @@ if(i?.getBooleanExtra("prov",false)==true)txRun(this,"mkdir -p ~/.config/gh ~/.c
 return n!=null||i?.getBooleanExtra("prov",false)==true}
 override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);applyNav(i)}
 override fun onBackPressed(){val o=openMenu;if(w.visibility==View.VISIBLE&&w.canGoBack())w.goBack() else if(o!=null)o() else super.onBackPressed()}
-override fun onResume(){super.onResume();setup();spawn();startWd(this);if(!loaded){n=0;h.postDelayed({if(!loaded)w.loadUrl(cur)},700)};rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0)}
+override fun onResume(){val _wt=android.os.SystemClock.elapsedRealtime();super.onResume();if(!su){su=true;setup()};spawn();startWd(this);if(!loaded){n=0;h.postDelayed({if(!loaded)w.loadUrl(cur)},700)};rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0);rt?.post{android.util.Log.i("aPerf","warm: resume->frame "+(android.os.SystemClock.elapsedRealtime()-_wt)+"ms")}}
 private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}  /* always refresh: reinstall must update the UI */
 val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.deleteRecursively();ti.mkdirs();val src=File(filesDir,"terminfo.src");if(!src.exists())assets.open("terminfo.src").use{i->src.outputStream().use{o->i.copyTo(o)}}
@@ -87,7 +87,7 @@ override fun onCreate(b:Bundle?){super.onCreate(b)
 WebView.setWebContentsDebuggingEnabled(true)
 w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(this@M,"A");setBackgroundColor(Color.BLACK)
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
-webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null);if(url.startsWith("http"))loaded=true}
+webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null);if(url.startsWith("http")){loaded=true;android.util.Log.i("aPerf","cold: home painted "+(android.os.SystemClock.elapsedRealtime()-android.os.Process.getStartElapsedRealtime())+"ms after proc start")}}
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE}
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
