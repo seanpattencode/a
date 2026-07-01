@@ -7,9 +7,9 @@ static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_atta
 static void tm_ensure_sess(void){
     tm_gc();
     if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
-    /* own scope so a-ui's `a ui reload` cgroup-kill can't take tmux down (the "crash"); diag: my/tmuxlog.sh */
+    /* own scope: `a ui reload` cgroup-kill must not take tmux down; diag: my/tmuxlog.sh */
     (void)!system("{ command -v systemd-run >/dev/null 2>&1&&systemctl --user show-environment >/dev/null 2>&1&&Z='systemd-run --user --scope -q --'||Z=;"
-        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;(a snap restore >/dev/null 2>&1 &);} </dev/null >/dev/null 2>&1");}
+        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done'&&(a snap restore >/dev/null 2>&1 &);tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
