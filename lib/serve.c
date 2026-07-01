@@ -122,7 +122,7 @@ static void _html_gen(void){
                 char tag[16];memcpy(tag,p+2,(size_t)(end-p-2));tag[end-p-2]=0;
                 if(!strcmp(tag,"CMDS")){EMIT(cmds,(int)strlen(cmds));}
                 else if(!strcmp(tag,"PO")){EMIT("<option value=\"\">~ (home)</option>",(int)strlen("<option value=\"\">~ (home)</option>"));}
-                else if(!strcmp(tag,"DO")){EMIT("<option value=\"\">local</option>",(int)strlen("<option value=\"\">local</option>"));
+                else if(!strcmp(tag,"DO")){char h[64]="";gethostname(h,64);char o[128];int ll=snprintf(o,128,"<option value=\"\">local: %s</option>",h);EMIT(o,ll);
                     char gc[B];snprintf(gc,B,"grep -h '^Name:' '%s/ssh/'*.txt 2>/dev/null|sed 's/Name: //'|sort -u",SROOT);
                     FILE*df=popen(gc,"r");char dln[256];while(df&&fgets(dln,256,df)){dln[strcspn(dln,"\n")]=0;if(!dln[0])continue;
                         char o[300];int ol=snprintf(o,300,"<option>%s</option>",dln);EMIT(o,ol);}if(df)pclose(df);}
@@ -367,21 +367,21 @@ static void _handle(int c){
         int w=0;for(int i=0;i<blen;i++)if(ct[i]!='\r')ct[w++]=ct[i];            /* CRLF -> LF */
         char fp[P];snprintf(fp,P,"%s/%s",base,rel);
         {char*sl=strrchr(fp,'/');if(sl){*sl=0;mkdirp(fp);*sl='/';}}   /* create parent folders */
+        char bf[64];snprintf(bf,64,"/tmp/_b%d",(int)getpid());   /* merge base = pre-save file (what the editor loaded), not stale HEAD */
+        {size_t o=0;char*d=readf(fp,&o);FILE*b=fopen(bf,"w");if(b){if(d)(void)!fwrite(d,1,o,b);fclose(b);}free(d);}
         FILE*wf=fopen(fp,"w");int ok=0;if(wf){fwrite(ct,1,(size_t)w,wf);ok=!ferror(wf);fclose(wf);}
         char saved[512],gurl[B]="";
-        if(ok){
-            /* commit just this file to a-git, push (rebase-retry), then fetch + confirm on origin → github commit url */
-            char gc[B*2];snprintf(gc,B*2,"cd '%s'&&git add '%s'&&{ git diff --cached --quiet||git commit -q -m 'doc: %s';};"
-                "{ git push -q 2>/dev/null||{ git pull --rebase --autostash -q 2>/dev/null&&git push -q 2>/dev/null;}; };"
-                "git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo \"https://github.com/$u/commit/$(git rev-parse --short HEAD)\";}",base,rel,rel);
+        if(ok){  /* 3-way merge onto origin/main's latest, push just this file via plumbing (survives local divergence); url or ERR */
+            char gc[B*3];snprintf(gc,B*3,"cd '%s'&&F='%s';T=/tmp/_t$$;M=/tmp/_m$$;I=/tmp/_i$$;git fetch origin -q;git show origin/main:\"$F\">$T 2>/dev/null||cp '%s' $T;"
+                "if git merge-file -p \"$F\" '%s' $T>$M;then cp $M \"$F\";GIT_INDEX_FILE=$I git read-tree origin/main;GIT_INDEX_FILE=$I git update-index --add --cacheinfo 100644,$(git hash-object -w $M),\"$F\";"
+                "n=$(git commit-tree $(GIT_INDEX_FILE=$I git write-tree) -p origin/main -m \"doc: $F\");e=$(git push origin $n:main 2>&1)&&{ u=$(git config remote.origin.url);u=${u#*github.com[:/]};echo \"https://github.com/${u%%.git}/commit/$(git rev-parse --short $n)\";}||printf 'ERR %%s' \"$e\";"
+                "else echo 'ERR overlapping edit on origin — reopen & redo on latest';fi;rm -f $T $M $I '%s'",base,rel,bf,bf,bf);
             pcmd(gc,gurl,B);gurl[strcspn(gurl,"\n")]=0;
-            char ts[16];time_t tt=time(0);strftime(ts,16,"%H:%M:%S",localtime(&tt));
-            const char*hash=strrchr(gurl,'/');hash=hash?hash+1:gurl;
-            if(gurl[0])snprintf(saved,512,"✓ saved %s · verified on origin · <a href=\"%s\" target=_blank style=color:#6cf>%s</a> <span style=color:#888>(private — sign in to view)</span>",ts,gurl,hash);
-            else snprintf(saved,512,"✓ saved %s locally · ✗ NOT pushed to origin",ts);
+            char ts[16];time_t t=time(0);strftime(ts,16,"%H:%M:%S",localtime(&t));
+            if(!strncmp(gurl,"https",5)){const char*h=strrchr(gurl,'/')+1;snprintf(saved,512,"✓ %s pushed · <a href=\"%s\" style=color:#6cf>%s</a>",ts,gurl,h);}
+            else snprintf(saved,512,"✓ %s saved locally · ✗ not pushed — %s",ts,gurl[0]?gurl:"no git output");
         }else snprintf(saved,512,"✗ SAVE FAILED");
-        {char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*lf=fopen(lg,"a");
-            if(lf){if(!ok)fprintf(lf,"✗ FAIL write %s\n",rel);else if(gurl[0])fprintf(lf,"✓ saved %s · verified on origin · %s\n",rel,gurl);else fprintf(lf,"✓ saved %s LOCALLY (✗ not pushed to origin)\n",rel);fclose(lf);}}
+        {char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*l=fopen(lg,"a");if(l){fprintf(l,"save %s %s\n",rel,ok?gurl:"WRITEFAIL");fclose(l);}}
         size_t nl=0;char*nf=readf(fp,&nl);
         _docpage(c,rel,nf?nf:ct,nf?nl:(size_t)w,saved,ds);free(nf);return;}
     if(!strncmp(req,"POST /book",10)){char nm[128];_qn(req,nm);
@@ -395,6 +395,7 @@ static void _handle(int c){
         if(rename(fr,to)){_sresp(c,404,"text/plain","x",1);return;}_sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];_qn(req,nm);
         if(!nm[0]){
+            int au=!!strstr(req,"sort=author");   /* /book?sort=author → group by author */
             char bd[P];snprintf(bd,P,"%s/books",AROOT);
             static char names[4096][128];int n=0;DIR*d=opendir(bd);struct dirent*e;
             if(d){while((e=readdir(d))&&n<4096){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
@@ -406,24 +407,33 @@ static void _handle(int c){
                     int dup=0;for(int i=0;i<n;i++)if(!strcmp(names[i],bn)){dup=1;break;}
                     if(!dup&&bn[0]&&bn[0]!='.')snprintf(names[n++],128,"%s",bn);}
                 if(e2)l=e2+1;else break;}free(ix);}}
-            qsort(names,(size_t)n,128,_scmp);
+            static int idx[4096];   /* author mode sorts an index by resolved-author key (book.c) */
+            if(au){bk_resolve(names,n);g_ak=bk_ak;for(int i=0;i<n;i++)idx[i]=i;qsort(idx,(size_t)n,sizeof(int),g_akcmp);}
+            else{qsort(names,(size_t)n,128,_scmp);for(int i=0;i<n;i++)idx[i]=i;}
             int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
                 "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
                 "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:15px/1.3 system-ui}h3{color:#6cf;padding:14px 16px 6px;margin:0}"
                 ".r{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1a1a1a}.r:hover{background:#161616}"
                 ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9cf;text-decoration:none}.r.x .t{color:#5a6b7a}"
-                ".c{flex:none;color:#6a9;text-decoration:none;font-size:15px}.s{flex:none;width:48px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}</style>"
-                /* archive on press, confirm in place (no nav/reload): registered before TAPJS so stopImmediatePropagation owns a.x */
+                ".c{flex:none;color:#6a9;text-decoration:none;font-size:15px}.s{flex:none;width:48px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}"
+                ".h{position:sticky;top:0;background:#0b0b0b;color:#5af;font-weight:700;font-size:12px;letter-spacing:.09em;text-transform:uppercase;padding:16px 16px 5px;border-bottom:1px solid #1a1a1a}"
+                ".r.in{padding-left:30px}.nav{padding:4px 16px 10px;font-size:14px}.nav a{color:#789;text-decoration:none;margin-right:14px}.nav a.on{color:#6cf;font-weight:600}</style>"
                 "<script>function _ax(e){var a=e.target.closest('a.x');if(!a)return;e.preventDefault();e.stopImmediatePropagation();"
                 "if(e.type!='pointerdown')return;fetch(a.href).then(function(r){if(r.ok){a.closest('.r').style.opacity=.35;a.outerHTML='<span class=c>\xe2\x9c\x93</span>'}else a.textContent='\xe2\x9c\x97'},function(){a.textContent='\xe2\x9c\x97'})}"
-                "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true)</script>" TAPJS "<h3>books (%d)</h3>",n);
-            const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};
-            for(int i=0;i<n&&hl<cap-1024;i++){
+                "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true)</script>" TAPJS
+                "<h3>books (%d)</h3><div class=nav><a%s href=\"/book\">by name</a><a%s href=\"/book?sort=author\">by author</a></div>",
+                n,au?"":" class=on",au?" class=on":"");
+            const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};char pk[96]="";
+            for(int ii=0;ii<n&&hl<cap-1024;ii++){int i=idx[ii];
+                if(au&&strcmp(bk_ak[i],pk)){strcpy(pk,bk_ak[i]);   /* sticky author header per run */
+                    char ah[128];const char*a=bk_ad[i];int j=0;for(;a[j]&&j<120;j++)ah[j]=a[j]=='-'?' ':a[j];ah[j]=0;
+                    hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=h>%s</div>",ah);}
                 char tf[P];snprintf(tf,P,"%s/%s/output/explained.txt",bd,names[i]);int has=!access(tf,R_OK);
                 if(!has){snprintf(tf,P,"%s/%s/output/%s.txt",bd,names[i],names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
                 char xt[8]="";for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);if(!access(tf,R_OK)){snprintf(xt,8,"%s",ex[k]);break;}}
-                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><a class=\"c x\" href=\"/bookarchive?n=%s\" title=\"archive (hide)\">\xe2\x9c\x95</a><span class=s>%s</span></div>",has?"":"x",names[i],names[i],names[i],names[i],names[i],xt);}
+                char lb[360];snprintf(lb,360,"%s",names[i]);bk_mid(lb,96);
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><a class=\"c x\" href=\"/bookarchive?n=%s\" title=\"archive (hide)\">\xe2\x9c\x95</a><span class=s>%s</span></div>",has?"":"x",au?"in":"",names[i],lb,names[i],names[i],names[i],xt);}
             _sdoc(c,h,hl);free(h);return;}
         if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);

@@ -12,21 +12,17 @@ static void bk_norm(const char*a,char*o,int n){char t[12][32];int c=0;   /* alnu
         int l=0;while(*p&&isalnum((unsigned char)*p)&&l<31)t[c][l++]=(char)tolower((unsigned char)*p),p++;t[c][l]=0;if(l)c++;}
     for(int i=1;i<c;i++){char x[32];strcpy(x,t[i]);int j=i-1;for(;j>=0&&strcmp(t[j],x)>0;j--)strcpy(t[j+1],t[j]);strcpy(t[j+1],x);}
     int k=0;for(int i=0;i<c&&k<n-2;i++){for(int z=0;t[i][z]&&k<n-2;z++)o[k++]=t[i][z];if(i+1<c)o[k++]=' ';}o[k]=0;}
-/* clean authors w/o metadata: author = the ---segment RECURRING library-wide (titles unique, authors repeat); tie->last */
-static void bk_resolve(char nm[][128],int n){static char fk[4096][96],lk[4096][96];
-    for(int i=0;i<n;i++){fk[i][0]=lk[i][0]=0;const char*f=strstr(nm[i],"---");if(!f)continue;
-        const char*L=f;for(const char*q=f;(q=strstr(q,"---"));q+=3)L=q;
-        char s[96];int fl=(int)(f-nm[i]);if(fl>95)fl=95;memcpy(s,nm[i],(size_t)fl);s[fl]=0;bk_norm(s,fk[i],96);
-        const char*a=L+3;while(*a=='-')a++;bk_norm(a,lk[i],96);}
-    for(int i=0;i<n;i++){const char*f=strstr(nm[i],"---"),*L=f;int cf=0,cl=0;
-        if(!f){strcpy(bk_ad[i],"\xc2\xb7 unknown");strcpy(bk_ak[i],"~");continue;}
-        for(const char*q=f;(q=strstr(q,"---"));q+=3)L=q;
-        for(int j=0;j<n;j++){if((fk[j][0]&&!strcmp(fk[j],fk[i]))||(lk[j][0]&&!strcmp(lk[j],fk[i])))cf++;
-            if(lk[i][0]&&((fk[j][0]&&!strcmp(fk[j],lk[i]))||(lk[j][0]&&!strcmp(lk[j],lk[i]))))cl++;}
-        int useL=lk[i][0]&&(cl>=cf||!fk[i][0]);const char*r=useL?L+3:nm[i];int rl=useL?(int)strlen(r):(int)(f-nm[i]);
-        while(*r=='-'){r++;rl--;}char*key=useL?lk[i]:fk[i];
-        if(!key[0]||bk_srctag(key)){strcpy(bk_ad[i],"\xc2\xb7 unknown");strcpy(bk_ak[i],"~");}
-        else{if(rl>95)rl=95;memcpy(bk_ad[i],r,(size_t)rl);bk_ad[i][rl]=0;strcpy(bk_ak[i],key);}}}
+/* author w/o metadata: tail after last --- (title---author); but if the tail reads like a title (>4 words)
+   the name is author---title, so use the head. Same author → same segment → merges (Chernow's mixed forms). */
+static const char* bk_auth(const char*nm){const char*f=strstr(nm,"---");if(!f)return "\xc2\xb7 unknown";
+    const char*L=0;for(const char*q=nm;(q=strstr(q,"---"));q+=3)L=q;
+    const char*t=L+3;while(*t=='-')t++;int w=0;
+    for(const char*p=t;*p;){if(*p=='-'){p++;continue;}w++;while(*p&&*p!='-')p++;}
+    if(w>4){static char hd[96];int k=(int)(f-nm);if(k>95)k=95;memcpy(hd,nm,(size_t)k);hd[k]=0;return hd;}
+    return t;}
+static void bk_resolve(char nm[][128],int n){for(int i=0;i<n;i++){const char*a=bk_auth(nm[i]);
+    if(!strncmp(a,"\xc2\xb7",2)||!strncmp(a,"unknown",7)||bk_srctag(a)){strcpy(bk_ad[i],"\xc2\xb7 unknown");strcpy(bk_ak[i],"~");}
+    else{snprintf(bk_ad[i],96,"%s",a);bk_norm(a,bk_ak[i],96);}}}
 static char (*g_ak)[96];   /* set before qsort of an index[] by resolved-author key */
 static int g_akcmp(const void*pa,const void*pb){return strcmp(g_ak[*(const int*)pa],g_ak[*(const int*)pb]);}
 /* over-long names get middle-… so beginning AND end show (end-truncation would hide the title) */
