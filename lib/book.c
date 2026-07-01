@@ -74,8 +74,9 @@ static int cmd_book(int argc,char**argv){
             printf(i==cur?"\033[7m%s\033[0m\n":"%s\n",ln);}
         if(!m)printf("no match: %s\n",ft);
         int cb=0;for(int i=0;i<=cur&&i<nl;i++)if(Lb[i]>=0)cb++;
-        printf("\033[%d;1H\033[90m%d/%d  %s%s%.*s%s\033[0m\n%s",
-            rows-mr,m?cb:0,m,sm?"by-author  ":"by-name  ",(*ft||fm)?"filter:":"",cols>30?cols-30:14,ft,fm?"_":"",mn);
+        /* filter mode swaps menu→typing help: action keys (c=chat…) would type into the search, not fire, so don't show them */
+        printf("\033[%d;1H\033[90m%d/%d  %s%s%.*s\033[0m\n%s",rows-mr,m?cb:0,m,sm?"by-author  ":"by-name  ",*ft?"filter: ":"",cols>30?cols-30:14,ft,
+            fm?"\033[7;33m SEARCHING \033[0m \033[1m[Enter]\033[0m=pick  [Esc]=cancel":mn);
         fflush(stdout);
         char kc=0;if(read(0,&kc,1)!=1)break;int k=kc,ar=0;
         if(k==27){struct pollfd pf={0,POLLIN,0};   /* arrows = ESC[A/B → k/j (lone ESC stays quit/exit-filter) */

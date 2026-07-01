@@ -296,9 +296,10 @@ if __name__ == "__main__":
             alt = b / "output" / (name + ".txt")  # a book convert output
             if alt.is_file(): txt = alt
             elif (b / "source.txt").is_file(): txt = b / "source.txt"
-            else:  # no text yet — open the source (pdf/epub/docx) in the native app
-                f = next(b.glob("source.*"), None)
-                if not f: print(f"no file in {b}"); sys.exit(1)
+            else:  # no text yet — open the source in the native app; prefer .pdf, and confirm (Popen is silent → user can't tell it fired)
+                srcs = sorted(b.glob("source.*"), key=lambda p: p.suffix.lower() != ".pdf")
+                if not srcs: print(f"no file in {b}"); sys.exit(1)
+                f = srcs[0]; print(f">> opening {f.name} in native viewer ({b})")
                 subprocess.Popen(["open" if sys.platform=="darwin" else "xdg-open", str(f)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); sys.exit(0)
         IDX = ADATA / "git" / "books" / "index.txt"
         IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
