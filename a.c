@@ -476,7 +476,7 @@ static int cmd_cat(int c,char**v){perf_disarm();
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
     {char cm[B];init_db();load_cfg();CWD(wc);size_t sl=strlen(SDIR);
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
-    snprintf(cm,B,ia?"{ git -C '%1$s' grep -lI ''%2$s|sed 's|^|%1$s/|';git grep -lI ''%2$s 2>/dev/null; }":"git grep -lI ''%2$s",SDIR,ex);
+    snprintf(cm,B,ia?"{ git -C '%2$s' grep -lI ''%1$s|sed 's|^|%2$s/|';git grep -lI ''%1$s 2>/dev/null; }":"git grep -lI ''%s",ex,SDIR);
     size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,skf=0;
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
     if(fl){while((n=fread(b,1,8192,fl))>0){if(fl2+n<65536){memcpy(fb+fl2,b,n);fl2+=n;}}pclose(fl);}
