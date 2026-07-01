@@ -713,6 +713,7 @@ static void _handle(int c){
         _sresp(c,200,"text/html",h,hl);free(h);return;}
     if(!strncmp(req,"GET /stream/s",13)){
         char dev[64]="";{const char*q=strstr(req,"?dev=");if(q){q+=5;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)dev[i]=q[i];dev[i]=0;}}
+        char out[64]="";{const char*q=strstr(req,"&o=");if(q){q+=3;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)out[i]=q[i];out[i]=0;}}  /* local output: name, "all"=whole layout, or empty=focused */
         pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
         if(fp>0)return;signal(SIGCHLD,SIG_DFL);
         char gc[1024];int remote=0;
@@ -732,28 +733,33 @@ static void _handle(int c){
             {char ic[160];snprintf(ic,160,"ls %s/wayland-* 2>/dev/null|grep -v lock|head -1",rt);
              FILE*p=popen(ic,"r");char wl[128]="";if(p){if(fgets(wl,128,p))wl[strcspn(wl,"\n")]=0;pclose(p);}
              if(wl[0]){const char*b=strrchr(wl,'/');setenv("WAYLAND_DISPLAY",b?b+1:wl,1);}}
-            char ob[64]="";
-            {FILE*p=popen("S=$(ls $XDG_RUNTIME_DIR/sway-ipc.*.sock 2>/dev/null|head -1);SWAYSOCK=$S swaymsg -t get_outputs 2>/dev/null|python3 -c 'import sys,json;print(next((o[\"name\"] for o in json.load(sys.stdin) if o.get(\"focused\")),\"\"))' 2>/dev/null","r");
-             if(p){if(fgets(ob,64,p))ob[strcspn(ob,"\n")]=0;pclose(p);}}
+            char ob[64]="";if(out[0]&&strcmp(out,"all"))snprintf(ob,64,"%s",out);   /* monitor name -> that one; empty/all -> whole layout */
             const char*J=system("command -v magick>/dev/null 2>&1")?"":" | magick png:- -quality 60 jpg:-";  /* PNG multipart blanks Chrome after ~5s; JPEG is the MJPEG-correct, 5x-smaller format. PNG fallback if no magick */
             if(ob[0])snprintf(gc,sizeof gc,"grim -o '%s' -s 0.4 -%s",ob,J);else snprintf(gc,sizeof gc,"grim -s 0.4 -%s",J);}
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:multipart/x-mixed-replace;boundary=f\r\nCache-Control:no-store\r\n\r\n";
         if(write(c,SH,sizeof SH-1)<0)_exit(0);
+        char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);struct timeval t0;gettimeofday(&t0,NULL);int fn=0;   /* status -> tail adata/local/serve.log */
         for(;;){FILE*g=popen(gc,"r");if(!g)break;
             char*buf=NULL;size_t cap=0,len=0,r;char tb[65536];
             while((r=fread(tb,1,sizeof tb,g))>0){if(len+r>cap){size_t nc=(len+r)*2;char*nb=realloc(buf,nc);if(!nb){free(buf);buf=NULL;break;}buf=nb;cap=nc;}memcpy(buf+len,tb,r);len+=r;}
             pclose(g);
             if(buf&&len){const char*ct=(len>=2&&(unsigned char)buf[0]==0xff&&(unsigned char)buf[1]==0xd8)?"image/jpeg":"image/png";
                 char hd[80];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:%s\r\nContent-Length:%zu\r\n\r\n",ct,len);
-                if(write(c,hd,(size_t)hl)<0||write(c,buf,len)<0||write(c,"\r\n",2)<0){free(buf);break;}}
+                if(write(c,hd,(size_t)hl)<0||write(c,buf,len)<0||write(c,"\r\n",2)<0){free(buf);break;}
+                if(++fn==1||fn%4==0){struct timeval w;gettimeofday(&w,NULL);double el=(double)(w.tv_sec-t0.tv_sec)+(w.tv_usec-t0.tv_usec)/1e6;
+                    FILE*lf=fopen(lg,"a");if(lf){fprintf(lf,"stream %s/%s %df %.1ffps %zuKB\n",dev[0]?dev:"local",out[0]?out:"all",fn,el>0?fn/el:0,len/1024);fclose(lf);}}}
             free(buf);if(!len)break;}
         close(c);_exit(0);}
     if(!strncmp(req,"GET /stream",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
-        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=# onclick=\"if(cur)sel(cur);return false\" style=\"color:#f99;border-color:#5a2a2a\">\xe2\x96\xa0 stop</a><a data-d=local href=# onclick=\"sel('local');return false\">local</a>");
+        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=# onclick=\"if(cur)sel(cur);return false\" style=\"color:#f99;border-color:#5a2a2a\">\xe2\x96\xa0 stop</a><a data-d=local href=# onclick=\"sel('local');return false\" title=\"this machine \xc2\xb7 whole layout\">\xe2\x97\x89 %s \xc2\xb7 local</a>",DEV);
+        {FILE*p=popen("R=${XDG_RUNTIME_DIR:-/run/user/$(id -u)};S=$(ls $R/sway-ipc.*.sock 2>/dev/null|head -1);SWAYSOCK=$S swaymsg -t get_outputs 2>/dev/null|python3 -c 'import sys,json;[print(o[\"name\"]) for o in json.load(sys.stdin)]' 2>/dev/null","r");   /* enumerate local monitors -> each + "all" selectable */
+         char on[64];int no=0;if(p){while(fgets(on,64,p)&&nl<3100){on[strcspn(on,"\n")]=0;if(!on[0])continue;no++;
+             nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a class=sub data-d=\"local:%s\" href=# onclick=\"sel('local:%s');return false\">\xe2\x96\xa1 %s</a>",on,on,on);}pclose(p);}
+         if(no>1)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a class=sub data-d=local:all href=# onclick=\"sel('local:all');return false\">\xe2\x8a\x9e all monitors</a>");}
         {char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
          for(int i=0;i<n&&nl<3500;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
             if(nm)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a data-d=\"%s\" href=# onclick=\"sel('%s');return false\">%s</a>",nm,nm,nm);}}
-        char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#9cf;text-decoration:none;padding:7px 9px;border:1px solid #233;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}#b a.on{background:#13320f;color:#9f9;border-color:#2a5a2a}img{display:block;width:100vw;height:100vh;object-fit:contain;padding-left:160px;box-sizing:border-box;color:#888;font:14px ui-monospace,monospace}</style><div id=b>%s</div><img alt=\"\xe2\x86\x90 pick a device to start streaming\"><script>var img=document.querySelector('img'),cur='';function sel(d){if(cur===d){cur='';img.removeAttribute('src');img.alt='stopped \xc2\xb7 pick a device';}else{cur=d;img.src='/stream/s?dev='+encodeURIComponent(d);img.alt='starting '+d+'\xe2\x80\xa6';}document.querySelectorAll('#b a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-d')===cur)});}</script>",nav);
+        char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#9cf;text-decoration:none;padding:7px 9px;border:1px solid #233;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}#b a.on{background:#13320f;color:#9f9;border-color:#2a5a2a}#b a.sub{margin-left:14px;font-size:11px;border-left:3px solid #2a5a2a;border-radius:0 5px 5px 0;color:#8be}#st{position:fixed;bottom:10px;right:14px;display:none;color:#7d9;font:12px ui-monospace,monospace;background:#000a;padding:4px 10px;border-radius:6px;z-index:6}#st.ld{color:#9cf;animation:pl 1s infinite}@keyframes pl{50%%{opacity:.4}}img{display:block;width:100vw;height:100vh;object-fit:contain;padding-left:160px;box-sizing:border-box;color:#888;font:14px ui-monospace,monospace}</style><div id=b>%s</div><img alt=\"\xe2\x86\x90 pick a device\"><div id=st></div><script>var img=document.querySelector('img'),st=document.getElementById('st'),cur='',n=0;function P(){document.querySelectorAll('#b a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-d')===cur)})}function sel(d){if(cur===d){cur='';img.removeAttribute('src');img.onload=img.onerror=null;st.style.display='none';P();return}cur=d;n=0;st.style.display='block';st.className='ld';st.textContent='\xe2\x9f\xb3 starting '+d+'\xe2\x80\xa6';img.onload=function(){st.className='';st.textContent='\xe2\x97\x8f '+d+' \xc2\xb7 '+(++n)+' frame'+(n>1?'s':'')};img.onerror=function(){st.className='';st.textContent='\xe2\x9c\x97 failed \xc2\xb7 '+d};var sp=d.split(':');img.src='/stream/s?dev='+encodeURIComponent(sp[0])+(sp[1]?'&o='+encodeURIComponent(sp[1]):'');P()}</script>",nav);
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
         const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3]))?atoi(qw+3):-1;
