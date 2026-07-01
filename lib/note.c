@@ -21,7 +21,12 @@ static int cal_arch(const char*,CEv*);static void cal_disp(const char*,char*,siz
 static char* task_add(const char*,const char*,int);
 static void ts_human(const char*,char*,size_t);
 static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
-static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved locally");}
+static void notebox(const char*t){struct winsize w={0};ioctl(1,TIOCGWINSZ,&w);  /* echo saved text in a box → confidence it was taken as typed */
+    int mx=(w.ws_col>20?w.ws_col:60)-4,n=(int)strlen(t),bw=n<mx?n:mx;if(bw<4)bw=4;
+    printf("  ┌");for(int i=0;i<bw+2;i++)fputs("─",stdout);puts("┐");
+    for(int i=0;i<n;i+=bw)printf("  │ %-*.*s │\n",bw,bw,t+i);
+    printf("  └");for(int i=0;i<bw+2;i++)fputs("─",stdout);puts("┘");}
+static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved:");notebox(t);}
 typedef struct{char p[P];char t[2048];}GN;
 static GN*gn;static int gn_cap;
 static int gncmp(const void*a,const void*b){return strcmp(strrchr(((const GN*)a)->p,'_'),strrchr(((const GN*)b)->p,'_'));}
@@ -47,15 +52,15 @@ static int cmd_note(int argc, char **argv) {
             printf("%3d. \033[90m%-13s\033[0m %s\n",i+1,hu,gn[ix].t);}
         if(k<n)printf("    \033[90m… %d more · a n l all\033[0m\n",n-k);return 0;}
     if(argc<=2){int n=0;DIR*d=opendir(dir);if(d){struct dirent*e;while((e=readdir(d)))if(e->d_name[0]!='.'&&strstr(e->d_name,".txt"))n++;closedir(d);}
-        printf("%d notes  last synced %s\n  l=list  r=review  m=manage  /=search   a n <text>=add\n",n,sync_age());
+        printf("%d notes  last synced %s\n  \033[90ml list · r review · m manage · /x search\033[0m\n",n,sync_age());
         if(!isatty(0))return 0;
-        printf("> ");fflush(stdout);
-        struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSAFLUSH,&rt);
-        char ch;int rv=read(0,&ch,1);tcsetattr(0,TCSAFLUSH,&ot);putchar('\n');
-        if(rv!=1||ch==27||ch==3)return 0;
-        if(ch=='/'||ch=='s'){char q[128];printf("search: ");fflush(stdout);if(fgets(q,128,stdin)){q[strcspn(q,"\n")]=0;char a2[130];snprintf(a2,130,"?%s",q);execvp("a",(char*[]){"a","n",a2,NULL});}return 0;}
-        {static const char km[]="lrm";static const char*kv[]={"l","r","m"};for(int i=0;km[i];i++)if(ch==km[i])execvp("a",(char*[]){"a","n",(char*)kv[i],NULL});}
-        return 0;}
+        struct winsize w={0};ioctl(1,TIOCGWINSZ,&w);int cw=w.ws_col>4?w.ws_col:60;
+        for(int i=0;i<cw;i++)fputs("─",stdout);putchar('\n');        /* line above — type between the rules */
+        char lb[B];if(!fgets(lb,B,stdin)){putchar('\n');return 0;}lb[strcspn(lb,"\n")]=0;
+        for(int i=0;i<cw;i++)fputs("─",stdout);putchar('\n');        /* line below */
+        if(!lb[0])return 0;
+        if(lb[0]=='/')lb[0]='?';   /* /x → search; bare l/r/m still route; else = add path */
+        execvp("a",(char*[]){"a","n",lb,NULL});return 0;}
     if(argc>2&&(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review"))){
         const char *f=argv[2][0]=='?'?argv[2]+1:NULL;int n=load_notes(dir,f);
         if(!n){puts("(none)");return 0;} if(!isatty(STDIN_FILENO)){for(int i=0;i<n&&i<10;i++)puts(gn[i].t);return 0;}
@@ -479,7 +484,7 @@ static int cmd_task(int argc,char**argv){
         fflush(stdout);int fd=dup(1);(void)!freopen("/dev/null","w",stdout);
         int m=n<10?n:10;
         clock_gettime(CLOCK_MONOTONIC,&t0);for(int j=0;j<m;j++)task_show(j,n);
-        clock_gettime(CLOCK_MONOTONIC,&t1);fflush(stdout);dup2(fd,1);close(fd);stdout=fdopen(1,"w");
+        clock_gettime(CLOCK_MONOTONIC,&t1);fflush(stdout);dup2(fd,1);close(fd);clearerr(stdout);  /* was stdout=fdopen(1,"w") — glibc-only lvalue; dup2 already restored fd 1, musl-safe */
         double us=((double)(t1.tv_sec-t0.tv_sec)*1e9+(double)(t1.tv_nsec-t0.tv_nsec))/1e3;
         printf("task_show(x%d): %.0f us total, %.0f us/task\n",m,us,us/m);
         return 0;}

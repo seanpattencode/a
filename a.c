@@ -148,7 +148,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         _checkers
         if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] >"$ABIN/.chk" 2>/dev/null
             [ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&printf '#!/bin/sh\nhead -80 %s/.chk;exit 1' "$ABIN">"$ABIN/a"&&chmod +x "$ABIN/a"
-        else { $CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null || $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil; }&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
+        else { command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||$CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null || $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil; }&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
         fi
     ) >&- 2>&- &
     ;;
