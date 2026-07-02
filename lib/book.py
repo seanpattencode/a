@@ -127,6 +127,46 @@ def cmd_add(path):
     import shutil; shutil.copy2(str(p), str(dest / f"source{p.suffix}"))
     print(f"Added: {dest}")
 
+GUT = Path.home() / "civilization/data/gutenberg"   # /civ local dump: 69,999 PG .txt, no network
+
+def _gut_index():
+    # id/author/title/lang TSV from the dump files' own headers; one-time ~1min build, then instant
+    idx = GUT.parent / "gutenberg-authors.tsv"
+    if idx.exists(): return idx
+    import re
+    print(f"indexing {GUT} (one-time)...", flush=True)
+    g = lambda k, h: (lambda m: m[1].strip() if m else "")(re.search(rf"^{k}: *(.+)$", h, re.M))
+    rows = []
+    for f in GUT.glob("*.txt"):
+        h = f.open("rb").read(2048).decode("utf-8", "ignore")
+        rows.append(f"{f.stem}\t{g('Author', h)}\t{g('Title', h)}\t{g('Language', h)}")
+    idx.write_text("\n".join(rows))
+    return idx
+
+def cmd_corpus(author):
+    # single-author corpus → adata/corpus/<slug>.txt, for evals on great-person text (GREATS in
+    # common/prompts/default.txt; aicombo rung-0 loss). Sources: gutenberg dump (all query words in
+    # the Author field, English) + any matching transcribed a-book output/. PG boilerplate stripped.
+    import re
+    q = author.lower(); works = []
+    for line in _gut_index().read_text().splitlines():
+        i, a, t, l = (line.split("\t") + [""] * 4)[:4]
+        if all(w in a.lower() for w in q.split()) and l.lower().startswith("en") and (GUT / f"{i}.txt").exists():
+            x = (GUT / f"{i}.txt").read_text(errors="ignore")
+            m = re.search(r"\*\*\* ?START OF.{0,120}?\*\*\*(.*)\*\*\* ?END OF", x, re.S)
+            works.append((int(i), t or f"gut {i}", (m[1] if m else x).strip()))
+    for d in sorted(DATA_DIR.glob("[!.]*")):
+        if all(w in d.name.lower() for w in q.split()) and (d / "output").is_dir():
+            for f in sorted((d / "output").glob("*.txt")):
+                works.append((0, f"{d.name}/{f.name}", f.read_text(errors="ignore")))
+    if not works: sys.exit(f"x no '{author}' in gutenberg index or {DATA_DIR}")
+    works.sort(key=lambda w: w[0])
+    out = ADATA / "corpus"; out.mkdir(exist_ok=True)
+    dst = out / (q.replace(" ", "-") + ".txt")
+    dst.write_text("\n\n".join(f"== {t} [{i or 'a book'}] ==\n\n{x}" for i, t, x in works))
+    for i, t, _ in works: print(f"  {i or 'book':>6}  {t[:70]}")
+    print(f"+ {dst}  {len(works)} works  {sum(len(x.split()) for _, _, x in works):,} words")
+
 def _gdrive_info():
     from _common import get_rclone, _configured_remotes
     rc=get_rclone();remotes=_configured_remotes() if rc else []
@@ -178,6 +218,7 @@ if __name__ == "__main__":
               "a book read <name>  open in e -r at saved position; Ctrl-T speaks line; quit saves pos\n"
               "a book chat <name>  interactive Q&A against the book's processed output\n"
               "a book transcribe|translate|explain <name>  OCR / translate / annotate pages\n"
+              "a book corpus <author>  single-author .txt → adata/corpus/ (gutenberg dump + outputs), for evals\n"
               "a book list | index | serve [start|stop] | sync\n"
               "a book archive <substr>  toggle hidden .<name>: saved, not listed")
         sys.exit(0)
@@ -200,6 +241,8 @@ if __name__ == "__main__":
     elif cmd == "add":
         if len(args) < 3: print("Usage: a book add <file>"); sys.exit(1)
         cmd_add(args[2])
+    elif cmd == "corpus":
+        cmd_corpus(" ".join(args[2:])) if len(args) > 2 else sys.exit("Usage: a book corpus <author>")
     elif cmd in ("transcribe", "latex"):
         from PyPDF2 import PdfReader
         fn, cd, sf = (transcribe_page,"transcriptions","transcript") if cmd=="transcribe" else (latex_page,"latex","latex")
