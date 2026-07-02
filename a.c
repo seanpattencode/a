@@ -121,6 +121,7 @@ _checkers() {
     { ! command -v infer &>/dev/null||{ infer run --no-progress-bar -o "$T/infer" -- $CC $A -w -c "$F" -o /dev/null >"$T/10" 2>&1;! grep -q 'NULLPTR_DEREFERENCE\|BUFFER_OVERRUN\|USE_AFTER_FREE' "$T/infer/report.txt" 2>/dev/null;};}||touch "$T/10.f" &
     wait
 }
+_o3(){ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||$CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||$CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil;}
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
 build) _PT=${EPOCHREALTIME/./};_tok_chk
@@ -148,7 +149,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         _checkers
         if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] >"$ABIN/.chk" 2>/dev/null
             [ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&printf '#!/bin/sh\nhead -80 %s/.chk;exit 1' "$ABIN">"$ABIN/a"&&chmod +x "$ABIN/a"
-        else { command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||$CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null || $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil; }&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
+        else _o3&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
         fi
     ) >&- 2>&- &
     ;;
@@ -158,7 +159,7 @@ check) _PT=${EPOCHREALTIME/./};_tok_chk
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
     _checkers
     if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] 2>/dev/null; exit 1
-    else ok "all checkers passed"; _perf_chk check; { $CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null || $CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil; }&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt" & fi
+    else ok "all checkers passed"; _perf_chk check; _o3&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt" & fi
     ;;
 analyze) _ensure_cc;_warn_flags
     $CC $WARN $_Q --analyze -Xanalyzer -analyzer-output=text -Xanalyzer -analyzer-checker=security,unix,nullability,optin.portability.UnixAPI -Xanalyzer -analyzer-disable-checker=security.insecureAPI.DeprecatedOrUnsafeBufferHandling "$D/a.c"
