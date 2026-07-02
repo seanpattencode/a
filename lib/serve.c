@@ -254,8 +254,8 @@ static char*_cloud_html(void){
     hl+=snprintf(h+hl,(size_t)(cap-hl),"<div><h3 style=color:#888>Copy between clouds</h3>from <select id=src>%s</select> to <select id=dst>%s</select> <button class=cp onclick=startcp()>Copy</button> <button class=cp onclick=stopcp() style=background:#d33>Stop</button><div id=cpstat></div></div>",opts,opts);
     hl+=snprintf(h+hl,(size_t)(cap-hl),"%s","<script>function cpoll(){fetch('/api/cloudcp-status').then(r=>r.text()).then(t=>{var e=document.getElementById('cpstat'),p=t.split('|');if(p[0]=='running'){e.innerHTML='Copying '+(p[1]||'')+' ...';setTimeout(cpoll,2000)}else if(p[0]=='done'){e.innerHTML='Finished - <a target=_blank style=color:#4af href=\"'+p[1]+'\">'+p[1]+'</a>'}else if(p[0]=='stopped'){e.innerHTML='<span style=color:#fa0>Stopped: '+(p[1]||'')+'</span>'}else if(p[0]=='error'){e.innerHTML='<span style=color:#f44>Error: '+(p[1]||'')+'</span>'}else{e.textContent=''}})}function startcp(){var s=document.getElementById('src').value,d=document.getElementById('dst').value;if(s==d){alert('pick two different remotes');return}document.getElementById('cpstat').textContent='Starting ...';fetch('/api/cloudcp?src='+encodeURIComponent(s)+'&dst='+encodeURIComponent(d),{method:'POST'}).then(function(){setTimeout(cpoll,800)})}function stopcp(){fetch('/api/cloudcp-stop',{method:'POST'}).then(function(){setTimeout(cpoll,400)})}cpoll();</script>");
     return h;}
-static char*_phtml;static int _phlen;
-static void _prompt_gen(void){ /* cached at startup like _shtml; was ~160ms/req. refresh: a ui reload */
+static char*_phtml;static int _phlen;static time_t _pgen_t;
+static void _prompt_gen(void){ /* cached; GET /prompt regens when sources newer than cache (mtime check) */
         int pp[2];if(pipe(pp))return;pid_t ch=fork();
         if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);(void)!chdir(SDIR);execlp("a","a","prompt","show",(char*)0);_exit(1);}
         close(pp[1]);size_t cap=1<<19,ol=0;char*o=malloc(cap);
@@ -300,7 +300,7 @@ static void _prompt_gen(void){ /* cached at startup like _shtml; was ~160ms/req.
             else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
             else h[hl++]=k;}
         memcpy(h+hl,"</pre>",6);hl+=6;
-        free(o);_phtml=h;_phlen=hl;
+        free(o);_phtml=h;_phlen=hl;_pgen_t=time(0);
 }
 static char _rl[160];
 static void _handle(int c){
@@ -523,7 +523,12 @@ static void _handle(int c){
         for(int k=0;k<2;k++){hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<h3>%s/</h3>",dirs[k]);
             hl=_docls(h,hl,dirs[k],(int)strlen(dirs[k])+1);}
         _sdoc(c,h,hl);free(h);return;}
-    if(!strncmp(req,"GET /prompt",11)){if(_phtml)_sdoc(c,_phtml,_phlen);return;}
+    if(!strncmp(req,"GET /prompt",11)){ /* regen when active prompt file or mem index newer than cache */
+        struct stat st;char fp[P];load_cfg();const char*pap=cfget("prompt");if(!*pap)pap="default";
+        snprintf(fp,P,"%s/common/prompts/%s.txt",SROOT,pap);int stale=!_phtml||(!stat(fp,&st)&&st.st_mtime>=_pgen_t);
+        if(!stale){snprintf(fp,P,"%s/mem/index.txt",SROOT);if(!stat(fp,&st)&&st.st_mtime>=_pgen_t)stale=1;}
+        if(stale){free(_phtml);_phtml=0;_prompt_gen();}
+        if(_phtml)_sdoc(c,_phtml,_phlen);return;}
     if(!strncmp(req,"GET /p",6)&&(req[6]==' '||req[6]=='\r'||req[6]=='?')){
         char out[B]="";int ol=0,pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","i",(char*)0);_exit(1);}
