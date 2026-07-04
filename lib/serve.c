@@ -339,7 +339,7 @@ static void _handle(int c){
         _sresph(c,200,_mime(fp),fd2,(int)fl,"no-cache");free(fd2);return;}
     /* new full-page route? add a GET handler below + one nav link in ui_full.html line 9 (<div id=wm>). docs auto-list via /docs. */
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
-        char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when the page file is newer than the cache — was boot-frozen (same bug as /prompt, edits never appeared) */
+        char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when page file newer than cache (boot-frozen bug, cf /prompt) */
         if(_shtml&&!stat(uf,&us)&&us.st_mtime>=_sgen_t){free(_shtml);_shtml=0;_html_gen();}
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
     if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){

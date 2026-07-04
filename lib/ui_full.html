@@ -51,7 +51,7 @@ __MY__
 </div>
 <script>
 var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks'__MV__}, T, F, W;
-// 1ms mandate: every action's true time shown LIVE on screen (pms corner) — nav go(), search qi.oninput. go() must stay <1ms; show() is DOM toggle only, no network. keep this instrumentation.
+// 1ms mandate: action times shown LIVE (pms corner) — keep. go() must stay <1ms; show() is DOM toggle only, no network.
 function _pm(t,l){pms.textContent=l+' '+(performance.now()-t).toFixed(2)+'ms'}
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);_pm(t,'nav '+p);}
 function show(p){for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'&&F)setTimeout(function(){F.fit();T.focus()},0);if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='/')qi.oninput()}
