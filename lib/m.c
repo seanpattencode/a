@@ -101,6 +101,7 @@ static int cmd_m(int c,char**v){
     if(!getenv("TMUX")){char b2[B],sn[64];ajoin(b2,B,c,v,0);snprintf(sn,64,"m-%s",fn);tm_new(sn,wd,b2);tm_go(sn);return 0;}
     signal(SIGINT,m_sint);
     for(;;){
+        {load_cfg();char mc[B];m_cmdstr(mc,B);printf("\033[1;35m⏺ model = %s\033[0m\n\n",mc);}  /* the exact cmd each turn pipes into */
         {char*tb=readf(sf,NULL);if(tb){size_t l=strlen(tb);fputs(l>4000?tb+l-4000:tb,stdout);free(tb);}}
         for(;;){
             g_halt=0;load_cfg();
