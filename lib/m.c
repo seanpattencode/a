@@ -10,9 +10,9 @@ static void m_cmdstr(char*o,size_t n){const char*mc=cfget("m_cmd");if(*mc){snpri
     const char*md=cfget("m_model"),*ef=cfget("m_effort");
     snprintf(o,n,"claude -p --tools '' --model '%s' --effort '%s'",*md?md:"opus",*ef?ef:"max");}
 static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last CMD: → run in wd → feed back */
-    static char b[1<<16],x[B*4],mc[B];char last[B]="";
+    static char b[1<<16],x[B*4],mc[B];char last[B]="";int rep=0;
     load_cfg();m_cmdstr(mc,B);
-    for(int i=0;i<10&&!g_halt;i++){
+    for(int i=0;i<25&&!g_halt;i++){  /* multiple commands until the model stops (no CMD) */
         struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
         snprintf(x,sizeof x,"{ echo 'Shell agent, cwd %s. To act, END reply with CMD:<shell cmd> — output is fed back. Else plain text = final answer.';cat '%s';}|%s",wd,sf,mc);
         FILE*p=popen(x,"r");if(!p)return;
@@ -37,7 +37,7 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
         char*cm=t+4;while(*cm==' '||*cm=='`')cm++;
         char*e=strchr(cm,'\n');if(e)*e=0;
         for(e=cm+strlen(cm);e>cm&&(e[-1]=='`'||e[-1]==' ');)*--e=0;
-        if(!strcmp(cm,last))break;  /* repeat guard (report §8): same cmd again = loop, stop */
+        if(!strcmp(cm,last)){if(++rep>=3)break;}else rep=0;  /* soft repeat guard (report §8): deliberate repeats ok, 3 identical in a row = loop */
         snprintf(last,B,"%s",cm);
         printf("\033[33m$ %s\033[0m\n",cm);
         snprintf(x,sizeof x,"cd '%s'&&{ %s ;} 2>&1|tail -c 4000",wd,cm);
@@ -54,7 +54,7 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
 static size_t m_input(char *m,size_t sz,const char *st){
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSANOW,&r);
     fputs("\033[?2004h",stdout);
-    size_t l=0;int paste=0,q=0,top=1;
+    size_t l=0;int paste=0,q=0,ctop=1,pTR=0,mtR=1;
     for(;;){
         struct winsize ws;ioctl(1,TIOCGWINSZ,&ws);int W=ws.ws_col>8?ws.ws_col:80,H=ws.ws_row>6?ws.ws_row:24;
         int tR=1,cc=3;  /* wrap walk (codepoints, terminal's rule) → rows + cursor col */
@@ -64,8 +64,10 @@ static size_t m_input(char *m,size_t sz,const char *st){
             if(cc>W){tR++;cc=1;}
             cc++;}
         int pend=cc>W;if(pend){tR++;cc=1;}
-        top=H-tR-2;if(top<1)top=1;
-        printf("\033[%d;1H\033[J",top);
+        if(tR>mtR)mtR=tR;
+        if(tR>pTR){printf("\033[%d;1H",H);int sc=pTR?tR-pTR:tR+3;while(sc--)fputs("\n",stdout);pTR=tR;}  /* scroll content up: box must paint over FREED rows, never over the reply */
+        int top=H-tR-2;if(top<1)top=1;ctop=H-mtR-2;if(ctop<1)ctop=1;
+        printf("\033[%d;1H\033[J\033[%d;1H",ctop,top);
         for(int k=0;k<W;k++)fputs("─",stdout);
         fputs("\n> ",stdout);fwrite(m,1,l,stdout);if(pend)fputs("\n",stdout);fputs("\n",stdout);
         for(int k=0;k<W;k++)fputs("─",stdout);
@@ -84,7 +86,7 @@ static size_t m_input(char *m,size_t sz,const char *st){
         if(c>=32||c=='\t'||(c&0x80)){if(l<sz-1)m[l++]=(char)c;}
     }
     m[l]=0;
-    printf("\033[%d;1H\033[J",top);  /* wipe box; caller prints from here */
+    printf("\033[%d;1H\033[J",ctop);  /* wipe box; caller prints from here */
     fputs("\033[?2004l",stdout);fflush(stdout);tcsetattr(0,TCSANOW,&o);
     return q?(size_t)-1:l;
 }
