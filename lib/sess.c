@@ -71,7 +71,6 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
 }
 
 static FC fq[1024];int nfq;
-static size_t m_input(char*,size_t,const char*,int);  /* box input, defined in m.c (included later) */
 /* first-char index: a freq entry can only be a prefix of a line if their first chars match (case-insensit),
  * so bucket entries by lowercased first char and scan only that bucket — provably identical result, O(bucket)
  * not O(nfq). Most file/dir lines hit an empty bucket → instant. */
@@ -178,7 +177,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw)
     struct timespec tk=_t0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since _t0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
     while (1) {
-        ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>6?ws.ws_row-(m_mode?4:3):10;
+        ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: input-box rules */
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
         if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],buf))continue;fm[nm++]=(char*)ICFG[i];}}
         else for (int i=0;i<n&&nm<2048;i++) {
@@ -203,7 +202,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(ms)ms[strcspn(ms,"\n")]=0;
             hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
             free(ms); hdr_rows=hll>0?(hll+Wc-1)/Wc:1;}
-        int em=m_mode?(ws.ws_row>hdr_rows+3?ws.ws_row-hdr_rows-3:1):maxshow;
+        int em=m_mode?(ws.ws_row>hdr_rows+5?ws.ws_row-hdr_rows-5:1):maxshow;  /* -2 more: input box rules */
         int avail=em-na>0?em-na:1,ms=sel-na,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
         int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
         double fms;{struct timespec _n;clock_gettime(CLOCK_MONOTONIC,&_n);fms=(_n.tv_sec-tk.tv_sec)*1e3+(_n.tv_nsec-tk.tv_nsec)/1e6;}
@@ -215,20 +214,26 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 FP("\033[36m%.*s\033[0m\033[K\n",ch,hl+p);
                 p+=ch?ch:1;
             }while(p<hll);}
+        int Wr=ws.ws_col>8?ws.ws_col:80;char hint[320]="";  /* input BOX: bar above+below the > line → safe to type long (prompts, note text) */
+        #define RULE do{for(int _r=0;_r<Wr;_r++)FP("─");FP("\033[K\n");}while(0)
+        RULE;
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
         else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s %.3fms\033[0m\033[K\n",act,fms);
         else if(plen)FP("%s> %s\033[K\n",prefix,buf);
         else{int W=ws.ws_col?ws.ws_col:80,mi=sel-na;FP("> %s\033[K\n",buf);
-            if(mi>=0&&mi<nm){char*m=fm[mi],*tb=strchr(m,'\t');FP("\033[90m↵ run: %.*s\033[0m\033[K\n",tb?(int)(tb-m):(int)strlen(m),m);}
-            else FP("\033[90m↵ new tmux win → %s eff=%s : \"%.*s\"\033[0m\033[K\n",ag,ef,W>44?W-44:20,buf);}
+            if(mi>=0&&mi<nm){char*m=fm[mi],*tb=strchr(m,'\t');snprintf(hint,320,"↵ run: %.*s",tb?(int)(tb-m):(int)strlen(m),m);}
+            else snprintf(hint,320,"↵ new tmux win → %s eff=%s : \"%.*s\"",ag,ef,W>44?W-44:20,buf);}
+        RULE;
+        #undef RULE
+        if(hint[0])FP("\033[90m%s\033[0m\033[K\n",hint);
         if(na)FP("%s \033[36m⮌ switch → win %s (just fired)\033[0m\033[K\n",sel==0?" >":"  ",lastidx);
         for(int i=0;i<show;i++){int j=top+i,gj=j+na,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
             char*desc=t2?t2+1:(t?t+1:"");int dl=(int)strnlen(desc,50);
             if(ml>W-7-dl)ml=W-7-dl;FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dl,dl,desc);FP("\n");}
-        FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+1):1,plen+blen+3);
+        FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,plen+blen+3);  /* +1: top rule of input box */
         #undef FP
         (void)!write(STDOUT_FILENO,fb,(size_t)fl);if(ai_write){ai_savesorted(lines,n,ai_fprbuf);ai_write=0;}}
         char ch;
@@ -278,14 +283,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             {char*e=cmd+strlen(cmd)-1;while(e>cmd&&*e==' ')*e--=0;}
             int hs=0,cl=(int)strlen(cmd);
             for(int i=0;i<n;i++)if(!strncmp(lines[i],cmd,(size_t)cl)&&lines[i][cl]==' '){hs=1;break;}
-            if(hs){  /* command takes args → box entry (safe long typing: note, prompt, ...) */
-                static char ab[8192];char stt[300];snprintf(stt,300,"a %s _   Enter=run · Esc=cancel",cmd);
-                size_t an=m_input(ab,sizeof ab,stt,0);
-                if(an&&an!=(size_t)-1){IRST;
-                    char*args[40];int ax=0;args[ax++]="a";
-                    for(char*p=cmd;*p&&ax<36;){while(*p==' ')p++;if(!*p)break;args[ax++]=p;while(*p&&*p!=' ')p++;if(*p)*p++=0;}
-                    args[ax++]=ab;args[ax]=NULL;setenv("A_TUI","1",1);execvp("a",args);return 0;}
-                buf[0]=0;blen=0;sel=0;(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
+            if(hs){snprintf(prefix,256,"%s ",cmd);buf[0]=0;blen=0;sel=0;printf("\033[J");continue;}
             if(m_mode||!strncmp(cmd,"m model ",8)||!strncmp(cmd,"m agent ",8)||!strncmp(cmd,"m effort ",9)){char cs[512];snprintf(cs,512,"a %s >/dev/null 2>&1",cmd);(void)!system(cs);load_cfg();
                 sel=0;buf[0]=0;blen=0;
                 if(!strncmp(cmd,"m agent ",8))snprintf(prefix,256,"m effort ");

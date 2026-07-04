@@ -1,8 +1,5 @@
-/* m — platonic chat agent: the FILE is the agent (adata/git/m/agents/<name>.txt, synced), model = ANY shell cmd stdin→stdout.
- * a m [name]              interactive chat — Claude Code shape: model acts via CMD:, grounded, saved. C, no js.
- * a m <name> <task...>    one-shot: the mass-spawn unit (qsim sbatch / a ssh dev 'a m w1 "task"')
- * a m use <ag> <md> [ef]  fleet keys (read by a c/a j)   a m model|agent|effort <v>
- * a m cmd <raw cmd>|clear chat model override, e.g. ollama: "jq -Rs '{model:\"gemma4:12b-it-qat\",prompt:.,stream:false,think:true}'|curl -s -d @- localhost:11434/api/generate|jq -r .response" */
+/* m — platonic chat agent: FILE = the agent (adata/git/m/agents/<name>.txt), model = ANY shell cmd stdin→stdout.
+ * a m [name] chat · a m <name> <task...> one-shot spawn unit · use <ag> <md> [ef] fleet keys · cmd <raw>|clear · '/' menu */
 static volatile sig_atomic_t g_halt;
 static void m_sint(int s){(void)s;g_halt=1;}
 static void m_ap(const char*sf,const char*h,const char*t){FILE*f=fopen(sf,"a");if(f){fprintf(f,"## %s\n%s\n",h,t);fclose(f);}}
