@@ -742,7 +742,13 @@ static void _handle(int c){
             if(!host[0])_exit(0);
             char hp[256],port[8];ssh_parse(host,hp,port);char pre[600];
             ssh_pre(pre,600,pw[0]?pw:NULL,"-oStrictHostKeyChecking=accept-new -oConnectTimeout=6",port,hp);
-            snprintf(gc,sizeof gc,"%s 'R=${XDG_RUNTIME_DIR:-/run/user/$(id -u)};W=$(ls $R/wayland-* 2>/dev/null|grep -v lock|head -1);XDG_RUNTIME_DIR=$R WAYLAND_DISPLAY=$(basename \"$W\") grim -t ppm - 2>/dev/null|magick ppm:- -resize 25%% -quality 40 jpg:- 2>/dev/null||screencapture -x -t jpg - 2>/dev/null||DISPLAY=:0 import -window root -resize 25%% jpg:- 2>/dev/null||grim -s 0.25 - 2>/dev/null'",pre);remote=1;}  /* grainy JPEG: low-bw links just work + Chrome-safe; PNG-grim is the magick-less fallback */
+            char ro[64]="";                     /* remote output: &o= wins; else auto-pick first (else grim grabs the whole multi-monitor composite = 100Mpx, starves) */
+            if(out[0]&&strcmp(out,"all"))snprintf(ro,64,"%s",out);
+            else if(!out[0]){char dc[800];snprintf(dc,800,"%s 'SWAYSOCK=$(ls ${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sway-ipc.*.sock 2>/dev/null|head -1) swaymsg -t get_outputs 2>/dev/null'",pre);
+                FILE*dp=popen(dc,"r");char js[2048]="";if(dp){size_t jn=fread(js,1,2047,dp);js[jn]=0;pclose(dp);}
+                char*q=strstr(js,"\"name\"");if(q&&(q=strchr(q+6,':'))&&(q=strchr(q,'"'))){q++;int i=0;while(*q&&*q!='"'&&i<63&&(isalnum((unsigned char)*q)||*q=='-'||*q=='_'))ro[i++]=*q++;ro[i]=0;}}
+            char rg[80]="";if(ro[0])snprintf(rg,80,"-o %s ",ro);   /* names are [alnum-_], no spaces -> safe unquoted inside ssh '...' */
+            snprintf(gc,sizeof gc,"%s 'R=${XDG_RUNTIME_DIR:-/run/user/$(id -u)};W=$(ls $R/wayland-* 2>/dev/null|grep -v lock|head -1);export XDG_RUNTIME_DIR=$R WAYLAND_DISPLAY=$(basename \"$W\");while :;do grim %s-t ppm - 2>/dev/null||break;done|ffmpeg -loglevel error -f image2pipe -i - -vf scale=1024:-2 -q:v 6 -f mjpeg - 2>/dev/null'",pre,rg);remote=1;}  /* per-output (rg) avoids the composite; persistent ssh+ffmpeg -> MJPEG split below */
         if(!remote){                                            /* local sway: derive env + focused output */
             const char*rt=getenv("XDG_RUNTIME_DIR");char rtb[64];
             if(!rt||!rt[0]){snprintf(rtb,64,"/run/user/%d",(int)getuid());rt=rtb;}
@@ -751,22 +757,23 @@ static void _handle(int c){
              FILE*p=popen(ic,"r");char wl[128]="";if(p){if(fgets(wl,128,p))wl[strcspn(wl,"\n")]=0;pclose(p);}
              if(wl[0]){const char*b=strrchr(wl,'/');setenv("WAYLAND_DISPLAY",b?b+1:wl,1);}}
             char ob[64]="";if(out[0]&&strcmp(out,"all"))snprintf(ob,64,"%s",out);   /* monitor name -> that one; empty/all -> whole layout */
-            const char*T=" -t ppm -",*J=" | ffmpeg -loglevel error -i - -vf 'scale=iw*0.4:-2' -q:v 6 -f image2pipe -";  /* grim -s burns ~200ms/frame scaling (raw grab = 20ms): grab raw ppm, scale+jpeg in SIMD encoder (ffmpeg 69ms, magick 106ms); jpeg keeps Chrome multipart alive */
-            if(system("command -v ffmpeg>/dev/null 2>&1")){if(system("command -v magick>/dev/null 2>&1")){T=" -s 0.4 -";J="";}else J=" | magick ppm:- -resize 40% -quality 60 jpg:-";}
-            if(ob[0])snprintf(gc,sizeof gc,"grim -o '%s'%s%s",ob,T,J);else snprintf(gc,sizeof gc,"grim%s%s",T,J);}
+            char og[80]="";if(ob[0])snprintf(og,80,"-o '%s' ",ob);
+            snprintf(gc,sizeof gc,"while :;do grim %s-t ppm - 2>/dev/null||break;done|ffmpeg -loglevel error -f image2pipe -i - -vf scale=1024:-2 -q:v 6 -f mjpeg - 2>/dev/null",og);}  /* raw grab (20ms) -> ONE persistent ffmpeg scale+mjpeg (per-frame ffmpeg startup was the 16fps ceiling; grim -s pixman was 200ms) */
         static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:multipart/x-mixed-replace;boundary=f\r\nCache-Control:no-store\r\n\r\n";
         if(write(c,SH,sizeof SH-1)<0)_exit(0);
         char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);struct timeval t0;gettimeofday(&t0,NULL);int fn=0;   /* status -> tail adata/local/serve.log */
-        for(;;){FILE*g=popen(gc,"r");if(!g)break;
-            char*buf=NULL;size_t cap=0,len=0,r;char tb[65536];
-            while((r=fread(tb,1,sizeof tb,g))>0){if(len+r>cap){size_t nc=(len+r)*2;char*nb=realloc(buf,nc);if(!nb){free(buf);buf=NULL;break;}buf=nb;cap=nc;}memcpy(buf+len,tb,r);len+=r;}
-            pclose(g);
-            if(buf&&len){const char*ct=(len>=2&&(unsigned char)buf[0]==0xff&&(unsigned char)buf[1]==0xd8)?"image/jpeg":"image/png";
-                char hd[80];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:%s\r\nContent-Length:%zu\r\n\r\n",ct,len);
-                if(write(c,hd,(size_t)hl)<0||write(c,buf,len)<0||write(c,"\r\n",2)<0){free(buf);break;}
-                if(++fn==1||fn%4==0){struct timeval w;gettimeofday(&w,NULL);double el=(double)(w.tv_sec-t0.tv_sec)+(w.tv_usec-t0.tv_usec)/1e6;
-                    FILE*lf=fopen(lg,"a");if(lf){fprintf(lf,"stream %s/%s %df %.1ffps %zuKB\n",dev[0]?dev:"local",out[0]?out:"all",fn,el>0?fn/el:0,len/1024);fclose(lf);}}}
-            free(buf);if(!len)break;}
+        FILE*g=popen(gc,"r");if(!g)_exit(0);                       /* ONE persistent capture; split its MJPEG byte-stream into frames */
+        size_t cap=1<<21,len=0,sc=0,r;unsigned char*buf=malloc(cap);char tb[65536];
+        while(buf&&(r=fread(tb,1,sizeof tb,g))>0){
+            if(len+r>cap){cap=len+r+(1<<20);unsigned char*nb=realloc(buf,cap);if(!nb)break;buf=nb;}
+            memcpy(buf+len,tb,r);len+=r;
+            for(size_t e=sc;e+1<len;e++)if(buf[e]==0xff&&buf[e+1]==0xd9){       /* FFD9 = JPEG EOI: forward one complete frame (buf[0] is a SOI) */
+                size_t fl=e+2;char hd[96];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:image/jpeg\r\nContent-Length:%zu\r\n\r\n",fl);
+                if(write(c,hd,(size_t)hl)<0||write(c,buf,fl)<0||write(c,"\r\n",2)<0)_exit(0);   /* client gone -> exit -> SIGPIPE ends the pipeline (||break) */
+                if(++fn==1||fn%15==0){struct timeval w;gettimeofday(&w,NULL);double el=(double)(w.tv_sec-t0.tv_sec)+(w.tv_usec-t0.tv_usec)/1e6;
+                    FILE*lf=fopen(lg,"a");if(lf){fprintf(lf,"stream %s/%s %df %.1ffps %zuKB\n",dev[0]?dev:"local",out[0]?out:"all",fn,el>0?fn/el:0,fl/1024);fclose(lf);}}
+                memmove(buf,buf+fl,len-fl);len-=fl;e=(size_t)-1;sc=0;}
+            sc=len>1?len-1:0;}
         close(c);_exit(0);}
     if(!strncmp(req,"GET /stream",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
         char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=# onclick=\"if(cur)sel(cur);return false\" style=\"color:#f99;border-color:#5a2a2a\">\xe2\x96\xa0 stop</a><a data-d=local href=# onclick=\"sel('local');return false\" title=\"this machine \xc2\xb7 all monitors\">\xe2\x97\x89 %s \xc2\xb7 local</a>",DEV);
