@@ -49,9 +49,34 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
     snprintf(x,sizeof x,"(flock /tmp/.a_git.lock -c \"cd '%s'&&git add m&&{ git diff --cached --quiet||{ git commit -q -m m&&timeout 8 git push -q;};}\")>/dev/null 2>&1 &",SROOT);
     (void)!system(x);
 }
+/* '/' on empty box → m_pick live-filter menu (type-to-complete, a i style). Model picks set m_cmd ONLY —
+ * fleet keys m_agent/m_model stay untouched (a c/a j spawns unaffected). Returns 1=submit m, 2=keep editing m, 0=handled. */
+static int m_slash(char *m,size_t sz){
+    static const char *ops[]={"model\tpick model from list","new\tfresh agent","main\topen main agent","cmd\ttype raw model cmd","q\tquit"};
+    char sel[96];
+    int r=m_pick("cmd",ops,5,sel,sizeof sel);
+    if(r<=0)return 0;
+    sel[strcspn(sel,"\t")]=0;
+    if(!strcmp(sel,"q")||!strcmp(sel,"new")||!strcmp(sel,"main")){snprintf(m,sz,"/%s",sel);return 1;}
+    if(!strcmp(sel,"cmd")){snprintf(m,sz,"/cmd ");return 2;}
+    static char ib[24][96];const char*it[24];int n=0;
+    static const char*cl[]={"fable","opus","sonnet","haiku",0};
+    for(int k=0;cl[k]&&n<24;k++){snprintf(ib[n],96,"%s\tclaude",cl[k]);it[n]=ib[n];n++;}
+    char ol[2048];pcmd("ollama list 2>/dev/null|awk 'NR>1{print $1}'",ol,sizeof ol);
+    for(char*q=ol;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s\tollama local",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
+    r=m_pick("model",it,n,sel,sizeof sel);
+    if(r<=0)return 0;
+    char *tb=strchr(sel,'\t');int oll=tb&&strstr(tb+1,"ollama");if(tb)*tb=0;
+    load_cfg();char nc[B];
+    if(oll)snprintf(nc,B,"jq -Rs '{model:\"%s\",prompt:.,stream:false,think:true}'|curl -sS -d @- localhost:11434/api/generate|jq -r .response",sel);
+    else{const char*ef=cfget("m_effort");snprintf(nc,B,"claude -p --tools '' --model '%s' --effort '%s'",sel,*ef?ef:"max");}
+    cfset("m_cmd",nc);return 0;
+}
 /* box input — the CC/codex core idea in C: box = f(buffer,width), FULL repaint per keystroke (CC=react+yoga,
  * codex=ratatui wrap_ranges; nobody is incremental). Bottom-anchored ABSOLUTE rows (m_pick pattern) → zero drift. */
-static size_t m_input(char *m,size_t sz,const char *st){
+#define M_ST(st,fn) {load_cfg();char _mc[B];m_cmdstr(_mc,B);snprintf(st,B,"%s · %.60s · /=menu",fn,_mc);}
+static size_t m_input(char *m,size_t sz,const char *fn){
+    char st[B];M_ST(st,fn)
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSANOW,&r);
     fputs("\033[?2004h",stdout);
     size_t l=0;int paste=0,q=0,ctop=1,pTR=0,mtR=1;
@@ -78,6 +103,10 @@ static size_t m_input(char *m,size_t sz,const char *st){
             (void)!read(0,s,1);if(s[0]!='['&&s[0]!='O')continue;
             size_t si=0;while(si<7){if(read(0,s+1+si,1)!=1)break;char e=s[1+si];si++;if((e>='A'&&e<='Z')||(e>='a'&&e<='z')||e=='~')break;}
             if(si>=4&&!memcmp(s+1,"200~",4))paste=1;else if(si>=4&&!memcmp(s+1,"201~",4))paste=0;continue;}
+        if(c=='/'&&!l&&!paste){int r=m_slash(m,sz);
+            if(r==1){l=strlen(m);break;}
+            if(r==2){l=strlen(m);continue;}
+            M_ST(st,fn)continue;}
         if(c=='\r'||c=='\n'){if(paste){if(l<sz-1)m[l++]='\n';continue;}break;}
         if(c==127||c==8){while(l&&(m[l-1]&0xC0)==0x80)l--;if(l)l--;continue;}
         if(c==21){l=0;continue;}
@@ -106,9 +135,8 @@ static int cmd_m(int c,char**v){
         {load_cfg();char mc[B];m_cmdstr(mc,B);printf("\033[1;35m⏺ model = %s\033[0m\n\n",mc);}  /* the exact cmd each turn pipes into */
         {char*tb=readf(sf,NULL);if(tb){size_t l=strlen(tb);fputs(l>4000?tb+l-4000:tb,stdout);free(tb);}}
         for(;;){
-            g_halt=0;load_cfg();
-            char st[B];{char mc[B];m_cmdstr(mc,B);snprintf(st,B,"%s · %.60s · /q /new /use /cmd /<name>",fn,mc);}
-            static char m[65536];size_t l=m_input(m,sizeof m,st);
+            g_halt=0;
+            static char m[65536];size_t l=m_input(m,sizeof m,fn);
             if(l==(size_t)-1)return 0;
             if(!l)continue;
             printf("\033[36m> %s\033[0m\n",m);
