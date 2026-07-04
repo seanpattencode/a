@@ -71,6 +71,7 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
 }
 
 static FC fq[1024];int nfq;
+static size_t m_input(char*,size_t,const char*,int);  /* box input, defined in m.c (included later) */
 /* first-char index: a freq entry can only be a prefix of a line if their first chars match (case-insensit),
  * so bucket entries by lowercased first char and scan only that bucket — provably identical result, O(bucket)
  * not O(nfq). Most file/dir lines hit an empty bucket → instant. */
@@ -277,7 +278,14 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             {char*e=cmd+strlen(cmd)-1;while(e>cmd&&*e==' ')*e--=0;}
             int hs=0,cl=(int)strlen(cmd);
             for(int i=0;i<n;i++)if(!strncmp(lines[i],cmd,(size_t)cl)&&lines[i][cl]==' '){hs=1;break;}
-            if(hs){snprintf(prefix,256,"%s ",cmd);buf[0]=0;blen=0;sel=0;printf("\033[J");continue;}
+            if(hs){  /* command takes args → box entry (safe long typing: note, prompt, ...) */
+                static char ab[8192];char stt[300];snprintf(stt,300,"a %s _   Enter=run · Esc=cancel",cmd);
+                size_t an=m_input(ab,sizeof ab,stt,0);
+                if(an&&an!=(size_t)-1){IRST;
+                    char*args[40];int ax=0;args[ax++]="a";
+                    for(char*p=cmd;*p&&ax<36;){while(*p==' ')p++;if(!*p)break;args[ax++]=p;while(*p&&*p!=' ')p++;if(*p)*p++=0;}
+                    args[ax++]=ab;args[ax]=NULL;setenv("A_TUI","1",1);execvp("a",args);return 0;}
+                buf[0]=0;blen=0;sel=0;(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
             if(m_mode||!strncmp(cmd,"m model ",8)||!strncmp(cmd,"m agent ",8)||!strncmp(cmd,"m effort ",9)){char cs[512];snprintf(cs,512,"a %s >/dev/null 2>&1",cmd);(void)!system(cs);load_cfg();
                 sel=0;buf[0]=0;blen=0;
                 if(!strncmp(cmd,"m agent ",8))snprintf(prefix,256,"m effort ");

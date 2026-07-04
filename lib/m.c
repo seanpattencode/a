@@ -75,8 +75,9 @@ static int m_slash(char *m,size_t sz){
 /* box input — the CC/codex core idea in C: box = f(buffer,width), FULL repaint per keystroke (CC=react+yoga,
  * codex=ratatui wrap_ranges; nobody is incremental). Bottom-anchored ABSOLUTE rows (m_pick pattern) → zero drift. */
 #define M_ST(st,fn) {load_cfg();char _mc[B];m_cmdstr(_mc,B);snprintf(st,B,"%s · %.60s · /=menu",fn,_mc);}
-static size_t m_input(char *m,size_t sz,const char *fn){
-    char st[B];M_ST(st,fn)
+/* menu=1: chat (sfn=agent name, '/' opens m_slash). menu=0: generic box (sfn=literal status), for a i etc. */
+static size_t m_input(char *m,size_t sz,const char *sfn,int menu){
+    char st[B];if(menu)M_ST(st,sfn)else snprintf(st,B,"%s",sfn);
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSANOW,&r);
     fputs("\033[?2004h",stdout);
     size_t l=0;int paste=0,q=0,ctop=1,pTR=0,mtR=1;
@@ -102,14 +103,14 @@ static size_t m_input(char *m,size_t sz,const char *fn){
          printf(" \033[2m%.3fms\033[0m",(double)(p1.tv_sec-p0.tv_sec)*1e3+(double)(p1.tv_nsec-p0.tv_nsec)/1e6);}
         printf("\033[%d;%dH",top+tR,cc);fflush(stdout);
         unsigned char c;if(read(0,&c,1)!=1)break;
-        if(c==27){char s[8];int av=0;usleep(2000);ioctl(0,FIONREAD,&av);if(!av)continue;  /* lone ESC */
+        if(c==27){char s[8];int av=0;usleep(2000);ioctl(0,FIONREAD,&av);if(!av){l=0;break;}  /* lone ESC = cancel */
             (void)!read(0,s,1);if(s[0]!='['&&s[0]!='O')continue;
             size_t si=0;while(si<7){if(read(0,s+1+si,1)!=1)break;char e=s[1+si];si++;if((e>='A'&&e<='Z')||(e>='a'&&e<='z')||e=='~')break;}
             if(si>=4&&!memcmp(s+1,"200~",4))paste=1;else if(si>=4&&!memcmp(s+1,"201~",4))paste=0;continue;}
-        if(c=='/'&&!l&&!paste){int r=m_slash(m,sz);
+        if(menu&&c=='/'&&!l&&!paste){int r=m_slash(m,sz);
             if(r==1){l=strlen(m);break;}
             if(r==2){l=strlen(m);continue;}
-            M_ST(st,fn)continue;}
+            M_ST(st,sfn)continue;}
         if(c=='\r'||c=='\n'){if(paste){if(l<sz-1)m[l++]='\n';continue;}break;}
         if(c==127||c==8){while(l&&(m[l-1]&0xC0)==0x80)l--;if(l)l--;continue;}
         if(c==21){l=0;continue;}
@@ -139,7 +140,7 @@ static int cmd_m(int c,char**v){
         {char*tb=readf(sf,NULL);if(tb){size_t l=strlen(tb);fputs(l>4000?tb+l-4000:tb,stdout);free(tb);}}
         for(;;){
             g_halt=0;
-            static char m[65536];size_t l=m_input(m,sizeof m,fn);
+            static char m[65536];size_t l=m_input(m,sizeof m,fn,1);
             if(l==(size_t)-1)return 0;
             if(!l)continue;
             printf("\033[36m> %s\033[0m\n",m);
