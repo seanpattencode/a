@@ -24,7 +24,7 @@ static void _sha1(const unsigned char*d,size_t n,unsigned char out[20]){
     free(m);uint32_t hh[]={h0,h1,h2,h3,h4};
     for(int i=0;i<5;i++)for(int j=0;j<4;j++)out[i*4+j]=(unsigned char)(hh[i]>>(24-j*8));
 }
-static char*_shtml;static int _shlen;
+static char*_shtml;static int _shlen;static time_t _sgen_t;
 static char _sdir[P]; /* a serve <port> <dir> = static site only; UI (incl /ws shell) never exposed */
 static const char*_mime(const char*p){const char*e=strrchr(p,'.');e=e?e+1:"";
     return !strcmp(e,"html")?"text/html; charset=utf-8":!strcmp(e,"css")?"text/css":!strcmp(e,"js")?"text/javascript":
@@ -92,7 +92,7 @@ static int _tasks_build(char*h,int cap,const char*sort){
     return hl;
 }
 static void _html_gen(void){
-    char tf[P];snprintf(tf,P,"%s/lib/ui_full.html",SDIR);
+    char tf[P];snprintf(tf,P,"%s/lib/ui_full.html",SDIR);_sgen_t=time(NULL);
     char*src=readf(tf,NULL);if(!src)return;
     char*s=src;
     /* build commands JSON from a i */
@@ -339,6 +339,8 @@ static void _handle(int c){
         _sresph(c,200,_mime(fp),fd2,(int)fl,"no-cache");free(fd2);return;}
     /* new full-page route? add a GET handler below + one nav link in ui_full.html line 9 (<div id=wm>). docs auto-list via /docs. */
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
+        char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when the page file is newer than the cache — was boot-frozen (same bug as /prompt, edits never appeared) */
+        if(_shtml&&!stat(uf,&us)&&us.st_mtime>=_sgen_t){free(_shtml);_shtml=0;_html_gen();}
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
     if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
         char tgt[64]={0};const char*qw=strstr(req,"?w=");
