@@ -77,7 +77,7 @@ def run():
         elif _r(['systemctl', '--user', 'is-active', 'a-ui']).returncode == 0: _r(['systemctl', '--user', 'restart', 'a-ui'])
     else:
         p = int(a[0]) if a and a[0].isdigit() else PORT
-        _kill(); _bg('ui_full', p)
+        _kill(); _bg(p)
         print(f"{_url(p)}\n  on  auto-start service\n  off stop service\n  k   kill")
 
 if __name__ == '__main__': run()
