@@ -6,7 +6,43 @@
    secondary for Android. */
 #define SMUX " -oControlMaster=auto -oControlPath=%%d/.ssh/a-%%C -oControlPersist=300"
 #define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"
-static int m_pick(const char*,const char*const*,int,char*,size_t);
+/* live-filter picker (moved from m.c): anchors menu at bottom of pane via ABSOLUTE row positioning. caller sets raw mode. */
+static int m_pick(const char *cat,const char *const *items,int n,char *out,size_t osz){
+    struct winsize ws; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row:24;
+    int rsv=n+2; if(rsv>rows-1)rsv=rows-1; if(rsv>20)rsv=20;
+    int top=rows-rsv+1;
+    #define CLR() printf("\033[%d;1H\033[J",top)
+    char f[48]=""; int fl=0,sel=0;
+    for(;;){
+        int fm[64],nf=0;
+        for(int i=0;i<n&&nf<64;i++) if(!fl||strcasestr(items[i],f)) fm[nf++]=i;
+        if(sel>=nf)sel=nf?nf-1:0; if(sel<0)sel=0;
+        CLR();
+        printf("\033[36m%s:\033[0m %s",cat,f);
+        for(int i=0;i<nf&&i<rsv-1;i++){
+            const char *it=items[fm[i]]; const char *t=strchr(it,'\t');
+            int cl=t?(int)(t-it):(int)strlen(it);
+            printf("\n  %s%.*s%s",i==sel?"\033[7m> ":"  ",cl,it,i==sel?"\033[0m":"");
+            if(t)printf("  \033[90m%s\033[0m",t+1);
+        }
+        printf("\033[%d;%dH",top,(int)strlen(cat)+3+fl); fflush(stdout);
+        unsigned char c; if(read(0,&c,1)!=1){CLR();return -1;}
+        if(c==27){int av; usleep(50000); ioctl(0,FIONREAD,&av);
+            if(av>=2){char s[2]; (void)!read(0,s,2);
+                if(s[0]=='['||s[0]=='O'){
+                    if(s[1]=='A'){if(sel>0)sel--;continue;}
+                    if(s[1]=='B'){sel++;continue;}
+                }}
+            CLR();return -1;}
+        if(c==3){CLR();return -1;}
+        if(c==9){CLR();return 0;}
+        if(c==21){f[0]=0;fl=0;sel=0;continue;}
+        if(c=='\r'||c=='\n'){if(!nf)continue; CLR(); snprintf(out,osz,"%s",items[fm[sel]]); return 1;}
+        if(c==127||c==8||c==0xff){if(fl){f[--fl]=0; sel=0;} else {CLR(); return -1;}}
+        else if(c>=' '&&c<127&&fl<47){f[fl++]=(char)c;f[fl]=0;sel=0;}
+    }
+    #undef CLR
+}
 static void ssh_parse(const char*h,char*hp,char*port){
     snprintf(hp,256,"%s",*h=='@'?h+1:h);char*c=strrchr(hp,':');snprintf(port,8,"%s",c?c+1:"22");if(c)*c=0;}
 static const char*ssh_scope(const char*ip){/* lan if RFC1918, else wan */
