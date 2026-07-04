@@ -9,24 +9,28 @@ Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini windows re
 (claude's launch id goes stale on compaction); `a ssh` host windows reconnect; all others reopen as a
 shell in cwd. Restore fires on session-create (tm_ensure_sess). A_SNAP_SESSION overrides the session.
 """
-import sys, os, json, glob, re, socket, subprocess, time, termios, tty, select
+import sys, os, json, glob, re, socket, subprocess, time
 
 DEV = socket.gethostname()
 TMS = os.environ.get("A_SNAP_SESSION", "a")          # a's tmux session (overridable for testing)
-SNAPDIR = os.path.expanduser("~/a/adata/git/sessions")
+GIT = os.path.expanduser("~/a/adata/git")
+SNAPDIR = f"{GIT}/sessions"
 SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
 ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # session id on a claude cmdline
-RESUME = {"claude": "claude --dangerously-skip-permissions --resume %s; exec bash",  # %s = session id
+try: C = dict(re.findall(r"^m_(\w+): *(.*)", open(f"{GIT}/workspace/config.txt").read(), re.M))
+except OSError: C = {}
+MF = "".join(f" --{k} {C[k]}" for k in ("model", "effort") if C.get(k)) if C.get("agent", "claude") == "claude" else ""
+RESUME = {"claude": f"claude --dangerously-skip-permissions{MF} --resume %s; exec bash",  # %s=sid; no MF → opus/xhigh
           "codex": "codex resume --last; exec bash", "gemini": "gemini --yolo --resume latest; exec bash"}
-HOST = os.path.expanduser("~/a/adata/git/ssh/%s.txt")             # a ssh host registry
+HOST = f"{GIT}/ssh/%s.txt"                            # a ssh host registry
 
 
 LINUX = os.path.isdir("/proc")
 PS = {}                                               # macOS/BSD: {pid: (ppid, command)} from one `ps`
 
 
-def _scan():                                          # populate PS on platforms without /proc (macOS)
+def _ps():                                            # populate PS on platforms without /proc (macOS)
     global PS
     out = subprocess.run(["ps", "-axww", "-o", "pid=,ppid=,command="], capture_output=True, text=True).stdout
     PS = {}
@@ -71,7 +75,7 @@ def agent(pids):                                      # (kind, sid) of the agent
     return (None, "")
 
 
-def have(sid): return bool(sid) and bool(glob.glob(f"{PROJ}/*/{sid}.jsonl"))
+def have(sid): return bool(sid and glob.glob(f"{PROJ}/*/{sid}.jsonl"))
 
 
 def newest_in(cwd, skip):                             # newest claude transcript in cwd's project dir not already owned
@@ -94,7 +98,7 @@ def windows():                                        # [name, cwd, pane pids, s
 
 
 def save():
-    if not LINUX: _scan()                             # macOS: snapshot the process table once
+    if not LINUX: _ps()                               # macOS: snapshot the process table once
     info = [(n, cwd, *agent(pid), sc) for n, cwd, pid, sc in windows()]   # (name, cwd, kind, sid, sc)
     if not info: print("x no windows — snapshot kept"); return []  # don't clobber with emptiness
     claimed = {sid for _n, _c, k, sid, _s in info if k == "claude" and have(sid)}  # claude ids with a transcript
@@ -146,8 +150,8 @@ def show(flt=""):                                     # aggregate EVERY device's
         for j in rows:
             sid = ID.search(j["cmd"])
             mark = "●" if here and j["window"] in live else "⏸"
-            desc = (_preview(sid.group(1)) if here and sid else "") or j.get("preview", "") \
-                or (("claude " + sid.group(1)[:7]) if sid else (j["cmd"][:44] or "(shell)"))   # what it's about
+            desc = (_preview(sid[1]) if here and sid else "") or j.get("preview", "") \
+                or (("claude " + sid[1][:7]) if sid else (j["cmd"][:44] or "(shell)"))   # what it's about
             print(f"  {mark} {j['window']:15.15} {os.path.basename(j['cwd']):<8} {desc[:58]}"); n += 1
     print(f"\n{n} window(s) · {len(files)} device(s){'  /'+flt if flt else '   search: a res show <text>'}")
 
@@ -175,7 +179,7 @@ def _age(s):
 
 
 def _claude_list(flt="", mins=0):                     # recent claude transcripts: [(mtime, id, cwd, turns, preview)]
-    import time; now, out = time.time(), []
+    now, out = time.time(), []
     for f in sorted(glob.glob(f"{PROJ}/*/*.jsonl"), key=os.path.getmtime, reverse=True)[:150]:
         if mins and os.path.getmtime(f) < now - mins * 60: continue
         try: txt = open(f, errors="ignore").read()
@@ -183,10 +187,10 @@ def _claude_list(flt="", mins=0):                     # recent claude transcript
         if flt and flt.lower() not in txt.lower(): continue
         turns = txt.count('"role":"user","content":"')
         if turns < 2: continue
-        m = re.search(r'"cwd":"([^"]+)"', txt); cwd = m.group(1) if m else ""
+        m = re.search(r'"cwd":"([^"]+)"', txt); cwd = m[1] if m else ""
         if not os.path.isdir(cwd): continue
         p = re.search(r'"role":"user","content":"([^"]{1,50})', txt)
-        out.append((os.path.getmtime(f), os.path.basename(f)[:-6], cwd, turns, re.sub(r"\s+", " ", p.group(1)) if p else ""))
+        out.append((os.path.getmtime(f), os.path.basename(f)[:-6], cwd, turns, re.sub(r"\s+", " ", p[1]) if p else ""))
         if len(out) >= 20: break
     return now, out
 
@@ -209,7 +213,7 @@ def pick():                                           # interactive resume picke
         except EOFError: return
         if x in ("", "q"): return
         if x == "c": subprocess.run(["tmux", "new-window", "-n", "r-codex", "codex resume; exec bash"]); return
-        if x == "g": subprocess.run(["tmux", "new-window", "-n", "r-gemini", "gemini --yolo --resume latest; exec bash"]); return
+        if x == "g": subprocess.run(["tmux", "new-window", "-n", "r-gemini", RESUME["gemini"]]); return
         if x == "a":
             try: mins = int(input("restore all claude active within how many hours: ")) * 60
             except (ValueError, EOFError): continue
@@ -231,7 +235,7 @@ for j in $(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null|head -15);do s=$(basen
 def _resume_attach(host, live, cwd, sid):             # parked → resume into the box's tmux (survives ssh drop), then attach
     if not live:
         subprocess.run(["a", "ssh", host, "tmux", "new-window", "-t", "a", "-c", cwd, "-n", "r-" + sid[:8],
-                        "claude", "--dangerously-skip-permissions", "--model", "opus", "--resume", sid])
+                        f"claude --dangerously-skip-permissions{MF} --resume {sid}"])
     os.execvp("a", ["a", "ssh", host])
 
 
