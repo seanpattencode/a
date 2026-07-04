@@ -81,6 +81,7 @@ static size_t m_input(char *m,size_t sz,const char *fn){
     fputs("\033[?2004h",stdout);
     size_t l=0;int paste=0,q=0,ctop=1,pTR=0,mtR=1;
     for(;;){
+        struct timespec p0;clock_gettime(CLOCK_MONOTONIC,&p0);  /* 1MS MANDATE: measure key→painted, show it live */
         struct winsize ws;ioctl(1,TIOCGWINSZ,&ws);int W=ws.ws_col>8?ws.ws_col:80,H=ws.ws_row>6?ws.ws_row:24;
         int tR=1,cc=3;  /* wrap walk (codepoints, terminal's rule) → rows + cursor col */
         for(size_t k=0;k<l;k++){
@@ -96,7 +97,9 @@ static size_t m_input(char *m,size_t sz,const char *fn){
         for(int k=0;k<W;k++)fputs("─",stdout);
         fputs("\n> ",stdout);fwrite(m,1,l,stdout);if(pend)fputs("\n",stdout);fputs("\n",stdout);
         for(int k=0;k<W;k++)fputs("─",stdout);
-        printf("\n\033[2m%.*s\033[0m",W>1?W-1:1,st);
+        printf("\n\033[2m%.*s\033[0m",W>12?W-12:1,st);
+        {struct timespec p1;clock_gettime(CLOCK_MONOTONIC,&p1);
+         printf(" \033[2m%.3fms\033[0m",(double)(p1.tv_sec-p0.tv_sec)*1e3+(double)(p1.tv_nsec-p0.tv_nsec)/1e6);}
         printf("\033[%d;%dH",top+tR,cc);fflush(stdout);
         unsigned char c;if(read(0,&c,1)!=1)break;
         if(c==27){char s[8];int av=0;usleep(2000);ioctl(0,FIONREAD,&av);if(!av)continue;  /* lone ESC */
