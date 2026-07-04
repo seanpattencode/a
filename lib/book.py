@@ -167,6 +167,36 @@ def cmd_corpus(author):
     for i, t, _ in works: print(f"  {i or 'book':>6}  {t[:70]}")
     print(f"+ {dst}  {len(works)} works  {sum(len(x.split()) for _, _, x in works):,} words")
 
+def _clean_vtt(p):  # youtube auto-caption vtt → dense prose: drop timing/tags, undo rolling-caption dupes
+    import re; out = []
+    for l in Path(p).read_text(errors="ignore").splitlines():
+        if "-->" in l or l.startswith(("WEBVTT", "Kind:", "Language:")) or not l.strip(): continue
+        l = re.sub(r"<[^>]+>", "", l).strip()
+        if not l or l in ("[Music]", "[Applause]"): continue
+        if out and l == out[-1]: continue                 # exact rolling dup
+        if out and l.startswith(out[-1]): out[-1] = l      # partial → fuller line
+        else: out.append(l)
+    return " ".join(out)
+
+def cmd_yt(great, urls):
+    # targeted greats' SPOKEN word (talks/interviews/lectures) → append to adata/corpus/<slug>.txt.
+    # Companion to cmd_corpus (their writing); together = one great's full direct-source corpus for evals.
+    import subprocess, tempfile, glob
+    out = ADATA / "corpus"; out.mkdir(exist_ok=True)
+    dst = out / (great.lower().replace(" ", "-") + ".txt"); secs = []
+    for u in urls:
+        td = tempfile.mkdtemp()
+        subprocess.run(["yt-dlp", "--skip-download", "--write-auto-sub", "--sub-lang", "en",
+                        "--sub-format", "vtt", "-o", f"{td}/%(title)s.%(ext)s", u],
+                       capture_output=True, timeout=600)
+        for v in sorted(glob.glob(f"{td}/*.vtt")):
+            t = _clean_vtt(v); title = Path(v).name.rsplit(".", 2)[0]
+            if len(t.split()) > 50: secs.append((title, t)); print(f"  ✓ {title[:60]} ({len(t.split()):,} words)")
+    if not secs: sys.exit("x no captions pulled (private/no-caption video, or yt-dlp blocked)")
+    with open(dst, "a") as f:
+        for title, t in secs: f.write(f"\n\n== [youtube] {title} ==\n\n{t}")
+    print(f"+ appended {len(secs)} transcript(s), {sum(len(t.split()) for _,t in secs):,} words → {dst}")
+
 def _gdrive_info():
     from _common import get_rclone, _configured_remotes
     rc=get_rclone();remotes=_configured_remotes() if rc else []
@@ -219,6 +249,7 @@ if __name__ == "__main__":
               "a book chat <name>  interactive Q&A against the book's processed output\n"
               "a book transcribe|translate|explain <name>  OCR / translate / annotate pages\n"
               "a book corpus <author>  single-author .txt → adata/corpus/ (gutenberg dump + outputs), for evals\n"
+              "a book yt <great> <url>  append youtube talk/interview transcripts to that great's corpus\n"
               "a book list | index | serve [start|stop] | sync\n"
               "a book archive <substr>  toggle hidden .<name>: saved, not listed")
         sys.exit(0)
@@ -243,6 +274,8 @@ if __name__ == "__main__":
         cmd_add(args[2])
     elif cmd == "corpus":
         cmd_corpus(" ".join(args[2:])) if len(args) > 2 else sys.exit("Usage: a book corpus <author>")
+    elif cmd == "yt":
+        cmd_yt(args[2], args[3:]) if len(args) > 3 else sys.exit("Usage: a book yt <great> <youtube-url|channel|ytsearchN:query> ...")
     elif cmd in ("transcribe", "latex"):
         from PyPDF2 import PdfReader
         fn, cd, sf = (transcribe_page,"transcriptions","transcript") if cmd=="transcribe" else (latex_page,"latex","latex")
