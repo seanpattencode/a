@@ -171,10 +171,10 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     struct winsize ws;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
-    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h",24);
-    char buf[256]="";int blen=0,sel=0,cfgmode=0;char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="";
+    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);
+    char buf[256]="";int blen=0,sel=0,cfgmode=0,paste=0;char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="";
     static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
-    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l",16);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw)
+    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw)
     struct timespec tk=_t0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since _t0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: input-box rules */
@@ -255,10 +255,13 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     if(mc=='M'){if(!mb){int rr=my-(m_mode?3:2);if(na&&rr==0){sel=0;do_pick=1;}
                         else{int ci=top+rr-na;if(ci>=0&&ci<nm){sel=ci+na;do_pick=1;}}}
                     else if(mb==64&&sel>0){sel--;}else if(mb==65&&sel<tot-1){sel++;}}}
+                else if(seq[1]=='2'){char d0=0,d1=0;act="paste";  /* bracketed paste marks \033[200~ / \033[201~ */
+                    if(read(0,&d0,1)==1&&d0!='~'&&read(0,&d1,1)==1){char t=d1;while(t!='~'&&read(0,&t,1)==1);
+                        if(d0=='0'&&d1=='0')paste=1;else if(d0=='0'&&d1=='1')paste=0;}}
             } else if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;act="esc";} else if(!m_mode)break;
         } else if(ch=='\t'){if(sel<tot-1)sel++;act="↓";}
         else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;act="⌫";}
-        else if(ch=='\r'||ch=='\n')do_pick=1;
+        else if(ch=='\r'||ch=='\n'){if(paste){if(blen&&blen<254&&buf[blen-1]!=' '){buf[blen++]=' ';buf[blen]=0;}}else do_pick=1;}  /* pasted \n = space, never Enter (pasted email fired web entry → firefox) */
         else if(ch==7&&!cfgmode){cfgmode=1;sel=0;buf[0]=0;blen=0;act="config";(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
         else if(ch==3){if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
         else if(ch==4)break;
