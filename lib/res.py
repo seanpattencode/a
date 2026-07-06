@@ -93,17 +93,19 @@ def windows():                                        # [name, cwd, pane pids, s
     w = {}
     for l in r.stdout.splitlines():
         i, n, cwd, pid, sc = (l.split("\t", 4) + [""] * 5)[:5]
-        w.setdefault(i, [n, cwd, [], sc])[2].append(pid)
+        w.setdefault(i, [i, n, cwd, [], sc])[3].append(pid)
     return list(w.values())
 
 
 def save():
     if not LINUX: _ps()                               # macOS: snapshot the process table once
-    info = [(n, cwd, *agent(pid), sc) for n, cwd, pid, sc in windows()]   # (name, cwd, kind, sid, sc)
+    cur = subprocess.run(["tmux", "display-message", "-p", "#{window_id}"], capture_output=True,
+                         text=True).stdout.strip() if os.environ.get("TMUX") else ""
+    info = [(wid, n, cwd, *agent(pid), sc) for wid, n, cwd, pid, sc in windows()]  # (id, name, cwd, kind, sid, sc)
     if not info: print("x no windows — snapshot kept"); return []  # don't clobber with emptiness
-    claimed = {sid for _n, _c, k, sid, _s in info if k == "claude" and have(sid)}  # claude ids with a transcript
-    used, jobs = set(), []
-    for name, cwd, kind, sid, sc in info:
+    claimed = {sid for _w, _n, _c, k, sid, _s in info if k == "claude" and have(sid)}  # claude ids with a transcript
+    used, jobs, here = set(), [], []
+    for wid, name, cwd, kind, sid, sc in info:
         if "while a i" in sc: continue                             # skip a's session-keeper window
         cmd = s = ""                                               # unknown window → shell
         if kind == "claude":                                       # claude → resume its real transcript
@@ -111,12 +113,24 @@ def save():
             if s and s not in used: used.add(s); cmd = RESUME["claude"] % s
         elif kind in ("codex", "gemini"): cmd = RESUME[kind]       # codex/gemini → native resume
         elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name   # ssh window → reconnect
-        jobs.append({"window": name, "cwd": cwd, "cmd": cmd, "preview": _preview(s) if s else ""})  # bake tail → syncs cross-device
+        jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
+                     "preview": (_preview(s) if s else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
+        here.append("→" if wid == cur else " ")                    # the window you're running this from
     os.makedirs(SNAPDIR, exist_ok=True)
     json.dump({"host": DEV, "session": TMS, "jobs": jobs}, open(SNAP, "w"), indent=1)
-    print(f"✓ snapshot {len(jobs)} window(s) → {SNAP}")
-    for j in jobs: print(f"  {j['window']:24} {j['cmd'][:54] or '(shell)'}")
+    print(f"✓ snapshot {len(jobs)} window(s) · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
+    for m, j in zip(here, jobs):
+        tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"       # what respawns: claude/codex/gemini/a/(shell)
+        print(f" {m} {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
     return jobs
+
+
+def _pane_tail(wid):                                  # last non-blank visible line of a window → identifies shells
+    r = subprocess.run(["tmux", "capture-pane", "-p", "-t", wid], capture_output=True, text=True)
+    for l in reversed(r.stdout.splitlines()):
+        if any(c.isalnum() for c in l) and "⏵" not in l and "shift+tab" not in l:  # skip claude chrome/separators
+            return re.sub(r"\s+", " ", l.strip())[:60]
+    return ""
 
 
 def _preview(sid):                                   # tail (last 64KB) of a claude transcript → last human line = "what it's about"
