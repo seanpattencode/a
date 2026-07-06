@@ -8,6 +8,9 @@
 Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini windows resume their session
 (claude's launch id goes stale on compaction); `a ssh` host windows reconnect; all others reopen as a
 shell in cwd. Restore fires on session-create (tm_ensure_sess). A_SNAP_SESSION overrides the session.
+GUI layer (sway): foot/firefox windows are snapshotted (workspace, output, tmux-under-foot) and
+reopened onto their saved workspace on restore — foots reattach tmux, firefox uses its own session
+restore; every reopen (or "all already open") is printed. No sway → gui skipped, tmux still restores.
 """
 import sys, os, json, glob, re, socket, subprocess, time
 
@@ -117,12 +120,68 @@ def save():
                      "preview": (_preview(s) if s else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
         here.append("→" if wid == cur else " ")                    # the window you're running this from
     os.makedirs(SNAPDIR, exist_ok=True)
-    json.dump({"host": DEV, "session": TMS, "jobs": jobs}, open(SNAP, "w"), indent=1)
-    print(f"✓ snapshot {len(jobs)} window(s) · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
+    gui = gui_save()
+    json.dump({"host": DEV, "session": TMS, "jobs": jobs, "gui": gui}, open(SNAP, "w"), indent=1)
+    print(f"✓ snapshot {len(jobs)} window(s) + {len(gui)} gui · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
     for m, j in zip(here, jobs):
         tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"       # what respawns: claude/codex/gemini/a/(shell)
         print(f" {m} {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
     return jobs
+
+
+def _sway(*args):                                     # swaymsg passthrough (socket auto-discovered); None if no sway
+    s = os.environ.get("SWAYSOCK") or (sorted(glob.glob(f"/run/user/{os.getuid()}/sway-ipc.*.sock"),
+                                              key=os.path.getmtime, reverse=True) or [None])[0]
+    if not s: return None
+    m = next((x for x in ("/opt/sway-dev/bin/swaymsg", "/usr/local/bin/swaymsg") if os.path.exists(x)), "swaymsg")
+    try: return subprocess.run([m, *args], capture_output=True, text=True,
+                               env={**os.environ, "SWAYSOCK": s}).stdout
+    except OSError: return None
+
+
+GAPPS = {"foot", "firefox"}                           # gui apps we snapshot/reopen (sway app_ids)
+
+def _gwalk(n, ws, out, acc):                          # collect (app_id, ws, output, rect|None, pid) from a sway tree
+    if n.get("type") == "workspace": ws = n.get("name", ws)
+    if n.get("type") == "output": out = n.get("name", out)
+    app = n.get("app_id") or ""
+    if app in GAPPS and n.get("pid"):
+        acc.append({"app": app, "ws": ws, "out": out, "pid": n["pid"],
+                    "rect": [n["rect"][k] for k in ("x", "y", "width", "height")] if n.get("type") == "floating_con" else None})
+    for c in n.get("nodes", []) + n.get("floating_nodes", []): _gwalk(c, ws, out, acc)
+
+
+def gui_save():                                       # sway gui windows worth reviving; tmux flag = foot was showing tmux
+    t = _sway("-t", "get_tree")
+    if not t: return []
+    acc = []
+    _gwalk(json.loads(t), "", "", acc)
+    for g in acc:
+        g["tmux"] = g["app"] == "foot" and any("tmux" in _cmdline(c) for c in tree(g.pop("pid")))
+        g.pop("pid", None)
+    return acc
+
+
+def gui_restore(gui, dry=False):                      # reopen foot/firefox onto their saved workspaces, say so
+    if not gui: return
+    t = _sway("-t", "get_tree")
+    if t is None: print("(no sway — gui skipped)"); return
+    have = []
+    _gwalk(json.loads(t), "", "", have)
+    n_foot = sum(1 for h in have if h["app"] == "foot")
+    if n_foot >= sum(1 for g in gui if g["app"] == "foot") and \
+       (any(h["app"] == "firefox" for h in have) or not any(g["app"] == "firefox" for g in gui)):
+        print(f"  gui: all {len(gui)} already open"); return
+    for g in [x for x in gui if x["app"] == "foot"][n_foot:]:     # only the missing ones (current terminal counts)
+        cmd = f'workspace {g["ws"]}; exec foot{" tmux attach -t " + TMS if g["tmux"] else ""}'
+        print(f'  {"[dry] " if dry else ""}↻ foot → ws {g["ws"]}/{g["out"]}{" (tmux)" if g["tmux"] else ""}')
+        if not dry: _sway(cmd)
+    ff = [x for x in gui if x["app"] == "firefox"]
+    if ff and not any(h["app"] == "firefox" for h in have):
+        ws = ff[0]["ws"] if len({x["ws"] for x in ff}) == 1 else None
+        print(f'  {"[dry] " if dry else ""}↻ firefox → own session restore' + (f" (ws {ws})" if ws else " (multiple ws, left as-is)"))
+        if not dry:
+            _sway(f'workspace {ws}; exec firefox' if ws else 'exec firefox')
 
 
 def _pane_tail(wid):                                  # last non-blank visible line of a window → identifies shells
@@ -173,7 +232,7 @@ def show(flt=""):                                     # aggregate EVERY device's
 def restore(dry=False):
     if not os.path.exists(SNAP):
         print("(no snapshot to restore)"); return
-    jobs = json.load(open(SNAP))["jobs"]
+    d = json.load(open(SNAP)); jobs = d["jobs"]
     fresh = subprocess.run(["tmux", "has-session", "-t", TMS], capture_output=True).returncode != 0
     seen = [] if fresh else subprocess.run(["tmux", "list-windows", "-t", TMS, "-F", "#{window_name}"],
                           capture_output=True, text=True).stdout.split()          # idempotent: skip open windows
@@ -185,6 +244,7 @@ def restore(dry=False):
         argv = ["tmux"] + verb + ["-n", j["window"], "-c", cwd] + ([j["cmd"]] if j["cmd"] else [])
         print("  $ " + " ".join(argv)) if dry else subprocess.run(argv, check=False); n += 1
         print(f"  {'[dry] ' if dry else ''}↻ {j['window']:24} {j['cmd'][:50] or '(shell)'}")
+    gui_restore(d.get("gui", []), dry)
     print(f"{'[dry] ' if dry else ''}✓ restored {n} window(s) into tmux '{TMS}'")
 
 
