@@ -121,6 +121,9 @@ def save():
         here.append("→" if wid == cur else " ")                    # the window you're running this from
     os.makedirs(SNAPDIR, exist_ok=True)
     gui = gui_save()
+    if not gui:                                       # sway down mid-save — keep last known gui (don't clobber with emptiness)
+        try: gui = json.load(open(SNAP)).get("gui", [])
+        except (OSError, ValueError): gui = []
     json.dump({"host": DEV, "session": TMS, "jobs": jobs, "gui": gui}, open(SNAP, "w"), indent=1)
     print(f"✓ snapshot {len(jobs)} window(s) + {len(gui)} gui · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
     for m, j in zip(here, jobs):
