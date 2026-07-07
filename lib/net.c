@@ -136,24 +136,14 @@ static int cmd_sync(int argc, char **argv) { AB;
     printf("%s\n", SROOT);
     ensure_adata();
     sync_repo();
-    char c[B], out[256];
-    snprintf(c, B, "git -C '%s' remote get-url origin 2>/dev/null", SROOT);
-    pcmd(c, out, 256); out[strcspn(out,"\n")] = 0;
-    char t[256]; snprintf(c, B, "git -C '%s' log -1 --format='%%cd %%s' --date=format:'%%Y-%%m-%%d %%I:%%M:%%S %%p' 2>/dev/null", SROOT);
-    pcmd(c, t, 256); t[strcspn(t,"\n")] = 0;
-    const char *status = "synced";
-    if (!out[0]) status = "no remote (run: gh auth login, then: a sync)";
-    else if (!t[0]) status = "empty (no commits yet)";
-    printf("  %s\n  Last: %s\n  Status: %s\n", out[0] ? out : "(no remote)", t[0] ? t : "(none)", status);
-    /* Count files per folder */
-    const char *folders[] = {"common","ssh","login","scan","notes","workspace","adocs","tasks","cal"};
-    for (int i = 0; i < 9; i++) {
-        char d[P]; snprintf(d, P, "%s/%s", SROOT, folders[i]);
-        if (!dexists(d)) continue;
-        char cnt_cmd[P]; snprintf(cnt_cmd, P, "find '%s' -name '*.txt' -maxdepth 2 2>/dev/null | wc -l", d);
-        char cnt[16]; pcmd(cnt_cmd, cnt, 16); cnt[strcspn(cnt,"\n")] = 0;
-        printf("  %s: %s files\n", folders[i], cnt);
-    }
+    char c[B];
+    fflush(stdout);
+    snprintf(c,B,"cd '%s'&&u=$(git remote get-url origin 2>/dev/null);l=$(git log -1 --format='%%cd %%s' --date=format:'%%Y-%%m-%%d %%I:%%M:%%S %%p' 2>/dev/null);"
+        "set -- $(git rev-list --left-right --count @...origin/main 2>/dev/null||echo '? ?');s=synced;[ \"$1$2\" = 00 ]||s=\"\033[31mx NOT synced: $1 to push, $2 to pull\033[0m\";"
+        "[ -n \"$l\" ]||s='empty (no commits yet)';[ -n \"$u\" ]||s='no remote (run: gh auth login, then: a sync)';"
+        "printf '  %%s\\n  Last: %%s\\n  Status: %%s\\n' \"${u:-(no remote)}\" \"${l:-(none)}\" \"$s\";"
+        "for d in common ssh login scan notes workspace adocs tasks cal;do [ -d $d ]&&echo \"  $d: $(find $d -maxdepth 2 -name '*.txt'|wc -l) files\";done",SROOT);
+    (void)!system(c);
     bg_backup_jsonl();
     /* rclone sync context/ + books/ output */
     {char rc[64];pcmd("rclone listremotes 2>/dev/null|grep a-gdrive|head -1|tr -d ':'",rc,64);rc[strcspn(rc,"\n")]=0;
