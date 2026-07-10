@@ -107,7 +107,7 @@ static int load_tasks(const char*dir){
     }closedir(d);qsort(T,(size_t)n,sizeof(Tk),tcmp);return n;
 }
 static char* task_add(const char*dir,const char*t,int pri){
-    char sl[64];snprintf(sl,64,"%.32s",t);for(char*p=sl;*p;p++)*p=*p==' '||*p=='/'?'-':*p>='A'&&*p<='Z'?*p+32:*p;
+    char sl[64];snprintf(sl,64,"%.32s",t);for(char*p=sl;*p;p++)*p=isalnum((unsigned char)*p)?(char)tolower((unsigned char)*p):'-';   /* ascii-only dir names: %.32s chops multibyte → invalid utf8 → APFS refused checkout, macs stuck (7/10) */
     struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);
     static char fn[P];char ts[32],buf[B];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
     snprintf(ltd,P,"%s/%05d-%s_%s",dir,pri,sl,ts);mkdir(ltd,0755);

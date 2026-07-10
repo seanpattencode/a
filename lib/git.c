@@ -32,9 +32,14 @@ static void sync_repo(void) {
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);
     if(fd>=0&&flock(fd,LOCK_EX|LOCK_NB)){close(fd);return;}
     char c[B];
+    /* self-heal (7/8 wedge): a sync orphan died mid `pull --rebase`; the stateful rebase-merge dir then blocked every sync silently for a day.
+       heal each run: pin HEAD to rescue-*, abort dead state, commit churn, merge rescue back (-X ours: state files last-writer-wins), atomic merge-pull (never rebase). */
     snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
+        "[ -d \"$D/.git/rebase-merge\" ]&&{ g branch -f rescue-$(date +%%s) HEAD;g rebase --abort;};"
+        "[ -f \"$D/.git/MERGE_HEAD\" ]&&g merge --abort;"
         "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add --sparse -A;g commit -qm sync;"
-        "g pull --rebase -q origin main;g push -q origin main;} >/dev/null 2>&1",SROOT);
+        "for r in $(g branch --list 'rescue-*'|tr -d ' *');do g merge -X ours --no-edit -q \"$r\"&&g branch -D \"$r\";done;"
+        "g pull --no-rebase --no-edit -q origin main||g merge --abort;g push -q origin main;} >/dev/null 2>&1",SROOT);
     (void)!system(c);if(fd>=0)close(fd);
 }
 static void sync_bg(void) {
