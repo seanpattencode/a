@@ -21,8 +21,16 @@ static void tm_go(const char *w) {
     snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
 static void tm_rename(const char*n){const char*p=getenv("TMUX_PANE");char c[200];snprintf(c,200,"tmux rename-window -t '%s' '%s'",p?p:"",n);(void)!system(c);}  /* -t pane: bare rename hits session-current window (clobbered keeper on restore) */
+static void ram_park(void){                                             /* low RAM at window spawn → park LRU claude window; tmux server = the agent registry, pane child-check spots agents under any name (Sean 7/9: spawn freely, RAM never bottlenecks; parked = resumable via a feed). no /proc (mac) → av 0 → no-op */
+    long need=4096;{const char*e=getenv("A_RAM_MIN_MB");if(e)need=atol(e);}
+    char b[192]="";pcmd("awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null",b,192);
+    long av=atol(b);if(av<=0||av>=need)return;
+    pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p claude >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
+    b[strcspn(b,"\n")]=0;
+    if(b[0])printf("\xe2\x8f\xb8 parked %s (RAM %ldM < %ldM) \xe2\x80\x94 resume: a feed\n",b,av,need);
+}
 static int tm_new(const char *w, const char *wd, const char *cmd) {
-    tm_ensure_sess();if(tm_has(w))return 1;char c[B*2],ev[P+16]="";
+    tm_ensure_sess();if(tm_has(w))return 1;ram_park();char c[B*2],ev[P+16]="";
     const char*xa=getenv("A_CTX");if(xa&&xa[0])snprintf(ev,sizeof(ev),"-e A_CTX='%s' ",xa);
     if(cmd&&*cmd)snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s' '%s'",ev,w,wd,cmd);
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
@@ -114,7 +122,7 @@ static void tm_ensure_conf(void) {
         "set -g status-right \"\"\n"
 /* hints (^key) only when client wide enough to be a desktop; mobile/narrow shows clean labels */
 #define WH(x) "#{?#{e|>:#{client_width},70}," x ",}"
-        "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ... #[norange] #[range=user|kbd]Kb#[norange] \"\n"
+        "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange] #[range=user|park]\xe2\x8f\xb8Park" WH(" M-p") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ... #[norange] #[range=user|kbd]Kb#[norange] \"\n"
 #undef WH
         "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] ,#[fg=#000000 bg=#ffffff bold] #I:#W #[default] }\"\n"
         "bind -n M-Right if -F '#{==:#{pane_current_command},ssh}' 'run -b \"a fl n #W\"' next-window\n"
@@ -131,6 +139,7 @@ static void tm_ensure_conf(void) {
         "bind -n C-o " SSHIF "'send C-o' 'splitw -v -c \"#{pane_current_path}\"'\n"
         "bind -n C-w " SSHIF "'send C-w' 'selectw -n;killw -t:!'\n"
         "bind -n C-x " SSHIF "'send C-x' 'kill-pane'\n"
+        "bind -n M-p " SSHIF "'send M-p' 'selectw -n;killw -t:!;display \"\\xe2\\x8f\\xb8 parked - resume: a feed\"'\n"
 #undef SSHIF
         "bind-key -n C-q detach\n"
         "bind -n WheelUpStatus selectw -p\n"
@@ -141,7 +150,7 @@ static void tm_ensure_conf(void) {
         "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
         "win) tmux new-window;;"
         "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; new) tmux splitw;; "
-        "x) tmux killp;; close) tmux killw;; "
+        "x) tmux killp;; close) tmux killw;; park) tmux selectw -n;tmux killw -t:!;tmux display \"\xe2\x8f\xb8 parked - resume: a feed\";; "
         "menu) tmux menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%%%\\\"\" Quit 5 detach Kill 6 kills;; "
         "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
         "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n",
