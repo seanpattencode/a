@@ -185,8 +185,8 @@ static int _ws_upgrade(int c,const char*req){
     char r[256];int rl=snprintf(r,256,"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n",acc);
     (void)!write(c,r,(size_t)rl);return 1;
 }
-static void _ws_send(int c,const char*d,int n){
-    unsigned char h[10];int hl=2;h[0]=0x81;
+static void _ws_send(int c,const char*d,int n,int op){ /* 0x82 binary for term (split UTF-8 must not kill the socket), 0x81 text for ext reload */
+    unsigned char h[10];int hl=2;h[0]=(unsigned char)op;
     if(n<126){h[1]=(unsigned char)n;}else{h[1]=126;h[2]=(unsigned char)(n>>8);h[3]=(unsigned char)(n&0xFF);hl=4;}
     (void)!write(c,h,(size_t)hl);(void)!write(c,d,(size_t)n);
 }
@@ -217,7 +217,7 @@ static void _ws_term(int c,const char*target){
     close(s);
     struct pollfd pf[2]={{c,POLLIN,0},{m,POLLIN,0}};char buf[4096];
     while(poll(pf,2,-1)>0){
-        if(pf[1].revents&POLLIN){int n=(int)read(m,buf,4096);if(n<=0)break;_ws_send(c,buf,n);}
+        if(pf[1].revents&POLLIN){int n=(int)read(m,buf,4096);if(n<=0)break;_ws_send(c,buf,n,0x82);}
         if(pf[0].revents&POLLIN){int n=_ws_recv(c,buf,4096);if(n<0)break;
             if(buf[0]=='{'){char*co=strstr(buf,"\"cols\":");char*ro=strstr(buf,"\"rows\":");
                 if(co&&ro){struct winsize w={.ws_row=(unsigned short)atoi(ro+7),.ws_col=(unsigned short)atoi(co+7)};ioctl(m,TIOCSWINSZ,&w);continue;}}
@@ -231,9 +231,9 @@ static void _ws_reload(int c){ /* dev hot-reload: relay a FIFO byte -> WS "reloa
     struct pollfd pf[2]={{c,POLLIN,0},{f,POLLIN,0}};char b[64];
     while(poll(pf,2,25000)>=0){
         if(pf[0].revents&(POLLHUP|POLLERR))break;
-        if(pf[1].revents&POLLIN){if(read(f,b,64)>0)_ws_send(c,"reload",6);}
+        if(pf[1].revents&POLLIN){if(read(f,b,64)>0)_ws_send(c,"reload",6,0x81);}
         else if(pf[0].revents&POLLIN){if(_ws_recv(c,b,64)<0)break;}
-        else _ws_send(c,"ping",4);
+        else _ws_send(c,"ping",4,0x81);
     }
     close(f);
 }
