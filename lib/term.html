@@ -20,19 +20,16 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden}
 <textarea id=kb autocomplete=off autocapitalize=off spellcheck=false></textarea><div id=sb>boot</div>
 <script>
 'use strict';
-const Q=new URLSearchParams(location.search);
-const FS=+(Q.get('fs')||15),LH=Math.round(FS*1.25);
+const Q=new URLSearchParams(location.search),FS=+(Q.get('fs')||15),LH=Math.round(FS*1.25);
 const FONT='ui-monospace,"Cascadia Mono",Menlo,Consolas,"DejaVu Sans Mono","Noto Sans Mono",monospace';
 const PAL=['#000','#cd0000','#00cd00','#cdcd00','#26f','#cd00cd','#00cdcd','#e5e5e5','#7f7f7f','#f00','#0f0','#ff0','#5c5cff','#f0f','#0ff','#fff'];
-for(let i=0;i<216;i++){
+for(let i=0;i<240;i++){
   const v=n=>n?55+n*40:0;
-  PAL.push('#'+(1<<24|v(i/36|0)<<16|v(i/6%6|0)<<8|v(i%6)).toString(16).slice(1));
+  PAL.push('#'+(1<<24|(i<216?v(i/36|0)<<16|v(i/6%6|0)<<8|v(i%6):(8+(i-216)*10)*65793)).toString(16).slice(1));
 }
-for(let i=0;i<24;i++)PAL.push('#'+(1<<24|(8+i*10)*65793).toString(16).slice(1));
 const W2=[[0x1100,0x115f],[0x2e80,0x303e],[0x3041,0x33ff],[0x3400,0x9fff],[0xa000,0xa4cf],[0xac00,0xd7a3],[0xf900,0xfaff],[0xfe30,0xfe4f],[0xff00,0xff60],[0xffe0,0xffe6],[0x1f000,0x1faff],[0x20000,0x3fffd]];
 const W0=[[0x300,0x36f],[0x483,0x489],[0x591,0x5c7],[0x610,0x61a],[0x64b,0x65f],[0x6d6,0x6dc],[0x730,0x74a],[0x1ab0,0x1aff],[0x1dc0,0x1dff],[0x200b,0x200f],[0x20d0,0x20f0],[0xfe00,0xfe0f],[0xfe20,0xfe2f],[0xe0100,0xe01ef]];
-const inR=(c,T)=>T.some(([a,b])=>c>=a&&c<=b);
-const wcw=c=>c<32?0:c<0x7f?1:inR(c,W0)?0:inR(c,W2)?2:1;
+const wcw=c=>c<32?0:c<0x7f?1:W0.some(([a,b])=>c>=a&&c<=b)?0:W2.some(([a,b])=>c>=a&&c<=b)?2:1;
 const ACS={'`':'◆','a':'▒','f':'°','g':'±','h':'░','i':'#','j':'┘','k':'┐','l':'┌','m':'└','n':'┼','o':'⎺','p':'⎻','q':'─','r':'⎼','s':'⎽','t':'├','u':'┤','v':'┴','w':'┬','x':'│','y':'≤','z':'≥','{':'π','|':'≠','}':'£','~':'·'};
 /* fl bits: 1 bold 2 dim 4 italic 8 underline 16 reverse 32 invisible 64 strike | 128 WIDE 512 CONT */
 let cols=0,rows=0,cw=9,chh=LH,G=[],RE=[],MAIN=null;
@@ -41,20 +38,16 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
 }
 function dall(){for(let y=0;y<rows;y++)drow(y);}
-function initGrid(){
-  G=[];
-  for(let y=0;y<rows;y++)G.push(newRow());
-}
 function reset(){
   Object.assign(S,DEF,{bot:rows-1});
   MAIN=null;
-  initGrid();
+  G=Array.from({length:rows},newRow);
   dall();
 }
 function clr(y,x0,x1){
@@ -86,16 +79,16 @@ function put(ch,w){
   if(S.x>=cols){S.x=cols-1;S.pw=true;}
 }
 /* parser: GROUND 0, ESC 1, CSI 2, STR 3 (OSC/DCS/APC swallowed), CHARSET 5 */
-let st=0,pb='',cstgt=0;
+let st=0,pb='',ob='',cstgt=0;
 const DEC=new TextDecoder();
 function feed(d){
   const t0=performance.now();
   if(typeof d!=='string')d=DEC.decode(d,{stream:true});
   for(const ch of d){
     const c=ch.codePointAt(0);
-    if(st===3){
-      if(c===7)st=0;
-      else if(c===27)st=1;
+    if(st===3||st===4){
+      if(c===7||c===27){if(st===3)title();st=c===27?1:0;}
+      else if(st===3)ob+=ch;
       continue;
     }
     if(c===27){st=1;pb='';continue;}
@@ -111,6 +104,10 @@ function feed(d){
   pt=performance.now()-t0;
   if(!raf)raf=requestAnimationFrame(paint);
 }
+function title(){ /* OSC 0/2 "#S:#W" -> pin reconnects to the viewed window */
+  const m=ob.match(/^[02];(?:[^:]*:)?(.*)$/);
+  if(m){wn=m[1];document.title=m[1];}
+}
 function ctrl(c){
   if(c===8){if(S.pw)S.pw=false;else S.x=Math.max(0,S.x-1);}
   else if(c===9)S.x=Math.min(cols-1,(S.x&~7)+8);
@@ -120,7 +117,8 @@ function ctrl(c){
 function escC(ch){
   st=0;
   if(ch==='[')st=2;
-  else if(ch===']'||ch==='P'||ch==='X'||ch==='^'||ch==='_')st=3;
+  else if(ch===']'){st=3;ob='';}
+  else if(ch==='P'||ch==='X'||ch==='^'||ch==='_')st=4;
   else if(ch==='('||ch===')'){st=5;cstgt=ch==='('?0:1;}
   else if(ch==='7')sv();
   else if(ch==='8')rs();
@@ -196,7 +194,7 @@ function mode(priv,v,on){
     if(v===25)drow(S.y);
   }
   else if(v===1049){
-    if(on&&!S.alt){sv();MAIN=G;initGrid();S.alt=true;dall();}
+    if(on&&!S.alt){sv();MAIN=G;G=Array.from({length:rows},newRow);S.alt=true;dall();}
     else if(!on&&S.alt){G=MAIN;MAIN=null;S.alt=false;rs();fitGrid(G);dall();}
   }
   else if(v===1000||v===1002||v===1003)S.mouse=on?v:0;
@@ -296,7 +294,7 @@ function fit(){
 function sizeTo(c,r){
   if(c===cols&&r===rows&&RE.length)return;
   cols=c;rows=r;
-  if(!G.length)initGrid();
+  if(!G.length)G=Array.from({length:rows},newRow);
   fitGrid(G);
   S.top=0;S.bot=rows-1;S.x=Math.min(S.x,cols-1);S.y=Math.min(S.y,rows-1);
   scr.textContent='';
@@ -314,12 +312,12 @@ function sizeTo(c,r){
 }
 function connect(){
   if(W&&W.readyState<2)return;
-  const w=Q.get('w'),host=Q.get('host')||location.host;
-  W=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+host+'/ws'+(w?'?w='+encodeURIComponent(w):''));
+  const host=Q.get('host')||location.host;
+  W=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+host+'/ws'+(wn?'?w='+encodeURIComponent(wn):''));
   W.binaryType='arraybuffer';
-  W.onopen=()=>{wsOk=true;W.send(JSON.stringify({cols,rows}));stat();};
+  W.onopen=()=>{wsOk=true;ct=performance.now();W.send(JSON.stringify({cols,rows}));stat();};
   W.onmessage=e=>feed(typeof e.data==='string'?e.data:new Uint8Array(e.data));
-  W.onclose=W.onerror=()=>{wsOk=false;stat();setTimeout(connect,1000);}; /* no blank flash */
+  W.onclose=W.onerror=()=>{wsOk=false;stat();if(ct&&performance.now()-ct<1500)wn=Q.get('w')||'';setTimeout(connect,1000);}; /* no blank flash; dead pin -> fall back */
 }
 function tx(s){
   if(Q.get('test')){T.sent.push(s);return;}
@@ -377,12 +375,13 @@ scr.addEventListener('pointerdown',e=>{
 });
 scr.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')mev(e.button===2?2:e.button,e.clientX,e.clientY,true);});
 scr.addEventListener('contextmenu',e=>{if(S.mouse)e.preventDefault();});
-addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,e.clientY,false))e.preventDefault();},{passive:false});
+/* scroll gestures target the CURSOR row: never the status bar, where wheel = selectw (window jumps) */
+addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,(S.y+.5)*chh,false))e.preventDefault();},{passive:false});
 scr.addEventListener('touchstart',e=>ty=e.touches[0].clientY,{passive:true});
 scr.addEventListener('touchmove',e=>{ /* drag = wheel rows */
   const t=e.touches[0],n=Math.trunc((t.clientY-ty)/chh);
   if(!n)return;
-  for(let i=Math.abs(n);i--;)mev(n>0?64:65,t.clientX,t.clientY,false);
+  for(let i=Math.abs(n);i--;)mev(n>0?64:65,t.clientX,(S.y+.5)*chh,false);
   ty=t.clientY;
 },{passive:true});
 const refit=()=>{clearTimeout(rt);rt=setTimeout(fit,150);};
