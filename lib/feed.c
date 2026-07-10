@@ -68,8 +68,13 @@ static int f_sh(const char *host, const char *sc) {                     /* run s
 }
 static void f_cap(FI *x) {                                               /* fetch the row's ACTUAL tmux window: pane whose cwd matches, else the box's active window */
     struct timespec ca, cb; clock_gettime(CLOCK_MONOTONIC, &ca);
-    int lo = !strcmp(x->host, DEV); const char *me = lo ? getenv("TMUX_PANE") : NULL;   /* local: never capture the feed's own pane; fallback = last window (active IS the feed) */
-    char sc[720]; snprintf(sc, 720, FPANE "tmux capture-pane -ep -t ${i:-%s} 2>/dev/null||echo '(no tmux)'", x->cwd, me ? me : "", lo && me ? "a:!" : "a:");
+    int lo = !strcmp(x->host, DEV); const char *me = lo ? getenv("TMUX_PANE") : NULL;   /* local: never capture the feed's own pane */
+    #define FTAIL "printf '\\033[33m\xe2\x8f\xb8 not live \xe2\x80\x94 saved transcript tail (\xe2\x86\xb5 resume)\\033[0m\\n';j=$(ls -t ~/.claude/projects/*/%s.jsonl 2>/dev/null|head -1);" \
+        "tail -c 80000 \"$j\" 2>/dev/null|grep -o '\"text\":\"[^\"]\\{1,400\\}'|sed 's/^\"text\":\"//;s/\\\\n/ /g'|tail -8"
+    char sc[960];   /* parked: never resolve panes — a cwd match is someone else's shell (hsu 'exit' bug, Sean 7/9); live: pane capture, transcript fallback */
+    if (!x->live) snprintf(sc, 960, FTAIL, x->sid);
+    else snprintf(sc, 960, FPANE "if [ -n \"$i\" ];then tmux capture-pane -ep -t \"$i\" 2>/dev/null;else " FTAIL ";fi", x->cwd, me ? me : "", x->sid);
+    #undef FTAIL
     int fd = f_sh(x->host, sc); if (fd < 0) return; f_vn = 0; int r;
     while (f_vn < (int)sizeof f_vb - 1 && (r = (int)read(fd, f_vb + f_vn, sizeof f_vb - 1 - (size_t)f_vn)) > 0) f_vn += r;
     while (f_vn > 0 && (f_vb[f_vn - 1] == '\n' || f_vb[f_vn - 1] == '\r' || f_vb[f_vn - 1] == ' ')) f_vn--;   /* capture pads the viewport with blank lines — tail-clip must see content, not padding */
@@ -87,10 +92,20 @@ static void f_bar(void) {                                                /* bott
     #define MI(k,l) "\033[1;93m" k "\033[0;90m" l
     char b[768]; int o = snprintf(b, 768, "\033[%d;1H\033[K\033[93m/%s\xe2\x96\x8f\033[0m\033[90m%s\033[0m\r\n\033[K%s\033[0m",
         f_rows() - 1, f_filt, f_filt[0] ? "" : (f_mode ? " type to filter" : " press / to filter"),
-        f_mode ? MI(" \xe2\x86\xb5", " open  ") MI("Tab", " window  ") MI("\xe2\x86\x91\xe2\x86\x93", " move  ") MI("\xe2\x86\x90\xe2\x86\x92", " page  ") MI("\xe2\x8c\xab", " clear  ") MI("esc", " quit")
+        f_mode ? MI(" \xe2\x86\xb5", " open  ") MI("Tab", " window  ") MI("\xe2\x86\x91\xe2\x86\x93", " move  ") MI("\xe2\x86\x90\xe2\x86\x92", " page  ") MI("\xe2\x8c\xab", " back  ") MI("esc", " quit")
                : MI(" \xe2\x86\xb5", " open  ") MI("j/k", " move  ") MI("p", " park  ") MI("m", " model  ") MI("e", " archive  ") MI("/", " find  ") MI("Tab", " list  ") MI("q", " quit"));
     (void)!write(1, b, (size_t)o);
     #undef MI
+}
+static int f_wrow(const char *q, size_t L, int W, int emit) {            /* rows a line occupies at visible width W; emit=1 writes wrapped chunks. ANSI seqs zero-width+atomic, utf8 continuations zero-width */
+    int rows = 1, vis = 0; size_t cs = 0;
+    for (size_t i = 0; i < L; i++) {
+        if (q[i] == 27) { size_t j = i + 1; if (j < L && q[j] == '[') { j++; while (j < L && !isalpha((unsigned char)q[j])) j++; if (j < L) j++; } i = j - 1; continue; }
+        if (((unsigned char)q[i] & 0xC0) == 0x80) continue;
+        if (vis == W) { if (emit) { (void)!write(1, q + cs, i - cs); (void)!write(1, "\r\n", 2); } cs = i; rows++; vis = 0; }
+        vis++; }
+    if (emit) { (void)!write(1, q + cs, L - cs); (void)!write(1, "\033[0m\r\n", 6); }
+    return rows;
 }
 static void f_vpaint(int sel) {                                          /* gmail split view: list strip on top, the actual window below */
     struct winsize w; ioctl(1, TIOCGWINSZ, &w); int rows = w.ws_row ? w.ws_row : 24;
@@ -103,11 +118,13 @@ static void f_vpaint(int sel) {                                          /* gmai
             r == sel ? "\033[7m" : "", y->live ? "\033[32m\xe2\x97\x8f\033[39m" : "\xe2\x8f\xb8", y->host, bname(y->cwd), y->desc); }
     o += snprintf(h + o, (size_t)(2048 - o), "\033[90m--------------------------------------------\033[0m\r\n");
     (void)!write(1, h, (size_t)o);
-    int need = rows - 4 - shown, cnt = 0; char *p = f_vb + f_vn;
-    while (p > f_vb && cnt <= need) { p--; if (*p == '\n') cnt++; }
-    if (cnt > need) p++;
-    for (char *q = p; q < f_vb + f_vn;) { char *e = memchr(q, '\n', (size_t)(f_vb + f_vn - q)); size_t L = e ? (size_t)(e - q) : (size_t)(f_vb + f_vn - q);
-        (void)!write(1, q, L); (void)!write(1, "\033[0m\r\n", 6); q = e ? e + 1 : f_vb + f_vn; }
+    int W = w.ws_col ? w.ws_col : 80, bud = rows - 4 - shown; if (bud < 1) bud = 1;
+    struct { const char *q; size_t L; } ln[512]; int nl = 0;             /* wrap DOWN, never clip (Sean 7/9): budget by wrapped rows so content still ends flush above the bar */
+    for (char *q = f_vb; q < f_vb + f_vn && nl < 512;) { char *e = memchr(q, '\n', (size_t)(f_vb + f_vn - q)); size_t L = e ? (size_t)(e - q) : (size_t)(f_vb + f_vn - q);
+        ln[nl].q = q; ln[nl].L = L; nl++; q = e ? e + 1 : f_vb + f_vn; }
+    int start = nl, acc = 0;
+    while (start > 0) { int r = f_wrow(ln[start - 1].q, ln[start - 1].L, W, 0); if (acc + r > bud) break; acc += r; start--; }
+    for (int i = start; i < nl; i++) f_wrow(ln[i].q, ln[i].L, W, 1);
     f_bar();
 }
 static void f_spawn(const char *host) {                                  /* host=NULL → local box */
@@ -184,13 +201,19 @@ static void f_paint(int sel, long rus, int refreshing) {
     f_bar();
 }
 
-static void f_attach(FI *x) {                                            /* parked → resume into the box's tmux then attach; live → attach */
+static void f_attach(FI *x) {                                            /* parked → resume window; live → its window. same device = jump within THIS tmux (nested client is counterintuitive — Sean 7/9); remote = ssh attach */
     tcsetattr(f_tty, TCSANOW, &f_saved); printf("\033[?7h\033[H\033[2J"); fflush(stdout);
+    int lo = !strcmp(x->host, DEV);
     if (!x->live) { char wn[20]; snprintf(wn, 20, "r-%.8s", x->sid);
         const char *md = (x->mdl[0] && strcmp(x->mdl, "?")) ? x->mdl : (*cfget("m_model") ? cfget("m_model") : "opus");   /* default = model the session used before */
+        if (lo) { execlp("tmux", "tmux", "new-window", "-t", "a:", "-c", x->cwd, "-n", wn,
+            "claude", "--dangerously-skip-permissions", "--model", md, "--resume", x->sid, (char *)0); _exit(127); }
         if (fork() == 0) { execlp("a", "a", "ssh", x->host, "tmux", "new-window", "-t", "a", "-c", x->cwd, "-n", wn,
             "claude", "--dangerously-skip-permissions", "--model", md, "--resume", x->sid, (char *)0); _exit(127); }
         wait(0); }
+    else if (lo) { char sc[600]; const char *me = getenv("TMUX_PANE");
+        snprintf(sc, 600, FPANE "[ -n \"$i\" ]&&exec tmux select-window -t \"$i\"", x->cwd, me ? me : "");
+        execlp("bash", "bash", "-c", sc, (char *)0); _exit(127); }
     execlp("a", "a", "ssh", x->host, (char *)0); _exit(127);
 }
 
@@ -240,7 +263,7 @@ static int cmd_feed(int c, char **v) { (void)c; (void)v; perf_disarm();
                         if (s[1] == 'A') { if (sel > 0) sel--; } else if (s[1] == 'B') { if (sel + 1 < f_n) sel++; }
                         else if (s[1] == 'D' || s[1] == '5') { sel -= f_vh(); if (sel < 0) sel = 0; }                       /* ← / PgUp */
                         else if (s[1] == 'C' || s[1] == '6') { sel += f_vh(); if (sel >= f_n) sel = f_n ? f_n - 1 : 0; } }   /* → / PgDn */
-                } else if (f_mode && f_filt[0]) { f_filt[0] = 0; f_filt_n = 0; sel = 0; f_top = 0; } else break;
+                } else break;                                            /* Esc alone always exits (filter clearing = ⌫) */
                 dirty = 1; }
             else if (k == '\r' || k == '\n') { if (f_n) f_attach(&FL[f_idx[sel]]); }        /* Enter = open (come back in) */
             else if (k == '\t') { f_mode ^= 1; refetch = !f_mode; dirty = 1; }              /* Tab: window view <-> list */
@@ -262,7 +285,8 @@ static int cmd_feed(int c, char **v) { (void)c; (void)v; perf_disarm();
                     f_vpaint(sel); }
                 else if (k == '/') { f_mode = 1; dirty = 1; }            /* omnibox: filter typing lives in list mode */
                 else if (k == 'q') break; }
-            else if (k == 127 || k == 8) { if (f_filt_n) { f_filt[--f_filt_n] = 0; sel = 0; f_top = 0; } dirty = 1; }
+            else if (k == 127 || k == 8) { if (f_filt_n) { f_filt[--f_filt_n] = 0; sel = 0; f_top = 0; }
+                else { f_mode = 0; refetch = 1; } dirty = 1; }            /* ⌫ past empty = exit filter to window view, j/k nav back (Sean 7/9) */
             else if (k >= 32 && k < 127) { if (f_filt_n < 62) { f_filt[f_filt_n++] = (char)k; f_filt[f_filt_n] = 0; sel = 0; f_top = 0; } dirty = 1; }
             else dirty = 1; }
         for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) for (int j = 1; j < np; j++)
