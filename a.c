@@ -422,9 +422,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/serve.c"
 #include "lib/tok.c"
 #include "lib/debloat.c"
-#include "lib/v.c"
 #include "lib/m.c"
-#include "lib/webview.c"
 #include "lib/h.c"
 #include "lib/handoff.c"
 #include "lib/piper.c"
@@ -546,7 +544,7 @@ static int cmd_j(int c,char**v){
         pcmd(cm,pid,64);}return 0;}
     {char nb[16]="";pcmd("pgrep -xc claude 2>/dev/null||echo 0",nb,16);
     int nj=atoi(nb)-1;if(nj<0)nj=0;
-    if(nj>=100&&!(c>2&&!strcmp(v[2],"--resume"))){printf("x %d/100 slots full, see: a job\n",nj);return 1;}}
+    if(nj>=100&&!(c>2&&!strcmp(v[2],"--resume"))){printf("x %d/100 slots full, see: a j\n",nj);return 1;}}
     init_db();load_cfg();load_proj();CWD(wd);
     if(c>3&&!strcmp(v[2],"--resume")){snprintf(wd,P,"%s",v[3]);
         if(!dexists(wd)){printf("x %s not found\n",wd);return 1;}
@@ -576,7 +574,6 @@ static int cmd_j(int c,char**v){
     fflush(stdout);  /* tm_go execs without flushing stdio — emit the report first */
     if(isatty(1))tm_go(sn);  /* only switch to it when interactive; web/piped dispatch just creates + reports */
     return 0;}
-static int cmd_job(int c,char**v){return(c>2&&isdigit(*v[2]))?cmd_jobs(c,v):cmd_j(c,v);}
 static int cmd_tmux(int c,char**v){if(!getenv("TMUX")){tm_go(c>2?v[2]:NULL);return 0;}if(c>2){execvp("tmux",v+1);return 1;}setenv("A_FILT_TAG","win pane quit",1);return cmd_i(c,v);}
 #define ADBSEL "S=${ANDROID_SERIAL:-};[ -z \"$S\" ]&&{ N=$(adb devices|awk '/\\tdevice$/{print $1}');n=$(printf %s \"$N\"|grep -c .);" \
     "case $n in 0)echo no device;exit 1;;1)S=$N;;*)printf %s \"$N\"|nl>&2;read -rp '# [1]: ' i </dev/tty||exit 130;S=$(printf %s \"$N\"|sed -n ${i:-1}p);[ -z \"$S\" ]&&{ echo invalid;exit 1;};;esac;};A=\"adb -s $S\";"
@@ -687,14 +684,13 @@ typedef struct { const char *n; int (*fn)(int, char**); } cmd_t;
 static int cmd_cmp(const void*a,const void*b){return strcmp(((const cmd_t*)a)->n,((const cmd_t*)b)->n);}
 static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
-    {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},{"ai",cmd_all},
-    {"all",cmd_all},
+    {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},
     {"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
-    {"install",cmd_install},{"j",cmd_j},{"job",cmd_job},{"jobs",cmd_job},
+    {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
     {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
@@ -708,8 +704,8 @@ static const cmd_t CMDS[] = {
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
     {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},
     {"uninstall",cmd_uninstall},{"update",cmd_update},
-    {"v",cmd_v},{"vm",cmd_vm},
-    {"w",cmd_w},{"watch",cmd_watch},{"webview",cmd_webview},{"work",cmd_w},
+    {"vm",cmd_vm},
+    {"w",cmd_w},{"work",cmd_w},
     {"x",cmd_x},
 };
 #define NCMDS (sizeof(CMDS)/sizeof(*CMDS))
