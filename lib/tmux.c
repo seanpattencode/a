@@ -4,12 +4,16 @@
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");
     (void)!system("tmux list-clients -t '"TMS"' -F'#{client_pid} #{client_tty}' 2>/dev/null|while read p t;do g='"TMS"'-$p;tmux has-session -t \"$g\" 2>/dev/null||tmux new-session -d -t '"TMS"' -s \"$g\" 2>/dev/null;tmux switch-client -c \"$t\" -t \"$g\" 2>/dev/null;done");}
+/* fire the reboot snapshot restore once per tmux-server life. ssh.c's `tmux new -A -s a` (a ssh attach) and
+   the web term can birth "a" off this path, so heal when the session already exists too; @a_restored guards
+   the single firing (resets when the server dies on reboot); logged, not silent (2026-07-10: maps agent lost). */
+#define ARESTORE "(tmux set -g @a_restored 1;{ date;a snap restore;}>>\"$HOME/.a-restore.log\" 2>&1&)"
 static void tm_ensure_sess(void){
     tm_gc();
-    if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
+    if(!system("tmux has-session -t '"TMS"' 2>/dev/null&&{ [ \"$(tmux show -gqv @a_restored 2>/dev/null)\" = 1 ]||" ARESTORE ";}"))return;
     /* own scope: `a ui reload` cgroup-kill must not take tmux down; diag: my/tmuxlog.sh */
     (void)!system("{ command -v systemd-run >/dev/null 2>&1&&systemctl --user show-environment >/dev/null 2>&1&&Z='systemd-run --user --scope -q --'||Z=;"
-        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done'&&(a snap restore >/dev/null 2>&1 &);tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
+        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done'&&" ARESTORE ";tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
