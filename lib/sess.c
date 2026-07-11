@@ -79,53 +79,28 @@ static void fq_index(void){for(int z=0;z<256;z++)fqhead[z]=-1;
     for(int i=0;i<nfq;i++){fqlen[i]=(unsigned char)strlen(fq[i].n);int c=(unsigned char)fq[i].n[0];if(c>='A'&&c<='Z')c+=32;fqnext[i]=fqhead[c];fqhead[c]=i;}}
 static int fq_get(const char*s){int b=0,bl=0;int c=(unsigned char)s[0];if(c>='A'&&c<='Z')c+=32;
     for(int i=fqhead[c];i>=0;i=fqnext[i]){int l=fqlen[i];if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return !strncmp(s,"home\t",5)?0x7fffffff:strstr(s,"\tproject")?(1<<30)-atoi(s):b;}
-static int ln_cmp(const void*a,const void*b){return fq_get(*(char*const*)b)-fq_get(*(char*const*)a);}
 typedef struct{char*s;int k,i;}LNK;  /* decorate-sort: fq_get is O(nfq); call it once per line, not per qsort comparison */
 static int lnk_cmp(const void*a,const void*b){const LNK*x=a,*y=b;return x->k!=y->k?y->k-x->k:x->i-y->i;}
-/* sort-cache: `a i` scores+sorts ~1100 launcher entries every launch (~0.4ms). Memoize the sorted list and
- * reuse it until an order-affecting input changes. ai_fpr = a cheap fingerprint of every such input:
- * i_cache + web_cache + freq_cache (mtime:size), the window-set (content hash, so the ≤1s win refresh's
- * spurious mtime bumps don't invalidate), and the build itself (__DATE__ __TIME__, so a rebuild — i.e. any
- * change to acts[]/this code — invalidates). Same fingerprint ⇒ identical order ⇒ skip the rescore. */
-static void ai_fpr(char*out,int os,const char*icache){
-    struct stat si={0},se={0},sf={0};char p[P];
-    stat(icache,&si);
-    snprintf(p,P,"%s/web_cache.txt",DDIR);stat(p,&se);
-    snprintf(p,P,"%s/freq_cache.txt",DDIR);stat(p,&sf);
-    unsigned wh=5381;char wcp[P];snprintf(wcp,P,"%s/win_cache.txt",DDIR);
-    size_t wl=0;char*wb=readf(wcp,&wl);if(wb){for(size_t i=0;i<wl;i++)wh=((wh<<5)+wh)^(unsigned char)wb[i];free(wb);}
-    snprintf(out,os,"%s %s|%ld:%lld|%ld:%lld|%ld:%lld|%u",__DATE__,__TIME__,
-        (long)si.st_mtime,(long long)si.st_size,(long)se.st_mtime,(long long)se.st_size,
-        (long)sf.st_mtime,(long long)sf.st_size,wh);
-}
-/* write the fingerprint (line 0) + sorted lines to one file, atomically (temp+rename → no torn read). */
-static void ai_savesorted(char**lines,int n,const char*fpr){
-    char tp[P],dp[P];snprintf(tp,P,"%s/i_sorted.txt.%ld",DDIR,(long)getpid());
-    FILE*f=fopen(tp,"w");if(!f)return;
-    fputs(fpr,f);fputc('\n',f);
-    for(int i=0;i<n;i++){fputs(lines[i],f);fputc('\n',f);}
-    if(!fclose(f)){snprintf(dp,P,"%s/i_sorted.txt",DDIR);rename(tp,dp);}else unlink(tp);
-}
+/* i_frame: last run's first frame (winsize header + alt-enter + bytes), blasted by main() before any init
+ * so the menu is visible at exec-floor speed (~0.3ms); the real render overwrites it ~1ms later, invisibly.
+ * Replaces the old i_sorted data memo — caching pixels beats caching the sorted list. */
+static int ifr_on;static double ifr_ms;  /* ifr_ms = when pixels hit the pty (true time-to-visible, shown as "seen") */
+static void ifr_blast(void){struct winsize w;char p[P];size_t l;
+    if(ioctl(1,TIOCGWINSZ,&w))return;snprintf(p,P,"%s/i_frame.%dx%d",DDIR,w.ws_row,w.ws_col);char*f=readf(p,&l);
+    if(f&&l){(void)!write(1,f,l);ifr_on=1;
+        struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ifr_ms=(double)(t.tv_sec-_t0.tv_sec)*1e3+(double)(t.tv_nsec-_t0.tv_nsec)/1e6;}
+    free(f);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
     perf_disarm(); init_db(); load_cfg();
     CWD(cwd);
     char cache[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);
-    char*lines[2048];int n=0;const char*ft0=getenv("A_FILT_TAG");char ai_fprbuf[256];int ai_write=0;
-    if(!ft0){  /* sort-cache fast path: reuse the memoized sorted list unless an order-affecting input changed */
-        struct stat si,ss;char sshp[P];snprintf(sshp,P,"%s/ssh",SROOT);
-        if(stat(cache,&si)==0 && !(stat(sshp,&ss)==0&&ss.st_mtime>si.st_mtime)){
-            ai_fpr(ai_fprbuf,sizeof ai_fprbuf,cache);
-            char scp[P];snprintf(scp,P,"%s/i_sorted.txt",DDIR);FILE*cf=fopen(scp,"r");
-            if(cf){char l0[256];if(fgets(l0,sizeof l0,cf)){l0[strcspn(l0,"\n")]=0;
-                if(!strcmp(l0,ai_fprbuf)){static char sbuf[1<<20];size_t sl=fread(sbuf,1,sizeof sbuf-1,cf);sbuf[sl]=0;
-                    for(char*p=sbuf,*e=sbuf+sl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}}
-            fclose(cf);}}
-    }
+    {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%.0s%s/.local/share/applications","%.0s/usr/share/applications"};  /* regen when a source is newer; >= = same-second; %.0s eats SROOT */
+    if(!stat(cache,&c))for(int i=0;i<4;i++){snprintf(q,P,F[i],SROOT,HOME);if(!stat(q,&s)&&s.st_mtime>=c.st_mtime){unlink(cache);break;}}}
+    char*lines[2048];int n=0;const char*ft0=getenv("A_FILT_TAG");
     size_t len=0;char*raw=0;
-    if(!n){  /* miss / filtered view: full read + score + sort, then memoize the result (saved after first paint) */
+    {
     raw=readf(cache,&len);
-    {struct stat c,s;char d[P];snprintf(d,P,"%s/ssh",SROOT);if(raw&&!stat(cache,&c)&&!stat(d,&s)&&s.st_mtime>c.st_mtime){free(raw);raw=0;}}
     if(!raw){gen_icache();raw=readf(cache,&len);if(!raw)return 1;}
     {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);FILE*ff=fopen(fp,"r");if(ff){char ln[128];nfq=0;
         while(nfq<1024&&fgets(ln,128,ff)){char*c=strchr(ln,':');if(!c)continue;*c=0;
@@ -137,7 +112,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
      if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
     static char wb[32768];size_t wl=0;
-    {const char*ft=getenv("A_FILT_TAG");int winview=ft&&strstr(ft,"win");  /* -t TMS not -a: grouped a-<pid> sessions re-list the same windows. win view adds pane tail */
+    {int winview=ft0&&strstr(ft0,"win");  /* -t TMS not -a: grouped a-<pid> sessions re-list the same windows. win view adds pane tail */
     if(winview){FILE*p=popen("tmux lsw -t '"TMS"' -F '#{window_id} #W' 2>/dev/null|while read -r i w;do printf '%s\twin\t%s · %s\n' \"$w\" \"$i\" \"$(tmux capturep -pt $i -S -50 2>/dev/null|awk '/[a-z]/&&!/tokens|bypass/{gsub(/^ +| +$/,\"\");s=$0\" \"s}END{print substr(s,1,250)}')\";done","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
     else{/* fork-free fast path: read cached window list; a detached ≤1/s bg refresh keeps it warm so the tmux fork stays off the launch path */
         char wc[P];snprintf(wc,P,"%s/win_cache.txt",DDIR);size_t cl;char*cw=readf(wc,&cl);
@@ -159,37 +134,43 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     if(!n){puts("Empty cache");free(raw);return 1;}
     {static LNK lk[2048];for(int i=0;i<n;i++){lk[i].s=lines[i];lk[i].k=fq_get(lines[i]);lk[i].i=i;}
      qsort(lk,(size_t)n,sizeof*lk,lnk_cmp);for(int i=0;i<n;i++)lines[i]=lk[i].s;}
-    if(!ft0){ai_fpr(ai_fprbuf,sizeof ai_fprbuf,cache);ai_write=1;}  /* re-fingerprint (i_cache may have just regenerated) + arm the deferred save */
     }
-    {char*f=getenv("A_FILT_TAG"),*t;int j=0;
-    if(f){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))){
+    {char*t;int j=0;
+    if(ft0){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))){
         char tg[64];char*t2=strchr(t+1,'\t');size_t tl=t2?(size_t)(t2-t-1):strlen(t+1);
         if(tl>63)tl=63;memcpy(tg,t+1,tl);tg[tl]=0;
-        if(strstr(f,tg))lines[j++]=lines[i];}n=j;}}
-    int m_mode=0;{char*f=getenv("A_FILT_TAG");if(f&&!strcmp(f,"m"))m_mode=1;}
-    if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);if(ai_write)ai_savesorted(lines,n,ai_fprbuf);free(raw);return 0;}
+        if(strstr(ft0,tg))lines[j++]=lines[i];}n=j;}}
+    int m_mode=ft0&&!strcmp(ft0,"m");
+    if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
     struct winsize ws;
     struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
-    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);
-    char buf[256]="";int blen=0,sel=0,cfgmode=0,paste=0;char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="";
+    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);if(!ifr_on)write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);
+    int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="";time_t lastfire=0;
     static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
-    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw)
+    #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)  /* heap buf: paste of any length */
+    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw);free(buf)
     struct timespec tk=_t0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since _t0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
     while (1) {
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: input-box rules */
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
         if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],buf))continue;fm[nm++]=(char*)ICFG[i];}}
-        else for (int i=0;i<n&&nm<2048;i++) {
+        else for (int i=0;i<n&&nm<2048&&blen<256;i++) {  /* paste-scale buf can't be a filter (b2 cap) → prompt row only */
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
-            if(!blen&&(strstr(lines[i],"\tdir")||!strncmp(lines[i],"web ",4)))continue;
+            if(!blen&&(strstr(lines[i],"\tdir")||(!strncmp(lines[i],"web ",4)&&!strstr(lines[i]," · bm"))))continue;
             if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,buf);int ok=1;
                 for(w=strtok(b2," ");w&&ok;w=strtok(0," "))if(!strcasestr(s,w))ok=0;if(!ok)continue;
                 if(s[blen]<=' '&&!strncasecmp(s,buf,(size_t)blen)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
             fm[nm++]=lines[i];
         }
         const char*ag=cfget("i_agent");if(!*ag)ag="claude";const char*ef=cfget("i_effort");if(!*ef)ef=strstr(ag,"codex")?"xhigh":"max";
-        int na=(lastwin[0]&&!cfgmode&&!blen&&!plen)?1:0,tot=nm+na;if(sel>=tot)sel=tot?tot-1:0;
+        int na=(lastwin[0]&&!cfgmode&&!blen&&!plen)?1:0,vo=na+(blen&&!plen&&!cfgmode),tot=nm+vo;  /* vo: virtual row 0 = last-win switch OR live prompt row */
+        if(rotate){sel=nm==pnm?sel+1:vo;rotate=0;}pnm=nm;  /* keystroke that doesn't narrow (same nm) disambiguated nothing → next candidate; narrowed → first match */
+        if(sel>=tot)sel=tot?tot-1:0;
+        int fresh=lastfire&&time(0)-lastfire<180;if(!fresh)ltl[0]=0;  /* fired-win live tail: last 2 pane lines, refreshed by the poll below for 3min, then collapses */
+        char*tl1=0,*tl2=0;int ll1=0,ll2=0;if(na){char*p2=ltl;while(*p2&&!tl2){char*e2=strchr(p2,'\n');int L2=e2?(int)(e2-p2):(int)strlen(p2);
+            if(L2){if(!tl1){tl1=p2;ll1=L2;}else{tl2=p2;ll2=L2;}}if(!e2)break;p2=e2+1;}}
+        int xtra=na?(tl2?2:(tl1||fresh)?1:0):0;  /* receipt rows under the switch row (snippet rides the row itself) */
         int hdr_rows=0;char hl[2048];int hll=0,Wc=ws.ws_col?ws.ws_col:80;
         if(m_mode){load_cfg();const char*cm=cfget("m_model");if(!*cm)cm="opus";
             const char*cg=cfget("m_agent");if(!*cg)cg="claude";
@@ -203,7 +184,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
             free(ms); hdr_rows=hll>0?(hll+Wc-1)/Wc:1;}
         int em=m_mode?(ws.ws_row>hdr_rows+5?ws.ws_row-hdr_rows-5:1):maxshow;  /* -2 more: input box rules */
-        int avail=em-na>0?em-na:1,ms=sel-na,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
+        int avail=em-vo-xtra>0?em-vo-xtra:1,ms=sel-vo,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
         int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
         double fms;{struct timespec _n;clock_gettime(CLOCK_MONOTONIC,&_n);fms=(_n.tv_sec-tk.tv_sec)*1e3+(_n.tv_nsec-tk.tv_nsec)/1e6;}
         {char fb[B*4];int fl=0;
@@ -214,32 +195,45 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 FP("\033[36m%.*s\033[0m\033[K\n",ch,hl+p);
                 p+=ch?ch:1;
             }while(p<hll);}
-        int Wr=ws.ws_col>8?ws.ws_col:80;char hint[320]="";  /* input BOX: bar above+below the > line → safe to type long (prompts, note text) */
+        int Wr=ws.ws_col>8?ws.ws_col:80,ccol=plen+blen+3;char hint[320]="";  /* input BOX: bar above+below the > line → safe to type long (prompts, note text) */
         #define RULE do{for(int _r=0;_r<Wr;_r++)FP("─");FP("\033[K\n");}while(0)
         RULE;
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
-        else if(!blen&&!plen)FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s %.3fms\033[0m\033[K\n",act,fms);
-        else if(plen)FP("%s> %s\033[K\n",prefix,buf);
-        else{int W=ws.ws_col?ws.ws_col:80,mi=sel-na;FP("> %s\033[K\n",buf);
-            if(mi>=0&&mi<nm){char*m=fm[mi],*tb=strchr(m,'\t');snprintf(hint,320,"↵ run: %.*s",tb?(int)(tb-m):(int)strlen(m),m);}
-            else snprintf(hint,320,"↵ new tmux win → %s eff=%s : \"%.*s\"",ag,ef,W>44?W-44:20,buf);}
+        else if(!blen&&!plen){char sn2[32]="";if(ifr_ms)snprintf(sn2,32,"seen %.3f · ",ifr_ms);
+            FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
+        else{int W=ws.ws_col?ws.ws_col:80,aw=W-plen-4,off=0,cw=0;char cnt[24]="";  /* one row, tail-anchored: end stays visible; Nc count = proof the whole paste landed */
+            if(aw>440)aw=440;if(aw<8)aw=8;
+            if(blen>aw){cw=snprintf(cnt,24,"%dc…",blen)-2;aw-=cw;if(aw<8)aw=8;off=blen-aw;while(off<blen&&(buf[off]&0xC0)==0x80)off++;}
+            char vis[512];int vl=0;for(int k=off;k<blen;k++,vl++)vis[vl]=(char)(buf[k]=='\n'||buf[k]=='\t'?' ':buf[k]);vis[vl]=0;
+            FP("%s> \033[90m%s\033[0m%s\033[K\n",plen?prefix:"",cnt,vis);ccol=plen+3+cw+vl;
+            if(!plen){int hw=W-31-(int)strlen(ag)-(int)strlen(ef);if(hw<8)hw=8;if(hw>vl)hw=vl;  /* live tail-follow, … marks the cut */
+                snprintf(hint,320,"↵ new tmux win → %s eff=%s : \"%s%s\"",ag,ef,blen>hw?"…":"",vis+vl-hw);}}
         RULE;
         #undef RULE
-        if(hint[0])FP("\033[90m%s\033[0m\033[K\n",hint);
-        if(na)FP("%s \033[36m⮌ switch → win %s (just fired)\033[0m\033[K\n",sel==0?" >":"  ",lastidx);
-        for(int i=0;i<show;i++){int j=top+i,gj=j+na,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
+        if(hint[0])FP("%s \033[%dm%s\033[0m\033[K\n",sel?"  ":" >",sel?90:37,hint);  /* prompt row: selectable, bright when picked */
+        if(na){int pl2=(int)strlen(lastpr),mx=Wc-22;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}
+            FP("%s \033[36m⮌ switch → win %s · %.*s%s\033[0m\033[K\n",sel==0?" >":"  ",lastidx,pl2,lastpr,cut?"…":"");
+            if(!tl1&&fresh)FP("   \033[90m(no output yet)\033[0m\033[K\n");
+            for(int r=0;r<2;r++){char*t3=r?tl2:tl1;int L3=r?ll2:ll1,mw=Wc-4;if(!t3)continue;if(mw<8)mw=8;
+                if(L3>mw){L3=mw;while(L3>0&&(t3[L3]&0xC0)==0x80)L3--;}FP("   \033[90m%.*s\033[0m\033[K\n",L3,t3);}}
+        for(int i=0;i<show;i++){int j=top+i,gj=j+vo,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
             char*desc=t2?t2+1:(t?t+1:"");int dl=(int)strnlen(desc,50);
             if(ml>W-7-dl)ml=W-7-dl;FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dl,dl,desc);FP("\n");}
-        FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,plen+blen+3);  /* +1: top rule of input box */
+        FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,ccol);  /* +1: top rule of input box */
         #undef FP
-        (void)!write(STDOUT_FILENO,fb,(size_t)fl);if(ai_write){ai_savesorted(lines,n,ai_fprbuf);ai_write=0;}}
+        (void)!write(STDOUT_FILENO,fb,(size_t)fl);
+        if(sv&&!ft0){sv=0;char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames: blast fires whenever this pane size recurs. non-atomic: torn read = one cosmetic frame */
+            if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);(void)!write(fd,fb,(size_t)fl);close(fd);}}}
         char ch;
-        if(m_mode){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,250);
-            if(pr==0){clock_gettime(CLOCK_MONOTONIC,&tk);continue;} if(pr<0)break;}
-        if(read(0,&ch,1)!=1) break;
+        int lw=na&&fresh;  /* live tail ticks only while the receipt is fresh (foreground, ≤3min) — then back to pure block-on-key */
+        if(m_mode||lw){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,m_mode?250:500);
+            if(pr==0){if(lw){char q2[512];snprintf(q2,512,"tmux capturep -pt %s -S -40 2>/dev/null|awk '/[a-z]/&&!/tokens|bypass/{gsub(/^ +| +$/,\"\");if($0!=\"\")L[++i]=$0}END{for(j=i>1?i-1:1;j<=i;j++)print L[j]}'",lastwin);
+                pcmd(q2,ltl,(int)sizeof ltl);act="live";}
+                clock_gettime(CLOCK_MONOTONIC,&tk);continue;} if(pr<0)break;}
+        rd: if(read(0,&ch,1)!=1) break;
         clock_gettime(CLOCK_MONOTONIC,&tk);  /* key arrived → time the repaint it triggers */
         int do_pick=0;
         if(ch=='\x1b'){int av;ioctl(0,FIONREAD,&av);if(!av){usleep(2000);ioctl(0,FIONREAD,&av);}  /* arrow-seq bytes are already buffered → instant; only a genuine lone ESC waits 2ms (was 50ms on every arrow) */
@@ -252,33 +246,38 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     while(read(0,&mc,1)==1&&mc!=';')mb=mb*10+mc-'0';
                     while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
-                    if(mc=='M'){if(!mb){int rr=my-(m_mode?3:2);if(na&&rr==0){sel=0;do_pick=1;}
-                        else{int ci=top+rr-na;if(ci>=0&&ci<nm){sel=ci+na;do_pick=1;}}}
+                    if(mc=='M'){if(!mb){int rr=my-(m_mode?hdr_rows:0)-4;if(na&&rr==0){sel=0;do_pick=1;}  /* -4: 3 input-box rows + 1 (rows are 1-based); tail rows aren't clickable */
+                        else{int ci=top+rr-vo-xtra;if(rr>=vo+xtra&&ci>=0&&ci<nm){sel=ci+vo;do_pick=1;}}}
                     else if(mb==64&&sel>0){sel--;}else if(mb==65&&sel<tot-1){sel++;}}}
                 else if(seq[1]=='2'){char d0=0,d1=0;act="paste";  /* bracketed paste marks \033[200~ / \033[201~ */
                     if(read(0,&d0,1)==1&&d0!='~'&&read(0,&d1,1)==1){char t=d1;while(t!='~'&&read(0,&t,1)==1);
                         if(d0=='0'&&d1=='0')paste=1;else if(d0=='0'&&d1=='1')paste=0;}}
             } else if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;act="esc";} else if(!m_mode)break;
-        } else if(ch=='\t'){if(sel<tot-1)sel++;act="↓";}
-        else if(ch=='\x7f'||ch=='\b'){if(blen)buf[--blen]=0;sel=0;act="⌫";}
-        else if(ch=='\r'||ch=='\n'){if(paste){if(blen&&blen<254&&buf[blen-1]!=' '){buf[blen++]=' ';buf[blen]=0;}}else do_pick=1;}  /* pasted \n = space, never Enter (pasted email fired web entry → firefox) */
+        } else if(ch=='\t'&&!paste){if(sel<tot-1)sel++;act="↓";}
+        else if(ch=='\x7f'||ch=='\b'){while(blen&&(buf[blen-1]&0xC0)==0x80)blen--;if(blen)buf[--blen]=0;sel=blen&&!prefix[0]&&!cfgmode;act="⌫";}
+        else if(ch=='\r'||ch=='\n'){if(paste){if(blen){BFIT;buf[blen++]='\n';buf[blen]=0;}}else do_pick=1;}  /* pasted \n = kept literal, never Enter (pasted email fired web entry → firefox) */
         else if(ch==7&&!cfgmode){cfgmode=1;sel=0;buf[0]=0;blen=0;act="config";(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
         else if(ch==3){if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;}else if(!m_mode)break;}
         else if(ch==4)break;
-        else if(isalnum(ch)||strchr(" -_.",ch)){if(blen<254){buf[blen++]=ch;buf[blen]=0;sel=0;act="filter";}}
+        else if((unsigned char)ch>=32||(paste&&ch=='\t')){BFIT;buf[blen++]=ch;buf[blen]=0;rotate=1;act="filter";}  /* any byte: punctuation+UTF-8 paste intact; rotate resolves next frame; ↑ = prompt row */
+        if(paste){int av=0;ioctl(0,FIONREAD,&av);if(av>0)goto rd;}  /* drain the paste burst before repainting: O(n), not a repaint per byte */
         if(do_pick&&cfgmode&&nm&&sel<nm){char fld[16]="",val[32]="",ck[24];
             sscanf(fm[sel],"%15s %31s",fld,val);snprintf(ck,24,"i_%s",fld);cfset(ck,val);load_cfg();
             buf[0]=0;blen=0;sel=0;continue;}
-        if(do_pick&&!cfgmode&&!prefix[0]&&blen&&!nm){  /* no command matched → fire the prompt as a new agent win */
+        if(do_pick&&!cfgmode&&!prefix[0]&&blen&&(!sel||!nm)){  /* prompt row selected (or nothing matches) → fire as new agent win */
             const char*ia=cfget("i_agent");if(!*ia)ia="claude";const char*ie=cfget("i_effort");if(!*ie)ie=strstr(ia,"codex")?"xhigh":"max";
-            char run[B+64],cm[B+256],wi[16]="?";
-            if(strstr(ia,"codex"))snprintf(run,sizeof run,"codex -c model_reasoning_effort=%s --dangerously-bypass-approvals-and-sandbox \"%s\"",ie,buf);
-            else snprintf(run,sizeof run,"claude --dangerously-skip-permissions --effort %s \"%s\"",ie,buf);
+            char run[B+64],cm[B+256],wi[16]="?",pf[P];
+            snprintf(pf,P,"%s/i_prompt.txt",DDIR);writef(pf,buf);  /* prompt rides a file: any length, quotes/newlines can't break the two shell layers */
+            if(strstr(ia,"codex"))snprintf(run,sizeof run,"codex -c model_reasoning_effort=%s --dangerously-bypass-approvals-and-sandbox \"$(cat %s)\"",ie,pf);
+            else snprintf(run,sizeof run,"claude --dangerously-skip-permissions --effort %s \"$(cat %s)\"",ie,pf);
             snprintf(cm,sizeof cm,"tmux new-window -dP -F '#{window_index} #{window_id}' -c '%s' '%s;exec bash'",cwd,run);
             pcmd(cm,wi,16);sscanf(wi,"%7s %15s",lastidx,lastwin);
+            {int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;  /* receipt: head of what actually went */
+             for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}
+            ltl[0]=0;lastfire=time(0);
             snprintf(jstat,sizeof jstat,"→ win %s · %s/%s",lastidx,ia,ie);buf[0]=0;blen=0;sel=-1;continue;}  /* sel=-1: nothing selected, so one ↓ lands on the switch row (no accidental switch) */
         if(do_pick&&na&&sel==0){IRST;char c[64];snprintf(c,64,"tmux select-window -t %s",lastwin);(void)!system(c);return 0;}
-        if(do_pick&&nm&&sel>=na&&sel-na<nm){char*m=fm[sel-na],cmd[256];
+        if(do_pick&&nm&&sel>=vo&&sel-vo<nm){char*m=fm[sel-vo],cmd[256];
             {char*wt=strstr(m,"\twin\t@");if(wt){IRST;char wc[64];snprintf(wc,64,"tmux selectw -t %.*s",(int)strcspn(wt+5," "),wt+5);(void)!system(wc);return 0;}}
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
@@ -312,5 +311,6 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     }
     IRST;
     #undef IRST
+    #undef BFIT
     return 0;
 }
