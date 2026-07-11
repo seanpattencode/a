@@ -1634,15 +1634,18 @@ def _apk_auth(serial):
         serial=ds[0] if len(ds)==1 else pick(ds)
     names=_provision(serial,P)
     print(f"✓ provisioned termux on {serial}: {', '.join(names)}" if names else "! no gh/rclone creds on this dev box to push")
+def _txupdate(serial,pkg):   # pull+rebuild termux a via /api/omni, then restart serve so the new binary is live (a update doesn't reload the running serve); force-stops com.termux. skip: noup
+    d=f"adb -s {serial} ";S.run(["sh","-c",d+f"forward tcp:19112 tcp:1112;sleep 3;curl -sm90 localhost:19112/api/omni --data-urlencode q=update;sleep 8;"+d+"shell am force-stop com.termux;"+d+f"shell am start -n {pkg}/.M;"+d+"forward --remove tcp:19112"],capture_output=True);print("→ termux a updated + serve restarted")
 def run():
     if "pair" in sys.argv[1:]:return shizuku_pair()
     if "pair-qr" in sys.argv[1:] or "qr" in sys.argv[1:]:return qr_pair()
     if "auth" in sys.argv[1:]:return _apk_auth(next((a for a in sys.argv[2:] if a!="auth"),None))
     auth_on="noauth" not in sys.argv[2:]
+    up_on="noup" not in sys.argv[2:]   # default: bring termux a to latest + restart its serve after install
     AMAP={"arm":"armeabi-v7a","v7a":"armeabi-v7a","armeabi-v7a":"armeabi-v7a","arm64":"arm64-v8a","v8a":"arm64-v8a","arm64-v8a":"arm64-v8a"}
     proj=serial=ABI=None
     for a in sys.argv[2:]:
-        if a=="noauth":continue
+        if a in("noauth","noup"):continue
         if a in AMAP:ABI=AMAP[a];continue
         for p in [a,H+"/"+a,R+"/adata/git/my/"+a]:
             if os.path.isdir(p) and glob.glob(p+"/build.gradle*"):proj=os.path.abspath(p);break
@@ -1749,7 +1752,8 @@ def run():
             serial=pick(ds)
         if _rish_install(apk,pkg,serial=serial):
             names=_provision(serial,pkg) if auth_on else []
-            if not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
+            if pkg and up_on:_txupdate(serial,pkg)
+            elif not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
             print("✓ "+(pkg or os.path.basename(apk))+" (rish)"+(" + creds: "+", ".join(names) if names else ""));return
         r=adb("install","-r","-g",apk,serial=serial)
         if "INSTALL_FAILED" in r.stdout+r.stderr:
@@ -1757,7 +1761,8 @@ def run():
             r=adb("install","-g",apk,serial=serial)
         if r.returncode:print(r.stderr);sys.exit(1)
         names=_provision(serial,pkg) if auth_on else []
-        if not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
+        if pkg and up_on:_txupdate(serial,pkg)
+        elif not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
         if names:print("→ provisioned termux creds: "+", ".join(names))
     print("✓ "+(pkg or os.path.basename(apk)))
 run()
