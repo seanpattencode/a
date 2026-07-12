@@ -2,7 +2,7 @@
 """a res — resume agents: interactive pick, or save/restore the OPEN tmux windows across a reboot.
 (same command as `a resume` and `a snap`)
 
-  a res                                  interactive: pick a recent claude session (c/g/k = codex/gemini/grok native resume)
+  a res                                  type-to-search convo text live; ↵ resumes (codex/gemini/grok rows = native resume)
   a res save | show | restore [--dry]    snapshot / restore the tmux session across a reboot
 
 Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini/grok windows resume their session
@@ -269,52 +269,66 @@ def _age(s):
     s = int(s); return f"{s//60}m" if s < 3600 else (f"{s//3600}h" if s < 86400 else f"{s//86400}d")
 
 
-def _claude_list(flt="", mins=0):                     # recent claude transcripts: [(mtime, id, cwd, turns, preview)]
-    now, out = time.time(), []
-    for f in sorted(glob.glob(f"{PROJ}/*/*.jsonl"), key=os.path.getmtime, reverse=True)[:150]:
-        if mins and os.path.getmtime(f) < now - mins * 60: continue
-        try: txt = open(f, errors="ignore").read()
-        except OSError: continue
-        if flt and flt.lower() not in txt.lower(): continue
-        turns = txt.count('"role":"user","content":"')
-        if turns < 2: continue
-        m = re.search(r'"cwd":"([^"]+)"', txt); cwd = m[1] if m else ""
-        if not os.path.isdir(cwd): continue
-        p = re.search(r'"role":"user","content":"([^"]{1,50})', txt)
-        out.append((os.path.getmtime(f), os.path.basename(f)[:-6], cwd, turns, re.sub(r"\s+", " ", p[1]) if p else ""))
-        if len(out) >= 20: break
-    return now, out
+def _snip(ut, q, w):                                  # the line that MATCHED, match underlined; no q → last message
+    i = ut.lower().find(q or "\0")
+    s = re.sub(r"\s+", " ", ut[max(0, i - 22):i + w] if i >= 0 else ut.rsplit("\n", 1)[-1]).strip()[:max(10, w)]
+    j = s.lower().find(q or "\0")
+    return f"{s[:j]}\x1b[4m{s[j:j+len(q)]}\x1b[24m{s[j+len(q):]}" if j >= 0 else s
 
 
 def _claunch(sid, cwd):                               # resume one claude transcript in a new window
     subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(cwd)}", "-c", cwd, RESUME["claude"] % sid])
 
 
-def pick():                                           # interactive resume picker (claude inline; codex/gemini native)
+def pick():                                           # type-to-search resume picker: every key filters USER text live, ↵ opens
     if not os.environ.get("TMUX"): print("x need tmux"); return
-    flt = ""
-    while True:
-        now, L = _claude_list(flt)
-        print()
-        for i, (mt, sid, cwd, turns, prev) in enumerate(L, 1):
-            print(f"{i:2d}) {_age(now - mt):>4} {turns:3d}t {os.path.basename(cwd):<12} {prev}")
-        if not L: print("(none)")
-        print(" c) codex   g) gemini   k) grok   (native resume)")
-        try: x = input(f"# {('[/' + flt + '] ') if flt else ''}pick #, c/g/k, text=search, a=restore recent, q: ").strip()
-        except EOFError: return
-        if x in ("", "q"): return
-        if x == "c": subprocess.run(["tmux", "new-window", "-n", "r-codex", "codex resume; exec bash"]); return
-        if x == "g": subprocess.run(["tmux", "new-window", "-n", "r-gemini", RESUME["gemini"]]); return
-        if x == "k": subprocess.run(["tmux", "new-window", "-n", "r-grok", "grok --always-approve --resume; exec bash"]); return
-        if x == "a":
-            try: mins = int(input("restore all claude active within how many hours: ")) * 60
-            except (ValueError, EOFError): continue
-            _, A = _claude_list(flt, mins=mins)
-            for _mt, sid, cwd, _t, _p in A: _claunch(sid, cwd)
-            print(f"+ restored {len(A)}"); return
-        if x.isdigit() and 1 <= int(x) <= len(L):
-            _mt, sid, cwd, _t, _p = L[int(x) - 1]; _claunch(sid, cwd); return
-        flt = x                                       # anything else = search filter
+    import termios, tty, select
+    t1 = time.perf_counter_ns(); rows = []              # [mt, sid, cwd, turns, user-text] — his words, not tool blobs
+    for f in sorted(glob.glob(f"{PROJ}/*/*.jsonl"), key=os.path.getmtime, reverse=True)[:150]:
+        try: txt = open(f, errors="ignore").read()
+        except OSError: continue
+        ms = [x for x in re.findall(r'"role":"user","content":"([^"]{2,400})', txt)
+              if "command-name" not in x and not x.startswith(("<", "[Request"))]
+        c = re.search(r'"cwd":"([^"]+)"', txt)
+        if len(ms) > 1 and c and os.path.isdir(c[1]):
+            rows.append([os.path.getmtime(f), os.path.basename(f)[:-6], c[1], len(ms),
+                         "\n".join(ms)[-65536:].replace('\\"', '"').replace("\\n", " ")])
+    if not sys.stdin.isatty():                        # scripted use: print once, never hang
+        for r in rows[:20]: print(f"{_age(time.time()-r[0]):>4} {r[3]:3d}t {os.path.basename(r[2]):<12} {_snip(r[4], '', 58)}")
+        return
+    corp = [(r, (os.path.basename(r[2]) + "\n" + r[4]).lower()) for r in rows]
+    NAT = [("codex", "codex resume; exec bash"), ("gemini", RESUME["gemini"]),
+           ("grok", "grok --always-approve --resume; exec bash")]
+    q, sel, act = "", 0, None
+    old = termios.tcgetattr(0)
+    sys.stdout.write("\x1b[?1049h\x1b[?25l")
+    try:
+        tty.setcbreak(0)
+        while True:
+            ql = q.lower()                            # rank: most user-text hits first, then newest; best sits AT the menu
+            m = sorted(((r, l) for r, l in corp if ql in l), key=lambda x: (-x[1].count(ql), -x[0][0])) if q else corp
+            W, H = os.get_terminal_size()
+            items = [x for x in NAT if ql in x[0]] + [r for r, _l in reversed(m[:H - 5])]
+            sel = max(0, min(sel, len(items) - 1))
+            o = "\x1b[H" + "\x1b[K\n" * (H - 1 - len(items))
+            for i, it in enumerate(items):
+                ln = f"   {it[0]} — native resume" if isinstance(it, tuple) \
+                    else f" {_age(time.time()-it[0]):>4} {it[3]:>4}t {os.path.basename(it[2]):<10.10} {_snip(it[4], ql, W-24)}"
+                o += ("\x1b[7m" if i == len(items) - 1 - sel else "") + ln + "\x1b[0m\x1b[K\n"
+            o += f"/{q}▌ {len(m)}/{len(rows)} · type=search ↑↓ ↵=open esc=quit · {(time.perf_counter_ns()-t1)/1e6:.4f}ms"[:W] + "\x1b[K"
+            sys.stdout.write(o); sys.stdout.flush()
+            b = os.read(0, 1); t1 = time.perf_counter_ns()
+            if b in (b"\x03", b"\x04"): return
+            if b == b"\x1b":
+                if not select.select([0], [], [], 0.02)[0]: return
+                b2 = os.read(0, 2); sel += (b2 in (b"[A", b"OA")) - (b2 in (b"[B", b"OB"))
+            elif b in (b"\r", b"\n") and items: act = items[len(items) - 1 - sel]; break
+            elif b in (b"\x7f", b"\x08"): q, sel = q[:-1], 0
+            elif b >= b" ": q, sel = q + b.decode("utf-8", "ignore"), 0
+    finally:
+        termios.tcsetattr(0, termios.TCSADRAIN, old); sys.stdout.write("\x1b[?1049l\x1b[?25h"); sys.stdout.flush()
+    if isinstance(act, list): _claunch(act[1], act[2])
+    elif act: subprocess.run(["tmux", "new-window", "-n", f"r-{act[0]}", act[1]])
 
 
 RQ = r'''LIVE=$(tmux list-panes -s -t a -F "#{pane_start_command}" 2>/dev/null|grep -oE "[0-9a-f]{8}-[0-9a-f-]{27}")
