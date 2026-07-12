@@ -48,7 +48,7 @@ AHK
         ok "WSL: right shift = Ctrl+PageDown"
         exit 0
     fi
-    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nleftshift = overloadt2(shift, A-left, 200)\nrightshift = overloadt2(shift, A-right, 200)\n\n[control]\ntab = A-right\n\n[control+shift]\ntab = A-left\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → Ctrl+Tab/Ctrl+Shift+Tab + L/R-shift tap = next/prev window" || warn "keyd skipped" ;;
+    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nrightshift = overloadt2(shift, A-right, 200)\n\n[control]\ntab = A-right\n\n[control+shift]\ntab = A-left\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → Ctrl+Tab/Ctrl+Shift+Tab + R-shift tap = next/prev window" || warn "keyd skipped" ;;
 darwin*)
     pgrep -x Hammerspoon >/dev/null && { killall Hammerspoon 2>/dev/null; rm -f ~/.hammerspoon/init.lua; info "stopped Hammerspoon"; }
     command -v swiftc >/dev/null || { warn "need Command Line Tools: xcode-select --install"; exit 1; }
