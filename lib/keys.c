@@ -1,6 +1,6 @@
 #if 0
 #!/bin/bash
-# a keys on|off — caps→summon, right-shift→tmux next-window (mac: CGEventTap subprocess)
+# a keys on|off — key remaps: linux keyd, mac CGEventTap (caps→summon)
 set -e
 D="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; ACTION="${1:-on}"; ABIN="${D%%/adata/worktrees/*}/adata/local"
 G='\033[32m' Y='\033[33m' C='\033[36m' R='\033[0m'
@@ -32,16 +32,6 @@ fi
 
 case "$OSTYPE" in
 linux*)
-    cat > "$ABIN/a-launch" << 'LAUNCH'
-#!/bin/sh
-ABIN="$(dirname "$0")"
-[ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ] && exit 0
-if curl -s -o /dev/null http://a.local:1111 2>/dev/null; then xdg-open "http://a.local:1111" >/dev/null 2>&1 &
-else for T in ptyxis gnome-terminal alacritty foot xterm; do command -v "$T" >/dev/null 2>&1 && break; done
-    case "$T" in ptyxis|gnome-terminal) "$T" -- "$ABIN/a" i ;; alacritty) "$T" -e "$ABIN/a" i ;; foot) "$T" "$ABIN/a" i ;; *) xterm -e "$ABIN/a" i ;; esac
-fi
-LAUNCH
-    chmod +x "$ABIN/a-launch"
     if grep -qi microsoft /proc/version 2>/dev/null; then
         WU=$(powershell.exe -NoProfile -Command 'echo $env:USERNAME'|tr -d '\r\n ')
         SU="/mnt/c/Users/$WU/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup"
@@ -58,29 +48,7 @@ AHK
         ok "WSL: right shift = Ctrl+PageDown"
         exit 0
     fi
-    # keyd (right shift → Ctrl+PageDown) — first, doesn't need DBUS
-    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nleftshift = overloadt(shift, A-left, 200)\nrightshift = overloadt(shift, A-right, 200)\n\n[control]\ntab = A-right\n\n[control+shift]\ntab = A-left\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → Ctrl+Tab/Ctrl+Shift+Tab + L/R-shift tap = next/prev window" || warn "keyd skipped"
-    # GNOME bits — skip silently if no DBUS session
-    command -v gsettings >/dev/null && gsettings list-schemas >/dev/null 2>&1 || { info "no GNOME session — skipping capslock/Hyper bindings"; exit 0; }
-    OPTS=$(gsettings get org.gnome.desktop.input-sources xkb-options 2>/dev/null)
-    if [[ "$OPTS" != *"caps:hyper"* ]]; then
-        if [[ "$OPTS" == "@as []" || "$OPTS" == "[]" ]]; then OPTS="['caps:hyper']"
-        else OPTS="${OPTS%]*}, 'caps:hyper']"; fi
-        gsettings set org.gnome.desktop.input-sources xkb-options "$OPTS"
-        ok "capslock → Hyper"
-    else info "capslock already Hyper"; fi
-    gsettings set org.gnome.shell.keybindings toggle-application-view "[]" 2>/dev/null
-    info "unbound Super+a (app view) to avoid conflict"
-    EX=$(gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings 2>/dev/null)
-    if [[ "$EX" != *"a-launch"* ]]; then
-        if [[ "$EX" == "@as []" || "$EX" == "[]" ]]; then EX="['$KB']"
-        else EX="${EX%]*}, '$KB']"; fi
-        gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "$EX"
-    fi
-    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB name 'a launch'
-    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB command "$ABIN/a-launch"
-    gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:$KB binding '<Hyper>a'
-    ok "CapsLock+a → a i (or a ui if running)" ;;
+    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nleftshift = overloadt2(shift, A-left, 200)\nrightshift = overloadt2(shift, A-right, 200)\n\n[control]\ntab = A-right\n\n[control+shift]\ntab = A-left\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → Ctrl+Tab/Ctrl+Shift+Tab + L/R-shift tap = next/prev window" || warn "keyd skipped" ;;
 darwin*)
     pgrep -x Hammerspoon >/dev/null && { killall Hammerspoon 2>/dev/null; rm -f ~/.hammerspoon/init.lua; info "stopped Hammerspoon"; }
     command -v swiftc >/dev/null || { warn "need Command Line Tools: xcode-select --install"; exit 1; }
@@ -111,7 +79,7 @@ SWIFT
     launchctl unload "$PL" 2>/dev/null||:; launchctl load "$PL"
     ok "a-keys → caps→summon · right-shift→next-window"
     info "GRANT: System Settings → Accessibility → remove old a-keys, then 'a keys' to re-prompt" ;;
-*)  warn "unsupported OS — run $ABIN/a-launch manually" ;;
+*)  warn "unsupported OS" ;;
 esac
 
 exit 0
