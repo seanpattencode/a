@@ -99,5 +99,3 @@ static int cmd_scan(int argc, char **argv) {
     for(int i=2;i<argc&&i<61;i++)nv[i+1]=argv[i];nv[argc+1]=NULL;
     return cmd_agent(argc+1,nv);
 }
-
-static int cmd_all(int argc, char **argv) { fallback_py("multi", argc, argv); }

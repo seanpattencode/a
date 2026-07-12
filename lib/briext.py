@@ -33,7 +33,6 @@ let _chromiumMajorVersionInUserAgent = null
   , _mutationObserver = null  // Store MutationObserver reference
   , _lastMouseX = 0, _lastMouseY = 0  // Track mouse position for webcomic-style navigation
 
-if (_verboseDebugMode) console.log('[Instant Preload Extension] Initializing...');
 
 // For sites like Google that may need delayed initialization
 const hostname = window.location.hostname;
@@ -72,15 +71,12 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
 });
 
 if (needsDelayedInit) {
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Detected complex site, using delayed initialization');
   // Try multiple initialization attempts
   init();
   setTimeout(() => {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Re-initializing after 1 second');
     reinitializeEventListeners();
   }, 1000);
   setTimeout(() => {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Re-initializing after 3 seconds');
     reinitializeEventListeners();
   }, 3000);
 } else {
@@ -88,13 +84,10 @@ if (needsDelayedInit) {
 }
 
 function init() {
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Init function called');
   const supportChecksRelList = document.createElement('link').relList
 
   const supportsPrefetch = supportChecksRelList.supports('prefetch')
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Prefetch support:', supportsPrefetch);
   if (!supportsPrefetch) {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Browser does not support prefetch, exiting');
     return
   }
 
@@ -154,13 +147,11 @@ function init() {
       HTMLScriptElement.supports && 
       HTMLScriptElement.supports('speculationrules');
   
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Speculation rules support:', supportsSpeculationRules);
   
   if (supportsSpeculationRules) {
     // Browser supports speculation rules
     // Check for data attribute configuration first
     const speculationRulesConfig = document.body.dataset.instantSpecrules
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Data attribute config:', speculationRulesConfig);
     if (speculationRulesConfig == 'prerender') {
       _speculationRulesType = 'prerender'
     } else if (speculationRulesConfig == 'no') {
@@ -172,7 +163,6 @@ function init() {
   }
   // If browser doesn't support speculation rules, _speculationRulesType stays 'none'
   // which will trigger the fallback to link prefetch in the preload function
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Initial speculation rules type:', _speculationRulesType);
 
   // Load settings from storage
   if (typeof chrome !== 'undefined' && chrome.storage) {
@@ -222,7 +212,6 @@ function init() {
   // CHANGED: Allow external links on Google/YouTube to handle their subdomains
   if (hostname.includes('google.com') || hostname.includes('youtube.com')) {
     _allowExternalLinks = true
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Enabling external links for Google/YouTube domains');
   } else {
     _allowExternalLinks = 'instantAllowExternalLinks' in document.body.dataset
   }
@@ -284,10 +273,6 @@ function init() {
     passive: true,
   }
 
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Setting up event listeners...');
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Hover delay:', _delayOnHover + 'ms');
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Preload on mousedown:', preloadOnMousedown);
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Preload only on mousedown:', preloadOnlyOnMousedown);
 
   if (preloadOnlyOnMousedown) {
     document.addEventListener('touchstart', touchstartEmptyListener, eventListenersOptions)
@@ -297,12 +282,10 @@ function init() {
   }
 
   if (!preloadOnMousedown) {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Adding mouseover listener');
     document.addEventListener('mouseover', mouseoverListener, eventListenersOptions)
   }
 
   if (preloadOnMousedown) {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Adding mousedown listener');
     document.addEventListener('mousedown', mousedownListener, eventListenersOptions)
   }
   if (useMousedownShortcut) {
@@ -355,13 +338,11 @@ function init() {
   
   // Attach direct listeners to all existing links after a short delay
   setTimeout(() => {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Attaching direct link listeners...');
     attachDirectLinkListeners();
   }, 100);
 }
 
 function setupMutationObserver() {
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Setting up MutationObserver for dynamic content');
   
   // Disconnect existing observer if any
   if (_mutationObserver) {
@@ -397,7 +378,6 @@ function setupMutationObserver() {
     
     // Process new links
     if (newLinks.length > 0) {
-      if (_verboseDebugMode) console.log('[Instant Preload Extension] Found', newLinks.length, 'new links via MutationObserver');
       
       // Attach direct listeners to new links to ensure they work
       attachDirectLinkListeners();
@@ -410,11 +390,9 @@ function setupMutationObserver() {
     subtree: true
   })
   
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] MutationObserver started');
 }
 
 function setupSPANavigationDetection() {
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Setting up SPA navigation detection');
   
   let lastUrl = location.href;
   
@@ -423,7 +401,6 @@ function setupSPANavigationDetection() {
   setInterval(() => {
     const currentUrl = location.href;
     if (currentUrl !== lastUrl) {
-      if (_verboseDebugMode) console.log('[Instant Preload Extension] URL changed from', lastUrl, 'to', currentUrl);
       lastUrl = currentUrl;
       
       // Clear preloaded list when navigating to allow re-preloading
@@ -436,7 +413,6 @@ function setupSPANavigationDetection() {
         _speculationRulesScript = null;
       }
       
-      if (_verboseDebugMode) console.log('[Instant Preload Extension] Cleared preload cache after navigation');
 
       // Check for link at current mouse position (webcomic-style navigation)
       const linkAtMouse = document.elementFromPoint(_lastMouseX, _lastMouseY)?.closest('a');
@@ -446,7 +422,6 @@ function setupSPANavigationDetection() {
   
   // Also listen for popstate events (back/forward navigation)
   window.addEventListener('popstate', () => {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Popstate event detected');
     // Clear preloaded list
     _preloadedList.clear();
     _preloadedTimestamps.clear();
@@ -460,7 +435,6 @@ function setupSPANavigationDetection() {
 }
 
 function reinitializeEventListeners() {
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Reinitializing event listeners');
   
   // Clean up existing link listeners
   const existingLinks = document.querySelectorAll('a[data-instant-preload-attached="true"]');
@@ -482,17 +456,14 @@ function reinitializeEventListeners() {
   
   // Count and log all links on the page
   const allLinks = document.querySelectorAll('a');
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Found', allLinks.length, 'total links on page');
   
   // Check how many are preloadable
   let preloadableCount = 0;
   allLinks.forEach(link => {
     if (isPreloadable(link)) {
       preloadableCount++;
-      if (_verboseDebugMode) console.log('[Instant Preload Extension] Preloadable link:', link.href);
     }
   });
-  if (_verboseDebugMode) console.log('[Instant Preload Extension] Found', preloadableCount, 'preloadable links');
   
   // Attach direct listeners to links
   attachDirectLinkListeners();
@@ -501,7 +472,6 @@ function reinitializeEventListeners() {
   if (preloadableCount > 0) {
     const firstPreloadable = Array.from(allLinks).find(link => isPreloadable(link));
     if (firstPreloadable) {
-      if (_verboseDebugMode) console.log('[Instant Preload Extension] Force preloading first link as test:', firstPreloadable.href);
       preload(firstPreloadable.href, 'high', 'test');
     }
   }
@@ -531,12 +501,10 @@ function attachDirectLinkListeners() {
       // Prevent duplicate preloads
       if (_preloadedList.has(this.href)) return;
       
-      if (_verboseDebugMode) console.log('[Instant Preload] Direct mouseover on:', this.href);
       
       // Set timer for this specific link
       link._mouseoverTimer = setTimeout(() => {
         if (!_preloadedList.has(this.href)) {
-          if (_verboseDebugMode) console.log('[Instant Preload] Direct preload triggered for:', this.href);
           preload(this.href, 'high', 'hover');
         }
         link._mouseoverTimer = null;
@@ -556,7 +524,6 @@ function attachDirectLinkListeners() {
   });
   
   if (attachedCount > 0) {
-    if (_verboseDebugMode) console.log('[Instant Preload Extension] Attached direct listeners to', attachedCount, 'links');
   }
 }
 
@@ -578,17 +545,14 @@ function touchstartEmptyListener(event) {
 
 function mouseoverListener(event) {
   if (_verboseDebugMode) {
-    if (_verboseDebugMode) console.log('[DEBUG] Mouseover event triggered:', event.target);
   }
   
   if (isEventLikelyTriggeredByTouch(event)) {
     // This avoids uselessly adding a mouseout event listener and setting a timer.
-    if (_verboseDebugMode) console.log('[DEBUG] Event likely triggered by touch, ignoring');
     return
   }
 
   if (!('closest' in event.target)) {
-    if (_verboseDebugMode) console.log('[DEBUG] No closest method on target');
     return
     // Without this check sometimes an error "event.target.closest is not a function" is thrown, for unknown reasons
     // That error denotes that `event.target` isn't undefined. My best guess is that it's the Document.
@@ -599,20 +563,16 @@ function mouseoverListener(event) {
   const anchorElement = event.target.closest('a')
 
   if (!anchorElement) {
-    if (_verboseDebugMode) console.log('[DEBUG] No anchor element found');
     return
   }
 
   if (!isPreloadable(anchorElement)) {
-    if (_verboseDebugMode) console.log('[Instant Preload] Link not preloadable:', anchorElement?.href);
     return
   }
 
-  if (_verboseDebugMode) console.log('[Instant Preload] Mouseover detected on:', anchorElement.href, 'Delay:', _delayOnHover + 'ms');
   anchorElement.addEventListener('mouseout', mouseoutListener, {passive: true})
 
   _mouseoverTimer = setTimeout(() => {
-    if (_verboseDebugMode) console.log('[Instant Preload] Timer fired, preloading:', anchorElement.href);
     preload(anchorElement.href, 'high', 'hover')
     _mouseoverTimer = null
   }, _delayOnHover)
@@ -734,50 +694,41 @@ function isPreloadable(anchorElement) {
   const debugMode = window.location.hostname.includes('google.com') || window.location.hostname.includes('youtube.com');
   
   if (!anchorElement || !anchorElement.href) {
-    if (debugMode) console.log('[Instant Preload] Rejected: No element or href');
     return
   }
 
   if (_useWhitelist && !('instant' in anchorElement.dataset)) {
-    if (debugMode) console.log('[Instant Preload] Rejected: Whitelist mode, no instant dataset');
     return
   }
 
   if (anchorElement.origin != location.origin) {
     let allowed = _allowExternalLinks || 'instant' in anchorElement.dataset
     if (!allowed || !_chromiumMajorVersionInUserAgent) {
-      if (debugMode) console.log('[Instant Preload] Rejected: External link not allowed', anchorElement.href);
       // Chromium-only: see comment on "restrictive prefetch" and "cross-site speculation rules prefetch"
       return
     }
   }
 
   if (!['http:', 'https:'].includes(anchorElement.protocol)) {
-    if (debugMode) console.log('[Instant Preload] Rejected: Invalid protocol', anchorElement.protocol);
     return
   }
 
   if (anchorElement.protocol == 'http:' && location.protocol == 'https:') {
-    if (debugMode) console.log('[Instant Preload] Rejected: HTTP link on HTTPS page');
     return
   }
 
   if (!_allowQueryString && anchorElement.search && !('instant' in anchorElement.dataset)) {
-    if (debugMode) console.log('[Instant Preload] Rejected: Query string not allowed', anchorElement.href);
     return
   }
 
   if (anchorElement.hash && anchorElement.pathname + anchorElement.search == location.pathname + location.search) {
-    if (debugMode) console.log('[Instant Preload] Rejected: Same page hash link');
     return
   }
 
   if ('noInstant' in anchorElement.dataset) {
-    if (debugMode) console.log('[Instant Preload] Rejected: noInstant dataset');
     return
   }
 
-  if (debugMode) console.log('[Instant Preload] ACCEPTED:', anchorElement.href);
   return true
 }
 
@@ -785,7 +736,6 @@ function preload(url, fetchPriority = 'auto', triggerType = 'hover') {
   const startTime = performance.now();
   
   if (_preloadedList.has(url)) {
-    if (_verboseDebugMode) console.log('[Instant Preload] URL already preloaded:', url);
     return
   }
   
@@ -794,19 +744,15 @@ function preload(url, fetchPriority = 'auto', triggerType = 'hover') {
   if (_speculationRulesType !== 'none' && _preloadedList.size >= MAX_PRERENDERS) {
     // Remove the oldest prerender to make room
     const oldestUrl = _preloadedList.values().next().value
-    if (_verboseDebugMode) console.log('[Instant Preload] At prerender limit, removing oldest:', oldestUrl);
     
     _preloadedList.delete(oldestUrl)
     _preloadedTimestamps.delete(oldestUrl)
   }
 
-  if (_verboseDebugMode) console.log('[Instant Preload] Preloading:', url, 'Method:', _speculationRulesType);
   
   if (_speculationRulesType != 'none') {
-    if (_verboseDebugMode) console.log('[Instant Preload] Using speculation rules:', _speculationRulesType);
     preloadUsingSpeculationRules(url)
   } else {
-    if (_verboseDebugMode) console.log('[Instant Preload] Using link prefetch fallback');
     preloadUsingLinkElement(url, fetchPriority)
   }
 
@@ -815,7 +761,6 @@ function preload(url, fetchPriority = 'auto', triggerType = 'hover') {
   
   // Remove URL from the list after 4 seconds to allow re-prerendering
   setTimeout(() => {
-    if (_verboseDebugMode) console.log('[Instant Preload] Removing URL from preloaded list after 4 seconds:', url);
     _preloadedList.delete(url)
     _preloadedTimestamps.delete(url)
     
@@ -823,7 +768,6 @@ function preload(url, fetchPriority = 'auto', triggerType = 'hover') {
     if (_speculationRulesType === 'none') {
       const element = _preloadedElements.get(url)
       if (element && element.parentNode) {
-        if (_verboseDebugMode) console.log('[Instant Preload] Removing link element for:', url);
         element.parentNode.removeChild(element)
       }
       _preloadedElements.delete(url)
@@ -1017,7 +961,6 @@ function startContinuousDebugMonitoring() {
   if (_debugMonitoringStarted) return;
   _debugMonitoringStarted = true;
   
-  if (_verboseDebugMode) console.log('[DEBUG] Starting continuous monitoring');
   
   // Monitor mouse position and what element is under cursor
   let lastLoggedElement = null;
@@ -1043,7 +986,6 @@ function startContinuousDebugMonitoring() {
       } else if (element) {
         const nearestLink = element.closest('a');
         if (nearestLink) {
-          if (_verboseDebugMode) console.log('[DEBUG] Inside link container:', nearestLink.href);
           updateDebugOverlay(`Near link: ${nearestLink.href?.substring(0, 40)}...`);
         }
       }
@@ -1073,7 +1015,6 @@ function startContinuousDebugMonitoring() {
           const links = node.tagName === 'A' ? [node] : (node.querySelectorAll ? Array.from(node.querySelectorAll('a')) : []);
           linkCount += links.length;
           if (links.length > 0) {
-            if (_verboseDebugMode) console.log('[DEBUG] DOM Mutation added', links.length, 'links:', links.map(l => l.href));
           }
         }
       });
@@ -1092,7 +1033,6 @@ function startContinuousDebugMonitoring() {
   const originalAddEventListener = EventTarget.prototype.addEventListener;
   EventTarget.prototype.addEventListener = function(type, listener, options) {
     if ((type === 'mouseover' || type === 'mouseout' || type === 'click') && this.tagName === 'A') {
-      if (_verboseDebugMode) console.log('[DEBUG] Other script adding', type, 'listener to link:', this.href);
     }
     return originalAddEventListener.call(this, type, listener, options);
   };
@@ -1171,7 +1111,7 @@ FF={
 "manifest.json": r'''{
   "manifest_version": 2,
   "name": "a-bridge",
-  "version": "0.9",
+  "version": "1.0",
   "description": "HTTP long-poll bridge for `a` automation. The SINGLE poll connection lives in background.js (one connection, not tab-throttled); content.js runs dispatched commands per-frame. Deps: Firefox Nightly + xpinstall.signatures.required=false in user.js.",
   "permissions": [
     "<all_urls>",
@@ -1237,7 +1177,8 @@ const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'applica
 const _opening = new Map();
 const _norm = u => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/,''); }
                      catch (e) { return u.split(/[?#]/)[0].replace(/\/+$/,''); } };
-function openTab(url, bg) {            // bg:true → load in background; dedup only the find-or-create,
+function openTab(url, bg, fresh) {     // bg:true → load in background; dedup only the find-or-create,
+  if (fresh) return browser.tabs.create({url, active:!bg}).then(t => ({id:t.id, focused:!bg}));  // fresh: skip dedup (norm drops ?query — collides SERPs)
   const key = _norm(url);             // activate PER-CALL so a foreground flip always focuses even if a bg prefetch is in flight
   if (!_opening.has(key)) _opening.set(key, (async () => {
     const hit = (await browser.tabs.query({})).find(t => t.url && _norm(t.url) === key);
@@ -1254,7 +1195,7 @@ function openTab(url, bg) {            // bg:true → load in background; dedup 
 async function run(cmd) {
   const id = cmd.id;
   if (cmd.action === 'open') {
-    try { return post({id, src:'background', ok:true, value: await openTab(cmd.url, cmd.bg)}); }
+    try { return post({id, src:'background', ok:true, value: await openTab(cmd.url, cmd.bg, cmd.fresh)}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
   if (cmd.action === 'screenshot') {
@@ -1266,6 +1207,16 @@ async function run(cmd) {
       const t = cmd.url ? ts.find(x => x.url && _norm(x.url) === _norm(cmd.url)) : ts[0];
       if (t) await browser.tabs.remove(t.id);
       return post({id, src:'background', ok:true, value:{closed: t ? t.id : null}}); }
+    catch (e) { return post({id, src:'background', error:String(e)}); }
+  }
+  if (cmd.action === 'tabs') {   // list ALL tabs incl. error/discarded ones content scripts can't see
+    try { return post({id, src:'background', ok:true, value:(await browser.tabs.query({})).filter(t=>!cmd.match||(t.url||'').includes(cmd.match)).map(t=>[t.id, t.discarded?'discarded':t.status, (t.url||'').slice(0,200), (t.title||'').slice(0,60)])}); }
+    catch (e) { return post({id, src:'background', error:String(e)}); }
+  }
+  if (cmd.action === 'closeall') {   // close EVERY tab whose url contains cmd.match (batch job cleanup; match required)
+    try { const hs = cmd.match ? (await browser.tabs.query({})).filter(t=>(t.url||'').includes(cmd.match)) : [];
+      await browser.tabs.remove(hs.map(t=>t.id));
+      return post({id, src:'background', ok:true, value:hs.length}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
   const tabs = await browser.tabs.query({});
@@ -1328,6 +1279,7 @@ browser.runtime.onMessage.addListener(async (msg) => {
   const $ = s => document.querySelector(s);
   const dispatch = async (m) => {
     try {
+      if (m.match && !(self === top && location.href.includes(m.match))) return {skip:1};   // m.match targets any action at tabs whose URL contains it (top frame only)
       switch (m.action) {
         case 'navigate': if (self === top) top.location = m.url; return {ok:true};
         case 'click':    $(m.sel).click(); return {ok:true};
@@ -1362,6 +1314,7 @@ browser.runtime.onMessage.addListener(async (msg) => {
                            return {ok:true, value:await (async()=>eval(c))()}; }
         case 'wait':     await new Promise(r=>setTimeout(r,m.ms||500)); return {ok:true};
         case 'url':      return {ok:true, value:location.href};
+        case 'links':    return {ok:true, value:[...document.querySelectorAll('a[href^="http"]')].filter(a=>a.offsetParent&&(a.innerText||'').trim().length>2).map(a=>[a.href,(a.innerText||'').trim().replace(/\s+/g,' ').slice(0,80)]).slice(0,300)};
         default: return {error:'unknown action: '+m.action};
       }
     } catch (e) { return {error:String(e)}; }
@@ -1466,102 +1419,140 @@ CH={
 "manifest.json": r'''{
   "manifest_version": 3,
   "name": "bri-chrome",
-  "version": "1.1",
-  "description": "Chrome extension: a-bridge automation (HTTP long-poll :1234, eval via userScripts world) + instant-preload (hover prerender) + pageflip (Space/Down=next, Shift+Space/Up=prev). Toggle preload/pageflip in options. Dev hot-reload: a extload reload.",
-  "permissions": ["storage", "notifications", "userScripts"],
+  "version": "1.7",
+  "description": "Chrome extension: a-bridge automation (offscreen-doc long-poll :1234, focus-immune; commands run via chrome.scripting, no toggle) + instant-preload (hover prerender) + pageflip.",
+  "permissions": ["storage", "scripting", "alarms", "offscreen"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "sw.js" },
   "action": { "default_title": "bri-chrome — click for options" },
   "options_ui": { "page": "options.html", "open_in_tab": true },
   "chrome_url_overrides": { "newtab": "newtab.html" },
   "content_scripts": [
+    { "matches": ["<all_urls>"], "js": ["wake.js"], "run_at": "document_start", "all_frames": false },
     { "matches": ["<all_urls>"], "exclude_matches": ["http://localhost:1111/*", "http://127.0.0.1:1111/*"], "js": ["instant-preload.js", "pageflip.js", "clickdown.js"], "run_at": "document_idle", "all_frames": false }
   ]
 }
 ''',
-"sw.js": r'''// bri-chrome service worker: open options on toolbar click + show debug-preload notifications (gated by the debugNotifications toggle).
-// dev hot-reload: hold a WS to the a-server; "reload" -> reload focused tab + the extension (picks up edited files on disk). Trigger: a extload reload.
-(function r(){let ws;try{ws=new WebSocket('ws://localhost:1111/extreload')}catch(e){return setTimeout(r,3000)}
-  ws.onmessage=e=>{if(e.data!=='reload')return;chrome.tabs.query({active:true,currentWindow:true},t=>{if(t[0])chrome.tabs.reload(t[0].id);chrome.runtime.reload()})};
-  ws.onclose=ws.onerror=()=>setTimeout(r,3000);})();
-chrome.action.onClicked.addListener(()=>chrome.runtime.openOptionsPage());
-chrome.runtime.onMessage.addListener(msg=>{
-  if(msg.type!=='preload-debug')return;
-  chrome.storage.sync.get({debugNotifications:false},({debugNotifications})=>{
-    if(!debugNotifications)return;
-    const d=msg.data, u=d.url.length>60?d.url.slice(0,57)+'...':d.url, id='preload-'+Date.now();
-    chrome.notifications.create(id,{type:'basic',iconUrl:'icon48.png',title:'Page Preloaded',
-      message:u,contextMessage:`${d.triggerType} | ${d.duration}ms${d.method?' | '+d.method:''}${d.attemptedPrerender?' (prerender)':''}`});
-    setTimeout(()=>chrome.notifications.clear(id),3000);
-  });
-});
-// a-bridge: register a USER_SCRIPT-world poller (bridge.js) with an eval-capable CSP — MV3 analog of bri-ext's
-// browser.userScripts path. Isolated world bypasses page CSP so eval works on chatgpt/claude. Needs Developer Mode (on for unpacked).
-async function bridgeSetup(){
-  if(!chrome.userScripts)return; // user-scripts toggle off
-  // Frozen-shell: --load-extension is dead in branded Chrome (2026, Canary incl.) and repack+re-drag
-  // to change logic is the scream. So this package is a stable SHELL — at each SW start it pulls the
-  // LIVE bridge logic from the bri server (:1234 /bridge.js) and registers it as a userScripts CODE
-  // string (userScripts is MV3's one sanctioned dynamic-code path). Edit lib/bri-chrome/bridge.js →
-  // `a extload reload` (restarts SW → re-fetch) = new logic live, no repack, no re-drag. Same path
-  // works once the shell is frozen (packed / policy force-install), since logic isn't in the crx.
-  // Falls back to the packaged bridge.js when the server is down (last-known-good).
-  let js=[{file:'bridge.js'}];
-  try{const r=await fetch('http://127.0.0.1:1234/bridge.js');if(r.ok){const code=await r.text();if(code.trim())js=[{code}];}}catch(e){}
-  try{
-    await chrome.userScripts.configureWorld({csp:"script-src 'self' 'unsafe-eval'",messaging:true});
-    await chrome.userScripts.unregister().catch(()=>{});
-    await chrome.userScripts.register([{id:'bri-bridge',matches:['<all_urls>'],js,runAt:'document_end',world:'USER_SCRIPT',allFrames:true}]);
-    // also inject into ALREADY-OPEN http tabs so the bridge goes live with NO manual reload (idempotent via window.__bri)
-    for(const t of await chrome.tabs.query({})) if(t.url&&/^https?:/.test(t.url)) chrome.userScripts.execute({target:{tabId:t.id},js,world:'USER_SCRIPT'}).catch(()=>{});
-  }catch(e){console.error('bri bridge register failed',e);}
+"sw.js": r'''// bri-chrome service worker — privileged half of the bridge, works while Chrome is UNFOCUSED.
+// MV3 SWs are killed (~30s) and CANNOT hold a long-poll, so the persistent poll lives in an OFFSCREEN
+// DOCUMENT (offscreen.js — a real page, not tab-throttled, not SW-lifetime-capped). The offscreen relays
+// each command here; the SW runs it in the target tab via chrome.scripting.executeScript (ISOLATED world,
+// no "Allow user scripts" toggle) and POSTs the result to /resp. wake.js (content script) + onStartup/
+// onInstalled/alarms re-create the offscreen doc if Chrome ever closes it — self-healing.
+const RESP='http://127.0.0.1:1234/resp';
+// keepalive:true lets the POST finish even if the SW is torn down the instant after (fire-and-forget from a
+// dying worker otherwise aborts — this is why every earlier diagnostic vanished). Learned from claude-in-chrome.
+const post=d=>fetch(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d),keepalive:true}).catch(()=>{});
+post({sw:'top',off:typeof chrome.offscreen});  // DIAG: SW ran + can reach :1234; reports if chrome.offscreen exists
+
+// DISPATCH runs IN the target tab (ISOLATED world) via executeScript(func,args): pure fn of the command,
+// returns the /resp payload. Must be self-contained (serialized standalone) — no outer refs. Edit = repack.
+function DISPATCH(m){
+  const $=s=>document.querySelector(s);
+  if(m.vis&&document.hidden)return {skip:'hidden'};   // only the visible tab acts (Flutter ignores input when hidden)
+  const PE=(t,x,y,b)=>new PointerEvent(t,{bubbles:true,cancelable:true,composed:true,clientX:x,clientY:y,view:window,pointerId:1,pointerType:'mouse',isPrimary:true,button:0,buttons:b});
+  const run=async()=>{ switch(m.action){
+    case 'navigate': top.location=m.url; return {ok:true};
+    case 'click': $(m.sel).click(); return {ok:true};
+    case 'tap': { const el=document.elementFromPoint(m.x,m.y)||document.body;   // synthetic tap at client coords (canvas/Flutter)
+      ['pointerdown','mousedown','pointerup','mouseup','click'].forEach(t=>{const up=t.endsWith('up')||t==='click';
+        el.dispatchEvent(t[0]==='p'?PE(t,m.x,m.y,up?0:1):new MouseEvent(t,{bubbles:true,cancelable:true,clientX:m.x,clientY:m.y,view:window,buttons:up?0:1}));});
+      return {ok:true,value:el.tagName}; }
+    case 'drag': { const el=$('flt-glass-pane')||document.elementFromPoint(m.x1,m.y1)||document.body,N=16;   // spin/pan a canvas
+      el.dispatchEvent(PE('pointerdown',m.x1,m.y1,1));
+      for(let i=1;i<=N;i++){const x=m.x1+(m.x2-m.x1)*i/N,y=m.y1+(m.y2-m.y1)*i/N;el.dispatchEvent(PE('pointermove',x,y,1));await new Promise(r=>setTimeout(r,16));}
+      el.dispatchEvent(PE('pointerup',m.x2,m.y2,0)); return {ok:true}; }
+    case 'type': { let e=$(m.sel); if(!e.isContentEditable&&e.tagName==='DIV')e=e.querySelector('[contenteditable]')||e; e.focus();
+      if(e.isContentEditable)document.execCommand('insertText',false,m.text); else e.value=m.text;
+      e.dispatchEvent(new InputEvent('input',{bubbles:true,data:m.text,inputType:'insertText'})); return {ok:true}; }
+    case 'keys': { const e=$(m.sel)||document.activeElement; e.focus();
+      (Array.isArray(m.keys)?m.keys:[m.keys]).forEach(k=>['keydown','keypress','keyup'].forEach(t=>e.dispatchEvent(new KeyboardEvent(t,{key:k,code:k,keyCode:k==='Enter'?13:0,bubbles:true,cancelable:true})))); return {ok:true}; }
+    case 'text': return {ok:true,value:$(m.sel).innerText};
+    case 'html': return {ok:true,value:document.documentElement.outerHTML.slice(0,200000)};
+    case 'url': return {ok:true,value:location.href};
+    case 'size': return {ok:true,value:[innerWidth,innerHeight]};
+    case 'sem': { const p=document.querySelector('flt-semantics-placeholder');   // enable Flutter a11y tree, then enumerate labelled nodes
+      if(p&&!document.querySelector('flt-semantics-host [role]')){p.click(); await new Promise(r=>setTimeout(r,900));}
+      const seen=new Set(),out=[];
+      for(const e of document.querySelectorAll('flt-semantics-host [aria-label],flt-semantics-host [role],flt-semantics-host input')){
+        const r=e.getBoundingClientRect(); if(r.width<1&&r.height<1)continue;
+        const lab=(e.getAttribute('aria-label')||e.getAttribute('role')||e.tagName), k=lab+'@'+(r.x+r.width/2|0)+','+(r.y+r.height/2|0);
+        if(seen.has(k))continue; seen.add(k); out.push([e.getAttribute('role')||'',lab.slice(0,36),[r.x+r.width/2|0,r.y+r.height/2|0]]); }
+      return {ok:true,value:out.slice(0,60)}; }
+    case 'wait': await new Promise(r=>setTimeout(r,m.ms||500)); return {ok:true};
+    default: return {error:'unknown action: '+m.action};
+  } };
+  return run().catch(e=>({error:String(e)}));
 }
-bridgeSetup();chrome.runtime.onStartup.addListener(bridgeSetup);
-// newtab → :1111 is handled entirely by newtab.html (iframe-embeds the a-server). Deliberately NOT in
-// the SW: a webNavigation/tabs redirect needs those permissions, and adding permissions to an unpacked
-// extension needs a HARD reload (chrome.runtime.reload / `a extload reload` won't grant them) — which
-// breaks the zero-touch reload workflow. Iframe in newtab.html needs no perms and no worker.
-// bridge.js networking + screenshot proxy (CSP-exempt SW context). USER_SCRIPT-world messages arrive on onUserScriptMessage.
-chrome.runtime.onUserScriptMessage?.addListener((msg,_s,reply)=>{
-  if(msg&&msg.a==='fetch'){fetch(msg.url,msg.opts||{}).then(async r=>reply({status:r.status,body:r.status===200?await r.json():null})).catch(e=>reply({status:0,error:String(e)}));return true;}
-  if(msg&&msg.action==='screenshot'){chrome.tabs.captureVisibleTab({format:msg.format||'png'}).then(reply).catch(()=>reply(null));return true;}
+
+// open+focus a tab, deduped by normalized origin+path (bri-ext parity) — privileged, lives in the SW
+async function openTab(url,bg){const norm=u=>{try{const x=new URL(u);return x.origin+x.pathname.replace(/\/+$/,'')}catch(e){return (u||'').split(/[?#]/)[0]}};
+  const key=norm(url);const hit=(await chrome.tabs.query({})).find(t=>t.url&&norm(t.url)===key);
+  const tab=hit||await chrome.tabs.create({url,active:!bg});if(hit&&!bg)await chrome.tabs.update(hit.id,{active:true});return{id:tab.id,focused:!bg};}
+
+async function execCmd(cmd){
+  const id=cmd.id;
+  try{
+    if(cmd.action==='screenshot')return post({id,src:'sw',ok:true,value:await chrome.tabs.captureVisibleTab({format:cmd.format||'png'})});
+    if(cmd.action==='open')return post({id,src:'sw',ok:true,value:await openTab(cmd.url,cmd.bg)});
+  }catch(e){return post({id,src:'sw',error:String(e)});}
+  // target: tabs whose url contains cmd.host, else the active tab of each window (never a hidden background tab)
+  let tabs=(await chrome.tabs.query({})).filter(t=>t.url&&/^https?:/.test(t.url));
+  if(cmd.host)tabs=tabs.filter(t=>t.url.includes(cmd.host));
+  else{const a=tabs.filter(t=>t.active);if(a.length)tabs=a;}
+  await Promise.all(tabs.map(async t=>{try{
+    const res=await chrome.scripting.executeScript({target:{tabId:t.id},world:'ISOLATED',func:DISPATCH,args:[cmd]});
+    for(const r of (res||[])){const v=r&&r.result;if(v!=null)await post({id,src:t.url,...v});}
+  }catch(e){}}));
+}
+
+// create the offscreen poller if absent. Called from every SW wake path so a closed doc self-heals.
+let offP=null;   // single-flight: createDocument throws if called twice concurrently or if a doc already exists (claude-in-chrome pattern)
+function ensureOffscreen(){
+  if(offP)return offP;
+  offP=(async()=>{
+    try{
+      const c=await chrome.runtime.getContexts({contextTypes:['OFFSCREEN_DOCUMENT']});   // getContexts is the race-free existence check
+      if(c&&c.length){post({sw:'offscreen-exists'});return;}
+      await chrome.offscreen.createDocument({url:'offscreen.html',reasons:['BLOBS'],justification:'hold the a-bridge localhost long-poll'});
+      post({sw:'offscreen-created'});
+    }catch(e){post({sw:'offscreen-err',e:String(e)});}
+  })().finally(()=>{offP=null});
+  return offP;
+}
+chrome.runtime.onMessage.addListener((msg,_s,reply)=>{
+  if(msg&&msg.bri==='cmd'){execCmd(msg.cmd).then(()=>{try{reply({ok:1})}catch(e){}});return true;}  // await keeps the SW alive through exec
+  // wake.js page-load ping → (re)create the offscreen poller. MUST return true + reply after awaiting, else
+  // the SW dies before createDocument finishes (async work started from a listener needs the channel held open).
+  (async()=>{try{await ensureOffscreen();post({sw:'offscreen-ok'});}catch(e){post({sw:'offscreen-err',e:String(e)});}try{reply({ok:1})}catch(e){}})();
+  return true;
 });
+chrome.runtime.onStartup.addListener(ensureOffscreen);
+chrome.runtime.onInstalled.addListener(ensureOffscreen);
+chrome.alarms.create('bri',{periodInMinutes:0.4});   // ~24s heartbeat: re-create the offscreen doc if it was closed
+chrome.alarms.onAlarm.addListener(ensureOffscreen);
+ensureOffscreen();
+chrome.action.onClicked.addListener(()=>chrome.runtime.openOptionsPage());
 ''',
-"bridge.js": r'''// a-bridge poller for Chrome — runs in the userScripts USER_SCRIPT world: DOM access + eval allowed
-// (sw.js configures that world's CSP with 'unsafe-eval', so eval works on chatgpt/claude despite page CSP).
-// Networking is routed through the service worker (chrome.runtime.sendMessage) to bypass page connect-src.
-// MV3 analog of lib/bri-ext/content.js; same /poll + /resp protocol, same dispatch actions.
-(()=>{if(self!==top||window.__bri)return;window.__bri=1;  // top frame only + idempotent (SW re-injects into open tabs → no reload)
-  const POLL='http://127.0.0.1:1234/poll',RESP='http://127.0.0.1:1234/resp',$=s=>document.querySelector(s);
-  const xfer=(url,opts)=>chrome.runtime.sendMessage({a:'fetch',url,opts:opts||{}});
-  const dispatch=async m=>{try{switch(m.action){
-    case 'navigate':top.location=m.url;return{ok:true};
-    case 'click':$(m.sel).click();return{ok:true};
-    case 'type':{let e=$(m.sel);if(!e.isContentEditable&&e.tagName==='DIV')e=e.querySelector('[contenteditable]')||e;e.focus();
-      if(e.isContentEditable)document.execCommand('insertText',false,m.text);else e.value=m.text;
-      e.dispatchEvent(new InputEvent('input',{bubbles:true,data:m.text,inputType:'insertText'}));return{ok:true};}
-    case 'keys':{const e=$(m.sel)||document.activeElement;e.focus();
-      (Array.isArray(m.keys)?m.keys:[m.keys]).forEach(k=>['keydown','keyup'].forEach(t=>e.dispatchEvent(new KeyboardEvent(t,{key:k,bubbles:true,cancelable:true}))));return{ok:true};}
-    case 'text':return{ok:true,value:$(m.sel).innerText};
-    case 'html':return{ok:true,value:document.documentElement.outerHTML.slice(0,200000)};
-    case 'find':{const need=(m.text||'').toLowerCase().trim(),sel=m.sel||'button,[role="button"],a,[tabindex]:not([tabindex="-1"])',hits=[];
-      const walk=root=>{for(const el of root.querySelectorAll(sel)){const t=((el.innerText||el.textContent||'')+' '+(el.getAttribute('aria-label')||'')).toLowerCase();if(!need||t.includes(need))hits.push(el);}
-        for(const el of root.querySelectorAll('*'))if(el.shadowRoot)walk(el.shadowRoot);};
-      walk(document);if(m.click&&hits.length)hits[0].click();
-      return{ok:true,value:{n:hits.length,first:hits[0]?(hits[0].innerText||hits[0].getAttribute('aria-label')||'').trim().slice(0,80):null}};}
-    case 'eval':return{ok:true,value:await(async()=>eval(m.code))()};
-    case 'wait':await new Promise(r=>setTimeout(r,m.ms||500));return{ok:true};
-    case 'url':return{ok:true,value:location.href};
-    case 'screenshot':return{ok:true,value:await chrome.runtime.sendMessage({action:'screenshot',format:m.format})};
-    default:return{error:'unknown action: '+m.action};
-  }}catch(e){return{error:String(e)};}};
-  const post=d=>xfer(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({src:location.href,...d})});
-  post({hello:location.href,title:document.title,source:'chrome-userscript',v:'0.8'});
-  const loop=async()=>{try{const r=await xfer(POLL);const c=r&&r.status===200?r.body:null;
-    if(c){const out=await dispatch(c);await post({id:c.id,...out});}loop();}catch(e){setTimeout(loop,2000);}};
-  loop();
-})();
+"offscreen.html": r'''<!doctype html><meta charset=utf-8><title>bri poller</title><script src="offscreen.js"></script>''',
+"offscreen.js": r'''// bri-chrome persistent poller — runs in an offscreen document (NOT killed like the SW, NOT tab-throttled),
+// so it holds the :1234 long-poll while Chrome is unfocused. Each command is relayed to the SW, which has the
+// privileged chrome.scripting/tabs APIs to run it in the target tab and POST the result. This is the piece
+// that made background driving work: the SW alone can't stay alive to poll.
+const POLL='http://127.0.0.1:1234/poll', RESP='http://127.0.0.1:1234/resp';
+fetch(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hello:'offscreen-boot'}),keepalive:true}).catch(()=>{});
+// keepalive: a message from the offscreen doc every <30s resets the SW idle timer, so the SW stays warm to
+// relay commands into tabs (Chrome 109+ documented pattern). The offscreen doc itself never dies.
+setInterval(()=>chrome.runtime.sendMessage({bri:'ka'}).catch(()=>{}),20000);
+async function loop(){
+  for(;;){
+    let r; try{r=await fetch(POLL);}catch(e){await new Promise(s=>setTimeout(s,1500));continue;}
+    if(r.status===200){let c=null;try{c=await r.json();}catch(e){} if(c)chrome.runtime.sendMessage({bri:'cmd',cmd:c}).catch(()=>{});}
+  }
+}
+loop();
 ''',
+"wake.js": r'''chrome.runtime.sendMessage({bri:'wake'}).catch(()=>{});  // page-load ping wakes the SW → it (re)creates the offscreen poller''',
 "options.html": r'''<!doctype html><meta charset=utf-8><title>bri-chrome options</title>
 <!-- bri-chrome (Chrome): instant-preload + pageflip, no automation bridge. Standalone extension — the Firefox a-bridge is separate at lib/bri-ext (no shared source). -->
 <style>body{font:15px system-ui;padding:20px;max-width:34em}label{display:flex;gap:10px;align-items:center;font-size:16px;margin:.6em 0}small{color:#666}h3{margin-bottom:.2em}</style>

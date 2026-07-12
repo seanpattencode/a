@@ -2,14 +2,14 @@
 static const char *HELP_SHORT =
     "\033[1;33ma f\033[0m|flow        Triage: notes/tasks/prompts \xe2\x86\x92 agents\n"   /* highlighted: flow is the home loop */
     "a j \"prompt\"     Job: worktree + agent\n"
-    "a a|c|co|g|ai   Default/claude/codex/gemini/aider\n"
+    "a a|c|co|g      Default/claude/codex/gemini\n"
     "a <#>           Open project by number\n"
     "a help          All commands";
 
 static const char *HELP_FULL =
-    "a - agent manager  c=claude co=codex g=gemini ai=aider\n\n"
-    "JOBS    a j \"prompt\"  a job  a done \"msg\"\n"
-    "AGENTS  a c|co|g|ai  a <key>++  a all  a agent\n"
+    "a - agent manager  c=claude co=codex g=gemini\n\n"
+    "JOBS    a j \"prompt\"  a done \"msg\"\n"
+    "AGENTS  a c|co|g  a <key>++  a agent\n"
     "PROJ    a <#>  a add/remove/move/scan  a create <name>\n"
     "GIT     a push [msg]  a pr [title]  a pull/diff/revert\n"
     "NOTES   a n \"text\"  a task  a flow\n"
@@ -37,6 +37,7 @@ static void gen_icache(void) {
     char ic[P]; snprintf(ic, P, "%s/i_cache.txt", DDIR);
     FILE *f = fopen(ic, "w"); if (!f) return;
     fputs("a\tdefault agent\n",f);
+    {char bf[P];snprintf(bf,P,"%s/bookmarks.txt",SROOT);size_t bl;char*bd=readf(bf,&bl);if(bd){fwrite(bd,1,bl,f);if(bl&&bd[bl-1]!='\n')fputc('\n',f);free(bd);}}
     int i; for(i=0;i<NPJ;i++){fprintf(f,"%d: %s\tproject\n",i,PJ[i].name);
         DIR*sd=opendir(PJ[i].path);struct dirent*se;if(sd){while((se=readdir(sd)))if(se->d_name[0]!='.'&&se->d_type==DT_DIR)fprintf(f,"%s/%s\tdir\n",PJ[i].path,se->d_name);closedir(sd);}}
     for (i=0;i<NAP;i++) fprintf(f, "%d: %s\tcmd\n", NPJ+i, AP[i].name);
@@ -75,10 +76,9 @@ static void gen_icache(void) {
                 fprintf(f,"%s\t%s · repo\n",nm,re->d_name);}}closedir(sd);}}closedir(d);}}}
     /* subcommands not discoverable from filenames */
     fputs("scp\tsend file (tui pick file/host/dir)\n"
-    "diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\n"
-    "jobs\tlist jobs\ndash\tdashboard\nperf\tperformance\n"
+    "diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\nq\ttail/search open windows\n"
+    "dash\tdashboard\nperf\tperformance\n"
     "ui\tweb dashboard\n"
-    "webview\tnative window\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
     "cal add\tadd event\nhub add\tadd\nhub run\trun\nhub rm\trm\nhub log\tlog\n"
     "note\tnotes\nnote l\tlist\nnote r\treview\ntasks\ttasks\nssh add\tadd host\nssh all\tall hosts\n"
@@ -129,7 +129,7 @@ static void gen_icache(void) {
             if(j==nc&&nc<1024){snprintf(ct[nc].n,64,"%s",p);ct[nc].c=1;nc++;}}
         closedir(d);qsort(ct,(size_t)nc,sizeof(ct[0]),ctcmp);
         snprintf(fp2,P,"%s/freq_cache.txt",DDIR);
-        FILE*ff=fopen(fp2,"w");if(ff){for(int j=0;j<nc;j++)fprintf(ff,"%s:%d\n",ct[j].n,ct[j].c);fclose(ff);}
+        FILE*ff=fopen(fp2,"w");if(ff){for(int j=0;j<nc;j++)if(ct[j].c>1)fprintf(ff,"%s:%d\n",ct[j].n,ct[j].c);fclose(ff);}  /* c==1 = one-shot noise: pollutes ranking + triples scoring buckets */
         {snprintf(fp2,P,"%s/web_cache.txt",DDIR);
         char cm[P*2];snprintf(cm,P*2,"T=/tmp/.a_h$$;Q=\"SELECT url,title FROM urls WHERE title<>'' ORDER BY visit_count DESC LIMIT 50\";"
 #ifdef __APPLE__
@@ -176,7 +176,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);if(b+sizeof(t)+2>me)me=b+sizeof(t)+2;}}
         TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");
         #undef TAG
-        while(*me==' ')me++;
+        while(*me==' '||*me==']')me++;
         /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */
         for(char*ent=cu;*ent&&ncu<16;){char*nx=strstr(ent,"||");if(nx)*nx=0;
             char*p1=strstr(ent,"::"),*p2=p1?strstr(p1+2,"::"):0;
@@ -186,17 +186,17 @@ static int cmd_done(int argc,char**argv){AB;
         char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\n",sp,np);fputs("echo '✓ done';echo;a diff\n",sf);
-            if(dl[0])fprintf(sf,"echo;printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
+        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\n",sp,np);fputs("echo '✓ done';a diff\n",sf);
+            if(dl[0])fprintf(sf,"printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
             {FILE*nf=fopen(np,"w");if(nf){
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking opus (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
                 if(ts[0])fprintf(nf," echo; echo '=== TEST CMD OUTPUT ==='; %s 2>&1;",ts);
                 fprintf(nf," echo; echo '=== TASK ==='; cat '%s/common/prompts/next.txt'; } | claude -p --dangerously-skip-permissions --model opus --effort \"$EF\" --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)'\necho\nexec ${SHELL:-bash}\n",SROOT);fclose(nf);}}
             const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
-            if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\necho;printf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
-            else fputs("echo;printf '\\033[2mno test command\\033[0m\\n'\n",sf);
-            fputs("while :;do\necho\n",sf);
+            if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\nprintf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
+            else fputs("printf '\\033[2mno test command\\033[0m\\n'\n",sf);
+            fputs("while :;do\n",sf);
             if(*me)fprintf(sf,"printf '\\033[1;32m=== agent report ===\\033[0m\\n';cat<<'A_RPT'\n%s\nA_RPT\n",me);
             fputs("if [ -z \"$M\" ];then printf '\\033[1;35m=== actions (key) ===\\033[0m\\n'\n",sf);
             if(dl[0]&&tp)fputs("printf '\\033[1;33m[p]\\033[0m tell agent: push (recommended)\\n'\n",sf);

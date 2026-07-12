@@ -4,16 +4,12 @@
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");
     (void)!system("tmux list-clients -t '"TMS"' -F'#{client_pid} #{client_tty}' 2>/dev/null|while read p t;do g='"TMS"'-$p;tmux has-session -t \"$g\" 2>/dev/null||tmux new-session -d -t '"TMS"' -s \"$g\" 2>/dev/null;tmux switch-client -c \"$t\" -t \"$g\" 2>/dev/null;done");}
-/* fire the reboot snapshot restore once per tmux-server life. ssh.c's `tmux new -A -s a` (a ssh attach) and
-   the web term can birth "a" off this path, so heal when the session already exists too; @a_restored guards
-   the single firing (resets when the server dies on reboot); logged, not silent (2026-07-10: maps agent lost). */
-#define ARESTORE "(tmux set -g @a_restored 1;{ date;a snap restore;}>>\"$HOME/.a-restore.log\" 2>&1&)"
 static void tm_ensure_sess(void){
     tm_gc();
-    if(!system("tmux has-session -t '"TMS"' 2>/dev/null&&{ [ \"$(tmux show -gqv @a_restored 2>/dev/null)\" = 1 ]||" ARESTORE ";}"))return;
+    if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
     /* own scope: `a ui reload` cgroup-kill must not take tmux down; diag: my/tmuxlog.sh */
     (void)!system("{ command -v systemd-run >/dev/null 2>&1&&systemctl --user show-environment >/dev/null 2>&1&&Z='systemd-run --user --scope -q --'||Z=;"
-        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done'&&" ARESTORE ";tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
+        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done'&&(a snap restore >/dev/null 2>&1 &);tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
@@ -29,7 +25,7 @@ static void ram_park(void){                                             /* low R
     long need=4096;{const char*e=getenv("A_RAM_MIN_MB");if(e)need=atol(e);}
     char b[192]="";pcmd("awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null",b,192);
     long av=atol(b);if(av<=0||av>=need)return;
-    pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p claude >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
+    pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p 'claude|grok' >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
     b[strcspn(b,"\n")]=0;
     if(b[0])printf("\xe2\x8f\xb8 parked %s (RAM %ldM < %ldM) \xe2\x80\x94 resume: a feed\n",b,av,need);
 }
@@ -63,7 +59,7 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     if(dp[0])fprintf(f,"%s\n",dp);
     if(cp[0])fprintf(f,"%s\n",cp);
     fprintf(f,"When work finished, run a done \"[<test>cmd</test>][<diff>files</diff>][<do>key::label::cmd||key::label::cmd</do>] msg\""
-        " — split pane shows full diff, focused diff, runs test live as PTY; <do> adds custom menu keys that print the literal cmd and run it on keypress."
+        " — msg: one simple sentence. Quoted test output: beginning...end, 4 lines max. No spacing between report sections (diff shows better). Spawns diff + live-PTY test panes; <do> keys run cmd on keypress."
         " a tools: a done a help a diff a push [msg] a note <text> a cat 2|3 a ssh\n");
     char af[P];snprintf(af,P,"%s/AGENTS.md",wd);
     char *amd=readf(af,NULL);if(amd){fprintf(f,"%s\n",amd);free(amd);}

@@ -2,17 +2,17 @@
 """a res — resume agents: interactive pick, or save/restore the OPEN tmux windows across a reboot.
 (same command as `a resume` and `a snap`)
 
-  a res                                  interactive: pick a recent claude session (c/g = codex/gemini native resume)
+  a res                                  interactive: pick a recent claude session (c/g/k = codex/gemini/grok native resume)
   a res save | show | restore [--dry]    snapshot / restore the tmux session across a reboot
 
-Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini windows resume their session
+Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini/grok windows resume their session
 (claude's launch id goes stale on compaction); `a ssh` host windows reconnect; all others reopen as a
 shell in cwd. Restore fires on session-create (tm_ensure_sess). A_SNAP_SESSION overrides the session.
 GUI layer (sway): foot/firefox windows are snapshotted (workspace, output, tmux-under-foot) and
 reopened onto their saved workspace on restore — foots reattach tmux, firefox uses its own session
 restore; every reopen (or "all already open") is printed. No sway → gui skipped, tmux still restores.
 """
-import sys, os, json, glob, re, socket, subprocess, time
+import sys, os, json, glob, re, socket, subprocess, time, urllib.parse
 
 DEV = socket.gethostname()
 TMS = os.environ.get("A_SNAP_SESSION", "a")          # a's tmux session (overridable for testing)
@@ -20,12 +20,14 @@ GIT = os.path.expanduser("~/a/adata/git")
 SNAPDIR = f"{GIT}/sessions"
 SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
+GSESS = os.path.expanduser("~/.grok/sessions")        # grok: sessions/<url-encoded-cwd>/<sid>/
 ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # session id on a claude cmdline
 try: C = dict(re.findall(r"^m_(\w+): *(.*)", open(f"{GIT}/workspace/config.txt").read(), re.M))
 except OSError: C = {}
 MF = "".join(f" --{k} {C[k]}" for k in ("model", "effort") if C.get(k)) if C.get("agent", "claude") == "claude" else ""
 RESUME = {"claude": f"claude --dangerously-skip-permissions{MF} --resume %s; exec bash",  # %s=sid; no MF → opus/xhigh
-          "codex": "codex resume --last; exec bash", "gemini": "gemini --yolo --resume latest; exec bash"}
+          "codex": "codex resume --last; exec bash", "gemini": "gemini --yolo --resume latest; exec bash",
+          "grok": "grok --always-approve --resume %s; exec bash"}
 HOST = f"{GIT}/ssh/%s.txt"                            # a ssh host registry
 
 
@@ -65,7 +67,7 @@ def tree(pid):                                        # pid + all descendants
     return seen
 
 
-AEXE = {"claude", "codex", "gemini"}                  # agent binaries we revive natively
+AEXE = {"claude", "codex", "gemini", "grok"}          # agent binaries we revive natively
 
 def agent(pids):                                      # (kind, sid) of the agent under these panes; (None, "") if none
     for p in (t for pid in pids for t in tree(pid)):  # match the LAUNCHED BINARY, never a prompt substring:
@@ -73,12 +75,18 @@ def agent(pids):                                      # (kind, sid) of the agent
         for tk in cl.split("\0")[:2]:                 # argv[0:2] = exe (+ `node <script>`); the prompt sits later
             b = os.path.basename(tk)
             if b in AEXE:
-                if b == "claude": m = ID.search(cl); return ("claude", m.group(1) if m else "")
+                if b in ("claude", "grok"): m = ID.search(cl); return (b, m.group(1) if m else "")
                 return (b, "")
     return (None, "")
 
 
 def have(sid): return bool(sid and glob.glob(f"{PROJ}/*/{sid}.jsonl"))
+
+
+def gnewest(cwd, skip):                               # newest grok session for cwd not already owned
+    for j in sorted(glob.glob(f"{GSESS}/{urllib.parse.quote(cwd, safe='')}/*/"), key=os.path.getmtime, reverse=True):
+        s = os.path.basename(j[:-1])
+        if s not in skip: return s
 
 
 def newest_in(cwd, skip):                             # newest claude transcript in cwd's project dir not already owned
@@ -114,6 +122,9 @@ def save():
         if kind == "claude":                                       # claude → resume its real transcript
             s = sid if have(sid) else newest_in(cwd, claimed | used)
             if s and s not in used: used.add(s); cmd = RESUME["claude"] % s
+        elif kind == "grok":                                       # grok → resume its session (argv sid, else cwd's newest)
+            s = sid if sid and glob.glob(f"{GSESS}/*/{sid}/") else gnewest(cwd, used)
+            if s and s not in used: used.add(s); cmd = RESUME["grok"] % s
         elif kind in ("codex", "gemini"): cmd = RESUME[kind]       # codex/gemini → native resume
         elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name   # ssh window → reconnect
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
@@ -204,6 +215,9 @@ def _preview(sid):                                   # tail (last 64KB) of a cla
         m = [x for x in re.findall(r'"role":"user","content":"([^"]{2,90})', txt)
              if "command-name" not in x and "local-command" not in x and not x.startswith(("<", "[Request"))]
         if m: return re.sub(r"\s+", " ", m[-1])[:60]
+    for fp in glob.glob(f"{GSESS}/*/{sid}/summary.json"):
+        try: return json.load(open(fp)).get("generated_title", "")[:60]
+        except (OSError, ValueError): pass
     return ""
 
 
@@ -285,12 +299,13 @@ def pick():                                           # interactive resume picke
         for i, (mt, sid, cwd, turns, prev) in enumerate(L, 1):
             print(f"{i:2d}) {_age(now - mt):>4} {turns:3d}t {os.path.basename(cwd):<12} {prev}")
         if not L: print("(none)")
-        print(" c) codex   g) gemini   (native resume)")
-        try: x = input(f"# {('[/' + flt + '] ') if flt else ''}pick #, c/g, text=search, a=restore recent, q: ").strip()
+        print(" c) codex   g) gemini   k) grok   (native resume)")
+        try: x = input(f"# {('[/' + flt + '] ') if flt else ''}pick #, c/g/k, text=search, a=restore recent, q: ").strip()
         except EOFError: return
         if x in ("", "q"): return
         if x == "c": subprocess.run(["tmux", "new-window", "-n", "r-codex", "codex resume; exec bash"]); return
         if x == "g": subprocess.run(["tmux", "new-window", "-n", "r-gemini", RESUME["gemini"]]); return
+        if x == "k": subprocess.run(["tmux", "new-window", "-n", "r-grok", "grok --always-approve --resume; exec bash"]); return
         if x == "a":
             try: mins = int(input("restore all claude active within how many hours: ")) * 60
             except (ValueError, EOFError): continue

@@ -22,9 +22,14 @@ static char* task_add(const char*,const char*,int);
 static void ts_human(const char*,char*,size_t);
 static char nfs[256][P];static int nfn;  /* notes captured this session; git-synced + url'd on exit, never mid-loop */
 static void notebox(const char*t){struct winsize w={0};ioctl(1,TIOCGWINSZ,&w);  /* echo saved text in a box → confidence it was taken as typed */
-    int mx=(w.ws_col>20?w.ws_col:60)-4,n=(int)strlen(t),bw=n<mx?n:mx;if(bw<4)bw=4;
+    int mx=(w.ws_col>20?w.ws_col:60)-6,n=(int)strlen(t),bw=n<mx?n:mx;if(bw<4)bw=4;if(bw>500)bw=500;  /* -6 = frame width, box must not wrap */
     printf("  ┌");for(int i=0;i<bw+2;i++)fputs("─",stdout);puts("┐");
-    for(int i=0;i<n;i+=bw)printf("  │ %-*.*s │\n",bw,bw,t+i);
+    int rows=(n+bw-1)/bw;
+    for(int r2=0;r2<rows;r2++){  /* huge text: head + count + tail rows — start AND end prove the whole thing landed */
+        if(rows>9&&r2==4){char mid[48];snprintf(mid,48,"… %dc total …",n);printf("  │ %-*.*s │\n",bw,bw,mid);r2=rows-5;continue;}
+        char rb[512];int rl=n-r2*bw<bw?n-r2*bw:bw;
+        for(int k=0;k<rl;k++)rb[k]=(char)(t[r2*bw+k]=='\n'||t[r2*bw+k]=='\t'?' ':t[r2*bw+k]);rb[rl]=0;
+        printf("  │ %-*.*s │\n",bw,bw,rb);}
     printf("  └");for(int i=0;i<bw+2;i++)fputs("─",stdout);puts("┘");}
 static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved:");notebox(t);}
 typedef struct{char p[P];char t[2048];}GN;
@@ -109,13 +114,12 @@ static int load_tasks(const char*dir){
 static char* task_add(const char*dir,const char*t,int pri){
     char sl[64];snprintf(sl,64,"%.32s",t);for(char*p=sl;*p;p++)*p=isalnum((unsigned char)*p)?(char)tolower((unsigned char)*p):'-';   /* ascii-only dir names: %.32s chops multibyte → invalid utf8 → APFS refused checkout, macs stuck (7/10) */
     struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);
-    static char fn[P];char ts[32],buf[B];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
+    static char fn[P];char ts[32];strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
     snprintf(ltd,P,"%s/%05d-%s_%s",dir,pri,sl,ts);mkdir(ltd,0755);
     char sd[P];snprintf(sd,P,"%s/task",ltd);mkdir(sd,0755);
     snprintf(fn,P,"%s/task/%s.%09ld_%s.txt",ltd,ts,tp.tv_nsec,DEV);
-    int bo=snprintf(buf,B,"Text: %s\nDevice: %s\nCreated: %s\n",t,DEV,ts);
-    if(g_by)snprintf(buf+bo,(size_t)(B-bo),"By: %s\n",g_by);   /* LLM provenance line, only when --by given */
-    writef(fn,buf);
+    FILE*f=fopen(fn,"w");if(f){fprintf(f,"Text: %s\nDevice: %s\nCreated: %s\n",t,DEV,ts);   /* fprintf, no fixed buf: text of any length */
+        if(g_by)fprintf(f,"By: %s\n",g_by);fclose(f);}   /* LLM provenance line, only when --by given */
     return fn;
 }
 #define THINT "  \033[90mp <pri>  d MM-DD  enter=done\033[0m\n"
@@ -127,7 +131,9 @@ static void rapid_task(const char*t){
             rename(ltd,nw);if(tfn)memcpy(tfs[tfn-1],nw,strlen(nw));snprintf(ltd,P,"%s",nw);printf("✓ P%s\n",np);}  /* 5-digit pri: nw,ltd same len */
         else{char dn[32],df[P];dl_norm(t+2,dn,32);snprintf(df,P,"%s/deadline.txt",ltd);writef(df,dn);printf("✓ %s\n",dn);}
         return;}
-    char*f=task_add(rdir,t,50000);if(tfn<256)snprintf(tfs[tfn++],P,"%s",f);printf("✓ saved locally P50000 %s\n" THINT,t);}
+    char*f=task_add(rdir,t,50000);if(tfn<256)snprintf(tfs[tfn++],P,"%s",f);
+    size_t tl=strlen(t);if(tl>200)printf("✓ saved locally P50000 %zuc…%.160s\n" THINT,tl,t+tl-160);  /* huge paste: count+tail receipt */
+    else printf("✓ saved locally P50000 %s\n" THINT,t);}
 static int task_add_p(const char*dir,int argc,char**argv,int si){
     int pri=50000;if(si<argc&&is5d(argv[si])){pri=atoi(argv[si]);si++;if(si>=argc){puts("a task [PPPPP] <text>");return 1;}}
     char t[B]="";ajoin(t,B,argc,argv,si);char*f=task_add(dir,t,pri);if(tfn<256)snprintf(tfs[tfn++],P,"%s",f);printf("✓ saved locally P%05d %s\n" THINT,pri,t);
@@ -549,7 +555,7 @@ static char*book_txt(const char*book,size_t*bl){char bf[P];snprintf(bf,P,"%s/boo
         if(bd){while((be=readdir(bd)))if(strstr(be->d_name,".txt")){snprintf(bf,P,"%s/%s",od,be->d_name);break;}closedir(bd);}}
     return bf[0]?readf(bf,bl):NULL;}
 static void propose_run(const char*seed,const char*model,const char*book){
-    char tpl[P];prompt_ensure(tpl,P,"propose",PROPOSE_DEFAULT);size_t tl;char*tc=readf(tpl,&tl);if(!tc)return;
+    char tpl[P];prompt_ensure(tpl,P,"propose-seed",PROPOSE_DEFAULT);size_t tl;char*tc=readf(tpl,&tl);if(!tc)return;
     char pf[P];snprintf(pf,P,"%s/a_propose_%d.txt",TMP,(int)getpid());
     FILE*f=fopen(pf,"w");if(!f){free(tc);return;}
     if(book&&*book){size_t bl=0;char*bc=book_txt(book,&bl);   /* load the ENTIRE book as context */
@@ -791,7 +797,7 @@ static int cmd_flow(int argc,char**argv){perf_disarm();
             char cm[P+24];snprintf(cm,P+24,"e -w %s'%s'",off?"+6 ":"",f);(void)!system(cm);
             edit_st(f,st,"edited");ne++;}
         else snprintf(st,128,"o: nothing to edit");continue;}
-    if(ch=='l'){char tpl[P];prompt_ensure(tpl,P,"propose",PROPOSE_DEFAULT);   /* edit the prompt [g] generates with */
+    if(ch=='l'){char tpl[P];prompt_ensure(tpl,P,"propose-seed",PROPOSE_DEFAULT);   /* edit the prompt [g] generates with */
         char cmd[P+8];snprintf(cmd,P+8,"e -w '%s'",tpl);(void)!system(cmd);
         edit_st(tpl,st,"edited");ne++;continue;}
     if(ch=='s'){if(pg==2&&*top){size_t tl2;char*tx=readf(top,&tl2);   /* [s]end: dispatch top prompt candidate → a j claude window; archive ONLY on confirmed spawn */

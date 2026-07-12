@@ -60,29 +60,6 @@ static int cmd_copy(int c,char**v){(void)c;(void)v;char o[B];int ol=0;
 static void ssh_parse(const char*,char*,char*);
 static int ssh_pre(char*,int,const char*,const char*,const char*,const char*);
 
-static int cmd_watch(int argc, char **argv) {
-    if (argc < 3) { puts("Usage: a watch <session> [duration]"); return 1; }
-    const char *sn = argv[2]; int dur = argc > 3 ? atoi(argv[3]) : 0;
-    printf("Watching '%s'%s\n", sn, dur ? "" : " (once)");
-    time_t start = time(NULL);
-    char last[B] = "";
-    while (1) {
-        if (dur && time(NULL) - start > dur) break;
-        char out[B];
-        if (tm_read(sn, out, B) != 0) { printf("x Session %s not found\n", sn); return 1; }
-        if (strcmp(out, last)) {
-            if (strstr(out, "Are you sure?") || strstr(out, "Continue?") || strstr(out, "[y/N]") || strstr(out, "[Y/n]")) {
-                tm_key(sn, "y"); tm_key(sn, "Enter");
-                puts("✓ Auto-responded");
-            }
-            snprintf(last, B, "%s", out);
-        }
-        usleep(100000);
-        if (!dur) break;
-    }
-    return 0;
-}
-
 static int cmd_send(int argc, char **argv) {
     if (argc < 4) { puts("Usage: a send <session> <prompt> [--wait] [--no-enter]"); return 1; }
     const char *sn = argv[2];
@@ -115,7 +92,7 @@ typedef struct{char sn[64],pid[32],cmd[32],p[128],dev[32];}jpane_t;
 static int cmd_jobs(int argc, char **argv) {
     const char *sel=NULL,*rm=NULL;
     for(int i=2;i<argc;i++){if(!strcmp(argv[i],"rm")&&i+1<argc)rm=argv[++i];
-        else if(!strcmp(argv[i],"watch")){perf_disarm();execlp("watch","watch","-n2","-c","a","job",(char*)0);return 0;}
+        else if(!strcmp(argv[i],"watch")){perf_disarm();execlp("watch","watch","-n2","-c","a","j",(char*)0);return 0;}
         else if(strcmp(argv[i],"-r")&&strcmp(argv[i],"--running"))sel=argv[i];}
     init_db();load_cfg();
     jpane_t A[64];int na=0;

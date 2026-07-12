@@ -72,50 +72,59 @@ static int m_slash(char *m,size_t sz){
 /* box input — the CC/codex core idea in C: box = f(buffer,width), FULL repaint per keystroke (CC=react+yoga,
  * codex=ratatui wrap_ranges; nobody is incremental). Bottom-anchored ABSOLUTE rows (m_pick pattern) → zero drift. */
 #define M_ST(st,fn) {load_cfg();char _mc[B];m_cmdstr(_mc,B);snprintf(st,B,"%s · %.60s · /=menu",fn,_mc);}
-/* menu=1: chat (sfn=agent name, '/' opens m_slash). menu=0: generic box (sfn=literal status), for a i etc. */
-static size_t m_input(char *m,size_t sz,const char *sfn,int menu){
+/* menu=1: chat (sfn=agent name, '/' opens m_slash). menu=0: generic box (sfn=literal status), for a i etc.
+ * Buffer is heap-grown (any length); *out = the text (static, valid until next call). */
+static size_t m_input(char **out,const char *sfn,int menu){
+    static size_t cap;static char *m;if(!m){cap=4096;m=malloc(cap);}
     char st[B];if(menu)M_ST(st,sfn)else snprintf(st,B,"%s",sfn);
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSANOW,&r);
     fputs("\033[?2004h",stdout);
     size_t l=0;int paste=0,q=0,ctop=1,pTR=0,mtR=1;
+    #define MFIT do{if(l+2>cap){cap*=2;m=realloc(m,cap);}}while(0)
     for(;;){
         struct timespec p0;clock_gettime(CLOCK_MONOTONIC,&p0);  /* 1MS MANDATE: measure key→painted, show it live */
         struct winsize ws;ioctl(1,TIOCGWINSZ,&ws);int W=ws.ws_col>8?ws.ws_col:80,H=ws.ws_row>6?ws.ws_row:24;
-        int tR=1,cc=3;  /* wrap walk (codepoints, terminal's rule) → rows + cursor col */
+        int tR=1,cc=3;size_t ro[128];ro[1]=0;  /* wrap walk (codepoints, terminal's rule) → rows + cursor col; ro = ring of row-start offsets for the tail anchor */
         for(size_t k=0;k<l;k++){
-            if(m[k]=='\n'){tR++;cc=1;continue;}
+            if(m[k]=='\n'){tR++;cc=1;ro[tR&127]=k+1;continue;}
             if((m[k]&0xC0)==0x80)continue;
-            if(cc>W){tR++;cc=1;}
+            if(cc>W){tR++;cc=1;ro[tR&127]=k;}
             cc++;}
-        int pend=cc>W;if(pend){tR++;cc=1;}
-        if(tR>mtR)mtR=tR;
-        if(tR>pTR){printf("\033[%d;1H",H);int sc=pTR?tR-pTR:tR+3;while(sc--)fputs("\n",stdout);pTR=tR;}  /* scroll content up: box must paint over FREED rows, never over the reply */
-        int top=H-tR-2;if(top<1)top=1;ctop=H-mtR-2;if(ctop<1)ctop=1;
+        int pend=cc>W;if(pend){tR++;cc=1;ro[tR&127]=l;}
+        int BR=H-5>120?120:H-5;if(BR<3)BR=3;  /* box row budget: overflow → 1 count row + BR-1 tail rows, end always visible */
+        int eR=tR,ind=0;size_t ds=0;
+        if(tR>BR){ind=1;eR=BR;ds=ro[(tR-BR+2)&127];}
+        if(eR>mtR)mtR=eR;
+        if(eR>pTR){printf("\033[%d;1H",H);int sc=pTR?eR-pTR:eR+3;while(sc--)fputs("\n",stdout);pTR=eR;}  /* scroll content up: box must paint over FREED rows, never over the reply */
+        int top=H-eR-2;if(top<1)top=1;ctop=H-mtR-2;if(ctop<1)ctop=1;
         printf("\033[%d;1H\033[J\033[%d;1H",ctop,top);
         for(int k=0;k<W;k++)fputs("─",stdout);
-        fputs("\n> ",stdout);fwrite(m,1,l,stdout);if(pend)fputs("\n",stdout);fputs("\n",stdout);
+        if(ind)printf("\n> \033[2m%zuc…\033[0m\n",l);else fputs("\n> ",stdout);
+        fwrite(m+ds,1,l-ds,stdout);if(pend)fputs("\n",stdout);fputs("\n",stdout);
         for(int k=0;k<W;k++)fputs("─",stdout);
         printf("\n\033[2m%.*s\033[0m",W>12?W-12:1,st);
         {struct timespec p1;clock_gettime(CLOCK_MONOTONIC,&p1);
          printf(" \033[2m%.3fms\033[0m",(double)(p1.tv_sec-p0.tv_sec)*1e3+(double)(p1.tv_nsec-p0.tv_nsec)/1e6);}
-        printf("\033[%d;%dH",top+tR,cc);fflush(stdout);
-        unsigned char c;if(read(0,&c,1)!=1)break;
+        printf("\033[%d;%dH",top+eR,cc);fflush(stdout);
+        unsigned char c;rd:if(read(0,&c,1)!=1)break;
         if(c==27){char s[8];int av=0;usleep(2000);ioctl(0,FIONREAD,&av);if(!av){l=0;break;}  /* lone ESC = cancel */
             (void)!read(0,s,1);if(s[0]!='['&&s[0]!='O')continue;
             size_t si=0;while(si<7){if(read(0,s+1+si,1)!=1)break;char e=s[1+si];si++;if((e>='A'&&e<='Z')||(e>='a'&&e<='z')||e=='~')break;}
             if(si>=4&&!memcmp(s+1,"200~",4))paste=1;else if(si>=4&&!memcmp(s+1,"201~",4))paste=0;continue;}
-        if(menu&&c=='/'&&!l&&!paste){int r=m_slash(m,sz);
+        if(menu&&c=='/'&&!l&&!paste){int r=m_slash(m,cap);
             if(r==1){l=strlen(m);break;}
             if(r==2){l=strlen(m);continue;}
             M_ST(st,sfn)continue;}
-        if(c=='\r'||c=='\n'){if(paste){if(l<sz-1)m[l++]='\n';continue;}break;}
-        if(c==127||c==8){while(l&&(m[l-1]&0xC0)==0x80)l--;if(l)l--;continue;}
-        if(c==21){l=0;continue;}
-        if(c==3){l=0;break;}
-        if(c==4&&!l){q=1;break;}
-        if(c>=32||c=='\t'||(c&0x80)){if(l<sz-1)m[l++]=(char)c;}
+        if(c=='\r'||c=='\n'){if(!paste)break;MFIT;m[l++]='\n';}  /* pasted \n = literal; falls through to the drain check */
+        else if(c==127||c==8){while(l&&(m[l-1]&0xC0)==0x80)l--;if(l)l--;continue;}
+        else if(c==21){l=0;continue;}
+        else if(c==3){l=0;break;}
+        else if(c==4&&!l){q=1;break;}
+        else if(c>=32||c=='\t'||(c&0x80)){MFIT;m[l++]=(char)c;}
+        if(paste){int av=0;ioctl(0,FIONREAD,&av);if(av>0)goto rd;}  /* drain the paste burst before repainting: O(n), not a repaint per byte */
     }
-    m[l]=0;
+    m[l]=0;*out=m;
+    #undef MFIT
     printf("\033[%d;1H\033[J",ctop);  /* wipe box; caller prints from here */
     fputs("\033[?2004l",stdout);fflush(stdout);tcsetattr(0,TCSANOW,&o);
     return q?(size_t)-1:l;
@@ -137,10 +146,12 @@ static int cmd_m(int c,char**v){
         {char*tb=readf(sf,NULL);if(tb){size_t l=strlen(tb);fputs(l>4000?tb+l-4000:tb,stdout);free(tb);}}
         for(;;){
             g_halt=0;
-            static char m[65536];size_t l=m_input(m,sizeof m,fn,1);
+            char*m;size_t l=m_input(&m,fn,1);
             if(l==(size_t)-1)return 0;
             if(!l)continue;
-            printf("\033[36m> %s\033[0m\n",m);
+            if(l>2048){size_t eo=l-2000;while(eo<l&&(m[eo]&0xC0)==0x80)eo++;  /* huge paste: echo count+tail, transcript file keeps it whole */
+                printf("\033[36m> %zuc…%s\033[0m\n",l,m+eo);}
+            else printf("\033[36m> %s\033[0m\n",m);
             if(m[0]=='/'){m[strcspn(m,"\n")]=0;
                 if(!strcmp(m,"/q"))return 0;
                 if(!strncmp(m,"/use ",5)||!strncmp(m,"/cmd",4)){char sc[B];snprintf(sc,B,"a m %s",m+1);(void)!system(sc);continue;}

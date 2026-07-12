@@ -56,12 +56,15 @@ static const char *bname(const char *p) { const char *s = strrchr(p, '/'); retur
 static int ajoin(char*b,int sz,int argc,char**argv,int from){int l=0;for(int i=from;i<argc;i++)l+=snprintf(b+l,(size_t)(sz-l),"%s%s",i>from?" ":"",argv[i]);return l;}
 
 /* rapid input loop — empty line, ESC, or ctrl-c exits cleanly (callers run after); bracketed paste = one note.
-   raw byte read: lone ESC (no follow within 40ms) exits; ESC[200~..201~ paste captured as one note. */
+   raw byte read: lone ESC (no follow within 40ms) exits; ESC[200~..201~ paste captured as one note,
+   any length (heap-grown), echoed as count+tail so receipt of the whole thing is visible. */
 static void rapid(const char *prompt, void (*fn)(const char*)) {
     if (!isatty(STDIN_FILENO)) return; perf_disarm();
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSAFLUSH,&r);
     (void)!write(1,"\x1b[?2004h",8);
-    static char b[65536];int quit=0;unsigned char c;
+    static size_t cap;static char *b;if(!b){cap=65536;b=malloc(cap);}
+    #define RFIT do{if(n+2>cap){cap*=2;b=realloc(b,cap);}}while(0)
+    int quit=0;unsigned char c;
     while(!quit){fputs(prompt,stdout);fflush(stdout);size_t n=0;
         for(;;){if(read(0,&c,1)!=1||c==3){quit=1;break;}                  /* EOF / ctrl-c */
             if(c=='\n'||c=='\r')break;
@@ -73,12 +76,16 @@ static void rapid(const char *prompt, void (*fn)(const char*)) {
                 if(!strcmp(s,"200~")){                                    /* bracketed paste = one note */
                     while(read(0,&c,1)==1){
                         if(c==27){(void)!read(0,&c,1);while(read(0,&c,1)==1&&!(c>=64&&c<127));break;} /* 201~ */
-                        if(n<sizeof b-1){b[n++]=(char)c;(void)!write(1,&c,1);}}
+                        RFIT;b[n++]=(char)c;}
+                    {size_t ts=n>60?n-60:0;while(ts<n&&(b[ts]&0xC0)==0x80)ts++;char tl[64];size_t j=0;
+                     for(size_t k=ts;k<n;k++)tl[j++]=(char)(b[k]=='\n'||b[k]=='\t'?' ':b[k]);tl[j]=0;
+                     if(ts)printf("\033[2m%zuc…\033[0m",n);fputs(tl,stdout);}
                     break;}
                 continue;}                                               /* ignore arrows etc */
-            if(n<sizeof b-1){b[n++]=(char)c;(void)!write(1,&c,1);}}
+            RFIT;b[n++]=(char)c;(void)!write(1,&c,1);}
         (void)!write(1,"\n",1);b[n]=0;if(quit||!n)break;fn(b);}
     (void)!write(1,"\x1b[?2004l\n",9);tcsetattr(0,TCSAFLUSH,&o);
+    #undef RFIT
 }
 
 /* raw terminal helpers */

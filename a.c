@@ -121,7 +121,7 @@ _checkers() {
     { ! command -v infer &>/dev/null||{ infer run --no-progress-bar -o "$T/infer" -- $CC $A -w -c "$F" -o /dev/null >"$T/10" 2>&1;! grep -q 'NULLPTR_DEREFERENCE\|BUFFER_OVERRUN\|USE_AFTER_FREE' "$T/infer/report.txt" 2>/dev/null;};}||touch "$T/10.f" &
     wait
 }
-_o3(){ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||$CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||$CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil;}
+_o3(){ $CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil;}  # glibc-static first: SIMD str*/stdio = 2.1x faster i render than musl (measured 7/5); musl fallback
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
 build) _PT=${EPOCHREALTIME/./};_tok_chk
@@ -138,7 +138,6 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
     [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
-    ("$ABIN/a" i </dev/null >/dev/null 2>&1 &)  # warm i_cache off the launch path: first `a` render skips the cold ~3ms gen_icache dir-scan
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
         T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q $_QT"
@@ -567,7 +566,7 @@ static int cmd_j(int c,char**v){
         if(!fork_cp(wd,fp)){printf("+ %s\n",fp);snprintf(wd,P,"%s",fp);}
     }
     printf("+ job: %s\n  %.*s\n",bname(wd),80,pr);
-    if(pr[0])pl+=snprintf(pr+pl,(size_t)(B-pl),"\n\nWhen done: write .a_done with summary + test commands");
+    if(pr[0])pl+=snprintf(pr+pl,(size_t)(B-pl),"\n\nWhen done: write .a_done — one simple sentence + test cmd; output beginning...end 4 lines max; no spacing between sections");
     tm_ensure_conf();
     char jcmd[B];jcmd_fill(jcmd,0,wd,pr[0]?pr:NULL);
     char sn[64];snprintf(sn,64,"j-%s-%ld",bname(wd),(long)getpid());
@@ -735,7 +734,7 @@ int main(int argc, char **argv) {
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
     if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);  /* multicall: `h` symlink = one-keypress home */
-    if (argc < 2) { perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }  /* in-place; new-window ~22ms on Pi, cmd_i alt-screens */
+    if (argc < 2) { if(isatty(1))ifr_blast(); perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }  /* blast cached frame pre-init; cmd_i repaints over it */
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
     alog(acmd, wd);

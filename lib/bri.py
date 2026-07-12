@@ -23,6 +23,8 @@ Drive shortcuts (bridge must already be running in another process):
   bri url            return current URL
   bri grab [host]    full innerText of the tab whose URL has <host> — the select-all+copy
                      equivalent; no host = focused tab, --html = full DOM instead of text
+  bri research <q>   human deep research in the REAL signed-in browser: google+bing+ddg
+                     -> open every unique result; primitives: links/openall/tabs/grabs/closeall
   bri deploy         rebuild lib/bri-ext xpi + restart Firefox (zero-click extension bump)
   bri restart        quit + relaunch Firefox Nightly (clears tab leaks)
   bri mon            snapshot bri.py + Firefox CPU/RAM/tabs/connections
@@ -133,13 +135,6 @@ def handle(c, addr):
             if rid in pending: pending[rid].put(m)
         except Exception: pass
         http_send(c, '200 OK'); c.close(); return
-    if method == 'GET' and path == '/bridge.js':  # frozen-shell: bri-chrome SW fetches live bridge logic here each start (see sw.js bridgeSetup) → edit lib/briext.py, then `a bri serve`
-        import os, briext; body = b''
-        try: body = open(os.path.join(briext.OUT, 'bri-chrome', 'bridge.js'), 'rb').read()
-        except Exception as e: log(f'!! /bridge.js {e}')
-        log(f'>> served /bridge.js ({len(body)}b)')
-        http_send(c, '200 OK', body, 'application/javascript; charset=utf-8')
-        c.close(); return
     http_send(c, '404 Not Found'); c.close()
 
 def cmd_serve():
@@ -317,6 +312,50 @@ def _hl(host='', code=None):
     body = (_HL_HINT if code is None else _HL_CLICK).replace('__GUARD__', g).replace('__ENUM__', _HL_ENUM.replace('__SEL__', json.dumps(_HL_SEL)))
     return body if code is None else body.replace('__CODE__', json.dumps(code.upper()))
 
+# --- link fan-out (human deep research): links/openall/tabs/grabs/closeall/research ---
+def _send(j, to=None):  # push one command to :1235, return the parsed response objects
+    j.setdefault('id', int(time.time()*1000) % 10**9)
+    if to and to != 'all': j['to'] = to
+    s = socket.socket()
+    try: s.connect(('127.0.0.1', CMD))
+    except OSError: sys.stderr.write('x bridge not running — start it: a bri\n'); sys.exit(1)
+    s.sendall((json.dumps(j)+'\n').encode()); buf = b''
+    while (ch := s.recv(1<<16)): buf += ch
+    out = []
+    for ln in buf.decode(errors='replace').splitlines():
+        try: out.append(json.loads(ln))
+        except Exception: pass
+    return out
+_SJUNK = re.compile(r'//([\w.-]*\.)?(google\.\w+|bing\.com|duckduckgo\.com|duck\.ai|gstatic\.com|msn\.com|microsoft\.com|mozilla\.org|apps\.apple\.com|creativecommons\.org|insideduckduckgo\.\w+)/', re.I)
+def _unwrap(u):  # bing /ck/a + ddg /l/ + google /url redirect wrappers -> the real target URL
+    from urllib.parse import urlparse, parse_qs, unquote
+    p = urlparse(u); q = parse_qs(p.query); h = p.netloc.lower()
+    if h.endswith('bing.com') and p.path.startswith('/ck/'):
+        v = q.get('u', [''])[0]
+        try: return __import__('base64').urlsafe_b64decode(v[2:]+'==').decode() if v[:2] == 'a1' else None
+        except Exception: return None
+    if h.endswith('duckduckgo.com') and p.path.startswith('/l/'): return unquote(q.get('uddg', [''])[0]) or None
+    if h.endswith('google.com') and p.path == '/url': return q.get('q', [''])[0] or None
+    return u
+def _links(match, to, raw=False):  # harvest links from tabs matching <match>: unwrap redirects, drop engine chrome, dedupe
+    seen, out = set(), []
+    for r in _send({'action': 'links', 'match': match, 'host': match}, to):
+        for h, t in (r.get('value') or []):
+            u = h if raw else _unwrap(h)
+            if not u or not u.startswith('http') or (not raw and _SJUNK.search(u)): continue
+            k = re.sub(r'[?#].*', '', u).rstrip('/')
+            if k not in seen: seen.add(k); out.append((u, t))
+    return out
+def _openall(urls, to):  # open as bg tabs (no focus steal); capped + RAM-guarded; ~1.5s reply window per open = stagger
+    import os; mx = int(os.environ.get('BRI_OPEN_MAX', '20'))
+    if len(urls) > mx: sys.stderr.write(f'! capped {len(urls)} -> {mx} tabs (BRI_OPEN_MAX)\n'); urls = urls[:mx]
+    for i, u in enumerate(urls):
+        try:
+            if int(next(l for l in open('/proc/meminfo') if 'MemAvailable' in l).split()[1]) < 3*1024*1024:
+                sys.stderr.write(f'x RAM guard (<3G available): stopped at {i}/{len(urls)}\n'); break
+        except Exception: pass
+        _send({'action': 'open', 'url': u, 'bg': 1, 'fresh': 1}, to); print(f'+ {u}', flush=True)
+
 def client(args):
     import os
     to = args[0][1:] if args and args[0].startswith('@') else ''   # @firefox / @chrome / @all / @firefox/145 — target a browser (CLI default: firefox)
@@ -346,17 +385,47 @@ def client(args):
         guard = (f'if(!location.href.toLowerCase().includes({json.dumps(host.lower())}))return null;'
                  if host else 'if(!document.hasFocus())return null;')   # no host → the focused tab
         code = f'(()=>{{if(window.top!==window)return null;{guard}return {prop};}})()'
-        s = socket.socket(); s.connect(('127.0.0.1', CMD))
-        s.sendall((json.dumps({'id': int(time.time()*1000) % 10**9, 'action': 'eval', 'code': code, 'to': to}) + '\n').encode())
-        buf = b''
-        while (ch := s.recv(1 << 16)): buf += ch
         best = ''   # many tabs reply (most null); the target tab's innerText is the longest
-        for line in buf.decode(errors='replace').splitlines():
-            try: v = json.loads(line).get('value')
-            except Exception: v = None
+        for r in _send({'action': 'eval', 'code': code}, to):
+            v = r.get('value')
             if isinstance(v, str) and len(v) > len(best): best = v
         if best: sys.stdout.write(best + '\n')
         else: sys.stderr.write(f'x no text — is the {host or "focused"} tab open, logged in, and active? (discarded tabs read blank until clicked)\n'); sys.exit(1)
+        return
+    if a == 'links':  # result links of tabs whose URL has <match>: SERP redirects unwrapped, engine chrome dropped, deduped
+        if len(args) < 2: sys.stderr.write('usage: a bri links <url-substring> [--raw]\n'); sys.exit(1)
+        for u, t in _links(args[1], to, '--raw' in args): print(f'{u}\t{t}')
+        return
+    if a == 'openall':  # open every URL (args, or stdin lines: first token) as background tabs
+        urls = [w for w in args[1:] if w.startswith('http')] or \
+               [l.split()[0] for l in sys.stdin if l.split() and l.split()[0].startswith('http')]
+        _openall(urls, to); return
+    if a == 'tabs':  # id/status/url/title of every tab — background-side, so it SEES error/discarded tabs text+grab can't
+        for r in _send({'action': 'tabs', 'match': args[1] if len(args) > 1 else ''}, to):
+            for i, st, u, ti in (r.get('value') or []): print(f'{i:>4} {st:<10} {u}  [{ti}]')
+        return
+    if a == 'grabs':  # full innerText of EVERY tab matching <match> (grab = one best tab), ==== <url> headers
+        if len(args) < 2: sys.stderr.write('usage: a bri grabs <url-substring>\n'); sys.exit(1)
+        for r in _send({'action': 'text', 'sel': 'body', 'match': args[1], 'host': args[1]}, to):
+            if isinstance(r.get('value'), str): print(f'==== {r.get("src", "?")}\n{r["value"]}')
+        return
+    if a == 'closeall':  # close every tab whose URL contains <match> (cleanup after openall/research)
+        if len(args) < 2: sys.stderr.write('usage: a bri closeall <url-substring>\n'); sys.exit(1)
+        for r in _send({'action': 'closeall', 'match': args[1]}, to):
+            if r.get('ok'): print(f'closed {r["value"]} tabs')
+        return
+    if a == 'research':  # human deep research: query -> google+bing+ddg SERPs -> union of result links -> open ALL as tabs
+        if len(args) < 2: sys.stderr.write('usage: a bri research <query...>\n'); sys.exit(1)
+        from urllib.parse import quote_plus
+        q = quote_plus(' '.join(args[1:]))
+        for e in (f'www.google.com/search?q={q}', f'www.bing.com/search?q={q}', f'duckduckgo.com/?q={q}'):
+            _send({'action': 'open', 'url': 'https://' + e, 'bg': 1, 'fresh': 1}, to)
+        print('engines open, rendering...'); time.sleep(5)
+        ls = _links('?q=' + q, to) or (time.sleep(5) or _links('?q=' + q, to))   # all 3 SERPs share the ?q= marker
+        for u, t in ls: print(f'{u}\t{t}')
+        print(f'-- {len(ls)} unique results, opening all --')
+        _openall([u for u, _t in ls], to)
+        print(f"next: a bri grabs <url-substring> | a bri tabs | a bri closeall '?q={q[:40]}'")
         return
     if a == 'save':  # generic URL log (replaces the per-site dr.sh appenders); a bri <N> reopens
         import datetime, urllib.parse, os
@@ -443,17 +512,9 @@ def client(args):
         elif a=='screenshot':
             import base64, time as _t
             out = args[1] if len(args)>1 else f'/tmp/bri-{int(_t.time())}.png'
-            s = socket.socket(); s.connect(('127.0.0.1', CMD))
-            s.sendall(json.dumps({'id':int(time.time()*1000)%10**9,'action':'screenshot','to':to}).encode()+b'\n')
-            buf=b''
-            while True:
-                ch=s.recv(1<<16)
-                if not ch: break
-                buf+=ch
-            for line in buf.decode(errors='replace').splitlines():
-                try: v=json.loads(line).get('value','')
-                except Exception: continue
-                if v.startswith('data:image/'):
+            for r in _send({'action':'screenshot'}, to):
+                v = r.get('value','')
+                if isinstance(v,str) and v.startswith('data:image/'):
                     open(out,'wb').write(base64.b64decode(v.split(',',1)[1]))
                     print(out); return
             sys.stderr.write('x no image returned (ext loaded? a bri deploy)\n'); sys.exit(1)
@@ -487,6 +548,12 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome (bri-ext / bri-chro
   keys <sel> <k>   dispatch keydown/keyup (e.g. Enter)
   url              current URL
   grab [host]      select-all+copy equiv: full innerText of the tab whose URL has <host> (--html=DOM, no host=focused)
+  links <match>    result links of tabs whose URL has <match> (SERP redirects unwrapped+deduped; --raw=verbatim)
+  openall [u...|-] open URLs (args/stdin) as bg tabs (BRI_OPEN_MAX=20, RAM-guarded)
+  tabs [match]     id/status/url/title of every tab — sees error/discarded tabs grab can't
+  grabs <match>    innerText of EVERY tab matching <match> (grab = one best)
+  closeall <match> close every tab whose URL contains <match>
+  research <q...>  google+bing+ddg -> open every unique result (human deep research)
   new <id> [url]   open a job tab tagged #brijob=<id> (default chatgpt.com) for parallel jobs
   hint [match]     label clickable els on tabs whose URL contains <match> (host or brijob=<id>)
   hint-click <C>   click element C (re-enumerates; optional [match] filter, same as hint)
