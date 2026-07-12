@@ -292,7 +292,7 @@ def pick():                                           # type-to-search resume pi
         c = re.search(r'"cwd":"([^"]+)"', txt)
         if len(ms) > 1 and c and os.path.isdir(c[1]):
             rows.append([os.path.getmtime(f), os.path.basename(f)[:-6], c[1], len(ms),
-                         "\n".join(ms)[-65536:].replace('\\"', '"').replace("\\n", " ")])
+                         "\n".join(ms).replace('\\"', '"').replace("\\n", " ")])
     if not sys.stdin.isatty():                        # scripted use: print once, never hang
         for r in rows[:20]: print(f"{_age(time.time()-r[0]):>4} {r[3]:3d}t {os.path.basename(r[2]):<12} {_snip(r[4], '', 58)}")
         return
@@ -318,12 +318,12 @@ def pick():                                           # type-to-search resume pi
             o += f"/{q}▌ {len(m)}/{len(rows)} · type=search ↑↓ ↵=open esc=quit · {(time.perf_counter_ns()-t1)/1e6:.4f}ms"[:W] + "\x1b[K"
             sys.stdout.write(o); sys.stdout.flush()
             b = os.read(0, 1); t1 = time.perf_counter_ns()
-            if b in (b"\x03", b"\x04"): return
+            if b in b"\x03\x04": return               # b""=EOF exits
             if b == b"\x1b":
                 if not select.select([0], [], [], 0.02)[0]: return
-                b2 = os.read(0, 2); sel += (b2 in (b"[A", b"OA")) - (b2 in (b"[B", b"OB"))
-            elif b in (b"\r", b"\n") and items: act = items[len(items) - 1 - sel]; break
-            elif b in (b"\x7f", b"\x08"): q, sel = q[:-1], 0
+                b2 = os.read(0, 2); sel += b2.endswith(b"A") - b2.endswith(b"B")
+            elif b in b"\r\n" and items: act = items[len(items) - 1 - sel]; break
+            elif b in b"\x7f\x08": q, sel = q[:-1], 0
             elif b >= b" ": q, sel = q + b.decode("utf-8", "ignore"), 0
     finally:
         termios.tcsetattr(0, termios.TCSADRAIN, old); sys.stdout.write("\x1b[?1049l\x1b[?25h"); sys.stdout.flush()
