@@ -237,7 +237,7 @@ def _ff_restart():
             sys.stderr.write(_w + '\n  LLM/agent: PAUSE here and ASK THE USER what to do (close tabs first? proceed anyway?).\n'
                                   '  Do NOT auto-proceed; only re-run with FORCE=1 after the user says so.\n')
             return
-    subprocess.run(['pkill','-9','-f','firefox-nightly'],stdout=-3,stderr=-3); time.sleep(1)
+    subprocess.run(['pkill','-9','-f','^(/usr/lib/)?firefox-nightly'],stdout=-3,stderr=-3); time.sleep(1)  # anchored: unanchored matched vmtouch-firefox-nightly's cmdline (its args are FF paths) and SIGKILLed it every restart
     env = os.environ.copy(); xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
     socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
     if socks: env['WAYLAND_DISPLAY'] = socks[0]
