@@ -2,6 +2,7 @@
 __attribute__((noreturn))
 static void fallback_py(const char *mod, int argc, char **argv) {
     if (getenv("A_BENCH")) _exit(0);
+    signal(SIGCHLD,SIG_DFL);   /* IGN survives exec → uv ECHILD */
     perf_disarm();char path[P],ld[P];snprintf(ld,P,"%s/lib",SDIR);snprintf(path,P,"%s/%s.py",ld,mod);
     setenv("PYTHONDONTWRITEBYTECODE","1",1);setenv("PYTHONPATH",ld,1);
     char **a = malloc(((unsigned)argc + 5) * sizeof(char *));
