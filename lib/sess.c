@@ -113,22 +113,18 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
      if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
     static char wb[32768];size_t wl=0;
-    {int winview=ft0&&strstr(ft0,"win");  /* -t TMS not -a: grouped a-<pid> sessions re-list the same windows. win view adds convo start (first-pane pid birth; restored wins = restore time) + in-order tail of last output, end kept visible */
-    if(winview){struct winsize w2={0};int tb=250;if(!ioctl(1,TIOCGWINSZ,&w2)&&w2.ws_col){tb=w2.ws_col-80;if(tb<30)tb=30;if(tb>180)tb=180;}  /* tail budget tracks the desc window (dcap - "@id time · " prefix); non-tty = agent pipe → generous */
-        char pc[B*2];snprintf(pc,sizeof pc,
-            "td=$(date +%%b%%e|tr -d ' ');tmux lsp -s -t '"TMS"' -F '#{window_id} #{pane_id} #{pane_pid} #{window_name}' 2>/dev/null|while read -r i d p w;do "
-            "[ \"$i\" = \"$li\" ]&&continue;li=$i;"
-            "st=$(ps -o lstart= -p \"$p\" 2>/dev/null|awk -v td=\"$td\" '{split($4,T,\":\");h=T[1]+0;a=h<12?\"a\":\"p\";h=h%%12;if(!h)h=12;t=sprintf(\"%%d%%02d%%s\",h,T[2],a);if(($2 $3)==td)print t;else print $2 $3\" \"t}');"
-            "tl=$(tmux capturep -pJt \"$d\" -S -50 2>/dev/null|awk -v b=%d '{gsub(/^ +| +$/,\"\")}!/[a-z]/||/tokens|bypass|esc to interrupt|for shortcuts|disable recaps/{next}$0==\"/config)\"{next}/^[^a-zA-Z0-9]/&&/ for [0-9]+[ms]/{next}{L[++i]=$0}END{s=\"\";for(j=i>8?i-7:1;j<=i;j++)s=s (s==\"\"?\"\":\" \")L[j];n=length(s);if(n>b){p=n-b+2;q=index(substr(s,p,30),\" \");if(q)p+=q;print \"…\"substr(s,p)}else print s}');"
-            "printf '%%s\twin\t%%s%%s · %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$tl\";done",tb);
-        FILE*p=popen(pc,"r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
-    else{/* fork-free fast path: read cached window list; a detached ≤1/s bg refresh keeps it warm so the tmux fork stays off the launch path */
+    {/* win rows (bare menu AND a-tmux view): fork-free read of one rich cache — NAME\twin\t@id START · …in-order tail of last output — detached ≤1/s bg regen keeps it warm. -t TMS not -a: grouped a-<pid> sessions re-list the same windows. START = first-pane pid birth (a done splits excluded; restored wins = restore time) */
         char wc[P];snprintf(wc,P,"%s/win_cache.txt",DDIR);size_t cl;char*cw=readf(wc,&cl);
         if(cw){if(cl>32767)cl=32767;memcpy(wb,cw,cl);wb[cl]=0;wl=cl;free(cw);}
-        else{FILE*p=popen("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}
+        else{FILE*p=popen("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}  /* first run: names now, rich next open */
         struct stat ws;if(stat(wc,&ws)!=0||time(0)-ws.st_mtime>=1){if(fork()==0){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
-            char cm[P*2];snprintf(cm,sizeof cm,"tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null>'%s.%ld'&&mv '%s.%ld' '%s'",wc,(long)getpid(),wc,(long)getpid(),wc);
-            execlp("sh","sh","-c",cm,(char*)0);_exit(0);}}}}
+            char cm[P*3];snprintf(cm,sizeof cm,
+                "td=$(date +%%b%%e|tr -d ' ');tmux lsp -s -t '"TMS"' -F '#{window_id} #{pane_id} #{pane_pid} #{window_name}' 2>/dev/null|while read -r i d p w;do "
+                "[ \"$i\" = \"$li\" ]&&continue;li=$i;"
+                "st=$(ps -o lstart= -p \"$p\" 2>/dev/null|awk -v td=\"$td\" '{split($4,T,\":\");h=T[1]+0;a=h<12?\"a\":\"p\";h=h%%12;if(!h)h=12;t=sprintf(\"%%d%%02d%%s\",h,T[2],a);if(($2 $3)==td)print t;else print $2 $3\" \"t}');"
+                "tl=$(tmux capturep -pJt \"$d\" -S -50 2>/dev/null|awk '{gsub(/^ +| +$/,\"\")}!/[a-z]/||/tokens|bypass|esc to interrupt|for shortcuts/{next}/^[^a-zA-Z0-9]/&&/ for [0-9]+[ms]/{next}{L[++i]=$0}END{s=\"\";for(j=i>8?i-7:1;j<=i;j++)s=s (s==\"\"?\"\":\" \")L[j];gsub(/\\(disable recaps in \\/config\\)/,\"\",s);gsub(/current: [0-9.]+ · latest: [0-9.]+/,\"\",s);gsub(/  +/,\" \",s);gsub(/ +$/,\"\",s);n=length(s);b=200;if(n>b){p=n-b+2;q=index(substr(s,p,30),\" \");if(q)p+=q;print \"…\"substr(s,p)}else print s}');"
+                "printf '%%s\twin\t%%s%%s · %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$tl\";done >'%s.%ld'&&mv '%s.%ld' '%s'",wc,(long)getpid(),wc,(long)getpid(),wc);
+            execlp("sh","sh","-c",cm,(char*)0);_exit(0);}}}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static const char*acts[]={"home\tmenu","tmux split-window\tpane","tmux new-window\twin","tmux kill-pane\tpane","tmux kill-window\twin","tmux detach\tquit","tmux kill-session\tquit","tmux resize-pane -Z\tpane","tmux set synchronize-panes\tpane",
@@ -233,7 +229,10 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             FP("%s \033[%dm⌕ open in web\033[0m\033[K\n",sel==1?" >":"  ",sel==1?37:90);}
         for(int i=0;i<show;i++){int j=top+i,gj=j+vo,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
-            char*desc=t2?t2+1:(t?t+1:"");int dc=W-60<50?50:W-60>200?200:W-60;int dl=(int)strnlen(desc,(size_t)dc);  /* desc window grows with width: win-row convo tails get the room; 50 floor = old behavior on narrow */
+            char*desc=t2?t2+1:(t?t+1:"");int dc=W-60<50?50:W-60>200?200:W-60;  /* desc window grows with width: win-row convo tails get the room; 50 floor = old behavior on narrow */
+            static char db[256];if(t2&&!strncmp(t+1,"win\t",4)&&(int)strlen(desc)>dc){char*mm=strstr(desc," · ");  /* win row overflow: keep "@id START · " head, left-cut the tail so the convo END stays visible */
+                if(mm){int hd=(int)(mm-desc)+4,rm=dc-hd-3;if(rm>8){char*tp=desc+strlen(desc)-(size_t)rm;while((*tp&0xC0)==0x80)tp++;snprintf(db,256,"%.*s…%s",hd,desc,tp);desc=db;}}}
+            int dl=(int)strnlen(desc,(size_t)dc);
             if(ml>W-7-dl)ml=W-7-dl;FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dl,dl,desc);FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,ccol);  /* +1: top rule of input box */
