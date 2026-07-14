@@ -105,6 +105,7 @@ static void _html_gen(void){
     /* parse tab-separated lines into JSON array */
     int cl=1;cmds[0]='[';
     for(char*l=out;*l;){char*nl=strchr(l,'\n');if(nl)*nl=0;
+        for(char*q=l;*q;q++)if(*q=='"')*q='\'';else if(*q=='\\')*q='/';  /* one raw " kills the router script */
         char*tab=strchr(l,'\t');char*name=l,*desc="";
         if(tab){*tab=0;desc=tab+1;}
         while(*name==' ')name++;
