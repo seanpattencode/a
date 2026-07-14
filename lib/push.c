@@ -42,14 +42,14 @@ static int cmd_push(int argc, char **argv) { AB;
     }
     char msg[B]="",ps[P]="";
     if(argc>2)ajoin(msg,B,argc,argv,2);
-    /* no-arg tty: type-filter dirty files, newest first, ↵ pushes JUST that file, ⇥=all */
+    /* no-arg tty: pick a dirty file (newest first), ↵ pushes JUST it */
     else if(isatty(0)&&isatty(1)&&git_in_repo(cwd)){
         char ls[B*2],out[128];const char*fn[32];long mt[32];int nf=0;struct stat st;
         pcmd("git status --porcelain",ls,sizeof(ls));
         for(char*p=strtok(ls,"\n");p&&nf<32;p=strtok(0,"\n"))
             if(p[3]){char*a=strstr(p," -> ");fn[nf]=a?a+4:p+3;mt[nf]=stat(fn[nf],&st)?0:st.st_mtime;nf++;}
         for(int i=1;i<nf;i++)for(int j=i;j>0&&mt[j]>mt[j-1];j--){const char*t=fn[j];fn[j]=fn[j-1];fn[j-1]=t;long u=mt[j];mt[j]=mt[j-1];mt[j-1]=u;}
-        if(nf){perf_disarm();raw_enter();int r=m_pick("push ⇥all",fn,nf,out,128);
+        if(nf){perf_disarm();raw_enter();int r=m_pick("select file to push",fn,nf,out,128);
             char mb[B];int gm=r>0&&raw_line("msg: ",mb,B);raw_exit();
             if(r<0)return 0;
             if(r>0){snprintf(ps,P," -- '%s'",out);snprintf(msg,B,gm?"%s":"Update %s",gm?mb:out);}}
