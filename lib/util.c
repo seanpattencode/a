@@ -98,6 +98,7 @@ static int raw_line(const char*prompt,char*buf,int sz){
     raw_exit();printf("%s",prompt);fflush(stdout);
     int ok=fgets(buf,sz,stdin)!=NULL;if(ok)buf[strcspn(buf,"\n")]=0;
     raw_enter();return ok&&buf[0];}
+static int m_pick(const char*cat,const char*const*items,int n,char*out,size_t osz);/* live-filter picker, lib/ssh.c */
 
 
 static const char*clip_cmd(void){static char c[64];if(!getenv("TMUX"))return NULL;
