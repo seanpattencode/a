@@ -40,9 +40,21 @@ static int cmd_push(int argc, char **argv) { AB;
         if(vo[0]){unlink(cp);printf("✓ %s\n  github: %s\n",cs,vo);}else printf("✗ %s NOT on origin; re-push\n",cs);
         free(cs);return vo[0]?0:1;
     }
-    char msg[B]="";
+    char msg[B]="",ps[P]="";
     if(argc>2)ajoin(msg,B,argc,argv,2);
-    else snprintf(msg, B, "Update %s", bname(cwd));
+    /* no-arg tty: type-filter dirty files, newest first, ↵ pushes JUST that file, ⇥=all */
+    else if(isatty(0)&&isatty(1)&&git_in_repo(cwd)){
+        char ls[B*2],out[128];const char*fn[32];long mt[32];int nf=0;struct stat st;
+        pcmd("git status --porcelain",ls,sizeof(ls));
+        for(char*p=strtok(ls,"\n");p&&nf<32;p=strtok(0,"\n"))
+            if(p[3]){char*a=strstr(p," -> ");fn[nf]=a?a+4:p+3;mt[nf]=stat(fn[nf],&st)?0:st.st_mtime;nf++;}
+        for(int i=1;i<nf;i++)for(int j=i;j>0&&mt[j]>mt[j-1];j--){const char*t=fn[j];fn[j]=fn[j-1];fn[j-1]=t;long u=mt[j];mt[j]=mt[j-1];mt[j-1]=u;}
+        if(nf){perf_disarm();raw_enter();int r=m_pick("push ⇥all",fn,nf,out,128);
+            char mb[B];int gm=r>0&&raw_line("msg: ",mb,B);raw_exit();
+            if(r<0)return 0;
+            if(r>0){snprintf(ps,P," -- '%s'",out);snprintf(msg,B,gm?"%s":"Update %s",gm?mb:out);}}
+    }
+    if(!msg[0])snprintf(msg, B, "Update %s", bname(cwd));
 
     if (!git_in_repo(cwd)) {
         /* Fork without .git: init, commit, push branch to upstream */
@@ -79,7 +91,7 @@ static int cmd_push(int argc, char **argv) { AB;
     char ok[P],ef[P],c[B*2];struct stat st;
     snprintf(ok,P,"%s/logs/push.ok",DDIR);snprintf(ef,P,"%s/logs/push.err",DDIR);
     {char*e=readf(ef,NULL);if(e){unlink(ef);unlink(ok);printf("✗ %s\n",e);free(e);}}
-    if (stat(ok, &st) == 0 && time(NULL) - st.st_mtime < 600) {
+    if (!ps[0] && stat(ok, &st) == 0 && time(NULL) - st.st_mtime < 600) {
         snprintf(c,sizeof(c),"cd '%s'&&git add -A&&git commit -m \"%s\" --allow-empty 2>/dev/null&&"
             "{ " PUSHCMD "&&touch '%s'; }||echo fail>'%s'",cwd,msg,ok,ef);
         if(!fork()){setsid();int n=open("/dev/null",O_RDWR);if(n>=0){dup2(n,0);dup2(n,1);dup2(n,2);close(n);}
@@ -88,7 +100,7 @@ static int cmd_push(int argc, char **argv) { AB;
     }
     snprintf(c,B,"git -C '%s' config remote.origin.url 2>/dev/null",cwd);
     if(system(c)){snprintf(c,B,"cd '%s'&&gh repo create --private --source . --push",cwd);(void)!system(c);}
-    snprintf(c,sizeof(c),"cd '%s'&&git add -A&&git commit -m '%s' --allow-empty 2>/dev/null&&" PUSHCMD,cwd,msg);
+    snprintf(c,sizeof(c),"cd '%s'&&git add %s&&git commit -m '%s' --allow-empty%s 2>/dev/null&&" PUSHCMD,cwd,ps[0]?ps:"-A",msg,ps);
     char out[B];pcmd(c,out,B);
     #undef PUSHCMD
     if(!strstr(out,"->")&&!strstr(out,"up-to-date")&&!strstr(out,"Everything")){
