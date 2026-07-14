@@ -429,6 +429,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/piper.c"
 #include "lib/checkin.c"
 #include "lib/pedal.c"
+#include "lib/grep.c"
 #include "lib/feed.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
@@ -689,7 +690,7 @@ static const cmd_t CMDS[] = {
     {"audio",cmd_audio},{"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
+    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
