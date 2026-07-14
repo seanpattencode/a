@@ -12,7 +12,7 @@ GUI layer (sway): foot/firefox windows are snapshotted (workspace, output, tmux-
 reopened onto their saved workspace on restore — foots reattach tmux, firefox uses its own session
 restore; every reopen (or "all already open") is printed. No sway → gui skipped, tmux still restores.
 """
-import sys, os, json, glob, re, socket, subprocess, time, urllib.parse
+import sys, os, json, glob, re, socket, subprocess, time
 
 DEV = socket.gethostname()
 TMS = os.environ.get("A_SNAP_SESSION", "a")          # a's tmux session (overridable for testing)
@@ -20,14 +20,13 @@ GIT = os.path.expanduser("~/a/adata/git")
 SNAPDIR = f"{GIT}/sessions"
 SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
-GSESS = os.path.expanduser("~/.grok/sessions")        # grok: sessions/<url-encoded-cwd>/<sid>/
 ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # session id on a claude cmdline
 try: C = dict(re.findall(r"^m_(\w+): *(.*)", open(f"{GIT}/workspace/config.txt").read(), re.M))
 except OSError: C = {}
 MF = "".join(f" --{k} {C[k]}" for k in ("model", "effort") if C.get(k)) if C.get("agent", "claude") == "claude" else ""
 RESUME = {"claude": f"claude --dangerously-skip-permissions{MF} --resume %s; exec bash",  # %s=sid; no MF → opus/xhigh
           "codex": "codex resume --last; exec bash", "gemini": "gemini --yolo --resume latest; exec bash",
-          "grok": "grok --always-approve --resume %s; exec bash"}
+          "grok": "grok --always-approve --continue; exec bash"}   # --continue = cwd's newest session
 HOST = f"{GIT}/ssh/%s.txt"                            # a ssh host registry
 
 
@@ -75,18 +74,12 @@ def agent(pids):                                      # (kind, sid) of the agent
         for tk in cl.split("\0")[:2]:                 # argv[0:2] = exe (+ `node <script>`); the prompt sits later
             b = os.path.basename(tk)
             if b in AEXE:
-                if b in ("claude", "grok"): m = ID.search(cl); return (b, m.group(1) if m else "")
+                if b == "claude": m = ID.search(cl); return ("claude", m.group(1) if m else "")
                 return (b, "")
     return (None, "")
 
 
 def have(sid): return bool(sid and glob.glob(f"{PROJ}/*/{sid}.jsonl"))
-
-
-def gnewest(cwd, skip):                               # newest grok session for cwd not already owned
-    for j in sorted(glob.glob(f"{GSESS}/{urllib.parse.quote(cwd, safe='')}/*/"), key=os.path.getmtime, reverse=True):
-        s = os.path.basename(j[:-1])
-        if s not in skip: return s
 
 
 def newest_in(cwd, skip):                             # newest claude transcript in cwd's project dir not already owned
@@ -122,10 +115,7 @@ def save():
         if kind == "claude":                                       # claude → resume its real transcript
             s = sid if have(sid) else newest_in(cwd, claimed | used)
             if s and s not in used: used.add(s); cmd = RESUME["claude"] % s
-        elif kind == "grok":                                       # grok → resume its session (argv sid, else cwd's newest)
-            s = sid if sid and glob.glob(f"{GSESS}/*/{sid}/") else gnewest(cwd, used)
-            if s and s not in used: used.add(s); cmd = RESUME["grok"] % s
-        elif kind in ("codex", "gemini"): cmd = RESUME[kind]       # codex/gemini → native resume
+        elif kind in ("codex", "gemini", "grok"): cmd = RESUME[kind]   # native resume
         elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name   # ssh window → reconnect
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
                      "preview": (_preview(s) if s else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
@@ -215,9 +205,6 @@ def _preview(sid):                                   # tail (last 64KB) of a cla
         m = [x for x in re.findall(r'"role":"user","content":"([^"]{2,90})', txt)
              if "command-name" not in x and "local-command" not in x and not x.startswith(("<", "[Request"))]
         if m: return re.sub(r"\s+", " ", m[-1])[:60]
-    for fp in glob.glob(f"{GSESS}/*/{sid}/summary.json"):
-        try: return json.load(open(fp)).get("generated_title", "")[:60]
-        except (OSError, ValueError): pass
     return ""
 
 
