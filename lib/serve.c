@@ -164,6 +164,11 @@ static int _bkcol(const char*nm,int col,char*o,int osz){int r=-1;char ip[P];snpr
         if(e)l=e+1;else break;}
     free(ix);return r;}
 static long _bkpos(const char*nm){char b[24];return _bkcol(nm,5,b,24)<0?-1:atol(b);}  /* col5 saved offset; -1 = no row */
+static void _bkfile(const char*nm,char*tf){  /* reading text resolution order, shared by reader + say */
+    snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
+    if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/%s.txt",AROOT,nm,nm);
+    if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/transcript.txt",AROOT,nm);  /* canonical elsewhere: help.c chat context, sync filter */
+    if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/source.txt",AROOT,nm);}
 static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*saved,const char*ds){
     char*h=malloc(bl*6+2048);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
     int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#6cf}button{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#6c6}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
@@ -444,6 +449,31 @@ static void _handle(int c){
         free(ix);free(out);flock(lf,LOCK_UN);close(lf);
         if(!ok){_sresp(c,500,"text/plain","x",1);return;}
         _sresp(c,200,"text/plain",csv,cl);return;}
+    if(!strncmp(req,"GET /booksay",12)){char nm[128];_qn(req,nm);  /* speak from pos via `a say` (edge ryan); one group at a time, new play or stop=1 kills it */
+        if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","x",1);return;}
+        char sf2[P];snprintf(sf2,P,"%s/local/.booksay.pid",AROOT);   /* fork-per-conn: say-group pid must survive the request child */
+        {size_t pl=0;char*ps=readf(sf2,&pl);
+         if(ps){pid_t op=(pid_t)atol(ps);free(ps);
+            if(op>1){char cl[64],cb[256];snprintf(cl,64,"/proc/%d/cmdline",op);   /* direct read: procfs st_size=0 so readf returns empty */
+                int cf=open(cl,O_RDONLY);ssize_t cn=cf<0?-1:read(cf,cb,255);if(cf>=0)close(cf);
+                if(cn>3&&memmem(cb,(size_t)cn,"say",3))kill(-op,SIGTERM);   /* leader = exec-chained bash lib/say.sh — substring match, reuse-guarded */
+                else if(cn<0&&!kill(-op,0))kill(-op,SIGTERM);}   /* leader gone, group (uvx/ffplay) lives — ours by construction, reap */
+            unlink(sf2);}}
+        char*pq=strstr(req,"pos=");
+        if(!pq||strstr(req,"stop=")){_sresp(c,200,"text/plain","off",3);return;}
+        char tf[P];_bkfile(nm,tf);size_t tl=0;char*txt=readf(tf,&tl);
+        if(!txt){_sresp(c,404,"text/plain","x",1);return;}
+        size_t o=(size_t)atol(pq+4);if(o>=tl)o=tl?tl-1:0;
+        size_t e2=o+1400>tl?tl:o+1400,x=e2;   /* sentence-snap the tail within +300 */
+        while(x<tl&&x<e2+300&&!(strchr(".!?",txt[x-1])&&(txt[x]==' '||txt[x]=='\n')))x++;
+        if(x<tl)e2=x;
+        char*ch=malloc(e2-o+1);memcpy(ch,txt+o,e2-o);ch[e2-o]=0;free(txt);
+        pid_t k=fork();
+        if(!k){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
+            signal(SIGCHLD,SIG_DFL);execlp("a","a","say",ch,(char*)0);_exit(127);}
+        free(ch);
+        if(k>0){char pb[24];int pn=snprintf(pb,24,"%d",k);int pfd=open(sf2,O_WRONLY|O_CREAT|O_TRUNC,0644);if(pfd>=0){(void)!write(pfd,pb,(size_t)pn);close(pfd);}}
+        _sresp(c,200,"text/plain","on",2);return;}
     if(!strncmp(req,"GET /bookarchive",16)){char nm[128];_qn(req,nm);  /* dot-prefix rename = archive; restore: a book archive <substr> */
         if(!nm[0]||nm[0]=='.'||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
@@ -494,10 +524,7 @@ static void _handle(int c){
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><a class=\"c x\" href=\"/bookarchive?n=%s\" title=\"archive (hide)\">\xe2\x9c\x95</a><span class=s>%s</span></div>",has?"":"x",au?"in":"",names[i],lb,names[i],names[i],names[i],xt);}
             _sdoc(c,h,hl);free(h);return;}
         if(strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
-        char tf[P];snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
-        if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/%s.txt",AROOT,nm,nm);
-        if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/transcript.txt",AROOT,nm);  /* canonical elsewhere: help.c chat context, sync filter */
-        if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/source.txt",AROOT,nm);
+        char tf[P];_bkfile(nm,tf);
         size_t tl=0;char*txt=readf(tf,&tl);
         if(!txt){char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);int reg=0;  /* in synced index but not local: pull in bg, page retries */
             if(ix){char pat[140];snprintf(pat,140,"\t%s\t",nm);reg=!!strstr(ix,pat);free(ix);}
@@ -524,7 +551,7 @@ static void _handle(int c){
             "#hud{color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px 4px 0}"
             "#mp{display:none;position:fixed;top:28px;right:0;max-width:88vw;max-height:60vh;overflow:auto;background:#000;color:#9cf;font:13px ui-monospace,monospace;z-index:9}"
             "#mp div{padding:9px 10px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#f66;font-weight:400;padding:0 8px}</style>"
-            "<div id=tr><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
+            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,H=hud,ns=[].slice.call(K.childNodes),T=0,bs=[],co=P;"
@@ -564,6 +591,9 @@ static void _handle(int c){
             "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
             "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(S,400);mp.style.display='none'}});"
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
+            /* ▶ = speak from here via server-side `a say`; server owns the single say-group, reply is the state */
+            "var sp=0;ms.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();"
+            "fetch('/booksay?n='+encodeURIComponent(N)+(sp?'&stop=1':'&pos='+O())).then(function(r){return r.text()}).then(function(t){sp=t=='on'?1:0;ms.textContent=sp?'\\u25a0':'\\u25b6'},function(){sp=0;ms.textContent='\\u25b6'})});"
             "</script>",nm,pos);
         _sdoc(c,pg,hl);free(pg);return;}
     if(!strncmp(req,"GET /bookfile",13)){char nm[128];_qn(req,nm);  /* raw book asset with real mime → pdf opens in the browser's viewer */
