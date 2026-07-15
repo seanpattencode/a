@@ -8,7 +8,28 @@
 <script>(()=>{let o=0;const c=document.getElementById('pf'),p=document.getElementById('pfp');
 c.onclick=()=>{o=!o;p.style.display=o?'block':'none';if(o)fetch('/api/omni',{method:'POST',body:'q=profile htmlbody'}).then(r=>r.text()).then(t=>{const i=t.indexOf('<!doctype'),j=t.lastIndexOf('</pre>');p.srcdoc=i<0?t:t.slice(i,j>i?j:t.length)})}})()</script>
 <div id=v_index class=v style="align-items:center">
-  <form id=omni autocomplete=off style="margin-top:9vh"><input id=qi autofocus autocomplete=off autocapitalize=off autocorrect=off spellcheck=false placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:#4af"></form>
+  <div id=nwbar style="width:min(680px,92vw);margin-top:3vh;text-align:center">
+    <div id=nwtot data-go="/u" style="font-size:46px;font-weight:800;line-height:1.04;color:#4af;cursor:pointer" title="net worth · tap for /u trading">net worth&hellip;</div>
+    <div id=nwsub style="font-size:13px;color:#678;margin-top:4px">step 0 of making money: know what you have, timely</div>
+    <form id=nwf style="margin-top:8px;display:flex;gap:8px;justify-content:center">
+      <input id=nwi autocomplete=off placeholder="update: bank 2500 &middot; rm bank &middot; log" style="width:min(320px,68vw);font-size:14px;padding:8px;background:#000;color:#4af;border:1px solid #2a3a5a;border-radius:8px;outline:none">
+      <button style="font-size:14px;padding:8px 14px;background:#0b0f1a;color:#9cf;border:1px solid #2a3a5a;border-radius:8px;cursor:pointer">set</button>
+    </form>
+  </div>
+  <script>(function(){var T=document.getElementById('nwtot'),S=document.getElementById('nwsub');
+    function secs(t){var m=t.match(/(\d+)([smhd])/);return m?+m[1]*({s:1,m:60,h:3600,d:86400}[m[2]]):1e12}
+    function ago(s){var u=[['d',86400],['h',3600],['m',60],['s',1]],i;for(i=0;i<u.length;i++)if(s>=u[i][1])return Math.floor(s/u[i][1])+u[i][0];return '0s'}
+    function load(){fetch('/nw').then(function(r){return r.text()}).then(function(t){t=t.trim();
+      if(!t||t[0]==='x'){T.textContent='net worth —';T.style.color='#a55';S.textContent=t||'u server unreachable';return}
+      var money=(t.match(/\$[\d,]+(\.\d+)?/)||['—'])[0],eq=t.indexOf('='),parts=eq<0?'':t.slice(eq+1).split('|')[0].trim();
+      var stale=/[!?]/.test(t),ages=parts.match(/\d+[smhd]/g)||[],fresh=ages.length?Math.min.apply(null,ages.map(secs)):null;
+      T.textContent='net worth '+money;T.style.color=stale?'#fa0':'#4af';
+      S.innerHTML=(fresh!=null?'updated '+ago(fresh)+' ago'+(stale?' &middot; STALE, refresh':''):'freshness unknown')+(parts?' &middot; '+parts:'');
+      S.style.color=stale?'#fa0':'#678'}).catch(function(){T.textContent='net worth —';S.textContent='u server unreachable'})}
+    load();setInterval(load,20000);
+    document.getElementById('nwf').addEventListener('submit',function(e){e.preventDefault();var i=document.getElementById('nwi');if(!i.value.trim())return;
+      fetch('/nw',{method:'POST',body:i.value.trim()}).then(function(r){return r.text()}).then(function(){i.value='';load()})});})();</script>
+  <form id=omni autocomplete=off style="margin-top:4vh"><input id=qi autofocus autocomplete=off autocapitalize=off autocorrect=off spellcheck=false placeholder="" style="width:80vw;max-width:600px;font-size:24px;padding:16px;text-align:center;background:#000;color:#fff;border:1px solid #333;border-radius:8px;outline:none;caret-color:#4af"></form>
   <div style="display:flex;gap:12px;align-items:center;margin-top:10px"><span id=agb data-go="/ag" style="font-size:14px;padding:6px 14px;color:#4af;background:#000;border:1px solid #333;border-radius:8px;cursor:pointer;touch-action:manipulation">claude</span><select id=dev class=f style="font-size:14px;padding:6px">__DO__</select><span id=qh style="color:#345;font-size:15px">tap a page · or type a command / prompt</span></div>
   <div id=qo style="width:90vw;max-width:800px;margin-top:24px;max-height:78vh;overflow-y:auto"></div>
   <script src="/bm?js" defer></script>

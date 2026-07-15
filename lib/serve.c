@@ -145,6 +145,18 @@ static void _sresph(int c,int code,const char*ct,const char*body,int bl,const ch
 /* static doc pages: NOT no-store, so the browser back/forward cache restores them instantly (0ms, no refetch) */
 static void _sresp(int c,int code,const char*ct,const char*body,int bl){_sresph(c,code,ct,body,bl,"no-store");}
 static void _sdoc(int c,const char*body,int bl){_sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
+/* proxy the u server (127.0.0.1:9999) — net worth (+ any u stat) has ONE source there; we forward, never recompute (no drift). No shell → the update body can't inject. */
+static char* _ufwd(const char*path,const char*body,char*buf,int cap){
+    int s=socket(AF_INET,SOCK_STREAM,0);if(s<0)return 0;
+    struct sockaddr_in la={.sin_family=AF_INET,.sin_port=htons(9999),.sin_addr={htonl(INADDR_LOOPBACK)}};
+    struct timeval tv={2,0};setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);setsockopt(s,SOL_SOCKET,SO_SNDTIMEO,&tv,sizeof tv);
+    if(connect(s,(void*)&la,sizeof la)!=0){close(s);return 0;}
+    char rq[1200];int rn=body
+        ?snprintf(rq,1200,"POST %s HTTP/1.0\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",path,(int)strlen(body),body)
+        :snprintf(rq,1200,"GET %s HTTP/1.0\r\nConnection: close\r\n\r\n",path);
+    if(write(s,rq,(size_t)rn)!=rn){close(s);return 0;}
+    int tot=0,r;while(tot<cap-1&&(r=(int)read(s,buf+tot,cap-1-tot))>0)tot+=r;
+    close(s);buf[tot]=0;char*b=strstr(buf,"\r\n\r\n");return b?b+4:buf;}
 static int _scmp(const void*a,const void*b){return strcmp((const char*)a,(const char*)b);}
 static void _qn(const char*req,char*nm){nm[0]=0;const char*q=strstr(req,"?n=");if(!q)return;q+=3;int i=0;for(;q[i]&&q[i]!='&'&&q[i]!=' '&&i<127;i++)nm[i]=q[i];nm[i]=0;}
 static void _redir(int c,const char*url){char h[768];int hl=snprintf(h,768,"HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length:0\r\nConnection:close\r\n\r\n",url);(void)!write(c,h,(size_t)hl);}
@@ -283,14 +295,12 @@ static void _prompt_gen(void){ /* cached; GET /prompt regens when sources newer 
             if(ol+8192>cap){char*t=realloc(o,cap*=2);if(!t){free(o);o=NULL;break;}o=t;}}
         close(pp[0]);waitpid(ch,NULL,0);
         if(!o)return;
-        long cboff=-1;{char ap[P];snprintf(ap,P,"%s/local/a_cat.txt",AROOT);size_t al=0;char*ac=readf(ap,&al);
-            if(ac&&al){char*t=realloc(o,ol+al+1);if(t){o=t;cboff=(long)ol;memcpy(o+ol,ac,al);ol+=al;}free(ac);}}
         o[ol]=0;
         char*h=malloc(ol*6+2048);if(!h){free(o);return;}
         char cm[8192];int cl;size_t HL=strlen(HOME);
         load_cfg();const char*pap=cfget("prompt");if(!*pap)pap="default";  /* active prompt file feeds the unified prompt; CP[0] + selector reflect it */
         char pfmt[P],plbl[80];snprintf(pfmt,P,"%%s/common/prompts/%s.txt",pap);snprintf(plbl,80,"%s.txt (active)",pap);
-        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{plbl,pfmt,SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"mem index","%s/mem/index.txt",SROOT,"==> mem index <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat 3)","%s/local/a_cat.txt",AROOT,0,cboff}};
+        struct{const char*lbl,*fmt,*root,*mk;long off;}CP[]={{plbl,pfmt,SROOT,0,-1},{"AGENTS.md","%s/AGENTS.md",SDIR,0,-1},{"mem index","%s/mem/index.txt",SROOT,"==> mem index <==",-1},{"installed tools","",0,"Installed tools on this device:",-1},{"codebase (a cat)","%s/local/a_cat.txt",AROOT,"a_cat.txt (",-1}};
         int N=5;
         for(int i=0;i<N;i++){if(CP[i].off>=0)continue;char key[160]={0};
             if(CP[i].mk)snprintf(key,160,"%s",CP[i].mk);
@@ -371,6 +381,13 @@ static void _handle(int c){
     if(!strncmp(req,"GET /extreload",14)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
         if(_ws_upgrade(c,req))_ws_reload(c);return;}
     if(!strncmp(req,"GET /api/u-status",17)){_sresp(c,200,"application/json","{\"ok\":true}",11);return;}
+    if(!strncmp(req,"GET /nw",7)&&(req[7]==' '||req[7]=='\r'||req[7]=='?')){   /* net worth: single source = u server; home-page banner reads this */
+        char nb[4096];char*b=_ufwd("/nw",0,nb,4096);
+        if(b&&*b)_sresp(c,200,"text/plain; charset=utf-8",b,(int)strlen(b));
+        else _sresp(c,200,"text/plain; charset=utf-8","x u server down \xe2\x80\x94 start it: u web run",39);return;}
+    if(!strncmp(req,"POST /nw",8)){   /* update a part: body "bank 2500" | "rm bank" | "log" -> u's nw_apply (parsed in C, no shell) */
+        char*bd=strstr(req,"\r\n\r\n");bd=bd?bd+4:(char*)"";char nb[4096];char*b=_ufwd("/nw",bd,nb,4096);
+        _sresp(c,200,"text/plain; charset=utf-8",b?b:(char*)"x u down",b?(int)strlen(b):8);return;}
     if(!strncmp(req,"GET /bm",7)&&(req[7]==' '||req[7]=='?')){const char*q=req+7;int js=!strncmp(q,"?js",3),tx=!strncmp(q,"?txt",4),cr=!strncmp(q,"?chrome",7);char fp[P];
         snprintf(fp,P,cr?"%s/local/bm_chrome.json":tx?"%s/bookmarks.txt":js?"%s/common/bm.js":"%s/common/bm.html",cr?AROOT:SROOT);
         size_t fl=0;char*d=readf(fp,&fl);if(!d){_sresp(c,404,"text/plain","x",1);return;}
