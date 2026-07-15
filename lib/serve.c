@@ -153,15 +153,17 @@ static int _docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f
     int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;
     return rel[0]&&!strstr(rel,"..");}
 /* editor page: form POST + save button + escaped textarea + optional saved-banner (zero JS) */
-static long _bkpos(const char*nm){long pos=-1;char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);  /* col5 saved offset; -1 = no row */
-    size_t il=0;char*ix=readf(ip,&il);if(!ix)return -1;size_t nl=strlen(nm);
+static int _bkcol(const char*nm,int col,char*o,int osz){int r=-1;char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);  /* tab-col text of row nm; -1 = no row */
+    size_t il=0;char*ix=readf(ip,&il);if(!ix)return -1;size_t nl=strlen(nm);o[0]=0;
     for(char*l=ix;l<ix+il;){char*e=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e?e:ix+il;
         char*t1=memchr(l,'\t',(size_t)(lim-l)),*t2=t1?memchr(t1+1,'\t',(size_t)(lim-t1-1)):0;
-        if(t1&&t2&&(size_t)(t2-t1-1)==nl&&!strncmp(t1+1,nm,nl)){
-            char*t3=memchr(t2+1,'\t',(size_t)(lim-t2-1)),*t4=t3?memchr(t3+1,'\t',(size_t)(lim-t3-1)):0;
-            pos=t4&&t4+1<lim?atol(t4+1):0;break;}
+        if(t1&&t2&&(size_t)(t2-t1-1)==nl&&!strncmp(t1+1,nm,nl)){r=0;
+            char*p=l;int cc=1;while(cc<col&&p<lim){char*nt=memchr(p,'\t',(size_t)(lim-p));if(!nt)break;p=nt+1;cc++;}
+            if(cc==col){char*nt=memchr(p,'\t',(size_t)(lim-p));int L=(int)((nt&&nt<lim?nt:lim)-p);if(L>=osz)L=osz-1;memcpy(o,p,(size_t)L);o[L]=0;r=L;}
+            break;}
         if(e)l=e+1;else break;}
-    free(ix);return pos;}
+    free(ix);return r;}
+static long _bkpos(const char*nm){char b[24];return _bkcol(nm,5,b,24)<0?-1:atol(b);}  /* col5 saved offset; -1 = no row */
 static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*saved,const char*ds){
     char*h=malloc(bl*6+2048);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
     int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#6cf}button{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#6c6}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
@@ -403,7 +405,7 @@ static void _handle(int c){
         {char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*l=fopen(lg,"a");if(l){fprintf(l,"save %s %s\n",rel,ok?gurl:"WRITEFAIL");fclose(l);}}
         size_t nl=0;char*nf=readf(fp,&nl);
         _docpage(c,rel,nf?nf:ct,nf?nl:(size_t)w,saved,ds);free(nf);return;}
-    if(!strncmp(req,"POST /book",10)){char nm[128];_qn(req,nm);
+    if(!strncmp(req,"POST /book",10)&&(req[10]=='?'||req[10]==' ')){char nm[128];_qn(req,nm);   /* guard: /bookmark shares the prefix */
         char po[24]="0";char*bd=strstr(req,"\r\n\r\n"),*pp=bd?strstr(bd+4,"pos="):0;
         if(pp){pp+=4;int i=0;for(;pp[i]>='0'&&pp[i]<='9'&&i<23;i++)po[i]=pp[i];po[i]=0;}
         if(nm[0]&&!strchr(nm,'/')&&!strstr(nm,"..")&&!fork()){int n=open("/dev/null",O_WRONLY);if(n>=0)dup2(n,1);execlp("a","a","book","pos",nm,po,(char*)0);_exit(1);}
@@ -411,6 +413,37 @@ static void _handle(int c){
     if(!strncmp(req,"GET /bookpos",12)){char nm[128];_qn(req,nm);  /* readback: reader verifies its save landed (POST ok is pre-fork) */
         if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","x",1);return;}
         char b[24];int bl=snprintf(b,24,"%ld",_bkpos(nm));_sresp(c,200,"text/plain",b,bl);return;}
+    if(!strncmp(req,"GET /bookmark",13)){char nm[128];_qn(req,nm);  /* csv of col6 mark offsets */
+        if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","x",1);return;}
+        char b[512];int L=_bkcol(nm,6,b,512);_sresp(c,200,"text/plain",b,L>0?L:0);return;}
+    if(!strncmp(req,"POST /bookmark",14)){char nm[128];_qn(req,nm);  /* add=|del=<off> → RMW col6 under flock, reply authoritative csv */
+        char*bd2=strstr(req,"\r\n\r\n"),*p=0;char op=0;long ov=-1;
+        if(bd2){if((p=strstr(bd2+4,"add=")))op='a';else if((p=strstr(bd2+4,"del=")))op='d';if(p)ov=atol(p+4);}
+        if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")||!op||ov<0){_sresp(c,400,"text/plain","x",1);return;}
+        char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);
+        int lf=open(ip,O_RDWR|O_CREAT,0644);if(lf<0){_sresp(c,500,"text/plain","x",1);return;}
+        flock(lf,LOCK_EX);
+        long mk[64];int km=0;char cur[512];
+        if(_bkcol(nm,6,cur,512)>0)for(char*q=cur;*q&&km<64;){long v=atol(q);if(v>=0)mk[km++]=v;char*cm=strchr(q,',');if(!cm)break;q=cm+1;}
+        if(op=='d'){int w=0;for(int i=0;i<km;i++)if(mk[i]!=ov)mk[w++]=mk[i];km=w;}
+        else{int dup=0;for(int i=0;i<km;i++)dup|=mk[i]==ov;if(!dup&&km<64)mk[km++]=ov;
+            for(int i=1;i<km;i++){long x=mk[i];int j=i-1;for(;j>=0&&mk[j]>x;j--)mk[j+1]=mk[j];mk[j+1]=x;}}  /* panel = book order */
+        char csv[512];int cl=0;for(int i=0;i<km;i++)cl+=snprintf(csv+cl,(size_t)(512-cl),"%s%ld",i?",":"",mk[i]);
+        size_t il=0;char*ix=readf(ip,&il);size_t nl2=strlen(nm);int found=0;
+        char*out=malloc(il+nl2+600);size_t ol=0;
+        if(ix)for(char*l=ix;l<ix+il;){char*e=memchr(l,'\n',(size_t)(ix+il-l));size_t ll=e?(size_t)(e-l):(size_t)(ix+il-l);
+            char*t1=memchr(l,'\t',ll),*t2=t1?memchr(t1+1,'\t',ll-(size_t)(t1+1-l)):0;
+            if(!found&&t1&&t2&&(size_t)(t2-t1-1)==nl2&&!strncmp(t1+1,nm,nl2)){found=1;
+                size_t k=0;int tabs=0;for(;k<ll&&tabs<5;k++){out[ol+k]=l[k];if(l[k]=='\t')tabs++;}ol+=k;   /* cols 1-5 verbatim */
+                if(tabs<5){for(size_t z=0;z<ll-k;z++)out[ol+z]=l[k+z];ol+=ll-k;while(tabs++<5)out[ol++]='\t';}   /* short row: keep rest, pad */
+                memcpy(out+ol,csv,(size_t)cl);ol+=(size_t)cl;}
+            else{memcpy(out+ol,l,ll);ol+=ll;}
+            out[ol++]='\n';l=e?e+1:ix+il;}
+        if(!found)ol+=(size_t)snprintf(out+ol,nl2+600,"\t%s\t\t\t\t%s\n",nm,csv);
+        char tp[P];snprintf(tp,P,"%s.new",ip);FILE*f=fopen(tp,"w");int ok=f&&fwrite(out,1,ol,f)==ol&&!fclose(f)&&!rename(tp,ip);
+        free(ix);free(out);flock(lf,LOCK_UN);close(lf);
+        if(!ok){_sresp(c,500,"text/plain","x",1);return;}
+        _sresp(c,200,"text/plain",csv,cl);return;}
     if(!strncmp(req,"GET /bookarchive",16)){char nm[128];_qn(req,nm);  /* dot-prefix rename = archive; restore: a book archive <substr> */
         if(!nm[0]||nm[0]=='.'||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
@@ -480,13 +513,16 @@ static void _handle(int c){
             else if(ch=='>'){memcpy(esc+el,"&gt;",4);el+=4;}
             else esc[el++]=ch;}
         free(txt);
-        size_t cap=el+4096;char*pg=malloc(cap);int hl=snprintf(pg,cap,
+        size_t cap=el+16384;char*pg=malloc(cap);int hl=snprintf(pg,cap,   /* head+tail JS ~6KB and growing; 4096 truncated the script (snprintf returns would-be len → heap garbage served) */
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
             "<style>html,body{margin:0;background:#0b0b0b;overflow:hidden;height:100%%;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}"
             /* true pagination: bk is a fixed full-screen clipped box; flipping sets bk.scrollTop by whole screens, body never scrolls */
             "#bk{position:fixed;top:0;bottom:0;left:0;right:0;max-width:760px;margin:0 auto;overflow:hidden;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:0 18px;box-sizing:border-box}"
-            "#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}</style>"
-            "<div id=hud></div><pre id=bk>");
+            "#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}"
+            "#mk{position:fixed;top:24px;right:0;background:#000;font:14px ui-monospace,monospace;opacity:.85;z-index:9}#mk a{color:#6cf;text-decoration:none;padding:8px 12px;display:inline-block}"
+            "#mp{display:none;position:fixed;top:64px;right:0;max-width:88vw;max-height:60vh;overflow:auto;background:#000;color:#9cf;font:13px ui-monospace,monospace;z-index:9}"
+            "#mp div{padding:9px 10px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#f66;font-weight:400;padding:0 8px}</style>"
+            "<div id=hud></div><div id=mk><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a></div><div id=mp></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,H=hud,ns=[].slice.call(K.childNodes),T=0,bs=[],co=P;"
@@ -514,6 +550,18 @@ static void _handle(int c){
             "addEventListener('resize',function(){G(pg);});"
             "requestAnimationFrame(function(){if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
             "addEventListener('pagehide',B);addEventListener('visibilitychange',function(){if(document.hidden)B();});"
+            /* marks: col6 csv offsets, server reply is the authoritative list; rows self-label from the text at the offset.
+               controls stopPropagation so the global pointerdown pager doesn't flip; TX = unescaped text, offsets == file offsets */
+            "var TX=K.textContent,mks=[];"
+            "function EH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}"
+            "function MR(t){mks=t?t.split(',').filter(Boolean).map(Number):[];mt.textContent='\xe2\x9a\x91'+(mks.length||'');"
+            "mp.innerHTML=mks.map(function(o){return '<div data-o='+o+'><b data-x='+o+'>\xe2\x9c\x95</b>'+EH(TX.substr(o,44).replace(/\\s+/g,' '))+'</div>'}).join('')||'<div>no marks \xe2\x80\x94 +\xe2\x9a\x91 adds this page</div>'}"
+            "function MW(b){fetch('/bookmark?n='+encodeURIComponent(N),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(r){return r.text()}).then(MR)}"
+            "ma.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();MW('add='+O())});"
+            "mt.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();mp.style.display=mp.style.display=='block'?'none':'block'});"
+            "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
+            "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(S,400);mp.style.display='none'}});"
+            "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
             "</script>",nm,pos);
         _sdoc(c,pg,hl);free(pg);return;}
     if(!strncmp(req,"GET /bookfile",13)){char nm[128];_qn(req,nm);  /* raw book asset with real mime → pdf opens in the browser's viewer */
