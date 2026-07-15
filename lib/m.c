@@ -11,7 +11,7 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
     load_cfg();m_cmdstr(mc,B);
     for(int i=0;i<25&&!g_halt;i++){  /* multiple commands until the model stops (no CMD) */
         struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
-        snprintf(x,sizeof x,"{ echo 'Shell agent, cwd %s. To act, END reply with CMD:<shell cmd> — output is fed back. Else plain text = final answer.';cat '%s';}|%s",wd,sf,mc);
+        snprintf(x,sizeof x,"{ echo 'Shell agent: any reply line CMD:<shell cmd> runs on this computer (cwd %s), output fed back. No CMD = final answer. Examples:\n## user\ntime?\n## assistant\nCMD:date\n## user\nshow wikipedia\n## assistant\nCMD:xdg-open https://wikipedia.org\n## tool\n(no output)\n## assistant\nOpen.\nNow:';cat '%s';}|%s",wd,sf,mc);
         FILE*p=popen(x,"r");if(!p)return;
         int fd=fileno(p),tty=isatty(1),fr=0;size_t al=0;ssize_t n;char ch[4096];
         if(tty){fputs("\033[2m⠋ 0.0s\033[0m",stdout);fflush(stdout);}  /* thinking indicator, instant */
@@ -59,15 +59,16 @@ static int m_slash(char *m,size_t sz){
     static char ib[24][96];const char*it[24];int n=0;
     static const char*cl[]={"fable","opus","sonnet","haiku",0};
     for(int k=0;cl[k]&&n<24;k++){snprintf(ib[n],96,"%s\tclaude",cl[k]);it[n]=ib[n];n++;}
-    char ol[2048];pcmd("ollama list 2>/dev/null|awk 'NR>1{print $1}'",ol,sizeof ol);
-    for(char*q=ol;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s\tollama local",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
+    char ol[4096];{char gc[B];snprintf(gc,B,"awk -F'\t' '!/^#/&&NF>1{print $1\"\tserver\"}' '%s/m/models.txt' 2>/dev/null;ollama list 2>/dev/null|awk 'NR>1{print $1\"\tollama local\"}'",SROOT);pcmd(gc,ol,sizeof ol);}  /* models.txt label\tcmd rows; servers first — locals flood the 24 cap */
+    for(char*q=ol;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
     r=m_pick("model",it,n,sel,sizeof sel);
     if(r<=0)return 0;
-    char *tb=strchr(sel,'\t');int oll=tb&&strstr(tb+1,"ollama");if(tb)*tb=0;
+    char *tb=strchr(sel,'\t');int oll=tb&&strstr(tb+1,"ollama"),srv=tb&&strstr(tb+1,"server");if(tb)*tb=0;
     load_cfg();char nc[B];
-    if(oll)snprintf(nc,B,"jq -Rs '{model:\"%s\",prompt:.,stream:false,think:true}'|curl -sS -d @- localhost:11434/api/generate|jq -r .response",sel);
+    if(srv){char gc[B];snprintf(gc,B,"grep -m1 '^%s\t' '%s/m/models.txt'|cut -f2-",sel,SROOT);pcmd(gc,nc,B);nc[strcspn(nc,"\n")]=0;if(!nc[0])return 0;}
+    else if(oll)snprintf(nc,B,"jq -Rs '{model:\"%s\",prompt:.,stream:false,think:true}'|curl -sS -d @- localhost:11434/api/generate|jq -r .response",sel);
     else{const char*ef=cfget("m_effort");snprintf(nc,B,"claude -p --tools '' --model '%s' --effort '%s'",sel,*ef?ef:"max");}
-    cfset("m_cmd",nc);return 0;
+    cfset("m_cmd",nc);snprintf(m,sz,"/new");return 1;  /* pick = fresh agent: old convo pollutes the new model */
 }
 /* box input — the CC/codex core idea in C: box = f(buffer,width), FULL repaint per keystroke (CC=react+yoga,
  * codex=ratatui wrap_ranges; nobody is incremental). Bottom-anchored ABSOLUTE rows (m_pick pattern) → zero drift. */
@@ -142,7 +143,7 @@ static int cmd_m(int c,char**v){
     if(!getenv("TMUX")){char b2[B],sn[64];ajoin(b2,B,c,v,0);snprintf(sn,64,"m-%s",fn);tm_new(sn,wd,b2);tm_go(sn);return 0;}
     signal(SIGINT,m_sint);
     for(;;){
-        {load_cfg();char mc[B];m_cmdstr(mc,B);printf("\033[1;35m⏺ model = %s\033[0m\n\n",mc);}  /* the exact cmd each turn pipes into */
+        {load_cfg();char mc[B];m_cmdstr(mc,B);printf("\033[2J\033[H\033[1;35m⏺ model = %s\033[0m\n\n",mc);}  /* clear + the cmd each turn pipes into */
         {char*tb=readf(sf,NULL);if(tb){size_t l=strlen(tb);fputs(l>4000?tb+l-4000:tb,stdout);free(tb);}}
         for(;;){
             g_halt=0;
