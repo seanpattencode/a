@@ -38,6 +38,8 @@ static void sync_repo(void) {
         "[ -d \"$D/.git/rebase-merge\" ]&&{ g branch -f rescue-$(date +%%s) HEAD;g rebase --abort;};"
         "[ -f \"$D/.git/MERGE_HEAD\" ]&&g merge --abort;"
         "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add --sparse -A;g commit -qm sync;"
+        "g fetch -q origin main 2>/dev/null;b=$(g rev-list --count HEAD..origin/main 2>/dev/null);"
+        "[ \"${b:-0}\" -gt 500 ]&&{ g branch -f rescue-$(date +%%s) HEAD;g checkout -qB main origin/main;};"   /* far behind: merge livelocks weak boxes (pi400/pixel 7/15) — adopt origin, replay local via rescue */
         "for r in $(g branch --list 'rescue-*'|tr -d ' *');do g merge -X ours --no-edit -q \"$r\"&&g branch -D \"$r\";done;"
         "g pull --no-rebase --no-edit -q origin main||g merge --abort;g push -q origin main;} >/dev/null 2>&1",SROOT);
     (void)!system(c);if(fd>=0)close(fd);
