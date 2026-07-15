@@ -113,10 +113,25 @@ def split_pdf(book_dir, nocache=False):
 def cmd_sync():
     remote = "a-gdrive"
     path = f"{remote}:adata/books/"
-    print(f"Syncing {DATA_DIR} -> {path}")
-    subprocess.run(["rclone", "sync", str(DATA_DIR), path, "--progress", "-L"], check=False)
+    # text only (output/*.txt + source.txt): whole library ~300MB vs tens of GB with scans; devices pull-on-open
+    print(f"Syncing book text {DATA_DIR} -> {path}")
+    subprocess.run(["rclone", "copy", str(DATA_DIR), path, "--filter", "- .*/**", "--filter", "+ */output/*.txt",
+                    "--filter", "+ */source.txt", "--filter", "- *", "--transfers=16", "--progress", "-L"], check=False)
     print(f"Pulling {path} -> {DATA_DIR}")
     subprocess.run(["rclone", "copy", path, str(DATA_DIR), "--progress", "-L", "--ignore-existing"], check=False)
+    # registry upsert: every visible local book gets an index row -> every device lists the full library
+    IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
+    rows = [l for l in IDX.read_text().splitlines() if l.strip()]
+    have = {r.split("\t")[1] for r in rows if "\t" in r}
+    day = time.strftime("%Y-%m-%d")
+    new = [f"{path}{d.name}\t{d.name}\t\t{day}\t" for d in sorted(DATA_DIR.iterdir())
+           if d.is_dir() and d.name[0] != "." and d.name not in have]
+    if new:
+        t = IDX.parent / f".idxsync{os.getpid()}"   # atomic: bare write_text races cross-device index writers
+        t.write_text("\n".join(rows + new) + "\n"); t.rename(IDX)
+        subprocess.run(["flock", "/tmp/.a_git.lock", "sh", "-c",
+                        f"cd '{ADATA / 'git'}' && git add books/index.txt && git commit -qm 'books: register {len(new)} (sync upsert)'"], check=False)
+    print(f"+ index: {len(new)} registered, {len(rows) + len(new)} total")
 
 def cmd_add(path):
     p = Path(path)
