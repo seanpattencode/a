@@ -153,6 +153,15 @@ static int _docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f
     int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;
     return rel[0]&&!strstr(rel,"..");}
 /* editor page: form POST + save button + escaped textarea + optional saved-banner (zero JS) */
+static long _bkpos(const char*nm){long pos=-1;char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);  /* col5 saved offset; -1 = no row */
+    size_t il=0;char*ix=readf(ip,&il);if(!ix)return -1;size_t nl=strlen(nm);
+    for(char*l=ix;l<ix+il;){char*e=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e?e:ix+il;
+        char*t1=memchr(l,'\t',(size_t)(lim-l)),*t2=t1?memchr(t1+1,'\t',(size_t)(lim-t1-1)):0;
+        if(t1&&t2&&(size_t)(t2-t1-1)==nl&&!strncmp(t1+1,nm,nl)){
+            char*t3=memchr(t2+1,'\t',(size_t)(lim-t2-1)),*t4=t3?memchr(t3+1,'\t',(size_t)(lim-t3-1)):0;
+            pos=t4&&t4+1<lim?atol(t4+1):0;break;}
+        if(e)l=e+1;else break;}
+    free(ix);return pos;}
 static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*saved,const char*ds){
     char*h=malloc(bl*6+2048);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
     int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#6cf}button{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#6c6}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
@@ -399,6 +408,9 @@ static void _handle(int c){
         if(pp){pp+=4;int i=0;for(;pp[i]>='0'&&pp[i]<='9'&&i<23;i++)po[i]=pp[i];po[i]=0;}
         if(nm[0]&&!strchr(nm,'/')&&!strstr(nm,"..")&&!fork()){int n=open("/dev/null",O_WRONLY);if(n>=0)dup2(n,1);execlp("a","a","book","pos",nm,po,(char*)0);_exit(1);}
         _sresp(c,200,"text/plain","ok",2);return;}
+    if(!strncmp(req,"GET /bookpos",12)){char nm[128];_qn(req,nm);  /* readback: reader verifies its save landed (POST ok is pre-fork) */
+        if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","x",1);return;}
+        char b[24];int bl=snprintf(b,24,"%ld",_bkpos(nm));_sresp(c,200,"text/plain",b,bl);return;}
     if(!strncmp(req,"GET /bookarchive",16)){char nm[128];_qn(req,nm);  /* dot-prefix rename = archive; restore: a book archive <substr> */
         if(!nm[0]||nm[0]=='.'||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
@@ -460,13 +472,7 @@ static void _handle(int c){
                 char b[512];int bl=snprintf(b,512,"<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=5><body style=\"background:#0b0b0b;color:#6cf;font:16px ui-monospace,monospace;padding:40px\">syncing %s from cloud\xe2\x80\xa6 auto-retrying</body>",nm);
                 _sdoc(c,b,bl);return;}
             _sresp(c,404,"text/plain","no text — a book transcribe first",34);return;}
-        long pos=0;{char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);  /* saved offset = index.txt col5 */
-            if(ix){char*l=ix;while(l<ix+il){char*e=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e?e:ix+il;
-                char*t1=memchr(l,'\t',(size_t)(lim-l)),*t2=t1?memchr(t1+1,'\t',(size_t)(lim-t1-1)):0;
-                if(t1&&t2&&(size_t)(t2-t1-1)==strlen(nm)&&!strncmp(t1+1,nm,strlen(nm))){
-                    char*t3=memchr(t2+1,'\t',(size_t)(lim-t2-1)),*t4=t3?memchr(t3+1,'\t',(size_t)(lim-t3-1)):0;
-                    if(t4&&t4+1<lim)pos=atol(t4+1);break;}
-                if(e)l=e+1;else break;}free(ix);}}
+        long pos=_bkpos(nm);if(pos<0)pos=0;
         char*esc=malloc(tl*5+1);size_t el=0;  /* escape &<> so text node==exact file chars → caret offset==file offset */
         for(size_t i=0;i<tl;i++){char ch=txt[i];
             if(ch=='&'){memcpy(esc+el,"&amp;",5);el+=5;}
@@ -488,18 +494,24 @@ static void _handle(int c){
             "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
             "function O(){var r=K.getBoundingClientRect(),x=r.left+18,o;for(var y=2;y<120;y+=8){o=C(x,r.top+y);if(o!=null)return o;}return co;}"
             "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.round(K.scrollTop/ph());}"
-            "function S(){co=O();var b='pos='+co,u='/book?n='+encodeURIComponent(N);if(navigator.sendBeacon)navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'}));else fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
+            /* sync truth by readback: POST, then after uv settles GET /bookpos and compare. HUD stays bare when verified;
+               ' · ✗sync' appears only while the last save can't be confirmed (10s re-save loop), so it never flips when healthy */
+            "var sx='',sq=0,rt;function U(b){H.textContent=(b||'pg '+(pg+1)+'/'+(NP()+1))+sx;}"
+            "function M(ok){clearTimeout(rt);if(!ok)rt=setTimeout(S,10000);var s=ok?'':' \xc2\xb7 \xe2\x9c\x97sync';if(s!=sx){sx=s;U();}}"
+            "function V(v,q){fetch('/bookpos?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(function(t){if(q==sq)M(parseInt(t)===v)},function(){if(q==sq)M(0)})}"
+            "function S(){co=O();var q=++sq,v=co,b='pos='+v,u='/book?n='+encodeURIComponent(N);fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(r){if(q!=sq)return;if(r.ok)setTimeout(function(){V(v,q)},2000);else M(0)},function(){if(q==sq)M(0)})}"
+            "function B(){var b='pos='+O();if(navigator.sendBeacon)navigator.sendBeacon('/book?n='+encodeURIComponent(N),new Blob([b],{type:'application/x-www-form-urlencoded'}))}"
             /* true pagination: whole-screen pages via bk.scrollTop (body can't scroll); flip on pointer DOWN (depress, not lift)/wheel/keys — scrollTop is sync = sub-ms, paints next vsync */
             "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,fm=0,st;"
             "function ph(){return Math.max(lh,Math.floor(K.clientHeight/lh)*lh);}"
             "function NP(){return Math.max(0,Math.ceil((K.scrollHeight-K.clientHeight)/ph()));}"
-            "function G(p){p=Math.max(0,Math.min(p,NP()));var t=performance.now();K.scrollTop=p*ph();pg=p;fm=performance.now()-t;H.textContent='pg '+(pg+1)+'/'+(NP()+1)+' · '+fm.toFixed(2)+'ms';clearTimeout(st);st=setTimeout(S,400);}"
+            "function G(p){p=Math.max(0,Math.min(p,NP()));var t=performance.now();K.scrollTop=p*ph();pg=p;fm=performance.now()-t;U('pg '+(pg+1)+'/'+(NP()+1)+' · '+fm.toFixed(2)+'ms');clearTimeout(st);st=setTimeout(S,400);}"
             "addEventListener('pointerdown',function(e){G(pg+(e.clientX<innerWidth/3?-1:1));e.preventDefault();});"
             "addEventListener('wheel',function(e){G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
             "addEventListener('keydown',function(e){var k=e.key;if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
             "addEventListener('resize',function(){G(pg);});"
-            "requestAnimationFrame(function(){if(P>0){R(P);K.scrollTop=pg*ph();}H.textContent='pg '+(pg+1)+'/'+(NP()+1);});"
-            "addEventListener('pagehide',S);addEventListener('visibilitychange',function(){if(document.hidden)S();});"
+            "requestAnimationFrame(function(){if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
+            "addEventListener('pagehide',B);addEventListener('visibilitychange',function(){if(document.hidden)B();});"
             "</script>",nm,pos);
         _sdoc(c,pg,hl);free(pg);return;}
     if(!strncmp(req,"GET /bookfile",13)){char nm[128];_qn(req,nm);  /* raw book asset with real mime → pdf opens in the browser's viewer */
