@@ -46,15 +46,22 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
     snprintf(x,sizeof x,"(flock /tmp/.a_git.lock -c \"cd '%s'&&git add m&&{ git diff --cached --quiet||{ git commit -q -m m&&timeout 8 git push -q;};}\")>/dev/null 2>&1 &",SROOT);
     (void)!system(x);
 }
+static int m_resume(char*m,size_t sz){  /* saved convos (adata/git/m/agents/*.txt) newest-first, first-msg preview; pick → m="/<name>" */
+    static char ib[24][96];const char*it[24];char ls[4096],sel[96];int n=0;
+    {char gc[B];snprintf(gc,B,"cd '%s/m/agents' 2>/dev/null&&ls -t|sed 's/\\.txt$//'|while read -r f;do printf '%%s\t%%.60s\n' \"$f\" \"$(sed -n 2p \"$f.txt\")\";done",SROOT);pcmd(gc,ls,sizeof ls);}
+    for(char*q=ls;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
+    if(!n||m_pick("resume",it,n,sel,sizeof sel)<=0)return 0;
+    sel[strcspn(sel,"\t")]=0;snprintf(m,sz,"/%s",sel);return 1;}
 /* '/' on empty box → m_pick live-filter menu (type-to-complete, a i style). Model picks set m_cmd ONLY —
  * fleet keys m_agent/m_model stay untouched (a c/a j spawns unaffected). Returns 1=submit m, 2=keep editing m, 0=handled. */
 static int m_slash(char *m,size_t sz){
-    static const char *ops[]={"model\tpick model from list","new\tfresh agent","main\topen main agent","cmd\ttype raw model cmd","q\tquit"};
+    static const char *ops[]={"model\tpick model from list","resume\topen saved conversation","new\tfresh agent","cmd\ttype raw model cmd","q\tquit"};
     char sel[96];
     int r=m_pick("cmd",ops,5,sel,sizeof sel);
     if(r<=0)return 0;
     sel[strcspn(sel,"\t")]=0;
-    if(!strcmp(sel,"q")||!strcmp(sel,"new")||!strcmp(sel,"main")){snprintf(m,sz,"/%s",sel);return 1;}
+    if(!strcmp(sel,"q")||!strcmp(sel,"new")){snprintf(m,sz,"/%s",sel);return 1;}
+    if(!strcmp(sel,"resume"))return m_resume(m,sz);
     if(!strcmp(sel,"cmd")){snprintf(m,sz,"/cmd ");return 2;}
     static char ib[24][96];const char*it[24];int n=0;
     static const char*cl[]={"fable","opus","sonnet","haiku",0};
@@ -135,8 +142,9 @@ static int cmd_m(int c,char**v){
     if(c>2&&(!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort"))){char val[256]="";if(c>3)ajoin(val,256,c,v,3);load_cfg();char k[32];snprintf(k,32,"m_%s",v[2]);cfset(k,val);return 0;}
     if(c>2&&!strcmp(v[2],"use")){if(c>4){load_cfg();cfset("m_agent",v[3]);cfset("m_model",v[4]);if(c>5)cfset("m_effort",v[5]);}else puts("a m use <agent> <model> [effort]");return 0;}
     perf_disarm();init_db();load_cfg();
-    char fn[128]="main",sf[P];int ai=2;CWD(wd);
-    if(c>2){ai=3;if(!strcmp(v[2],"new")){time_t t=time(NULL);strftime(fn,128,"%y%m%d-%H%M%S",localtime(&t));}else snprintf(fn,128,"%s",v[2]);}
+    char fn[128],sf[P];int ai=2;CWD(wd);
+    {time_t t=time(NULL);strftime(fn,128,"%y%m%d-%H%M%S",localtime(&t));}  /* fresh by default; no implicit main */
+    if(c>2){ai=3;if(strcmp(v[2],"new"))snprintf(fn,128,"%s",v[2]);}
     {char ad[P];snprintf(ad,P,"%s/m/agents",SROOT);mkdirp(ad);}
     snprintf(sf,P,"%s/m/agents/%s.txt",SROOT,fn);
     if(c>ai){char pr[B]="";ajoin(pr,B,c,v,ai);m_ap(sf,"user",pr);signal(SIGINT,m_sint);m_run(sf,wd);return 0;}
@@ -155,6 +163,7 @@ static int cmd_m(int c,char**v){
             else printf("\033[36m> %s\033[0m\n",m);
             if(m[0]=='/'){m[strcspn(m,"\n")]=0;
                 if(!strcmp(m,"/q"))return 0;
+                if(!strcmp(m,"/resume")&&!m_resume(m,128))continue;
                 if(!strncmp(m,"/use ",5)||!strncmp(m,"/cmd",4)){char sc[B];snprintf(sc,B,"a m %s",m+1);(void)!system(sc);continue;}
                 if(!strcmp(m,"/new")){time_t t=time(NULL);strftime(fn,128,"%y%m%d-%H%M%S",localtime(&t));}
                 else snprintf(fn,128,"%s",m+1);
