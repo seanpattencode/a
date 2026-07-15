@@ -110,6 +110,77 @@ def split_pdf(book_dir, nocache=False):
         except Exception as e: print(f"Skipping page {i+1}: {type(e).__name__}")
     with ThreadPoolExecutor() as ex: list(ex.map(save, [(reader, i, pages_dir) for i in range(len(reader.pages))]))
 
+DRIP = ADATA / "local" / "bookdrip"   # paced codex transcription queue: rate-capped so one run can't eat the subscription
+def _dstate():
+    import json
+    try: return json.loads((DRIP / "state.json").read_text())
+    except Exception: return {}
+def _dw(**kw):
+    import json
+    DRIP.mkdir(parents=True, exist_ok=True); s = _dstate(); s.update(kw); s["ts"] = int(time.time())
+    t = DRIP / f".s{os.getpid()}"; t.write_text(json.dumps(s)); t.rename(DRIP / "state.json")
+def _dlog(m):
+    DRIP.mkdir(parents=True, exist_ok=True)
+    open(DRIP / "drip.log", "a").write(f"{time.strftime('%m-%d %H:%M:%S')} {m}\n")
+def _dmiss(b):
+    from PyPDF2 import PdfReader
+    n = len(PdfReader(str(b / "source.pdf")).pages); t = b / "transcriptions"
+    return n, [i for i in range(1, n + 1) if not (t / f"page_{i:04d}.txt").exists() or not (t / f"page_{i:04d}.txt").stat().st_size]
+def _drip_loop(tgt, rate):
+    os.environ["A_BOOK_CODEX"] = "1"   # codex only: claude content-filters scans
+    fails = 0
+    for b in ([resolve_book(tgt)] if tgt != "all" else sorted(DATA_DIR.glob("[!.]*"))):
+        if not (b / "source.pdf").is_file(): continue
+        try: split_pdf(b)
+        except Exception as e: _dlog(f"{b.name} split failed {type(e).__name__}"); continue
+        total, miss = _dmiss(b)
+        if not miss: continue
+        _dlog(f"{b.name} start: {len(miss)}/{total} to go, {rate}/h")
+        for n in miss:
+            while not (transcribe_page(str(b / "pages" / f"page_{n:04d}.pdf"), str(b / "transcriptions")) or "").strip():
+                fails += 1; _dlog(f"{b.name} p{n} empty ({fails}/3)")   # blank pages return non-empty tags, not a failure
+                if fails >= 3:   # quota-out = silent empties (7/11); park, reprobe, self-resume
+                    _dw(state="paused", reason="codex empty x3 (quota?)"); _dlog("PAUSED — reprobe in 30m"); time.sleep(1800)
+                else: time.sleep(60)
+            fails = 0; _dw(book=b.name, page=n, total=total, left=len(_dmiss(b)[1]), state="running", rate=rate, reason=""); _dlog(f"{b.name} p{n} ok")
+            time.sleep(3600 / rate)
+        texts = [(b / "transcriptions" / f"page_{i:04d}.txt").read_text().replace("<transcription>", "").replace("</transcription>", "").strip() for i in range(1, total + 1)]
+        (b / "output").mkdir(exist_ok=True); (b / "output" / "transcript.txt").write_text("\n\n".join(t for t in texts if t) + "\n")
+        _dlog(f"{b.name} COMPLETE {total}p -> output/transcript.txt")
+    _dw(state="done"); _dlog("queue done")
+def cmd_drip(args):
+    sub = args[2] if len(args) > 2 else "status"
+    if sub == "stop":
+        s = _dstate()
+        try: os.killpg(int(s.get("pid", 0)), 15); print(f"stopped pid {s['pid']}")
+        except Exception: print("not running")
+        _dw(state="stopped"); return
+    if sub == "start":
+        if len(args) < 4: sys.exit("usage: a book drip start <name|all> [pages/hour]")
+        tgt = args[3]; rate = float(args[4]) if len(args) > 4 else 20.0
+        if tgt != "all": resolve_book(tgt)   # validate before forking
+        s = _dstate()
+        if s.get("state") in ("running", "paused"):
+            try: os.kill(int(s.get("pid", 0)), 0); sys.exit(f"already running pid {s['pid']} — a book drip stop first")
+            except ProcessLookupError: pass
+        p = os.fork()
+        if p: print(f"+ drip pid {p}: {tgt} at {rate} pages/hour — status: a book drip"); return
+        os.setsid(); DRIP.mkdir(parents=True, exist_ok=True)
+        fd = os.open(DRIP / "out.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND); os.dup2(fd, 1); os.dup2(fd, 2); os.close(0)
+        _dw(pid=os.getpid(), target=tgt, rate=rate, state="running", reason="")
+        try: _drip_loop(tgt, rate)
+        except Exception as e: _dw(state="dead", reason=f"{type(e).__name__}: {e}"); _dlog(f"CRASH {type(e).__name__}: {e}")
+        os._exit(0)
+    s = _dstate()
+    if not s: print("no drip yet — a book drip start <name|all> [pages/hour]"); return
+    alive = True
+    try: os.kill(int(s.get("pid", 0)), 0)
+    except Exception: alive = False
+    st = s.get("state", "?") + (" (PROCESS DEAD)" if not alive and s.get("state") in ("running", "paused") else "")
+    left, rate = s.get("left"), s.get("rate", 0)
+    print(f"{s.get('target', '?')}  book={s.get('book', '-')} p{s.get('page', '-')}  left={left}/{s.get('total', '?')}  {rate}/h  [{st}] {s.get('reason', '')}"
+          + (f"  eta {left / rate:.1f}h" if isinstance(left, int) and rate else ""))
+    for l in (DRIP / "drip.log").read_text().splitlines()[-4:] if (DRIP / "drip.log").exists() else []: print(f"  {l}")
 def cmd_sync():
     remote = "a-gdrive"
     path = f"{remote}:adata/books/"
@@ -273,6 +344,7 @@ if __name__ == "__main__":
     if cmd == "list": cmd_list(show_all=True)
     elif cmd == "install": subprocess.run(["brew","install","--cask","calibre"] if sys.platform=="darwin" else ["sudo","apt-get","install","-y","calibre"])
     elif cmd == "sync": cmd_sync()
+    elif cmd == "drip": cmd_drip(args)
     elif cmd == "archive":  # toggle dot-prefix: data stays, every lister already skips dotdirs
         n = args[2] if len(args) > 2 else sys.exit("Usage: a book archive <substr>")
         m = [DATA_DIR/n] if (DATA_DIR/n).is_dir() else [d for d in DATA_DIR.iterdir() if d.is_dir() and n in d.name]
