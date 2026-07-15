@@ -25,7 +25,7 @@ static void ram_park(void){                                             /* low R
     long need=4096;{const char*e=getenv("A_RAM_MIN_MB");if(e)need=atol(e);}
     char b[192]="";pcmd("awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null",b,192);
     long av=atol(b);if(av<=0||av>=need)return;
-    pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p 'claude|grok' >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
+    pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p 'claude|grok|codex' >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
     b[strcspn(b,"\n")]=0;
     if(b[0])printf("\xe2\x8f\xb8 parked %s (RAM %ldM < %ldM) \xe2\x80\x94 resume: a feed\n",b,av,need);
 }

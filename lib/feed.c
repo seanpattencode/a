@@ -11,6 +11,13 @@
 "for d in $(ls -td ~/.grok/sessions/*/*/ 2>/dev/null|head -15);do s=$(basename \"$d\");j=\"$d/summary.json\"\n" \
 "c=$(e cwd);m=$(e current_model_id);p=$(e generated_title)\n" \
 FWTL("\"$d/chat_history.jsonl\"") FSTAT("\"$d\"") FEMIT
+#define FRQC /* codex: rollout-<ts>-<sid>.jsonl, line-1 source cli = interactive (exec = headless noise); live = argv sid (resume) or rollout held open by a codex pid — no launch sid flag */ \
+"LIVE=\"$LIVE $(for q in $(pgrep -x codex 2>/dev/null);do ls -l /proc/$q/fd 2>/dev/null;done|grep -oE '[0-9a-f-]{36}\\.jsonl')\"\n" \
+"for j in $(ls -t ~/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null|xargs awk 'FNR==1{if(/\"source\":\"cli\"/)print FILENAME;nextfile}' /dev/null 2>/dev/null|head -15);do s=$(basename \"$j\" .jsonl|tail -c 37)\n" \
+"c=$(head -c 900 \"$j\" 2>/dev/null|grep -o '\"cwd\":\"[^\"]*'|cut -d'\"' -f4)\n" \
+"m=$(grep -o '\"model\":\"[^\"]*' \"$j\" 2>/dev/null|tail -1|cut -d'\"' -f4)\n" \
+"p=$(grep -o '\"user_message\",\"message\":\"[^\"]\\{1,46\\}' \"$j\" 2>/dev/null|head -1|sed 's/.*message\":\"//')\n" \
+FWTL("\"$j\"") FSTAT("\"$j\"") FEMIT
 static const char *FRQ =
 FLIVE
 "for j in $(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null|head -15);do s=$(basename \"$j\" .jsonl)\n"
@@ -18,8 +25,8 @@ FLIVE
 "m=$(grep -o '\"model\":\"[^\"]*\"' \"$j\" 2>/dev/null|tail -1|cut -d'\"' -f4)\n"
 "p=$(grep -o '\"role\":\"user\",\"content\":\"[^\"]\\{1,46\\}' \"$j\" 2>/dev/null|grep -vE 'local-command|command-name'|head -1|sed 's/.*content\":\"//')\n"
 FWTL("\"$j\"") FSTAT("\"$j\"") FEMIT
-FRQG;
-static const char *FRQL = FLIVE FRQG;                                    /* statx local: claude via f_lemit, grok via shell */
+FRQG FRQC;
+static const char *FRQL = FLIVE FRQG FRQC;                               /* statx local: claude via f_lemit, grok/codex via shell */
 
 typedef struct { char host[40], cwd[256], sid[48], mdl[40], desc[160], tail[64]; int live, seen; long mt; } FI;
 static FI FL[512]; static int FNN, f_live_scan = 1, f_top, f_tty;
@@ -70,17 +77,17 @@ static void f_b64(const char *in, char *out) {                           /* ship
     out[o] = 0;
 }
 
-/* resolve THE session's pane: sid-bearing proc (grep '[a]bc' form never matches its own argv) → climb ppids to a pane. $s = raw sid for scripts, $i = pane or empty */
-#define FSID "s=$(printf %%s '%s'|tr -d '[]');p=$(grep -al '%s' /proc/[0-9]*/cmdline 2>/dev/null|cut -d/ -f3|head -1);" \
-    "L=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null);" \
-    "while [ -n \"$p\" ]&&[ \"$p\" -gt 1 ] 2>/dev/null;do i=$(echo \"$L\"|awk -v x=\"$p\" '$1==x{print $2;exit}');[ -n \"$i\" ]&&break;p=$(awk '{print $4}' /proc/$p/stat 2>/dev/null);done;"
+/* resolve THE session's pane: sid-bearing procs (grep '[a]bc' form never matches its own argv) + codex fd-holders (no argv sid) → climb ppids to a pane; every candidate tried (transient ghosts die mid-climb). $s = raw sid for scripts, $i = pane or empty */
+#define FSID "s=$(printf %%s '%s'|tr -d '[]');L=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null);i=;" \
+    "for p in $(grep -al '%s' /proc/[0-9]*/cmdline 2>/dev/null|cut -d/ -f3) $(for q in $(pgrep -x codex 2>/dev/null);do ls -l /proc/$q/fd 2>/dev/null|grep -q \"$s\"&&echo $q;done);do " \
+    "while [ -n \"$p\" ]&&[ \"$p\" -gt 1 ] 2>/dev/null;do i=$(echo \"$L\"|awk -v x=\"$p\" '$1==x{print $2;exit}');[ -n \"$i\" ]&&break 2;p=$(awk '{print $4}' /proc/$p/stat 2>/dev/null);done;done;"
 #define FPAT(b, x) char b[56]; snprintf(b, 56, "[%c]%s", (x)->sid[0], (x)->sid + 1)
 #define FREAP while (waitpid(-1, 0, WNOHANG) > 0) {}
 #define FBASH(sc) { execlp("bash", "bash", "-c", sc, (char *)0); _exit(127); }
 static int f_sh(const char *host, const char *sc) {                     /* run sc on a box (local or ssh); returns stdout fd, caller reads to EOF then reaps. setsid: detach from tty — ssh else reads /dev/tty and steals keystrokes */
     int pf[2]; if (pipe(pf)) return -1; pid_t pid = fork(); if (pid < 0) { close(pf[0]); close(pf[1]); return -1; }
     if (!pid) { setsid(); dup2(pf[1], 1); close(pf[0]); close(pf[1]); int dn = open("/dev/null", O_RDWR); if (dn >= 0) { dup2(dn, 0); dup2(dn, 2); if (dn > 2) close(dn); }
-        if (strcmp(host, DEV)) { char b6[2600], cm[2700]; f_b64(sc, b6); snprintf(cm, 2700, "echo %s|base64 -d|bash", b6); execlp("a", "a", "ssh", host, cm, (char *)0); }
+        if (strcmp(host, DEV)) { char b6[3400], cm[3500]; f_b64(sc, b6); snprintf(cm, 3500, "echo %s|base64 -d|bash", b6); execlp("a", "a", "ssh", host, cm, (char *)0); }
         FBASH(sc) }
     close(pf[1]); return pf[0];
 }
@@ -89,11 +96,11 @@ static char f_cb[131072]; static int f_cbn, f_cfd = -1; static char f_csid[48]; 
 static void f_cap_start(FI *x) {                                         /* 1ms mandate: spawn the fetch and return — keypress paints instantly, content lands via the poll loop */
     if (f_cfd >= 0) { close(f_cfd); f_cfd = -1; FREAP }                  /* flipped again mid-fetch: drop the stale one */
     clock_gettime(CLOCK_MONOTONIC, &f_ct0);
-    #define FTAIL "printf '\\033[33m\xe2\x8f\xb8 not live \xe2\x80\x94 saved transcript tail (\xe2\x86\xb5 resume)\\033[0m\\n';j=$(ls -t ~/.claude/projects/*/%s.jsonl ~/.grok/sessions/*/%s/chat_history.jsonl 2>/dev/null|head -1);" \
+    #define FTAIL "printf '\\033[33m\xe2\x8f\xb8 not live \xe2\x80\x94 saved transcript tail (\xe2\x86\xb5 resume)\\033[0m\\n';j=$(ls -t ~/.claude/projects/*/%s.jsonl ~/.grok/sessions/*/%s/chat_history.jsonl ~/.codex/sessions/*/*/*/*%s.jsonl 2>/dev/null|head -1);" \
         "tail -c 80000 \"$j\" 2>/dev/null|grep -o '\"text\":\"[^\"]\\{1,400\\}'|sed 's/^\"text\":\"//;s/\\\\n/ /g'|tail -8"
-    char sc[1200]; FPAT(pat, x);   /* parked: transcript only; live: THE session's pane by sid, transcript fallback */
-    if (!x->live) snprintf(sc, sizeof sc, FTAIL, x->sid, x->sid);
-    else snprintf(sc, sizeof sc, FSID "if [ -n \"$i\" ];then tmux capture-pane -ep -t \"$i\" 2>/dev/null;else " FTAIL ";fi", pat, pat, "$s", "$s");
+    char sc[1400]; FPAT(pat, x);   /* parked: transcript only; live: THE session's pane by sid, transcript fallback */
+    if (!x->live) snprintf(sc, sizeof sc, FTAIL, x->sid, x->sid, x->sid);
+    else snprintf(sc, sizeof sc, FSID "if [ -n \"$i\" ];then tmux capture-pane -ep -t \"$i\" 2>/dev/null;else " FTAIL ";fi", pat, pat, "$s", "$s", "$s");
     #undef FTAIL
     f_cbn = 0; snprintf(f_csid, 48, "%s", x->sid); f_cfd = f_sh(x->host, sc);
 }
@@ -322,7 +329,9 @@ static void f_attach(FI *x) {                                            /* park
     int lo = !strcmp(x->host, DEV);
     if (!x->live) { char wn[20]; snprintf(wn, 20, "r-%.8s", x->sid);
         const char *md = (x->mdl[0] && strcmp(x->mdl, "?")) ? x->mdl : (*cfget("m_model") ? cfget("m_model") : "opus");   /* default = model the session used before */
-        char rc[240]; snprintf(rc, 240, "%s '%s' --resume '%s'", strncmp(x->mdl, "grok", 4) ? "claude --dangerously-skip-permissions --model" : "grok --always-approve -m", md, x->sid);   /* grok row: model field names the binary */
+        char rc[240];   /* model field names the binary: grok-*, gpt-*=codex (config.toml owns its model), else claude */
+        if (!strncmp(x->mdl, "gpt", 3)) snprintf(rc, 240, "codex resume --dangerously-bypass-approvals-and-sandbox '%s'", x->sid);
+        else snprintf(rc, 240, "%s '%s' --resume '%s'", strncmp(x->mdl, "grok", 4) ? "claude --dangerously-skip-permissions --model" : "grok --always-approve -m", md, x->sid);
         if (lo) { char sc[900]; snprintf(sc, sizeof sc, "w=$(tmux new-window -dP -t 'a:' -c '%s' -n '%s' -F '#{pane_id}' -- %s);exec tmux switch-client -t \"$w\"", x->cwd, wn, rc);
             FBASH(sc) }
         if (fork() == 0) { char rr[700]; snprintf(rr, 700, "tmux new-window -t a -c '%s' -n '%s' %s", x->cwd, wn, rc);
