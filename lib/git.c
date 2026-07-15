@@ -35,6 +35,7 @@ static void sync_repo(void) {
     /* self-heal (7/8 wedge): a sync orphan died mid `pull --rebase`; the stateful rebase-merge dir then blocked every sync silently for a day.
        heal each run: pin HEAD to rescue-*, abort dead state, commit churn, merge rescue back (-X ours: state files last-writer-wins), atomic merge-pull (never rebase). */
     snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
+        "[ -f \"$D/.git/index.lock\" ]&&! pgrep -x git >/dev/null&&rm -f \"$D/.git/index.lock\";"   /* killed git strands the lock; every later sync then no-ops silently (tablet 7/15: 37k behind) */
         "[ -d \"$D/.git/rebase-merge\" ]&&{ g branch -f rescue-$(date +%%s) HEAD;g rebase --abort;};"
         "[ -f \"$D/.git/MERGE_HEAD\" ]&&g merge --abort;"
         "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add --sparse -A;g commit -qm sync;"
