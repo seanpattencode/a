@@ -431,6 +431,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/pedal.c"
 #include "lib/grep.c"
 #include "lib/feed.c"
+#include "lib/fleet.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
@@ -609,6 +610,15 @@ static int cmd_adb(int c,char**v){
           "T(){ $A forward tcp:18022 tcp:8022 >/dev/null 2>&1;ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p 18022 $U@localhost \"$1\"; }\n"
           "T \"$1\";r=$?;[ $r -eq 255 ]&&{ echo '! ssh failed, retrying via a adb setup' >&2;ANDROID_SERIAL=$S a adb setup >&2;T \"$1\";r=$?; }\n"
           "$A forward --remove tcp:18022 >/dev/null 2>&1;exit $r","a",cmd,(char*)0);_exit(127);}
+    if(c>2&&!strcmp(v[2],"reg")){char sc[B];   /* register connected devices into adata/git/adb/ (like ssh/): fleet's adb pass reads these */
+        snprintf(sc,B,"d=%s/adb;mkdir -p \"$d\";adb devices 2>/dev/null|awk '/\\tdevice$/{print $1}'|while read s;do "
+          "n=$(adb -s \"$s\" shell getprop ro.product.name 2>/dev/null|tr -d '\\r\\n ');[ -n \"$n\" ]||n=$s;"
+          "case \"$s\" in *:*) w=$s;u=$(adb -s \"$s\" shell getprop ro.serialno 2>/dev/null|tr -d '\\r\\n ');;"
+          "*) w=$(grep '^Wireless:' \"$d/$n.txt\" 2>/dev/null|awk '{print $2}');u=$s;;esac;"
+          "printf 'Name: %%s\\nSerial: %%s\\nWireless: %%s\\n' \"$n\" \"${u:-$s}\" \"${w:-unknown}\">\"$d/$n.txt\";"
+          "echo \"+ $n serial=${u:-$s} wireless=${w:-unknown} (rename file to match ssh name if it differs)\";done;"
+          "flock /tmp/.a_git.lock sh -c 'cd %s&&git add adb&&git commit -qm \"adb reg\" -- adb' 2>/dev/null;:",SROOT,SROOT);
+        return system(sc);}
     execlp("adb","adb","devices","-l",(char*)0);return 1;
 }
 static int cmd_run_once(int c,char**v){
@@ -690,7 +700,7 @@ static const cmd_t CMDS[] = {
     {"audio",cmd_audio},{"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
+    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},

@@ -676,6 +676,11 @@ static void _handle(int c){
         if(f){time_t t=time(NULL);char ts[32];strftime(ts,32,"%Y-%m-%d %H:%M",localtime(&t));fprintf(f,"%s\t%s\n",ts,buf);fclose(f);}
         _sresp(c,200,"text/plain",pf,(int)strlen(pf));return;}
     if(!strncmp(req,"POST /api/sync",14)){sync_bg();_sresp(c,200,"text/plain","ok",2);return;}
+    if(!strncmp(req,"GET /fleet",10)){char fp[P],*fb;size_t fn=0;   /* device status: serve the a fleet cache instantly, refresh in bg (TUI primary, this mirrors it) */
+        snprintf(fp,P,"%s/fleet.txt",DDIR);fb=readf(fp,&fn);
+        (void)!system("setsid a fleet >/dev/null 2>&1 &");
+        char h[8192];int hl=snprintf(h,8192,"<title>a fleet</title><body style=\"background:#000;color:#eee;margin:12px\"><pre style=\"font:14px monospace;overflow-x:auto\">%s</pre>",fb&&fn?fb:"no data yet - refreshing, reload in a few seconds");
+        free(fb);_sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
         int busy=fd>=0&&flock(fd,LOCK_EX|LOCK_NB)<0;if(fd>=0){if(!busy)flock(fd,LOCK_UN);close(fd);}
         const char*r=busy?"syncing":sync_age();_sresp(c,200,"text/plain",r,(int)strlen(r));return;}
