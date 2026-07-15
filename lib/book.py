@@ -113,13 +113,7 @@ def split_pdf(book_dir, nocache=False):
 def cmd_sync():
     remote = "a-gdrive"
     path = f"{remote}:adata/books/"
-    # text only (output/*.txt + source.txt): whole library ~300MB vs tens of GB with scans; devices pull-on-open
-    print(f"Syncing book text {DATA_DIR} -> {path}")
-    subprocess.run(["rclone", "copy", str(DATA_DIR), path, "--filter", "- .*/**", "--filter", "+ */output/*.txt",
-                    "--filter", "+ */source.txt", "--filter", "- *", "--transfers=16", "--progress", "-L"], check=False)
-    print(f"Pulling {path} -> {DATA_DIR}")
-    subprocess.run(["rclone", "copy", path, str(DATA_DIR), "--progress", "-L", "--ignore-existing"], check=False)
-    # registry upsert: every visible local book gets an index row -> every device lists the full library
+    # registry upsert FIRST — the list is instantly complete everywhere; content streams up behind it (pull-on-open)
     IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
     rows = [l for l in IDX.read_text().splitlines() if l.strip()]
     have = {r.split("\t")[1] for r in rows if "\t" in r}
@@ -132,6 +126,12 @@ def cmd_sync():
         subprocess.run(["flock", "/tmp/.a_git.lock", "sh", "-c",
                         f"cd '{ADATA / 'git'}' && git add books/index.txt && git commit -qm 'books: register {len(new)} (sync upsert)'"], check=False)
     print(f"+ index: {len(new)} registered, {len(rows) + len(new)} total")
+    # text only (output/*.txt + source.txt): whole library ~300MB vs tens of GB with scans; devices pull-on-open
+    print(f"Syncing book text {DATA_DIR} -> {path}")
+    subprocess.run(["rclone", "copy", str(DATA_DIR), path, "--filter", "- .*/**", "--filter", "+ */output/*.txt",
+                    "--filter", "+ */source.txt", "--filter", "- *", "--transfers=16", "--progress", "-L"], check=False)
+    print(f"Pulling {path} -> {DATA_DIR}")
+    subprocess.run(["rclone", "copy", path, str(DATA_DIR), "--progress", "-L", "--ignore-existing"], check=False)
 
 def cmd_add(path):
     p = Path(path)
