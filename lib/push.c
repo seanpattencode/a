@@ -14,7 +14,12 @@ static int tok_rule(const char *cwd, char *v, int vsz) {
     snprintf(c,B,"cd '%s'&&cat \"$(git rev-parse --show-toplevel)/.tokrule\" 2>/dev/null",cwd);
     { char tr[512]; pcmd(c,tr,(int)sizeof(tr)); char *pl=strstr(tr,"paths="),*mc=strstr(tr,"module=");
       if(pl){ pl+=6; size_t i=0; while(pl[i]&&pl[i]!='\n'&&i<255){paths[i]=pl[i];i++;} paths[i]=0; }
-      if(mc) modcap=atol(mc+7); }
+      if(mc) modcap=atol(mc+7);
+      char *tc=strstr(tr,"total=");   /* total= repo-wide cap (tracked bytes/4) — the entropy deadman, enforced at push too */
+      if(tc){ long totcap=atol(tc+6);
+        snprintf(c,B,"cd \"$(cd '%s'&&git rev-parse --show-toplevel)\"&&git ls-files -z|xargs -0 cat 2>/dev/null|wc -c",cwd);
+        pcmd(c,o,64); long tt=atol(o)/4;
+        if(totcap&&tt>totcap&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  TOTAL  repo %ld tok > cap %ld (.tokrule total=)\n",tt,totcap);n++;} } }
     char list[B*4];
     snprintf(c,B,"cd '%s'&&{ git diff --name-only %s -- %s 2>/dev/null;git ls-files --others --exclude-standard -- %s 2>/dev/null; }|sort -u",cwd,br,paths,paths);
     pcmd(c,list,(int)sizeof(list));
