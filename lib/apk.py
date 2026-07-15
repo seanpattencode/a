@@ -1707,7 +1707,7 @@ def run():
         srcmax=max((os.path.getmtime(p) for p in [f"{R}/a.c"]+glob.glob(f"{R}/lib/*.c")+glob.glob(f"{R}/lib/*.h")),default=0)
         miss=[s for s in stage if not os.path.exists(s) or (s==ADROID and os.path.getmtime(s)<srcmax)]
         if ADROID in miss:
-            cc=f"{_ND}/{_NV}/toolchains/llvm/prebuilt/{_NH}/bin/{TRIPLE}29-clang"
+            cc=f"{_ND}/{_NV}/toolchains/llvm/prebuilt/{_NH}/bin/{TRIPLE}30-clang"   # 30: bionic statx (feed.c) needs API>=30; fleet is all Android 13+
             S.check_call([cc,'-DSRC="/data/local/tmp"',"-w"]+cf.split()+["-o",ADROID,f"{R}/a.c"])
         if any(SRCD in s for s in miss):S.check_call(["a","droidtmux"],env={**os.environ,"DABI":ABI,"DPUSH":"0"})
         miss=[s for s in stage if not os.path.exists(s)]
