@@ -494,10 +494,11 @@ static void _handle(int c){
             "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
             "function O(){var r=K.getBoundingClientRect(),x=r.left+18,o;for(var y=2;y<120;y+=8){o=C(x,r.top+y);if(o!=null)return o;}return co;}"
             "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.round(K.scrollTop/ph());}"
-            /* sync truth by readback: POST, then after uv settles GET /bookpos and compare. HUD stays bare when verified;
-               ' · ✗sync' appears only while the last save can't be confirmed (10s re-save loop), so it never flips when healthy */
-            "var sx='',sq=0,rt;function U(b){H.textContent=(b||'pg '+(pg+1)+'/'+(NP()+1))+sx;}"
-            "function M(ok){clearTimeout(rt);if(!ok)rt=setTimeout(S,10000);var s=ok?'':' \xc2\xb7 \xe2\x9c\x97sync';if(s!=sx){sx=s;U();}}"
+            /* sync truth by readback: POST, then after uv settles GET /bookpos and compare. Steady '✓' while verified
+               (load counts: pos came from the index), '✗sync' while a save can't be confirmed (10s re-save loop) —
+               absence would be ambiguous with the feature being broken, so healthy has a mark that never changes */
+            "var sx=' \xc2\xb7 \xe2\x9c\x93',sq=0,rt;function U(b){H.textContent=(b||'pg '+(pg+1)+'/'+(NP()+1))+sx;}"
+            "function M(ok){clearTimeout(rt);if(!ok)rt=setTimeout(S,10000);var s=ok?' \xc2\xb7 \xe2\x9c\x93':' \xc2\xb7 \xe2\x9c\x97sync';if(s!=sx){sx=s;U();}}"
             "function V(v,q){fetch('/bookpos?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(function(t){if(q==sq)M(parseInt(t)===v)},function(){if(q==sq)M(0)})}"
             "function S(){co=O();var q=++sq,v=co,b='pos='+v,u='/book?n='+encodeURIComponent(N);fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(r){if(q!=sq)return;if(r.ok)setTimeout(function(){V(v,q)},2000);else M(0)},function(){if(q==sq)M(0)})}"
             "function B(){var b='pos='+O();if(navigator.sendBeacon)navigator.sendBeacon('/book?n='+encodeURIComponent(N),new Blob([b],{type:'application/x-www-form-urlencoded'}))}"
