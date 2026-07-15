@@ -610,6 +610,19 @@ static int cmd_adb(int c,char**v){
           "T(){ $A forward tcp:18022 tcp:8022 >/dev/null 2>&1;ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p 18022 $U@localhost \"$1\"; }\n"
           "T \"$1\";r=$?;[ $r -eq 255 ]&&{ echo '! ssh failed, retrying via a adb setup' >&2;ANDROID_SERIAL=$S a adb setup >&2;T \"$1\";r=$?; }\n"
           "$A forward --remove tcp:18022 >/dev/null 2>&1;exit $r","a",cmd,(char*)0);_exit(127);}
+    if(c>2&&!strcmp(v[2],"qr"))return system(   /* android 11+ wireless-debug pairing: QR = WIFI:T:ADB;S:name;P:pass;; then phone broadcasts _adb-tls-pairing */
+      "command -v qrencode>/dev/null||{ echo 'x need qrencode (apt install qrencode)';exit 1; };"
+      "command -v avahi-browse>/dev/null||{ echo 'x need avahi-browse (apt install avahi-utils)';exit 1; };"
+      "N=ADB_$(od -An -tx1 -N4 /dev/urandom|tr -d ' \\n');P=$(od -An -tx1 -N6 /dev/urandom|tr -d ' \\n');"
+      "printf 'WIFI:T:ADB;S:%s;P:%s;;' \"$N\" \"$P\"|qrencode -t ANSIUTF8;"
+      "echo '» phone: Developer options → Wireless debugging → Pair device with QR code';"
+      "F=$(mktemp);(timeout 95 avahi-browse -rp _adb-tls-pairing._tcp >\"$F\" 2>/dev/null &);"
+      "printf '» waiting for scan';for i in $(seq 90);do L=$(awk -F';' '/^=/&&$3==\"IPv4\"{print $8\";\"$9;exit}' \"$F\");[ -n \"$L\" ]&&break;printf .;sleep 1;done;echo;"
+      "rm -f \"$F\";[ -z \"$L\" ]&&{ echo 'x no pairing service in 90s — QR screen open? same wifi?';exit 1; };"
+      "IP=${L%%;*};PT=${L##*;};echo \"+ pairing $IP:$PT\";adb pair \"$IP:$PT\" \"$P\"||exit 1;"
+      "C=$(timeout 15 avahi-browse -rpt _adb-tls-connect._tcp 2>/dev/null|awk -F';' -v ip=\"$IP\" '/^=/&&$3==\"IPv4\"&&$8==ip{print $8\":\"$9;exit}');"
+      "[ -z \"$C\" ]&&{ echo '! paired; connect service not seen — reopen wireless debugging, then: a adb';exit 0; };"
+      "adb connect \"$C\">/dev/null 2>&1;adb devices|grep -q \"$C\"&&echo \"✓ connected $C  (a adb reg to save)\"||echo \"! paired but connect to $C did not stick\"");
     if(c>2&&!strcmp(v[2],"reg")){char sc[B];   /* register connected devices into adata/git/adb/ (like ssh/): fleet's adb pass reads these */
         snprintf(sc,B,"d=%s/adb;mkdir -p \"$d\";adb devices 2>/dev/null|awk '/\\tdevice$/{print $1}'|while read s;do "
           "n=$(adb -s \"$s\" shell getprop ro.product.name 2>/dev/null|tr -d '\\r\\n ');[ -n \"$n\" ]||n=$s;"
