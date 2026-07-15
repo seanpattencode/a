@@ -21,9 +21,9 @@ static void tm_go(const char *w) {
     snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
 static void tm_rename(const char*n){const char*p=getenv("TMUX_PANE");char c[200];snprintf(c,200,"tmux rename-window -t '%s' '%s'",p?p:"",n);(void)!system(c);}  /* -t pane: bare rename hits session-current window (clobbered keeper on restore) */
-static void ram_park(void){                                             /* low RAM at window spawn → park LRU claude window; tmux server = the agent registry, pane child-check spots agents under any name (Sean 7/9: spawn freely, RAM never bottlenecks; parked = resumable via a feed). no /proc (mac) → av 0 → no-op */
+static void ram_park(void){                                             /* low RAM at window spawn → park LRU claude window; tmux server = the agent registry, pane child-check spots agents under any name (Sean 7/9: spawn freely, RAM never bottlenecks; parked = resumable via a feed). gate: MemAvailable, mac vm_stat free+inactive+purgeable (7/15); neither → av 0 → no-op */
     long need=4096;{const char*e=getenv("A_RAM_MIN_MB");if(e)need=atol(e);}
-    char b[192]="";pcmd("awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null",b,192);
+    char b[192]="";pcmd("a=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null);[ -n \"$a\" ]||a=$(vm_stat 2>/dev/null|awk '/page size of/{ps=$8}/Pages (free|inactive|purgeable):/{s+=$NF}END{if(s*ps)print int(s*ps/1048576)}');printf %s \"$a\"",b,192);
     long av=atol(b);if(av<=0||av>=need)return;
     pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p 'claude|grok|codex' >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
     b[strcspn(b,"\n")]=0;
