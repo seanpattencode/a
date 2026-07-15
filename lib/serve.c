@@ -518,11 +518,13 @@ static void _handle(int c){
             "<style>html,body{margin:0;background:#0b0b0b;overflow:hidden;height:100%%;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}"
             /* true pagination: bk is a fixed full-screen clipped box; flipping sets bk.scrollTop by whole screens, body never scrolls */
             "#bk{position:fixed;top:0;bottom:0;left:0;right:0;max-width:760px;margin:0 auto;overflow:hidden;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:0 18px;box-sizing:border-box}"
-            "#hud{position:fixed;top:0;right:0;background:#000;color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px;opacity:.75;z-index:9}"
-            "#mk{position:fixed;top:24px;right:0;background:#000;font:14px ui-monospace,monospace;opacity:.85;z-index:9}#mk a{color:#6cf;text-decoration:none;padding:8px 12px;display:inline-block}"
-            "#mp{display:none;position:fixed;top:64px;right:0;max-width:88vw;max-height:60vh;overflow:auto;background:#000;color:#9cf;font:13px ui-monospace,monospace;z-index:9}"
+            /* one top-right line: marks controls + hud share #tr so nothing stacks (Sean: only take one line) */
+            "#tr{position:fixed;top:0;right:0;display:flex;align-items:center;background:#000;opacity:.85;z-index:9}"
+            "#tr a{color:#6cf;text-decoration:none;padding:5px 10px;font:14px ui-monospace,monospace}"
+            "#hud{color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px 4px 0}"
+            "#mp{display:none;position:fixed;top:28px;right:0;max-width:88vw;max-height:60vh;overflow:auto;background:#000;color:#9cf;font:13px ui-monospace,monospace;z-index:9}"
             "#mp div{padding:9px 10px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#f66;font-weight:400;padding:0 8px}</style>"
-            "<div id=hud></div><div id=mk><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a></div><div id=mp></div><pre id=bk>");
+            "<div id=tr><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,H=hud,ns=[].slice.call(K.childNodes),T=0,bs=[],co=P;"
