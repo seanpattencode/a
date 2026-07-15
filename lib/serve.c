@@ -497,8 +497,9 @@ static void _handle(int c){
             /* sync truth by readback: POST, then after uv settles GET /bookpos and compare. Steady '✓' while verified
                (load counts: pos came from the index), '✗sync' while a save can't be confirmed (10s re-save loop) —
                absence would be ambiguous with the feature being broken, so healthy has a mark that never changes */
-            "var sx=' \xc2\xb7 \xe2\x9c\x93',sq=0,rt;function U(b){H.textContent=(b||'pg '+(pg+1)+'/'+(NP()+1))+sx;}"
-            "function M(ok){clearTimeout(rt);if(!ok)rt=setTimeout(S,10000);var s=ok?' \xc2\xb7 \xe2\x9c\x93':' \xc2\xb7 \xe2\x9c\x97sync';if(s!=sx){sx=s;U();}}"
+            /* time inline: T/D and most single letters are taken by the pager vars — a helper name here broke the whole script once */
+            "var sx=' \xc2\xb7 \xe2\x9c\x93'+new Date().toTimeString().slice(0,5),sq=0,rt;function U(b){H.textContent=(b||'pg '+(pg+1)+'/'+(NP()+1))+sx;}"
+            "function M(ok){clearTimeout(rt);if(!ok)rt=setTimeout(S,10000);var s=ok?' \xc2\xb7 \xe2\x9c\x93'+new Date().toTimeString().slice(0,5):' \xc2\xb7 \xe2\x9c\x97sync';if(s!=sx){sx=s;U();}}"
             "function V(v,q){fetch('/bookpos?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(function(t){if(q==sq)M(parseInt(t)===v)},function(){if(q==sq)M(0)})}"
             "function S(){co=O();var q=++sq,v=co,b='pos='+v,u='/book?n='+encodeURIComponent(N);fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(r){if(q!=sq)return;if(r.ok)setTimeout(function(){V(v,q)},2000);else M(0)},function(){if(q==sq)M(0)})}"
             "function B(){var b='pos='+O();if(navigator.sendBeacon)navigator.sendBeacon('/book?n='+encodeURIComponent(N),new Blob([b],{type:'application/x-www-form-urlencoded'}))}"
