@@ -159,6 +159,16 @@ static char* _ufwd(const char*path,const char*body,char*buf,int cap){
     close(s);buf[tot]=0;char*b=strstr(buf,"\r\n\r\n");return b?b+4:buf;}
 static int _scmp(const void*a,const void*b){return strcmp((const char*)a,(const char*)b);}
 static void _qn(const char*req,char*nm){nm[0]=0;const char*q=strstr(req,"?n=");if(!q)return;q+=3;int i=0;for(;q[i]&&q[i]!='&'&&q[i]!=' '&&i<127;i++)nm[i]=q[i];nm[i]=0;}
+static void _qp(const char*req,const char*k,char*d,int n){d[0]=0;const char*q=strstr(req,k);if(!q)return;q+=strlen(k);int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<n-1&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)d[i]=q[i];d[i]=0;}
+static int _sshpre(const char*dev,char*pre,int n){ /* fleet device name -> ssh cmd prefix; 1=remote 0=local -1=unknown */
+    if(!dev[0]||!strcmp(dev,"local")||!strcmp(dev,DEV))return 0;
+    char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int m=listdir(ddir,paths,64);
+    char host[256]="",pw[256]="";
+    for(int i=0;i<m;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
+        if(nm&&!strcmp(nm,dev)){const char*h=kvget(&kv,"Host"),*p=kvget(&kv,"Password");if(h)snprintf(host,256,"%s",h);if(p)snprintf(pw,256,"%s",p);break;}}
+    if(!host[0])return -1;
+    char hp[256],port[8];ssh_parse(host,hp,port);
+    ssh_pre(pre,n,pw[0]?pw:NULL,"-oStrictHostKeyChecking=accept-new -oConnectTimeout=6",port,hp);return 1;}
 static void _redir(int c,const char*url){char h[768];int hl=snprintf(h,768,"HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length:0\r\nConnection:close\r\n\r\n",url);(void)!write(c,h,(size_t)hl);}
 /* ?f=<path> → rel (urldecoded). returns 1 if valid (non-empty, no ..) */
 static int _docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f=");if(!q)q=strstr(req,"&f=");if(!q)return 0;q+=3;
@@ -901,20 +911,63 @@ static void _handle(int c){
             "function checkAll(){var rows=[].slice.call(document.querySelectorAll('a.d')),cs=document.getElementById('cs');rows.forEach(function(el){set(el,'wait','\\u27f3')});cs.textContent=' checking '+rows.length+'\\u2026';"
             "fetch('/dev/probeall').then(function(r){return r.json()}).then(function(m){rows.forEach(function(el){paint(el,m[el.dataset.h]||'offline')});cs.textContent=' done'},function(){cs.textContent=' error'})}</script>");
         _sresp(c,200,"text/html",h,hl);free(h);return;}
+    if(!strncmp(req,"GET /mic/s",10)){   /* device mic -> streaming WAV (ffmpeg writes the header); page's <audio> plays it live */
+        char dev[64];_qp(req,"?dev=",dev,64);
+        pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
+        if(fp>0)return;signal(SIGCHLD,SIG_DFL);
+        static const char MV[]="ffmpeg -loglevel error -f pulse -fragment_size 4096 -i default -ac 1 -ar 24000 -f wav - 2>/dev/null";
+        char gc[1024],pre[600];int r=_sshpre(dev,pre,600);if(r<0)_exit(0);
+        if(!r){const char*rt=getenv("XDG_RUNTIME_DIR");if(!rt||!rt[0]){char rb[64];snprintf(rb,64,"/run/user/%d",(int)getuid());setenv("XDG_RUNTIME_DIR",rb,1);}}
+        if(r)snprintf(gc,sizeof gc,"%s '%s'",pre,MV);else snprintf(gc,sizeof gc,"%s",MV);
+        static const char AH[]="HTTP/1.1 200 OK\r\nContent-Type:audio/wav\r\nCache-Control:no-store\r\n\r\n";
+        if(write(c,AH,sizeof AH-1)<0)_exit(0);
+        FILE*g=popen(gc,"r");if(!g)_exit(0);
+        char tb[8192];size_t rr;while((rr=fread(tb,1,sizeof tb,g))>0)if(write(c,tb,rr)<0)_exit(0);
+        close(c);_exit(0);}
+    if(!strncmp(req,"GET /cam",8)&&(req[8]==' '||req[8]=='?'||req[8]=='\r')){   /* cam viewer: local+fleet, snap=canvas download, mic toggle */
+        char nav[2048];int nl=snprintf(nav,sizeof nav,"<button data-d=\"local\">%s</button>",DEV);
+        char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
+        for(int i=0;i<n&&nl<1800;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
+            if(nm)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<button data-d=\"%s\">%s</button>",nm,nm);}
+        char h[8192];int hl=snprintf(h,sizeof h,
+            "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>cam</title>"
+            "<style>body{margin:0;background:#000;font:13px ui-monospace,monospace}"
+            "#w{position:fixed;inset:0 0 108px 0;display:flex}#w img{flex:1;min-width:0;object-fit:contain}"
+            "#b{position:fixed;left:0;right:0;bottom:0;padding:5px;display:flex;flex-direction:column;gap:5px;background:#0a0a0a}"
+            "#st{color:#7d9;text-align:center;height:15px}.r{display:flex;gap:5px}"
+            ".r button{flex:1;padding:10px 2px;background:#111;color:#9cf;border:1px solid #233;border-radius:6px;font:inherit;overflow:hidden}"
+            "#d{overflow-x:auto}#d button{flex:0 0 auto;padding:10px 8px}"
+            ".r .on{background:#13320f;color:#9f9}</style>"
+            "<div id=w></div><div id=b><div id=st>pick a device</div><div class=r id=d>%s</div>"
+            "<div class=r><button id=sn>&#128247; snap</button><button id=mi>&#127908; mic</button></div></div>"
+            "<script>var g=function(i){return document.getElementById(i)},img=null,au=null,cur='';"
+            "function S(t){g('st').textContent=t}"
+            "function mio(on){if(au){au.pause();au.src='';au=null}g('mi').className='';if(!on)return;"
+            "au=new Audio('/mic/s?dev='+(cur||'local'));au.play();g('mi').className='on';S('\\u25cf mic '+(cur||'local'))}"
+            "function sel(b){mio(0);g('w').innerHTML='';img=null;var d=b.dataset.d;"
+            "document.querySelectorAll('#d button').forEach(function(x){x.className=''});"
+            "if(cur===d){cur='';S('stopped');return}cur=d;b.className='on';"
+            "img=new Image();img.onload=function(){S('\\u25cf '+d)};img.onerror=function(){S('\\u2717 '+d)};"
+            "img.src='/stream/s?dev='+d+'&c=1';g('w').appendChild(img);S('\\u27f3 '+d+'\\u2026')}"
+            "g('d').addEventListener('pointerdown',function(e){var b=e.target.closest('button');if(b)sel(b)});"
+            "g('mi').addEventListener('pointerdown',function(){mio(!au)});"
+            "g('sn').addEventListener('pointerdown',function(){if(!img||!img.naturalWidth){S('\\u2717 no stream');return}"
+            "var cv=document.createElement('canvas');cv.width=img.naturalWidth;cv.height=img.naturalHeight;cv.getContext('2d').drawImage(img,0,0);"
+            "var a=document.createElement('a');a.download='cam_'+(cur||'x')+'_'+Date.now()+'.jpg';a.href=cv.toDataURL('image/jpeg',.92);a.click();S('\\u2713 '+cv.width+'x'+cv.height)});"
+            "</script>",nav);
+        _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /stream/s",13)){
-        char dev[64]="";{const char*q=strstr(req,"?dev=");if(q){q+=5;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)dev[i]=q[i];dev[i]=0;}}
-        char out[64]="";{const char*q=strstr(req,"&o=");if(q){q+=3;int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<63&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)out[i]=q[i];out[i]=0;}}  /* local output: name, "all"=whole layout, or empty=focused */
+        char dev[64];_qp(req,"?dev=",dev,64);
+        char out[64];_qp(req,"&o=",out,64);  /* local output: name, "all"=whole layout, or empty=focused */
         pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
         if(fp>0)return;signal(SIGCHLD,SIG_DFL);
         char gc[1024];int remote=0;
-        if(dev[0]&&strcmp(dev,"local")&&strcmp(dev,DEV)){       /* remote device: ssh in, capture to stdout */
-            char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
-            char host[256]="",pw[256]="";
-            for(int i=0;i<n;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
-                if(nm&&!strcmp(nm,dev)){const char*h=kvget(&kv,"Host"),*p=kvget(&kv,"Password");if(h)snprintf(host,256,"%s",h);if(p)snprintf(pw,256,"%s",p);break;}}
-            if(!host[0])_exit(0);
-            char hp[256],port[8];ssh_parse(host,hp,port);char pre[600];
-            ssh_pre(pre,600,pw[0]?pw:NULL,"-oStrictHostKeyChecking=accept-new -oConnectTimeout=6",port,hp);
+        if(strstr(req,"&c=1")){                                 /* camera: v4l2 HW-MJPEG passthrough, raw fallback; nodes as shot.sh — dead node fails fast, live one streams until client leaves */
+            static const char CV[]="for v in /dev/video0 /dev/video1 /dev/video2 /dev/video3;do ffmpeg -loglevel error -f v4l2 -input_format mjpeg -video_size 1280x720 -i $v -c copy -f mjpeg - 2>/dev/null||ffmpeg -loglevel error -f v4l2 -i $v -q:v 6 -f mjpeg - 2>/dev/null;done";
+            char pre[600];int cr=_sshpre(dev,pre,600);if(cr<0)_exit(0);
+            if(cr)snprintf(gc,sizeof gc,"%s '%s'",pre,CV);else snprintf(gc,sizeof gc,"%s",CV);remote=1;}
+        else if(dev[0]&&strcmp(dev,"local")&&strcmp(dev,DEV)){       /* remote device: ssh in, capture to stdout */
+            char pre[600];if(_sshpre(dev,pre,600)<1)_exit(0);
             char ro[64]="";                     /* remote output: &o= wins else auto-pick first (else grim grabs the whole composite) */
             if(out[0]&&strcmp(out,"all"))snprintf(ro,64,"%s",out);
             else if(!out[0]){char dc[800];snprintf(dc,800,"%s 'SWAYSOCK=$(ls ${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sway-ipc.*.sock 2>/dev/null|head -1) swaymsg -t get_outputs 2>/dev/null'",pre);
@@ -1000,6 +1053,8 @@ static void _handle(int c){
         _sresp(c,200,"text/plain",nm,(size_t)nl);return;}
     _sresp(c,404,"text/plain","not found",9);
 }
+static int cmd_cam(int c,char**v){(void)c;(void)v;AB;perf_disarm();
+    (void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/cam");puts("✓ localhost:1111/cam");return 0;}
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     mkfifo("/tmp/a_dash.fifo",0644);(void)!open("/tmp/a_dash.fifo",O_RDWR|O_NONBLOCK);
     unlink("/tmp/a_extreload.fifo");mkfifo("/tmp/a_extreload.fifo",0644); /* ext hot-reload channel; left unopened so writes only land when a worker is reading */
