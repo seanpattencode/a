@@ -558,6 +558,10 @@ static int cmd_j(int c,char**v){
     int si=2,wt=0;if(c>3&&isdigit(*v[2])){int idx=atoi(v[2]);if(idx<NPJ)snprintf(wd,P,"%s",PJ[idx].path);si++;}
     /* jobs run on main by default. --wt opts into fork isolation. agents work in parallel, push only their files. */
     char pr[B]="";int pl=0;for(int i=si;i<c;i++){if(!strcmp(v[i],"--wt")){wt=1;continue;}if(!strcmp(v[i],"--no-wt"))continue;pl+=snprintf(pr+pl,(size_t)(B-pl),"%s%s",pl?" ":"",v[i]);}
+    {struct stat pf;const char*dt=strrchr(pr,'.');   /* whole prompt = existing .txt/.md path → load file as the prompt */
+     if(dt&&(!strcmp(dt,".txt")||!strcmp(dt,".md"))&&!stat(pr,&pf)&&S_ISREG(pf.st_mode)){char*fc=readf(pr,NULL);if(fc){
+        if(strlen(fc)>(size_t)B-200){printf("x %s: >%d bytes, too big for j\n",pr,B-200);free(fc);return 1;}
+        printf("+ prompt ← %s\n",pr);pl=snprintf(pr,B,"%s",fc);free(fc);}}}
     if(wt&&git_in_repo(wd)){
         char fkd[P];snprintf(fkd,P,"%s/forks",AROOT);mkdirp(fkd);
         time_t now=time(NULL);struct tm*t=localtime(&now);char ts[16];
