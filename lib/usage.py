@@ -8,17 +8,17 @@
 import json,os,re,glob,time,urllib.request,datetime as dt
 def J(u,d=None,h={}):
     return json.load(urllib.request.urlopen(urllib.request.Request(u,json.dumps(d).encode() if d else None,{"Content-Type":"application/json",**h})))
-def em_of(d,main=False):
-    try:return json.load(open(os.path.expanduser("~/.claude.json") if main else d+"/.claude.json"))["oauthAccount"]["emailAddress"]
+def em_of(d):
+    try:return json.load(open(d+"/.claude.json"))["oauthAccount"]["emailAddress"]
     except Exception:return ""
-now=dt.datetime.now(dt.timezone.utc)
-mf=os.path.expanduser("~/.claude/.credentials.json");me=em_of("",True)
+now=dt.datetime.now(dt.timezone.utc);H=os.path.expanduser("~")
+mf=H+"/.claude/.credentials.json";me=em_of(H)
 if me and os.path.exists(mf):
-    sd=os.path.expanduser("~/.claude-"+re.sub(r"\W","_",me));os.makedirs(sd,exist_ok=True)
+    sd=H+"/.claude-"+re.sub(r"\W","_",me);os.makedirs(sd,exist_ok=True)
     sc=sd+"/.credentials.json";open(sc,"w").write(open(mf).read());os.chmod(sc,0o600)
     json.dump({"oauthAccount":{"emailAddress":me}},open(sd+"/.claude.json","w"))
 rows=[(f"{me or 'main'} (active)",mf)]
-for f in sorted(glob.glob(os.path.expanduser("~/.claude-*/.credentials.json"))):
+for f in sorted(glob.glob(H+"/.claude-*/.credentials.json")):
     d=os.path.dirname(f);e=em_of(d)
     if e!=me:rows.append((e or d.split("/")[-1],f))
 for n,f in rows:
@@ -31,8 +31,8 @@ for n,f in rows:
             tm=f+".tmp";open(tm,"w").write(json.dumps(c));os.chmod(tm,0o600);os.rename(tm,f)
         u=J("https://api.anthropic.com/api/oauth/usage",h={"Authorization":"Bearer "+o["accessToken"]})
         for l in u["limits"]:
-            r=dt.datetime.fromisoformat(l["resets_at"])
-            m=((l.get("scope") or {}).get("model") or {}).get("display_name") or "all"
-            print(f'  {l["kind"]:14}{m:8}{l["percent"]:3}%  resets {r.astimezone():%a %H:%M} ({(r-now).total_seconds()/3600:.0f}h)')
+            m=((l.get("scope") or {}).get("model") or {}).get("display_name") or "all";t=""
+            if l["resets_at"]:r=dt.datetime.fromisoformat(l["resets_at"]);t=f'  resets {r.astimezone():%a %H:%M} ({(r-now).total_seconds()/3600:.0f}h)'
+            print(f'  {l["kind"]:14}{m:8}{l["percent"]:3}%{t}')
     except Exception as e:print(f"  x {e}")
 if len(rows)<2:print("(one account so far — swap logins as usual; every account a usage sees gets kept + auto-refreshed)")
