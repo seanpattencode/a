@@ -43,9 +43,14 @@ static int cmd_tok(int c,char**v){perf_disarm();
             for(int i=off;i<off+shown;i++)
                 printf("%s%c%9ld  %.*s%s\033[0m\n",i==cur?"\033[7m":"",i-off<9?(char)('1'+i-off):' ',ch[i].s/4,ch[i].nl,ch[i].n,ch[i].dir?"/":"");
             printf("\033[90m/%s · %ld tok · %d items%s\n",pf,tot/4,nc,nc>shown?" (j/k scrolls)":"");
-            printf("1-9/o/enter open · j/k · u up · q quit · scan %.1fms · \033[37m%.4fms\033[0m",sc,tkms()-ta);
+            printf("1-9/o/enter/→ open · j/k/↑↓ · u/← up · q quit · scan %.1fms · \033[37m%.4fms\033[0m",sc,tkms()-ta);
             fflush(stdout);
-            char k;if(read(0,&k,1)!=1||k=='q'||k==27||k==3)break;
+            char k;if(read(0,&k,1)!=1)break;
+            if(k==27){char sq[2]={0,0};struct termios r2=r;r2.c_cc[VMIN]=0;r2.c_cc[VTIME]=1;tcsetattr(0,TCSANOW,&r2);
+                ssize_t sn=read(0,sq,2);tcsetattr(0,TCSANOW,&r);
+                if(sn<2||(sq[0]!='['&&sq[0]!='O'))break;   /* bare ESC = quit */
+                k=sq[1]=='A'?'k':sq[1]=='B'?'j':sq[1]=='C'?'o':sq[1]=='D'?'u':0;}
+            if(k=='q'||k==3)break;
             if(k=='j'){if(cur<nc-1)cur++;}
             else if(k=='k'){if(cur>0)cur--;}
             else if(k=='u'){if(pl){pf[pl-1]=0;char*s2=strrchr(pf,'/');if(s2)s2[1]=0;else pf[0]=0;cur=off=0;}}
