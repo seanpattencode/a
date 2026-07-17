@@ -105,5 +105,5 @@ static const char*clip_cmd(void){static char c[64];if(!getenv("TMUX"))return NUL
     if(!pcmd("tmux show -sv copy-command 2>/dev/null",c,64)&&c[0]){c[strcspn(c,"\n")]=0;return c;}
     return "tmux load-buffer -";}
 static int to_clip(const char*d){const char*c=clip_cmd();if(!c)return 1;
-    char cm[80];snprintf(cm,80,"%s 2>/dev/null",c);
+    char cm[80];snprintf(cm,80,"%s 2>/dev/null",c);signal(SIGPIPE,SIG_IGN);
     FILE*f=popen(cm,"w");if(!f)return 1;fputs(d,f);return pclose(f);}
