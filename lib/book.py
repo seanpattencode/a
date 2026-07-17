@@ -10,6 +10,25 @@ ROOT = Path(__file__).resolve().parent.parent
 ADATA = ROOT / "adata"
 DATA_DIR = ADATA / "books"
 
+def _idxw(IDX, rows):   # atomic replace (unique tmp+rename) — bare write_text raced cross-device writers: spliced rows, catalog truncated to 1 line (7/15, repaired a-git eba10f1e9f)
+    t = IDX.parent / f".idx{os.getpid()}"; t.write_text("\n".join(rows) + "\n"); t.rename(IDX)
+
+POSD = ADATA / "local" / "bookpos"
+def _pos_w(name, off):   # position register: local mirror instantly + gdrive fire-and-forget → other devices see it in seconds, not at next git merge
+    POSD.mkdir(parents=True, exist_ok=True); (POSD / name).write_text(str(off))
+    subprocess.Popen(["rclone", "copyto", str(POSD / name), f"a-gdrive:books/pos/{name}", "--contimeout", "5s", "--retries", "2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def _pos_r(name, seed=0):   # cloud-first, HARD 4s deadline (subprocess timeout= — rclone --timeout is idle-IO, NOT a deadline: hung the reader open under a sync storm), loud fallback → mirror → col5 seed
+    POSD.mkdir(parents=True, exist_ok=True); t = POSD / (name + ".new")
+    print(">> position: cloud…", end="", flush=True)
+    try:
+        r = subprocess.run(["rclone", "copyto", f"a-gdrive:books/pos/{name}", str(t), "--contimeout", "2s", "--retries", "1", "--low-level-retries", "2"], capture_output=True, timeout=4)
+        if t.exists(): t.rename(POSD / name); print(" ✓")
+        else: print(f" fail rc{r.returncode} → local" if r.returncode else " no register → local")
+    except subprocess.TimeoutExpired: print(" timeout 4s → local")
+    except Exception as e: print(f" {type(e).__name__} → local")
+    try: return int((POSD / name).read_text())
+    except Exception: return seed
+
 def pick_book():
     books = sorted(p.parent.name for p in DATA_DIR.glob("[!.]*/source.*"))
     if not books: print("No books in", DATA_DIR); sys.exit(1)
@@ -424,7 +443,7 @@ if __name__ == "__main__":
                 p[4] = str(off); found = True; out.append("\t".join(p))
             else: out.append(l)
         if not found: out.append("\t".join(["", name, "", "", str(off)]))
-        IDX.write_text("\n".join(out) + "\n")
+        _idxw(IDX, out); _pos_w(name, off)
         print(f"{name} pos {off}")
     elif cmd == "convert":
         # a book convert <name> | <fmt e.g. epub> | all  — calibre ebook-convert source.<ext> -> output/<name>.txt
@@ -473,6 +492,7 @@ if __name__ == "__main__":
             if len(parts) >= 2 and parts[1] == name:
                 if len(parts) >= 5 and parts[4].strip().isdigit(): pos = int(parts[4])
                 break
+        pos = _pos_r(name, pos)   # register (seconds-fresh from any device) beats col5 seed
         pos_out = f"/tmp/book_pos_{name}.txt"
         Path(pos_out).unlink(missing_ok=True)
         if shutil.which("e"):
@@ -489,9 +509,9 @@ if __name__ == "__main__":
                     while len(parts) < 5: parts.append("")
                     parts[4] = str(new_pos)
                     lines[i] = "\t".join(parts); updated = True; break
-            if updated:
-                IDX.write_text("\n".join(lines) + "\n")
-                print(f"+ position {pos} -> {new_pos} (saved to {IDX.name})")
+            if updated: _idxw(IDX, lines)
+            _pos_w(name, new_pos)
+            print(f"+ position {pos} -> {new_pos} (register + col5)")
             sys.exit(0)
         # APK fallback: narrate via the TTS APK on Android. resumes from /sdcard/Documents/book_pos_<name>.txt
         # large books are sent in ~150KB sessions; re-run to advance.
