@@ -2,7 +2,7 @@
 # ── a.c — agent manager & human-AI accelerator. sh a.c [build|install|analyze|shell|clean]
 # Polyglot: shell sees # as comments; C preprocessor skips #if 0..#endif.
 # Fixes: fewer tokens, same speed+. Features: cut until it breaks.
-# Read codebase: a cat (1=all 2=skip my/ 3=root full+sub first10+last5, copies to clipboard)
+# Read codebase: a cat (1=all 3=100k-tok index, A_CB=cap-bytes; copies to clipboard)
 # Context: a c/j preloads a cat (auto mode 3) into claude's system prompt via --append-system-prompt-file
 # TERMUX: set CLAUDE_CODE_TMPDIR=$HOME/.tmp; build with clang directly.
 case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
@@ -472,32 +472,43 @@ static int cmd_cat(int c,char**v){perf_disarm();
     char m=0;int di=2;
     if(c>2&&v[2][0]>='1'&&v[2][0]<='3'&&!v[2][1]){m=v[2][0];di=3;}
     if(c>di&&chdir(v[di]))return 1;
-    if(!m){if(!isatty(1))m='3';else{puts("1 all\n2 all (skip my/)\n3 first10+last5 (skip my/)");
+    if(!m){if(!isatty(1))m='3';else{puts("1 all\n3 100k index");
         printf("> ");fflush(stdout);char ch[4];if(!fgets(ch,4,stdin))return 0;m=ch[0];}}
-    const char*ex=m!='1'?" -- ':!my/'":"";
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
     {char cm[B];init_db();load_cfg();CWD(wc);size_t sl=strlen(SDIR);
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
-    snprintf(cm,B,ia?"{ git -C '%2$s' grep -lI ''%1$s|sed 's|^|%2$s/|';git grep -lI ''%1$s 2>/dev/null; }":"git grep -lI ''%s",ex,SDIR);
+    if(ia)snprintf(cm,B,"{ git -C '%1$s' grep -lI ''|sed 's|^|%1$s/|';git grep -lI '' 2>/dev/null; }",SDIR);else snprintf(cm,B,"git grep -lI ''");
     size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,skf=0;
+    size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):400000;
+    size_t kl=0,kcap=0;char*kd=NULL;  /* skipped-file map: silent omission reads as "covered everything" */
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
     if(fl){while((n=fread(b,1,8192,fl))>0){if(fl2+n<65536){memcpy(fb+fl2,b,n);fl2+=n;}}pclose(fl);}
     fb[fl2]=0;
     if(ia){const char*am="\nYou are an agent spawned by the a agent manager. The source code is included for better understnading of the tools you can use. If you encounter issues in their use, consider fixing them and sending a pr of the fix as shorter tokens.\n";GA(am,strlen(am));}
     for(char*p=fb;p<fb+fl2;){char*e=memchr(p,'\n',(size_t)(fb+fl2-p));if(!e)break;*e=0;
         if(l>6*1024*1024){GA("\n(too large to continue)\n",25);skf++;break;}
-        if(m=='3'&&l>131072&&strchr(p,'/')){skf++;p=e+1;continue;}
+        if(m=='3'&&l>bud&&strchr(p,'/')){skf++;size_t pl=strlen(p);
+            if(kl+pl+2>=kcap){kcap=(kl+pl+4096)*2;kd=realloc(kd,kcap);}
+            memcpy(kd+kl,p,pl);kl+=pl;kd[kl++]='\n';p=e+1;continue;}
         FILE*f=fopen(p,"r");if(!f){p=e+1;continue;}
         int tl=0;char ln[512];while(fgets(ln,512,f))tl++;
         rewind(f);nf++;
         char hdr[600];size_t hl=(size_t)snprintf(hdr,600,"\n==> %s (%d lines) <==\n",p,tl);
         GA(hdr,hl);
-        int hd=m=='3'?(strchr(p,'/')?100:1000):tl;int tl2=m=='3'?30:5;
+        int hd=m=='3'?(strchr(p,'/')?10:1000):tl,tl2=5;
         int i=0;while(fgets(ln,512,f)){size_t sl=strlen(ln);
             if(i<hd||(tl>hd+tl2&&i>=tl-tl2)){GA(ln,sl);}
             if(i==hd&&tl>hd+tl2){GA("  ...\n",6);}
             i++;}
         fclose(f);p=e+1;}
+    {const char*kh="\n==> not shown — read on demand: <==\n";int h=0;
+    if(kd){kd[kl]=0;GA(kh,strlen(kh));h=1;
+        if(skf>40)for(char*q=kd;*q;){size_t dl=strcspn(q,"/\n");int cn=0;char*r=q;
+            for(;*r&&!strncmp(r,q,dl+1);r+=strcspn(r,"\n")+1)cn++;
+            GA(b,(size_t)snprintf(b,96,"%.*s/ %d files\n",(int)dl,q,cn));q=r;}
+        else{GA(kd,kl);}free(kd);}
+    {FILE*uf=popen("git ls-files -o --directory 2>/dev/null|sed '41s/.*/+more/;41q'","r");if(uf){
+        while(fgets(b,512,uf)){if(!h++){GA(kh,strlen(kh));}GA(b,strlen(b));}pclose(uf);}}}
     CWD(cd);const char*actx=getenv("A_CTX");char ctd[P];
     if(actx&&actx[0]=='/')snprintf(ctd,P,"%s",actx);else snprintf(ctd,P,"%s/context/%s",AROOT,actx&&actx[0]?actx:bname(cd));
     #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){char s[512];size_t sr=fread(s,1,512,cf);int bin=0;\
@@ -513,13 +524,14 @@ static int cmd_cat(int c,char**v){perf_disarm();
             char sp[P],sh[260];snprintf(sp,P,"%s/%s",fp2,se->d_name);snprintf(sh,260,"%s/%s",de->d_name,se->d_name);CTX_EMIT(sp,sh);}closedir(sd);}continue;}
         CTX_EMIT(fp2,de->d_name);}closedir(dd);}}
     #undef CTX_EMIT
+    size_t cl2=l;
     {const char*ap=cfget("prompt");if(!*ap)ap="default";char p[P];snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,ap);FILE*f=fopen(p,"r");
      if(f){char hd[64];size_t hl2=(size_t)snprintf(hd,64,"\n==> prompt: %s <==\n",ap);GA(hd,hl2);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
     if(!d)return 1;d[l]=0;
     char tf[P];snprintf(tf,P,"%s/local/a_cat.txt",AROOT);writef(tf,d);
     {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full\n\n",tf,lc);}
     (void)!write(1,d,l);to_clip(d);
-    fprintf(stderr,"✓ %d files %zub%s cat %s\n  context: %s/\n",nf,l,skf?" (skipped)":"",tf,ctd);
+    fprintf(stderr,"✓ %d files %zu+%zuprompt tok%s cat %s\n  context: %s/\n",nf,cl2/4,(l-cl2)/4,skf?" (skipped)":"",tf,ctd);
     free(d);}
     #undef GA
     return 0;}
