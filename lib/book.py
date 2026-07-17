@@ -128,9 +128,22 @@ def _dmiss(b):
     return n, [i for i in range(1, n + 1) if not (t / f"page_{i:04d}.txt").exists() or not (t / f"page_{i:04d}.txt").stat().st_size]
 def _drip_loop(tgt, rate):
     os.environ["A_BOOK_CODEX"] = "1"   # codex only: claude content-filters scans
+    books = [resolve_book(tgt)] if tgt != "all" else sorted(d for d in DATA_DIR.glob("[!.]*") if d.is_dir())
+    if tgt == "all" and shutil.which("ebook-convert"):   # free pass first: ebook formats -> txt via calibre; codex only for scans
+        _dw(book="(converting ebooks)", page="-", total="-", left="-", state="running", reason="calibre pass before codex")
+        for b in books:
+            src2 = next((s for s in b.glob("source.*") if s.suffix not in (".txt", ".pdf")), None)
+            out = b / "output" / (b.name + ".txt")
+            if not src2 or out.exists() and out.stat().st_size: continue
+            out.parent.mkdir(parents=True, exist_ok=True)
+            try: subprocess.run(["ebook-convert", str(src2), str(out)], capture_output=True, timeout=180)
+            except Exception: pass
+            _dlog(f"{b.name} convert {'ok' if out.exists() and out.stat().st_size else 'failed'}")
+    books = [b for b in books if (b / "source.pdf").is_file()]
+    _dw(qtotal=len(books), qdone=0)
     fails = 0
-    for b in ([resolve_book(tgt)] if tgt != "all" else sorted(DATA_DIR.glob("[!.]*"))):
-        if not (b / "source.pdf").is_file(): continue
+    for qi, b in enumerate(books):
+        _dw(qdone=qi)
         try: split_pdf(b)
         except Exception as e: _dlog(f"{b.name} split failed {type(e).__name__}"); continue
         total, miss = _dmiss(b)
@@ -151,25 +164,40 @@ def _drip_loop(tgt, rate):
 def cmd_drip(args):
     sub = args[2] if len(args) > 2 else "status"
     if sub == "stop":
-        s = _dstate()
-        try: os.killpg(int(s.get("pid", 0)), 15); print(f"stopped pid {s['pid']}")
-        except Exception: print("not running")
+        if not subprocess.run(["systemctl", "--user", "is-active", "-q", "bookdrip.service"]).returncode:
+            subprocess.run(["systemctl", "--user", "stop", "bookdrip.service"]); print("stopped bookdrip.service (auto mode still enabled — a book drip auto off to disable)")
+        else:
+            s = _dstate()
+            try: os.killpg(int(s.get("pid", 0)), 15); print(f"stopped pid {s['pid']}")
+            except Exception: print("not running")
         _dw(state="stopped"); return
-    if sub == "start":
-        if len(args) < 4: sys.exit("usage: a book drip start <name|all> [pages/hour]")
+    if sub == "auto":   # persistent mode: systemd --user unit -> starts at boot (linger), Restart=on-failure resumes crashes
+        if len(args) > 3 and args[3] == "off":
+            subprocess.run(["systemctl", "--user", "disable", "--now", "bookdrip.service"]); _dw(state="stopped"); print("- bookdrip.service disabled"); return
+        rate = float(args[3]) if len(args) > 3 else 20.0
+        u = Path.home() / ".config/systemd/user/bookdrip.service"; u.parent.mkdir(parents=True, exist_ok=True)
+        u.write_text(f"[Unit]\nDescription=a book drip - paced codex transcription of all books\n[Service]\nExecStart={Path.home()}/.local/bin/a book drip fg all {rate}\nRestart=on-failure\nRestartSec=120\nNice=10\n[Install]\nWantedBy=default.target\n")
+        subprocess.run(["systemctl", "--user", "daemon-reload"]); subprocess.run(["systemctl", "--user", "enable", "--now", "bookdrip.service"])
+        print(f"+ bookdrip.service: all books at {rate}/h — survives reboot; status: a book drip; off: a book drip auto off"); return
+    if sub in ("start", "fg"):
+        if len(args) < 4: sys.exit(f"usage: a book drip {sub} <name|all> [pages/hour]")
         tgt = args[3]; rate = float(args[4]) if len(args) > 4 else 20.0
         if tgt != "all": resolve_book(tgt)   # validate before forking
         s = _dstate()
         if s.get("state") in ("running", "paused"):
             try: os.kill(int(s.get("pid", 0)), 0); sys.exit(f"already running pid {s['pid']} — a book drip stop first")
             except ProcessLookupError: pass
-        p = os.fork()
-        if p: print(f"+ drip pid {p}: {tgt} at {rate} pages/hour — status: a book drip"); return
-        os.setsid(); DRIP.mkdir(parents=True, exist_ok=True)
-        fd = os.open(DRIP / "out.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND); os.dup2(fd, 1); os.dup2(fd, 2); os.close(0)
+        if sub == "fg":   # unit mode: no fork, SIGTERM = clean stop marker, cache makes every restart a resume
+            import signal
+            signal.signal(signal.SIGTERM, lambda *a: (_dw(state="stopped"), os._exit(0)))
+        else:
+            p = os.fork()
+            if p: print(f"+ drip pid {p}: {tgt} at {rate} pages/hour — status: a book drip"); return
+            os.setsid(); DRIP.mkdir(parents=True, exist_ok=True)
+            fd = os.open(DRIP / "out.log", os.O_WRONLY | os.O_CREAT | os.O_APPEND); os.dup2(fd, 1); os.dup2(fd, 2); os.close(0)
         _dw(pid=os.getpid(), target=tgt, rate=rate, state="running", reason="")
         try: _drip_loop(tgt, rate)
-        except Exception as e: _dw(state="dead", reason=f"{type(e).__name__}: {e}"); _dlog(f"CRASH {type(e).__name__}: {e}")
+        except Exception as e: _dw(state="dead", reason=f"{type(e).__name__}: {e}"); _dlog(f"CRASH {type(e).__name__}: {e}"); os._exit(1)
         os._exit(0)
     s = _dstate()
     if not s: print("no drip yet — a book drip start <name|all> [pages/hour]"); return
@@ -178,7 +206,8 @@ def cmd_drip(args):
     except Exception: alive = False
     st = s.get("state", "?") + (" (PROCESS DEAD)" if not alive and s.get("state") in ("running", "paused") else "")
     left, rate = s.get("left"), s.get("rate", 0)
-    print(f"{s.get('target', '?')}  book={s.get('book', '-')} p{s.get('page', '-')}  left={left}/{s.get('total', '?')}  {rate}/h  [{st}] {s.get('reason', '')}"
+    q = f"  queue {s['qdone']}/{s['qtotal']} pdfs" if "qtotal" in s else ""
+    print(f"{s.get('target', '?')}{q}  book={s.get('book', '-')} p{s.get('page', '-')}  left={left}/{s.get('total', '?')}  {rate}/h  [{st}] {s.get('reason', '')}"
           + (f"  eta {left / rate:.1f}h" if isinstance(left, int) and rate else ""))
     for l in (DRIP / "drip.log").read_text().splitlines()[-4:] if (DRIP / "drip.log").exists() else []: print(f"  {l}")
 def cmd_sync():
