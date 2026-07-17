@@ -3,9 +3,8 @@
 into adata/local/ext/ on demand. Mirrors `a apk`: single source file, makes the folder tree.
 Shared payload (instant-preload, pageflip, icons) is defined ONCE here so the two cannot drift.
   a briext           generate -> adata/local/ext/{bri-ext,bri-chrome}, print load paths
-  a briext verify    generate, then diff -r vs lib/bri-ext + lib/bri-chrome (proof it matches)
 Edit this file to change either extension; rerun to redeploy. Firefox xpi: a bri deploy."""
-import os,sys,base64,subprocess
+import os,sys,base64
 ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT=os.path.join(ROOT,"adata/local/ext")
 
@@ -1053,10 +1052,10 @@ function startContinuousDebugMonitoring() {
   }, 2000);
 }
 ''',
-"pageflip.js": r'''// pageflip — discrete viewport paging, SHARED by both extensions (FF bri-ext + Chrome bri-chrome). Down=next, Up=prev (one tap).
+"pageflip.js": r'''// pageflip — discrete viewport paging, SHARED by both extensions (FF bri-ext + Chrome bri-chrome). Wheel/Down=next, Up=prev (one notch/tap).
 // Universal step: detects the scroll container (window, or a large inner scrollable div) and the obscured
 // top/bottom band (fixed/sticky bars) via pixel probes re-run each flip — so sticky / hide-on-scroll headers
-// never skip content, on any site. ▲▼ buttons; skips text fields; toggle chrome.storage.sync.pageflip (default on).
+// never skip content, on any site. ▲▼ buttons; skips text fields; toggle chrome.storage.sync.pageflip (default off).
 // Single source: lib/briext.py generates both — edit there, then `a briext`.
 (()=>{
   if(window.__pf)return; window.__pf=1;
@@ -1075,15 +1074,19 @@ function startContinuousDebugMonitoring() {
     let best=null,ba=0;for(const el of document.querySelectorAll('div,main,section,article,ul')){if(el.scrollHeight<=el.clientHeight+8)continue;
       if(!/(auto|scroll)/.test(getComputedStyle(el).overflowY))continue;const r=el.getBoundingClientRect(),a=r.width*r.height;if(a>ba){ba=a;best=el;}}return best;};
   const go=d=>{const s=scr();if(s){s.scrollBy(0,d*Math.max(1,s.clientHeight-8));return;}scrollBy(0,d*Math.max(1,innerHeight-obsc(1)-obsc(0)));};
-  const onkey=e=>{const t=e.target;if(t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable))return;
+  const infld=t=>t&&(/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)||t.isContentEditable);
+  const onkey=e=>{if(infld(e.target))return;
     if(e.key==='ArrowDown'||(e.key===' '&&!e.shiftKey)){go(1);e.preventDefault();}else if(e.key==='ArrowUp'||(e.key===' '&&e.shiftKey)){go(-1);e.preventDefault();}};
+  let lw=0;  // wheel = one flip per notch; 200ms cooldown tames momentum wheels/trackpads. ctrl+wheel(zoom), horizontal, fields stay native.
+  const onwheel=e=>{if(e.ctrlKey||!e.deltaY||infld(e.target))return;e.preventDefault();
+    const n=performance.now();if(n-lw>200){lw=n;go(e.deltaY>0?1:-1);}};
   const mk=(l,d,b)=>{const e=document.createElement('div');e.textContent=l;e.className='__pf_btn';
     e.style.cssText=`position:fixed;right:12px;bottom:${b}px;width:52px;height:52px;z-index:2147483647;display:flex;align-items:center;justify-content:center;font:26px sans-serif;background:#000a;color:#fff;border-radius:11px;user-select:none;cursor:pointer`;
     e.addEventListener('pointerdown',ev=>{go(d);ev.preventDefault();});document.body.appendChild(e);return e;};
   const apply=on=>{
-    if(on&&!active){active=true;addEventListener('keydown',onkey,true);zones=[mk('▲',-1,74),mk('▼',1,14)];}
-    else if(!on&&active){active=false;removeEventListener('keydown',onkey,true);zones.forEach(z=>z.remove());zones=[];}};
-  chrome.storage.sync.get({pageflip:true},d=>apply(d.pageflip));
+    if(on&&!active){active=true;addEventListener('keydown',onkey,true);addEventListener('wheel',onwheel,{passive:false,capture:true});zones=[mk('▲',-1,74),mk('▼',1,14)];}
+    else if(!on&&active){active=false;removeEventListener('keydown',onkey,true);removeEventListener('wheel',onwheel,true);zones.forEach(z=>z.remove());zones=[];}};
+  chrome.storage.sync.get('pageflip',d=>apply(d.pageflip));
   chrome.storage.onChanged.addListener(c=>c.pageflip&&apply(c.pageflip.newValue));
 })();
 ''',
@@ -1355,7 +1358,7 @@ button:hover{background:#444}
 <label><input type=checkbox id=enablePrerender> Enable prerender (full page load)</label>
 <label><input type=checkbox id=debugNotifications> Debug notifications</label>
 <label><input type=checkbox id=debugMode> Debug mode (console + overlay)</label>
-<label><input type=checkbox id=pageflip> Pageflip — ↓ next page / ↑ prev (one tap), ▲▼ buttons</label>
+<label><input type=checkbox id=pageflip> Pageflip — wheel/↓ next page, ↑ prev (one notch/tap), ▲▼ buttons</label>
 <label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
 <label><input type=checkbox id=clickdown2> Clickdown+ — also press-open JS/role=link nav (Amazon/Google); buttons excluded</label>
 <div id=stat></div>
@@ -1374,7 +1377,7 @@ $('cap').textContent = sup
     : '⚠ No Speculation Rules — prefetch fallback only';
 $('cap').className = sup ? 'ok' : 'warn';
 
-const defs = {enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true, clickdown2:false};
+const defs = {enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:false, clickdown:true, clickdown2:false};
 chrome.storage.sync.get(defs, items => {
   for (const k in defs) {
     $(k).checked = items[k];
@@ -1480,6 +1483,7 @@ function DISPATCH(m){
         if(seen.has(k))continue; seen.add(k); out.push([e.getAttribute('role')||'',lab.slice(0,36),[r.x+r.width/2|0,r.y+r.height/2|0]]); }
       return {ok:true,value:out.slice(0,60)}; }
     case 'wait': await new Promise(r=>setTimeout(r,m.ms||500)); return {ok:true};
+    case 'set': await chrome.storage.sync.set(m.kv||{}); return {ok:true,value:await chrome.storage.sync.get(null)};  // MV3 bans eval; flag flips
     default: return {error:'unknown action: '+m.action};
   } };
   return run().catch(e=>({error:String(e)}));
@@ -1560,14 +1564,14 @@ loop();
 <label><input type=checkbox id=enablePrerender> Instant preload — prerender links on hover (speculation rules)</label>
 <label><input type=checkbox id=debugNotifications> Debug notifications — popup on each preload</label>
 <label><input type=checkbox id=debugMode> Debug mode — console logging + on-page overlay</label>
-<label><input type=checkbox id=pageflip> Pageflip — Down=next page, Up=prev (one tap), ▲▼ buttons</label>
+<label><input type=checkbox id=pageflip> Pageflip — wheel/Down=next page, Up=prev (one notch/tap), ▲▼ buttons</label>
 <label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
 <label><input type=checkbox id=clickdown2> Clickdown+ — also press-open JS/role=link nav (Amazon/Google); buttons excluded</label>
 <p><small>Changes take effect immediately, no reload.</small></p>
 <script src=options.js></script>
 ''',
 "options.js": r'''// bri-chrome options — instant-preload (prerender / debug notifications / debug mode) + pageflip. Persists in chrome.storage.sync.
-const defs={enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:true, clickdown:true, clickdown2:false};
+const defs={enablePrerender:true, debugNotifications:false, debugMode:false, pageflip:false, clickdown:true, clickdown2:false};
 chrome.storage.sync.get(defs, items=>{
   for(const k in defs){const e=document.getElementById(k);e.checked=items[k];
     e.onchange=()=>chrome.storage.sync.set({[k]:e.checked});}
@@ -1594,59 +1598,54 @@ def build():
 
 def chrome_install(chrome='google-chrome-unstable'):
     # zero-drag Chrome install: pack a signed crx and force-install it via enterprise policy off a local
-    # file:// update manifest (Chrome blocks http extension downloads as insecure; file:// is trusted).
-    # Survives restart. Reuses the key → stable ID. Content scripts (clickdown/pageflip/preload) work from
-    # this alone; the automation bridge additionally needs the per-profile "Allow user scripts" toggle.
-    import subprocess,hashlib,json
+    # file:// update manifest (Chrome blocks http extension downloads; file:// is trusted; --load-extension
+    # is DEAD in branded builds \u2014 silently ignored). Reuses the key \u2192 stable ID.
+    import subprocess,hashlib,json,time
     build()
     ext=os.path.join(OUT,'bri-chrome'); pem=os.path.join(OUT,'bri-chrome.pem'); crx=os.path.join(OUT,'bri-chrome.crx')
     upd=os.path.join(OUT,'bri-chrome-update.xml')
+    mf=os.path.join(ext,'manifest.json');m=json.load(open(mf));t=int(time.time())  # monotonic auto-bump: same/lower version than last-seen never installs
+    m['version']=ver='1.%d.%d'%(t>>16,t&0xffff);json.dump(m,open(mf,'w'))
     cmd=[chrome,'--pack-extension='+ext,'--user-data-dir=/tmp/_abrpack','--no-first-run']
     if os.path.exists(pem): cmd.append('--pack-extension-key='+pem)
     subprocess.run(cmd,timeout=90,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     der=subprocess.run(['openssl','rsa','-in',pem,'-pubout','-outform','DER'],capture_output=True).stdout
     ID=''.join(chr(97+int(c,16)) for c in hashlib.sha256(der).hexdigest()[:32])
-    ver=json.load(open(os.path.join(ext,'manifest.json')))['version']
     open(upd,'w').write(
       "<?xml version='1.0' encoding='UTF-8'?>\n<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>\n"
       "<app appid='%s'><updatecheck codebase='file://%s' version='%s'/></app>\n</gupdate>\n"%(ID,crx,ver))
     pol=json.dumps({"ExtensionInstallForcelist":["%s;file://%s"%(ID,upd)],"ExtensionInstallSources":["file:///*"]})
     subprocess.run(['sudo','mkdir','-p','/etc/opt/chrome/policies/managed'],check=True)
     subprocess.run(['sudo','tee','/etc/opt/chrome/policies/managed/bri-chrome.json'],input=pol.encode(),stdout=subprocess.DEVNULL,check=True)
-    print("✓ force-install policy set  id=%s  crx=%d bytes"%(ID,os.path.getsize(crx)))
-    print("  -> (re)start Chrome: it auto-installs bri-chrome, no drag.   remove: a briext uninstall")
+    print("\u2713 force-install policy set  id=%s v%s crx=%d bytes"%(ID,ver,os.path.getsize(crx)))
+    print("  -> a briext restart; lands ~1-5 min AFTER boot (roll-call), not at boot.  remove: a briext uninstall")
     return ID
 
 def chrome_uninstall():
     import subprocess
     subprocess.run(['sudo','rm','-f','/etc/opt/chrome/policies/managed/bri-chrome.json'])
-    print("✓ removed force-install policy (restart Chrome to drop the extension)")
+    print("\u2713 removed force-install policy (restart Chrome to drop the extension)")
 
 def chrome_restart(chrome='google-chrome-canary'):
     # Chrome can't be restarted from inside the extension (scripts can't open chrome://restart; chrome.runtime.restart is ChromeOS-only),
     # so do it from the terminal: SIGTERM the MAIN browser process (the one with no --type=) for a clean shutdown, then relaunch w/ session restore.
+    # pgrep ^-anchored to argv0: vmtouch pins the binary path in ITS argv — unanchored never sees it exit.
     import subprocess,time
-    for pid in subprocess.run(['pgrep','-f','chrome-canary/chrome'],capture_output=True,text=True).stdout.split():
+    for pid in subprocess.run(['pgrep','-f','^/opt/google/chrome-canary/chrome'],capture_output=True,text=True).stdout.split():
         try: cl=open('/proc/%s/cmdline'%pid,'rb').read().split(b'\0')
         except OSError: continue
-        if cl and cl[0].endswith(b'chrome-canary/chrome') and b'--type=' not in b' '.join(cl): subprocess.run(['kill','-TERM',pid])
+        if b'--type=' not in b' '.join(cl): subprocess.run(['kill','-TERM',pid])
     for _ in range(80):
-        if not subprocess.run(['pgrep','-f','chrome-canary/chrome'],capture_output=True).stdout.strip(): break
+        if not subprocess.run(['pgrep','-f','^/opt/google/chrome-canary/chrome'],capture_output=True).stdout.strip(): break
         time.sleep(0.1)
     subprocess.Popen([chrome,'--restore-last-session'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
-    print("✓ Canary restarted (session restore) — force-install picks up the new crx on boot")
+    print("\u2713 Canary restarted (session restore) \u2014 new crx lands in ~1-5 min")
 
 def main(argv):
     if "install" in argv[1:]: return chrome_install()
     if "uninstall" in argv[1:]: return chrome_uninstall()
     if "restart" in argv[1:]: return chrome_restart()
     paths=build()
-    if "verify" in argv[1:]:
-        for p in paths:
-            old=os.path.join(ROOT,"lib",os.path.basename(p))
-            print("=== diff -r %s  (-old +new) ==="%os.path.basename(p))
-            subprocess.run(["diff","-r",old,p])
-        print("\nclean diff above (besides intended dedup) = generated extensions match the working ones")
     for p in paths: print("\u2713 "+p)
     print("load: a extload "+paths[1]+"   |   firefox xpi: a bri deploy")
 
