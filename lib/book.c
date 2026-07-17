@@ -34,6 +34,18 @@ static void bk_cloudmv(const char*a,const char*b){if(fork())return;
     int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
     execl("/bin/sh","sh","-c","r=$(rclone listremotes 2>/dev/null|grep a-gdrive|head -1);"
         "[ -n \"$r\" ]&&exec rclone moveto \"${r}adata/books/$0\" \"${r}adata/books/$1\"",a,b,(char*)0);_exit(0);}
+static void bk_jget(const char*j,const char*k,char*o,int n){o[0]=0;char pat[24];snprintf(pat,24,"\"%s\":",k);   /* flat one-level state.json only */
+    const char*p=strstr(j,pat);if(!p)return;p+=strlen(pat);while(*p==' ')p++;if(*p=='"')p++;   /* json.dumps pads ": " */
+    int i=0;while(p[i]&&p[i]!='"'&&p[i]!=','&&p[i]!='}'&&i<n-1){o[i]=p[i];i++;}o[i]=0;}
+static void bk_drip(char*o,int n){o[0]=0;char fp[P];snprintf(fp,P,"%s/local/bookdrip/state.json",AROOT);
+    size_t l=0;char*j=readf(fp,&l);if(!j)return;
+    char st[24],bk[64],pg[12],qd[12],qt[12],pid[16];
+    bk_jget(j,"state",st,24);bk_jget(j,"book",bk,64);bk_jget(j,"page",pg,12);
+    bk_jget(j,"qdone",qd,12);bk_jget(j,"qtotal",qt,12);bk_jget(j,"pid",pid,16);free(j);
+    if(!st[0]||!strcmp(st,"stopped"))return;   /* quiet when intentionally off */
+    if((!strcmp(st,"running")||!strcmp(st,"paused"))&&(atoi(pid)<2||kill(atoi(pid),0)))strcpy(st,"DEAD");
+    char q[28]="";if(qt[0]&&strcmp(qt,"0"))snprintf(q,28," %s/%s",qd,qt);
+    bk_mid(bk,30);snprintf(o,(size_t)n,"  \xc2\xb7 drip %s%s %s p%s",st,q,bk,pg);}
 static int cmd_book(int argc,char**argv){
     if(argc>2||!isatty(0)||!isatty(1))fallback_py("book",argc,argv);
     perf_disarm();init_db();signal(SIGCHLD,SIG_IGN);   /* bk_cloudmv children: no zombies while the pager runs */
@@ -60,7 +72,7 @@ static int cmd_book(int argc,char**argv){
         while(cur<nl&&Lb[cur]<0)cur++;if(cur>=nl){cur=nl-1;while(cur>0&&Lb[cur]<0)cur--;}
         struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);int rows=w.ws_row>10?w.ws_row:24,cols=w.ws_col>20?w.ws_col:80;
         printf("\033[H\033[2J");
-        static const char mn[]="[j/k]move [spc/b]page [s]ort [o]read [c]chat [e]archive [/]filter [q]quit";
+        static const char mn[]="[j/k]move [spc/b]page [s]ort [o]read [c]chat [d]rip [e]archive [/]filter [q]quit";
         int mr=((int)sizeof(mn)-1+cols-1)/cols;   /* wrapped menu rows (overflow scrolls row1 off) */
         int ps=rows-1-mr,p0=ps>0?(cur/ps)*ps:0;
         for(int i=p0;i<p0+ps&&i<nl;i++){
@@ -71,7 +83,9 @@ static int cmd_book(int argc,char**argv){
         if(!m)printf("no match: %s\n",ft);
         int cb=0;for(int i=0;i<=cur&&i<nl;i++)if(Lb[i]>=0)cb++;
         /* filter mode swaps menu→typing help: action keys (c=chat…) would type into the search, not fire, so don't show them */
-        printf("\033[%d;1H\033[90m%d/%d  %s%s%.*s\033[0m\n%s",rows-mr,m?cb:0,m,sm?"by-author  ":"by-name  ",*ft?"filter: ":"",cols>30?cols-30:14,ft,
+        char ds[96],sr[224];bk_drip(ds,96);   /* live drip segment in the status row; whole row clipped to cols */
+        snprintf(sr,224,"%d/%d  %s%s%.*s%s",m?cb:0,m,sm?"by-author  ":"by-name  ",*ft?"filter: ":"",cols>30?cols-30:14,ft,ds);
+        printf("\033[%d;1H\033[90m%.*s\033[0m\n%s",rows-mr,cols-1,sr,
             fm?"\033[7;33m SEARCHING \033[0m \033[1m[Enter]\033[0m=pick  [Esc]=cancel":mn);
         fflush(stdout);
         char kc=0;if(read(0,&kc,1)!=1)break;int k=kc,ar=0;
@@ -90,6 +104,11 @@ static int cmd_book(int argc,char**argv){
         else if(k==' '&&m){cur+=ps;if(cur>=nl)cur=nl-1;}
         else if(k=='b'&&m){cur-=ps;if(cur<0)cur=0;}
         else if(k=='s'){sm^=1;cur=0;}   /* toggle name <-> author grouping */
+        else if(k=='d'){printf("\033[H\033[2J\033[0m");fflush(stdout);   /* drip info pane: status + log tail + unit; any key returns */
+            char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;echo '--- drip.log ---';tail -n 16 '%s/local/bookdrip/drip.log' 2>/dev/null;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true",AROOT);
+            (void)!system(dc);
+            printf("\n\033[7m any key to return \033[0m");fflush(stdout);
+            char t;(void)!read(0,&t,1);}
         else if(k=='/'){fm=1;ft[0]=0;cur=0;}
         else if((k=='o'||k=='\r'||k=='\n')&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","read",nm[Lb[cur]],0};fallback_py("book",4,av);}
         else if(k=='c'&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","chat",nm[Lb[cur]],0};fallback_py("book",4,av);}
