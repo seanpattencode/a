@@ -84,7 +84,7 @@ static int cmd_ssh(int argc,char**argv){
     const char*sub=argc>2?argv[2]:NULL;
     /* list */
     if(!sub){/* auto-refresh self */
-        char ip[128]="",port[8]="22",h[256];const char*u=getenv("USER");
+        char ip[128]="",port[8]="22",h[256]="";const char*u=getenv("USER");
         char pv[64];pcmd("grep -ci microsoft /proc/version 2>/dev/null",pv,64);
         if(atoi(pv)>0){pcmd("powershell.exe -c \"ipconfig\"|grep -oP '192\\.168\\.\\d+\\.\\d+'|head -1",ip,128);ip[strcspn(ip,"\n")]=0;snprintf(port,8,"2222");}
         else{pcmd(IP_CMD,ip,128);ip[strcspn(ip,"\n")]=0;
@@ -95,17 +95,22 @@ static int cmd_ssh(int argc,char**argv){
             if(f<0||strcmp(H[f].host,h)){ssh_savex(dir,sn,h,f>=0?H[f].pw:NULL,0,0);
                 if(f<0&&nh<32){snprintf(H[nh].name,128,"%s",sn);snprintf(H[nh].host,256,"%s",h);H[nh].pw[0]=0;nh++;}
                 else if(f>=0)snprintf(H[f].host,256,"%s",h);}}
-        int on=!system("pgrep -x sshd >/dev/null 2>&1");
-        printf("SSH sshd:%s\n",on?" \033[32mon\033[0m":" \033[31moff\033[0m");
+        int on=!system("pgrep -x sshd >/dev/null 2>&1"),acc=0;
+        if(on&&ip[0]){char pb[256];snprintf(pb,256,"timeout 1 bash -c 'exec 3<>/dev/tcp/%s/%s' 2>/dev/null",ip,port);acc=!system(pb);}
         size_t dl=strlen(DEV);
+        char st[480];int sl=snprintf(st,480,"%s others %s%s\033[0m · as",
+            on?"\033[30;42m SSHD ON \033[0m":"\033[97;41m SSHD OFF \033[0m",acc?"\033[32m✓ ":"\033[31mx no access",acc?h:"");
+        for(int i=0;i<nh&&sl<440;i++)if(!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-')sl+=snprintf(st+sl,(size_t)(480-sl)," %s",H[i].name);
+        printf("%s · flip: a ssh %s\n",st,on?"stop":"start");
         if(!nh){puts("  (none) — a ssh add");return 0;}
         if(!isatty(0)){for(int i=0;i<nh;i++)printf("  %s: %s\n",H[i].name,H[i].host);return 0;}
         static char ib[64][512],sel[256];static const char*it[64];int ni=0;sel[0]=0;
         #define SA(...) do{if(ni<64){snprintf(ib[ni],512,__VA_ARGS__);it[ni]=ib[ni];ni++;}}while(0)
+        SA("%s\t%s",on?"stop":"start",st);
         SA("default\tdefault host");
         for(int i=0;i<nh;i++){int s=!strncmp(H[i].name,DEV,dl)&&H[i].name[dl]=='-';
             SA("%s\t%s%s%s",H[i].name,H[i].host,H[i].pw[0]?" [pw]":"",s?" (self)":"");}
-        static const char*km[]={"add","all","self","start","stop","status","setup","key","auth","rm","pw","mv","info","os","ping",0};
+        static const char*km[]={"add","all","self","status","setup","key","auth","rm","pw","mv","info","os","ping",0};
         for(int i=0;km[i];i++)SA("%s\tcommand",km[i]);raw_enter();int got=m_pick("ssh",it,ni,sel,sizeof sel)>0;raw_exit();putchar('\n');
         #undef SA
         if(!got||!*sel)return 0;
@@ -114,8 +119,8 @@ static int cmd_ssh(int argc,char**argv){
         execvp("a",(char*[]){"a","ssh",sel,NULL});return 1;}
 
     /* start/stop/status */
-    if(!strcmp(sub,"start")){int r=system("sshd 2>/dev/null||service ssh start 2>/dev/null||sudo service ssh start 2>/dev/null||/usr/sbin/sshd 2>/dev/null||sudo /usr/sbin/sshd 2>/dev/null");puts(r?"x sshd":"✓ sshd");return r!=0;}
-    if(!strcmp(sub,"stop")){(void)!system("pkill -x sshd 2>/dev/null||sudo pkill -x sshd");puts("✓");return 0;}
+    if(!strcmp(sub,"start")){int r=system("sshd 2>/dev/null||service ssh start 2>/dev/null||sudo service ssh start 2>/dev/null||/usr/sbin/sshd 2>/dev/null||sudo /usr/sbin/sshd 2>/dev/null");puts(r?"x sshd":"\033[30;42m SSHD ON \033[0m");return r!=0;}
+    if(!strcmp(sub,"stop")){(void)!system("pkill -x sshd 2>/dev/null||sudo pkill -x sshd");puts("\033[97;41m SSHD OFF \033[0m");return 0;}
     if(!strcmp(sub,"status")||!strcmp(sub,"s")){
         int on=!system("pgrep -x sshd >/dev/null 2>&1");char ip[128];
         pcmd(IP_CMD,ip,128);ip[strcspn(ip,"\n")]=0;
