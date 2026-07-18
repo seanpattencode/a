@@ -145,6 +145,16 @@ def _dmiss(b):
     from PyPDF2 import PdfReader
     n = len(PdfReader(str(b / "source.pdf")).pages); t = b / "transcriptions"
     return n, [i for i in range(1, n + 1) if not (t / f"page_{i:04d}.txt").exists() or not (t / f"page_{i:04d}.txt").stat().st_size]
+def _codex_alive():   # trivial probe: distinguishes quota-out from a poison page
+    import tempfile
+    f = tempfile.NamedTemporaryFile(suffix=".out", delete=False); f.close()
+    try:
+        subprocess.run(["codex", "exec", "reply with exactly: READY", "--skip-git-repo-check", "-o", f.name], capture_output=True, timeout=90, stdin=subprocess.DEVNULL)
+        return "READY" in Path(f.name).read_text()
+    except Exception: return False
+    finally:
+        try: os.unlink(f.name)
+        except OSError: pass
 def _drip_loop(tgt, rate):
     os.environ["A_BOOK_CODEX"] = "1"   # codex only: claude content-filters scans
     books = [resolve_book(tgt)] if tgt != "all" else sorted(d for d in DATA_DIR.glob("[!.]*") if d.is_dir())
@@ -169,11 +179,19 @@ def _drip_loop(tgt, rate):
         if not miss: continue
         _dlog(f"{b.name} start: {len(miss)}/{total} to go, {rate}/h")
         for n in miss:
+            pf = 0   # poison track: page fails while codex is provably alive (Maxwellians p1: 5m hang -> timeout -> looked like quota, livelocked the queue)
             while not (transcribe_page(str(b / "pages" / f"page_{n:04d}.pdf"), str(b / "transcriptions")) or "").strip():
-                fails += 1; _dlog(f"{b.name} p{n} empty ({min(fails,3)}/3)")   # blank pages return non-empty tags, not a failure
-                if fails >= 3:   # quota-out = silent empties (7/11); park, reprobe, self-resume
-                    _dw(state="paused", reason="codex empty x3 (quota?)"); _dlog("PAUSED — reprobe in 30m"); time.sleep(1800)
-                else: time.sleep(60)
+                if _codex_alive():
+                    pf += 1; _dlog(f"{b.name} p{n} failed, codex alive ({pf}/2)")
+                    if pf >= 2:
+                        (b / "transcriptions" / f"page_{n:04d}.txt").write_text("<transcription>[page unreadable — codex failed twice; redo: a book transcribe with --nocache]</transcription>")
+                        _dlog(f"{b.name} p{n} POISON — placeholder, moving on"); break
+                    time.sleep(30)
+                else:
+                    fails += 1; _dlog(f"{b.name} p{n} empty ({min(fails,3)}/3, codex down)")   # blank pages return non-empty tags, not a failure
+                    if fails >= 3:   # quota-out = silent empties (7/11); park, reprobe, self-resume
+                        _dw(state="paused", reason="codex down (quota?)"); _dlog("PAUSED — reprobe in 30m"); time.sleep(1800); _dw(state="running", reason="")
+                    else: time.sleep(60)
             fails = 0; _dw(book=b.name, page=n, total=total, left=len(_dmiss(b)[1]), state="running", rate=rate, reason=""); _dlog(f"{b.name} p{n} ok")
             time.sleep(3600 / rate)
         texts = [(b / "transcriptions" / f"page_{i:04d}.txt").read_text().replace("<transcription>", "").replace("</transcription>", "").strip() for i in range(1, total + 1)]
