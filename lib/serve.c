@@ -968,8 +968,8 @@ static void _handle(int c){
         pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
         if(fp>0)return;signal(SIGCHLD,SIG_DFL);
         char gc[1024];int remote=0;
-        if(strstr(req,"&c=1")){                                 /* camera: v4l2 HW-MJPEG passthrough, raw fallback; nodes as shot.sh — dead node fails fast, live one streams until client leaves */
-            static const char CV[]="for v in /dev/video0 /dev/video1 /dev/video2 /dev/video3;do ffmpeg -loglevel error -f v4l2 -input_format mjpeg -video_size 1280x720 -i $v -c copy -f mjpeg - 2>/dev/null||ffmpeg -loglevel error -f v4l2 -i $v -q:v 6 -f mjpeg - 2>/dev/null;done";
+        if(strstr(req,"&c=1")){                                 /* camera: fuser-wait then EXEC one ffmpeg. exec = no shell parent, so client-gone SIGPIPE(local)/SIGHUP(ssh) kills ffmpeg and frees the device (a for-loop wrapper orphaned ffmpeg holding /dev/video0 for minutes -> next viewer EBUSY -> split-second-then-stop). fuser-wait(<=5s) rides the prior stream's release window so a quick reconnect doesn't hit EBUSY; it's BEFORE exec, so a mid-wait disconnect spawns no ffmpeg to orphan. native MJPG size (ffmpeg picks the cam's best mjpeg mode: 720p30 here / pi400) — no v4l2-ctl (absent on some boxes) and no forced -video_size (720p webcams only advertised 1080p) */
+            static const char CV[]="i=0;while [ $i -lt 25 ];do fuser /dev/video0 >/dev/null 2>&1||break;sleep 0.2;i=$((i+1));done;exec ffmpeg -loglevel error -f v4l2 -input_format mjpeg -i /dev/video0 -c copy -f mjpeg -";
             char pre[600];int cr=_sshpre(dev,pre,600);if(cr<0)_exit(0);
             if(cr)snprintf(gc,sizeof gc,"%s '%s'",pre,CV);else snprintf(gc,sizeof gc,"%s",CV);remote=1;}
         else if(dev[0]&&strcmp(dev,"local")&&strcmp(dev,DEV)){       /* remote device: ssh in, capture to stdout */
