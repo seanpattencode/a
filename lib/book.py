@@ -228,6 +228,11 @@ def cmd_drip(args):
     q = f"  queue {s['qdone']}/{s['qtotal']} pdfs" if "qtotal" in s else ""
     print(f"{s.get('target', '?')}{q}  book={s.get('book', '-')} p{s.get('page', '-')}  left={left}/{s.get('total', '?')}  {rate}/h  [{st}] {s.get('reason', '')}"
           + (f"  eta {left / rate:.1f}h" if isinstance(left, int) and rate else ""))
+    try: mdl = next(l.split("=", 1)[1].strip().strip('"') for l in (Path.home() / ".codex/config.toml").read_text().splitlines() if l.replace(" ", "").startswith("model="))
+    except Exception: mdl = "?"
+    print(f"  engine: codex exec ({mdl}), page pdf->200dpi png->transcribe; claude unused (content-filters scans)")
+    if s.get("state") == "paused": print(f"  next probe ~{time.strftime('%H:%M', time.localtime(s.get('ts', 0) + 1800))}")
+    elif s.get("state") == "running" and rate: print(f"  next page ~{time.strftime('%H:%M', time.localtime(s.get('ts', 0) + int(3600 / rate)))}")
     for l in (DRIP / "drip.log").read_text().splitlines()[-4:] if (DRIP / "drip.log").exists() else []: print(f"  {l}")
 def cmd_sync():
     remote = "a-gdrive"
