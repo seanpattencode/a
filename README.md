@@ -57,14 +57,6 @@ Auth syncs across devices:
 
 Simple code — you can read all of it. Fork it, change it, make it yours. PRs are merged very fast worst case one day.
 
-## Show what matters
-
-A system that helps you succeed must make the numbers that decide success **obvious, accurate, and timely** — logged honestly, displayed where you can't miss them. The web home page (`a serve`) surfaces these first, not buried in a submenu.
-
-**Concrete goal — net worth (step 0 of making money):** the home UI shows total net worth prominently at the top, with how stale it is and a one-line box to update it. It is *not recomputed* — it proxies the single source (the `u` trading system's one net-worth formatter), so the figure on the main page and in `/u` can never disagree. Knowing exactly what you have, as timely as possible, is the precondition for growing it.
-
-**The general principle:** log accurately, and make obvious the key statistics whose *reading* most improves your accomplishing the broader goal — enhancing the wellbeing of all sentient life. Instrumentation is not decoration; the metric you see every day is the one you move. Add the stat that would most change your next decision; show it honestly, staleness and all.
-
 ## Depth
 
 Full framework: [IDEAS.md](IDEAS.md) — explains purpose and philosophy of the project in ranked points.
