@@ -157,6 +157,7 @@ def _codex_alive():   # trivial probe: distinguishes quota-out from a poison pag
         except OSError: pass
 def _drip_loop(tgt, rate):
     os.environ["A_BOOK_CODEX"] = "1"   # codex only: claude content-filters scans
+    os.environ["PATH"] = f"{Path.home()}/.local/bin:" + os.environ.get("PATH", "")   # systemd unit PATH lacks ~/.local/bin: codex was FileNotFound -> instant 'empty', read as quota
     books = [resolve_book(tgt)] if tgt != "all" else sorted(d for d in DATA_DIR.glob("[!.]*") if d.is_dir())
     if tgt == "all" and shutil.which("ebook-convert"):   # free pass first: ebook formats -> txt via calibre; codex only for scans
         _dw(book="(converting ebooks)", page="-", total="-", left="-", state="running", reason="calibre pass before codex")
@@ -213,7 +214,7 @@ def cmd_drip(args):
             subprocess.run(["systemctl", "--user", "disable", "--now", "bookdrip.service"]); _dw(state="stopped"); print("- bookdrip.service disabled"); return
         rate = float(args[3]) if len(args) > 3 else 20.0
         u = Path.home() / ".config/systemd/user/bookdrip.service"; u.parent.mkdir(parents=True, exist_ok=True)
-        u.write_text(f"[Unit]\nDescription=a book drip - paced codex transcription of all books\n[Service]\nExecStart={Path.home()}/.local/bin/a book drip fg all {rate}\nRestart=on-failure\nRestartSec=120\nNice=10\n[Install]\nWantedBy=default.target\n")
+        u.write_text(f"[Unit]\nDescription=a book drip - paced codex transcription of all books\n[Service]\nEnvironment=PATH={Path.home()}/.local/bin:/usr/local/bin:/usr/bin:/bin\nExecStart={Path.home()}/.local/bin/a book drip fg all {rate}\nRestart=on-failure\nRestartSec=120\nNice=10\n[Install]\nWantedBy=default.target\n")
         subprocess.run(["systemctl", "--user", "daemon-reload"]); subprocess.run(["systemctl", "--user", "enable", "--now", "bookdrip.service"])
         print(f"+ bookdrip.service: all books at {rate}/h — survives reboot; status: a book drip; off: a book drip auto off"); return
     if sub in ("start", "fg"):
