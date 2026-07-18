@@ -45,7 +45,8 @@ static void bk_drip(char*o,int n){o[0]=0;char fp[P];snprintf(fp,P,"%s/local/book
     if(!st[0]||!strcmp(st,"stopped"))return;   /* quiet when intentionally off */
     if((!strcmp(st,"running")||!strcmp(st,"paused"))&&(atoi(pid)<2||kill(atoi(pid),0)))strcpy(st,"DEAD");
     char q[28]="";if(qt[0]&&strcmp(qt,"0"))snprintf(q,28," %s/%s",qd,qt);
-    bk_mid(bk,30);snprintf(o,(size_t)n,"  \xc2\xb7 drip %s%s %s p%s",st,q,bk,pg);}
+    char lb[40];if(!strcmp(st,"running"))strcpy(lb,"transcribing");else snprintf(lb,40,"transcribe %s",st);   /* say the thing, not the codename */
+    bk_mid(bk,30);snprintf(o,(size_t)n,"  \xc2\xb7 %s%s %s p%s",lb,q,bk,pg);}
 static int cmd_book(int argc,char**argv){
     if(argc>2||!isatty(0)||!isatty(1))fallback_py("book",argc,argv);
     perf_disarm();init_db();signal(SIGCHLD,SIG_IGN);   /* bk_cloudmv children: no zombies while the pager runs */
@@ -72,7 +73,7 @@ static int cmd_book(int argc,char**argv){
         while(cur<nl&&Lb[cur]<0)cur++;if(cur>=nl){cur=nl-1;while(cur>0&&Lb[cur]<0)cur--;}
         struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);int rows=w.ws_row>10?w.ws_row:24,cols=w.ws_col>20?w.ws_col:80;
         printf("\033[H\033[2J");
-        static const char mn[]="[j/k]move [spc/b]page [s]ort [o]read [c]chat [d]rip [e]archive [/]filter [q]quit";
+        static const char mn[]="[j/k]move [spc/b]page [s]ort [o]read [c]chat [t]ranscribe [e]archive [/]filter [q]quit";
         int mr=((int)sizeof(mn)-1+cols-1)/cols;   /* wrapped menu rows (overflow scrolls row1 off) */
         int ps=rows-1-mr,p0=ps>0?(cur/ps)*ps:0;
         for(int i=p0;i<p0+ps&&i<nl;i++){
@@ -104,11 +105,16 @@ static int cmd_book(int argc,char**argv){
         else if(k==' '&&m){cur+=ps;if(cur>=nl)cur=nl-1;}
         else if(k=='b'&&m){cur-=ps;if(cur<0)cur=0;}
         else if(k=='s'){sm^=1;cur=0;}   /* toggle name <-> author grouping */
-        else if(k=='d'){printf("\033[H\033[2J\033[0m");fflush(stdout);   /* drip info pane: status + log tail + unit; any key returns */
-            char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;echo '--- drip.log ---';tail -n 16 '%s/local/bookdrip/drip.log' 2>/dev/null;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true",AROOT);
+        else if(k=='t'||k=='d'){printf("\033[H\033[2J\033[0m");fflush(stdout);   /* transcribe pane: status + log tail + unit; r=resume-now x=stop */
+            char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;echo '--- log ---';tail -n 16 '%s/local/bookdrip/drip.log' 2>/dev/null;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true",AROOT);
             (void)!system(dc);
-            printf("\n\033[7m any key to return \033[0m");fflush(stdout);
-            char t;(void)!read(0,&t,1);}
+            printf("\n\033[7m [r]esume/probe now  [x]stop  [any]back \033[0m");fflush(stdout);
+            char t=0;(void)!read(0,&t,1);
+            if(t=='r'){char rt[12]="20",fp2[P],rc[B];snprintf(fp2,P,"%s/local/bookdrip/state.json",AROOT);   /* keep the configured rate across resume */
+                size_t l2=0;char*j2=readf(fp2,&l2);if(j2){bk_jget(j2,"rate",rt,12);free(j2);if(!rt[0])strcpy(rt,"20");}
+                snprintf(rc,B,"a book drip auto %s >/dev/null 2>&1;systemctl --user restart bookdrip.service 2>/dev/null;sleep 1",rt);
+                (void)!system(rc);}
+            else if(t=='x')(void)!system("a book drip stop >/dev/null 2>&1");}
         else if(k=='/'){fm=1;ft[0]=0;cur=0;}
         else if((k=='o'||k=='\r'||k=='\n')&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","read",nm[Lb[cur]],0};fallback_py("book",4,av);}
         else if(k=='c'&&m){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J");char*av[]={"a","book","chat",nm[Lb[cur]],0};fallback_py("book",4,av);}
