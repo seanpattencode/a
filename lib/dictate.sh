@@ -2,6 +2,7 @@
 # TDT 0.6b server, CPU ~0.2s/tick, --latency-msec=30 mic, settles recognized words, only the tail moves). F5 again: stop.
 # Model auto-downloads to ~/.cache/a_dictate on first run.
 # Voice commands (say them): "enter" -> newline, "stop" -> stop dictation. a dictate bind: binds F5 (sway), synced.
+# Sessions append to adata/transcripts/"YYYY-MM-DD H-MM AM dictate.txt" (phone-recording naming).
 S=/tmp/a_dictate R=$S.ctl srv=/tmp/a_dictate_srv.py
 if [ "$1" = bind ]; then c=$HOME/.config/sway/config
   grep -q 'F5 exec a dictate' "$c" || echo 'bindsym F5 exec a dictate' >> "$c"
@@ -12,13 +13,14 @@ import numpy as np
 import sherpa_onnx
 D=os.path.expanduser("~/.cache/a_dictate/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8")
 REC=sherpa_onnx.OfflineRecognizer.from_transducer(encoder=D+"/encoder.int8.onnx",decoder=D+"/decoder.int8.onnx",joiner=D+"/joiner.int8.onnx",tokens=D+"/tokens.txt",num_threads=6,model_type="nemo_transducer",debug=False)
-R="/tmp/a_dictate.ctl"; ON="/tmp/a_dictate.on"
-typed_n=0
+R="/tmp/a_dictate.ctl"; ON="/tmp/a_dictate.on"; T=os.path.expanduser("~/a/adata/transcripts")
+typed_n=0; SESS=[]
 def yd(*a): subprocess.run(["ydotool",*a])
 def nfy(m,t): subprocess.run(["notify-send","-t",str(t),"-h","string:x-canonical-private-synchronous:adictate",m])
 def emit(words):  # append-only: type only newly-committed words, never backspace
     global typed_n
     if len(words)>typed_n:
+        SESS.extend(words[typed_n:])
         yd("type","-d","4","-H","4"," ".join(words[typed_n:])+" ")
         typed_n=len(words)
 def tx(buf):
@@ -30,7 +32,7 @@ def worker():
     global typed_n
     p=subprocess.Popen(["parec","--rate=16000","--channels=1","--format=s16le","--latency-msec=30"],stdout=subprocess.PIPE)
     nfy("🎤 dictation ON",0)
-    buf=b""; last=time.time(); prev=[]; committed=[]; voicestop=False
+    buf=b""; last=time.time(); prev=[]; committed=[]; voicestop=False; SESS.clear(); t0=time.localtime()
     while not stop.is_set():
         c=p.stdout.read(4000)
         if c: buf+=c
@@ -43,11 +45,15 @@ def worker():
             if ci is not None:
                 emit(committed[:ci])
                 if norm(committed[ci])=="stop": voicestop=True; break
-                yd("key","-d","4","28:1","28:0"); typed_n=0
+                yd("key","-d","4","28:1","28:0"); SESS.append("\n"); typed_n=0
                 buf=b""; prev=[]; committed=[]; last=time.time(); continue
             emit(committed); last=time.time()
     p.terminate()
     if not voicestop and len(buf)>8000: emit(tx(buf).split())
+    txt=" ".join(SESS).replace(" \n ","\n").strip()
+    if txt:
+        os.makedirs(T,exist_ok=True)
+        open(os.path.join(T,time.strftime("%Y-%m-%d %-I-%M %p",t0)+" dictate.txt"),"a").write(txt+"\n")
     nfy("⏹ dictation OFF",1500)
     try: os.remove(ON)
     except OSError: pass
