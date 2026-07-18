@@ -170,7 +170,7 @@ def _drip_loop(tgt, rate):
         _dlog(f"{b.name} start: {len(miss)}/{total} to go, {rate}/h")
         for n in miss:
             while not (transcribe_page(str(b / "pages" / f"page_{n:04d}.pdf"), str(b / "transcriptions")) or "").strip():
-                fails += 1; _dlog(f"{b.name} p{n} empty ({fails}/3)")   # blank pages return non-empty tags, not a failure
+                fails += 1; _dlog(f"{b.name} p{n} empty ({min(fails,3)}/3)")   # blank pages return non-empty tags, not a failure
                 if fails >= 3:   # quota-out = silent empties (7/11); park, reprobe, self-resume
                     _dw(state="paused", reason="codex empty x3 (quota?)"); _dlog("PAUSED — reprobe in 30m"); time.sleep(1800)
                 else: time.sleep(60)
