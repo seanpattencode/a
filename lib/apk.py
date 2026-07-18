@@ -592,7 +592,6 @@ JF(void,nRender)(JNIEnv*e,jclass c,jintArray arr){(void)c;
  jint*p=(*e)->GetIntArrayElements(e,arr,NULL);int stride=W;
  for(int i=0;i<W*H;i++)p[i]=0xFF000000;
  if(FN.px){
-  int gridh=rows*FN.ch;
   for(int r=0;r<rows;r++)for(int col=0;col<cols;col++){
    Cell cl=G[r*MC+col];
    uint32_t fg=PAL[(cl.at&1)?(cl.fg|8)&15:cl.fg&15],bg=PAL[cl.bg&15];
@@ -610,7 +609,6 @@ JF(void,nRender)(JNIEnv*e,jclass c,jintArray arr){(void)c;
    int tx=ix+(iw-lw)/2,ty=iy+(ih-FN.ch)/2;
    drawstr((uint32_t*)p,stride,&FN,lb,tx,ty,i==selkey?0xFF000000:col);
   }
-  if(gridh<H-(int)(H*0.40f)){/*ok*/}
  }
  (*e)->ReleaseIntArrayElements(e,arr,p,0);dirty=0;}
 
@@ -1532,15 +1530,6 @@ def pick(ds):
     if len(ds)==1:return ds[0]
     for i,d in enumerate(ds):print(f"  {i}: {adb('-s',d,'shell','getprop','ro.product.model').stdout.strip() or d} ({d})")
     return ds[int(input("#: "))]
-CP={0xd03:"a53",0xd05:"a55",0xd0b:"a76",0xd0d:"a77",0xd41:"a78",0xd44:"x1",0xd46:"a510",0xd47:"a710",0xd48:"x2",0xd4d:"a715",0xd4e:"x3",0xd80:"a520",0xd81:"a720",0xd82:"x4"}
-def detect_cpu(serial):
-    best=None
-    for l in adb("shell","cat","/proc/cpuinfo",serial=serial).stdout.splitlines():
-        if "CPU part" in l:
-            c=CP.get(int(l.split(":")[-1].strip(),16))
-            if c:best="cortex-"+c
-    if best:print("cpu:",best)
-    return best
 def shizuku_pair():
     import urllib.request,json,re
     print("Phone steps:\n  1. Settings → Developer Options → Wireless Debugging → ON\n  2. Tap 'Pair device with pairing code' → dialog shows pairing port + 6-digit code\n")
@@ -1597,28 +1586,7 @@ def _rish_install(apk_path,pkg,serial=None):
     print(f"x rish: {(r.stdout or '').strip()} {(r.stderr or '').strip()}")
     return False
 
-def qr_pair():
-    """One-tap wireless debug pairing via QR scan. No code typing."""
-    import secrets,string,re,time
-    if not shutil.which("qrencode"):sys.exit("x install qrencode (apt install qrencode / brew install qrencode)")
-    svc="studio-"+secrets.token_hex(4);pw="".join(secrets.choice(string.ascii_letters+string.digits) for _ in range(12))
-    print("\nPhone: Settings → Developer options → Wireless debugging → Pair device with QR code → scan:\n")
-    S.run(["qrencode","-t","ANSIUTF8","-m","1",f"WIFI:T:ADB;S:{svc};P:{pw};;"])
-    print(f"\nsvc={svc}  waiting up to 90s for scan...")
-    seen=lambda pat:[re.search(r"(\S+):(\d+)",l) for l in S.run(["adb","mdns","services"],capture_output=True,text=True).stdout.splitlines() if pat in l]
-    for _ in range(180):
-        for m in seen(svc) if any(svc in l for l in S.run(["adb","mdns","services"],capture_output=True,text=True).stdout.splitlines()) else []:
-            if not m:continue
-            host,port=m.group(1),m.group(2);print(f"\n→ pair {host}:{port}")
-            p=S.Popen(["adb","pair",f"{host}:{port}"],stdin=S.PIPE,stdout=S.PIPE,stderr=S.STDOUT);o,_=p.communicate(input=(pw+"\n").encode());print(o.decode())
-            if b"Successfully paired" not in o:return
-            for _ in range(30):
-                for m2 in seen("_adb-tls-connect"):
-                    if m2:S.run(["adb","connect",f"{m2.group(1)}:{m2.group(2)}"]);print(f"✓ connected {m2.group(1)}:{m2.group(2)}");return
-                time.sleep(0.5)
-            return
-        time.sleep(0.5)
-    print("x timeout")
+def qr_pair():S.run(["a","adb","qr"])   # ONE QR-pairing implementation: a adb qr (a.c) — this was a drifted duplicate
 
 def _provision(serial,pkg):
     """Push this dev box's gh+rclone creds to the phone so its termux web-UI can sync. adb can't write termux's private home, so we adb-push the files to /data/local/tmp (binary sync — contents never logged, unlike intent extras) and fire --ez prov; only the apk holds termux's RUN_COMMAND grant, so it copies them into ~/.config. Then we wipe the staging copies. Returns provisioned names."""
@@ -1639,6 +1607,12 @@ def _apk_auth(serial):
         serial=ds[0] if len(ds)==1 else pick(ds)
     names=_provision(serial,P)
     print(f"✓ provisioned termux on {serial}: {', '.join(names)}" if names else "! no gh/rclone creds on this dev box to push")
+def _adb_install(apk,pkg,serial):   # install -r -g; on INSTALL_FAILED uninstall + clean install
+    r=adb("install","-r","-g",apk,serial=serial)
+    if "INSTALL_FAILED" in r.stdout+r.stderr:
+        if pkg:adb("uninstall",pkg,serial=serial)
+        r=adb("install","-g",apk,serial=serial)
+    return r
 def _txupdate(serial,pkg):   # pull+rebuild termux a via /api/omni, then restart serve so the new binary is live (a update doesn't reload the running serve); force-stops com.termux. skip: noup
     d=f"adb -s {serial} ";S.run(["sh","-c",d+f"forward tcp:19112 tcp:1112;sleep 3;curl -sm90 localhost:19112/api/omni --data-urlencode q=update;sleep 8;"+d+"shell am force-stop com.termux;"+d+f"shell am start -n {pkg}/.M;"+d+"forward --remove tcp:19112"],capture_output=True);print("→ termux a updated + serve restarted")
 def run():
@@ -1672,9 +1646,7 @@ def run():
         if not os.path.exists(proj+"/gradlew"):sys.exit("x No gradlew in "+proj)
         lp=proj+"/local.properties"
         if not os.path.exists(lp) or SDK not in open(lp).read():open(lp,"w").write(f"sdk.dir={SDK}\n")
-        ga=["./gradlew","assembleDebug"]
-        if cpu:ga.append(f"-Pcpu_target={cpu}")
-        os.chdir(proj);S.run(ga,check=True)
+        os.chdir(proj);S.run(["./gradlew","assembleDebug"],check=True)
         apks=glob.glob(proj+"/**/debug/*.apk",recursive=True)
         if not apks:sys.exit("x No APK")
         apk=apks[0];pkg=None
@@ -1691,19 +1663,15 @@ def run():
         w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC);w(D+"/app/src/main/res/xml/shortcuts.xml",SC);w(D+"/app/src/main/res/values/strings.xml",STR)
         w(D+"/app/src/main/java/com/aios/a/Home.kt",HKT);w(D+"/app/src/main/res/values/styles.xml",TXML)
         w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",MXML);w(D+"/app/src/main/res/xml/acc.xml",ACC)
+        NLIBS=[("native.c",NC,"anative",""),("launcher.c",LC,"launcher","-lm "),("keyboard.c",KC,"keyboard",""),("reader.c",RDR_C,"reader",""),("bubble.c",BUB_C,"bubble","-lm ")]
         if IT:
             sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
-            w(D+"/native.c",NC);so=sf+"/libanative.so"
-            S.run(f"clang -shared {cf} -w -o '{so}' '{D}/native.c'&&patchelf --remove-rpath '{so}'",shell=True,check=True)
-            w(D+"/launcher.c",LC);lso=sf+"/liblauncher.so"
-            S.run(f"clang -shared {cf} -w -lm -o '{lso}' '{D}/launcher.c'&&patchelf --remove-rpath '{lso}'",shell=True,check=True)
-            w(D+"/keyboard.c",KC);kso=sf+"/libkeyboard.so"
-            S.run(f"clang -shared {cf} -w -o '{kso}' '{D}/keyboard.c'&&patchelf --remove-rpath '{kso}'",shell=True,check=True)
-            w(D+"/reader.c",RDR_C);rso=sf+"/libreader.so"
-            S.run(f"clang -shared {cf} -w -o '{rso}' '{D}/reader.c'&&patchelf --remove-rpath '{rso}'",shell=True,check=True)
-            w(D+"/bubble.c",BUB_C);bso=sf+"/libbubble.so"
-            S.run(f"clang -shared {cf} -w -lm -o '{bso}' '{D}/bubble.c'&&patchelf --remove-rpath '{bso}'",shell=True,check=True)
-        else:w(D+"/app/src/main/cpp/native.c",NC);w(D+"/app/src/main/cpp/launcher.c",LC);w(D+"/app/src/main/cpp/keyboard.c",KC);w(D+"/app/src/main/cpp/reader.c",RDR_C);w(D+"/app/src/main/cpp/bubble.c",BUB_C);w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
+            for fn,src,lib,lm in NLIBS:
+                w(D+"/"+fn,src);so=f"{sf}/lib{lib}.so"
+                S.run(f"clang -shared {cf} -w {lm}-o '{so}' '{D}/{fn}'&&patchelf --remove-rpath '{so}'",shell=True,check=True)
+        else:
+            for fn,src,_l,_m in NLIBS:w(D+"/app/src/main/cpp/"+fn,src)
+            w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
         # Stage bundled bins + terminfo source (from a droid/droidtmux output)
         sf=D+"/app/src/main/jniLibs/"+ABI;os.makedirs(sf,exist_ok=True)
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
@@ -1739,10 +1707,7 @@ def run():
         if _rish_install(apk,pkg):print("✓ "+(pkg or os.path.basename(apk))+" (rish)");return
         sa=_self_adb()
         if sa:
-            r=adb("install","-r","-g",apk,serial=sa)
-            if "INSTALL_FAILED" in r.stdout+r.stderr:
-                if pkg:adb("uninstall",pkg,serial=sa)
-                r=adb("install","-g",apk,serial=sa)
+            r=_adb_install(apk,pkg,sa)
             if r.returncode==0:
                 if pkg:adb("shell","am","start","-n",pkg+"/.M",serial=sa)
                 print("✓ "+(pkg or os.path.basename(apk)));return
@@ -1760,10 +1725,7 @@ def run():
             if pkg and up_on:_txupdate(serial,pkg)
             elif not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
             print("✓ "+(pkg or os.path.basename(apk))+" (rish)"+(" + creds: "+", ".join(names) if names else ""));return
-        r=adb("install","-r","-g",apk,serial=serial)
-        if "INSTALL_FAILED" in r.stdout+r.stderr:
-            if pkg:adb("uninstall",pkg,serial=serial)
-            r=adb("install","-g",apk,serial=serial)
+        r=_adb_install(apk,pkg,serial)
         if r.returncode:print(r.stderr);sys.exit(1)
         names=_provision(serial,pkg) if auth_on else []
         if pkg and up_on:_txupdate(serial,pkg)

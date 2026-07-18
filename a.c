@@ -630,8 +630,9 @@ static int cmd_adb(int c,char**v){
       "command -v qrencode>/dev/null||{ echo 'x need qrencode (apt install qrencode)';exit 1; };"
       "command -v avahi-browse>/dev/null||{ echo 'x need avahi-browse (apt install avahi-utils)';exit 1; };"
       "N=ADB_$(od -An -tx1 -N4 /dev/urandom|tr -d ' \\n');P=$(od -An -tx1 -N6 /dev/urandom|tr -d ' \\n');"
-      "printf 'WIFI:T:ADB;S:%s;P:%s;;' \"$N\" \"$P\"|qrencode -t ANSIUTF8;"
       "echo '» phone: Developer options → Wireless debugging → Pair device with QR code';"
+      "printf 'WIFI:T:ADB;S:%s;P:%s;;' \"$N\" \"$P\"|qrencode -t ANSIUTF8;"
+      "echo \"  pairing secret: $P — NOT a wifi password (a camera app misreads this QR as a wifi network; scan it only from the pairing screen)\";"
       "F=$(mktemp);(timeout 95 avahi-browse -rp _adb-tls-pairing._tcp >\"$F\" 2>/dev/null &);"
       "printf '» waiting for scan';for i in $(seq 90);do L=$(awk -F';' '/^=/&&$3==\"IPv4\"{print $8\";\"$9;exit}' \"$F\");[ -n \"$L\" ]&&break;printf .;sleep 1;done;echo;"
       "rm -f \"$F\";[ -z \"$L\" ]&&{ echo 'x no pairing service in 90s — QR screen open? same wifi?';exit 1; };"
@@ -648,7 +649,7 @@ static int cmd_adb(int c,char**v){
           "echo \"+ $n serial=${u:-$s} wireless=${w:-unknown} (rename file to match ssh name if it differs)\";done;"
           "flock /tmp/.a_git.lock sh -c 'cd %s&&git add adb&&git commit -qm \"adb reg\" -- adb' 2>/dev/null;:",SROOT,SROOT);
         return system(sc);}
-    execlp("adb","adb","devices","-l",(char*)0);return 1;
+    {int r=system("adb devices -l");printf("\033[90m  a adb qr(pair wifi-debug) reg setup ssh a|cmd <..>\033[0m\n");return r;}
 }
 static int cmd_run_once(int c,char**v){
     if(c<3){puts("Usage: a once [-t secs] [claude flags] prompt words...");return 1;}

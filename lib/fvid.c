@@ -3,11 +3,10 @@
    Newest-frame-wins: per-client TIOCOUTQ backlog check — laggy client skips frames, never stalls others.
    Every frame part carries X-TS (capture epoch µs) + X-Seq → client can compute frame age live.
 
-   build:  wayland-scanner client-header wlr-screencopy-unstable-v1.xml wlr-screencopy.h
-           wayland-scanner private-code  wlr-screencopy-unstable-v1.xml wlr-screencopy.c
-           cc -O2 -w fvid.c wlr-screencopy.c -lwayland-client -lturbojpeg -o fvid
-   run:    ./fvid -s [-o DP-1] [-p 9333] [-q 45] [-d 2] [-f 60]     screen mode
-           ./fvid -c /dev/video0 [-p 9333] [-w 1280] [-h 720]       camera mode (HW MJPEG passthrough)
+   build:  cc -B/usr/bin -O2 -w fvid.c ../adata/git/my/fvid/fvid-screencopy.c -lwayland-client -lturbojpeg -o /tmp/fvid   (binary gitignored, never tracked)
+           glue pre-generated in adata/git/my/fvid (protocol frozen; regen rarely: wayland-scanner client-header|private-code fvid-screencopy.xml)
+   run:    /tmp/fvid -s [-o DP-1] [-p 9333] [-q 45] [-d 2] [-f 60]     screen mode
+           /tmp/fvid -c /dev/video0 [-p 9333] [-w 1280] [-h 720]       camera mode (HW MJPEG passthrough)
 */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -29,7 +28,7 @@
 #include <linux/videodev2.h>
 #include <turbojpeg.h>
 #include <wayland-client.h>
-#include "fvid-screencopy.h"
+#include "../adata/git/my/fvid/fvid-screencopy.h"
 
 /* ---------- tiny http mjpeg fanout ---------- */
 #define MAXC 8

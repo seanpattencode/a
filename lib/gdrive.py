@@ -1,6 +1,6 @@
 """aio gdrive"""
 import sys,os,subprocess as sp,json
-from _common import cloud_login,cloud_logout,cloud_sync,cloud_status,_configured_remotes,RCLONE_BACKUP_PATH,DATA_DIR,SYNC_ROOT,DEVICE_ID,alog,get_rclone
+from _common import cloud_login,cloud_logout,cloud_sync,_configured_remotes,RCLONE_BACKUP_PATH,DATA_DIR,SYNC_ROOT,DEVICE_ID,alog,get_rclone
 from sync import cloud_sync as cloud_sync_tar
 _AF=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),'adata','git','gdrive_accounts.txt')
 def _accts():

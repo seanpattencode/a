@@ -15,7 +15,7 @@ static const char *HELP_FULL =
     "NOTES   a n \"text\"  a task  a flow\n"
     "REMOTE  a ssh [<#>]  a run <#> \"task\"\n"
     "CODE    a cat [1|3]  (3=100k index)\n"
-    "SYSTEM  a ls/kill/attach  a hub  a config/sync/update/perf";
+    "SYSTEM  a ls/kill  a hub  a config/sync/update/perf";
 
 static void list_all(int cache, int quiet) {
     load_proj(); load_apps();

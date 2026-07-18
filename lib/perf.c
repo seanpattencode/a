@@ -3,8 +3,8 @@ static const char *BENCH_CMDS[] = {
     "move","prompt","remove","repo","send","set","setup",
     "uninstall","watch",/* "x" kills tmux server, destroys active dev sessions */
     "e","kill","revert","deps","hub",
-    "jobs","mono","ssh","work","ask","login","gdrive","email","ui","attach",
-    "cleanup","run","pull","diff","all","push","tree","review","log","note",
+    "jobs","mono","ssh","work","ask","login","gdrive","email","ui",
+    "run","pull","diff","all","push","tree","review","log","note",
     "sync","scan","update","install",NULL
 };
 
