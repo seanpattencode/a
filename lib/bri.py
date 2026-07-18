@@ -360,6 +360,7 @@ def client(args):
     import os
     to = args[0][1:] if args and args[0].startswith('@') else ''   # @firefox / @chrome / @all / @firefox/145 — target a browser (CLI default: firefox)
     if to: args = args[1:]
+    to_exp = bool(to or os.environ.get('BRI_TO'))   # explicit target — read-only listings default to all browsers instead
     to = to or os.environ.get('BRI_TO') or 'firefox'
     a = args[0] if args else ''
     if a == 'cdp':
@@ -386,11 +387,13 @@ def client(args):
                  if host else 'if(!document.hasFocus())return null;')   # no host → the focused tab
         code = f'(()=>{{if(window.top!==window)return null;{guard}return {prop};}})()'
         best = ''   # many tabs reply (most null); the target tab's innerText is the longest
-        for r in _send({'action': 'eval', 'code': code}, to):
+        rs = _send({'action': 'eval', 'code': code}, to)
+        for r in rs:
             v = r.get('value')
             if isinstance(v, str) and len(v) > len(best): best = v
         if best: sys.stdout.write(best + '\n')
-        else: sys.stderr.write(f'x no text — is the {host or "focused"} tab open, logged in, and active? (discarded tabs read blank until clicked)\n'); sys.exit(1)
+        else: sys.stderr.write(f'x no text — is the {host or "focused"} tab open, logged in, and active? (discarded tabs read blank until clicked)'
+                               f' [target={to}; answered: {", ".join(sorted({r["br"] for r in rs if r.get("br")})) or "none"} — wrong browser? @chrome/@all]\n'); sys.exit(1)
         return
     if a == 'links':  # result links of tabs whose URL has <match>: SERP redirects unwrapped, engine chrome dropped, deduped
         if len(args) < 2: sys.stderr.write('usage: a bri links <url-substring> [--raw]\n'); sys.exit(1)
@@ -400,9 +403,12 @@ def client(args):
         urls = [w for w in args[1:] if w.startswith('http')] or \
                [l.split()[0] for l in sys.stdin if l.split() and l.split()[0].startswith('http')]
         _openall(urls, to); return
-    if a == 'tabs':  # id/status/url/title of every tab — background-side, so it SEES error/discarded tabs text+grab can't
-        for r in _send({'action': 'tabs', 'match': args[1] if len(args) > 1 else ''}, to):
-            for i, st, u, ti in (r.get('value') or []): print(f'{i:>4} {st:<10} {u}  [{ti}]')
+    if a == 'tabs':  # id/status/url/title of every tab, BOTH browsers unless @targeted, rows tagged — background-side, so it SEES error/discarded tabs text+grab can't
+        rs = _send({'action': 'tabs', 'match': args[1] if len(args) > 1 else ''}, to if to_exp else 'all')
+        n = 0
+        for r in rs:
+            for i, st, u, ti in (r.get('value') or []): n += 1; print(f'{r.get("br","?").split("/")[0]:<8}{i:>4} {st:<10} {u}  [{ti}]')
+        if not n: sys.stderr.write(f'x no tab rows [answered: {", ".join(sorted({r["br"] for r in rs if r.get("br")})) or "none"} — browser ext missing the tabs action? a briext + browser restart deploys it]\n'); sys.exit(1)
         return
     if a == 'grabs':  # full innerText of EVERY tab matching <match> (grab = one best tab), ==== <url> headers
         if len(args) < 2: sys.stderr.write('usage: a bri grabs <url-substring>\n'); sys.exit(1)

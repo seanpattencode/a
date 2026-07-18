@@ -1422,7 +1422,7 @@ CH={
 "manifest.json": r'''{
   "manifest_version": 3,
   "name": "bri-chrome",
-  "version": "1.7",
+  "version": "1.8",
   "description": "Chrome extension: a-bridge automation (offscreen-doc long-poll :1234, focus-immune; commands run via chrome.scripting, no toggle) + instant-preload (hover prerender) + pageflip.",
   "permissions": ["storage", "scripting", "alarms", "offscreen"],
   "host_permissions": ["<all_urls>"],
@@ -1499,6 +1499,7 @@ async function execCmd(cmd){
   try{
     if(cmd.action==='screenshot')return post({id,src:'sw',ok:true,value:await chrome.tabs.captureVisibleTab({format:cmd.format||'png'})});
     if(cmd.action==='open')return post({id,src:'sw',ok:true,value:await openTab(cmd.url,cmd.bg)});
+    if(cmd.action==='tabs')return post({id,src:'sw',ok:true,value:(await chrome.tabs.query({})).filter(t=>!cmd.match||(t.url||'').includes(cmd.match)).map(t=>[t.id,t.discarded?'discarded':t.status,(t.url||'').slice(0,200),(t.title||'').slice(0,60)])});
   }catch(e){return post({id,src:'sw',error:String(e)});}
   // target: tabs whose url contains cmd.host, else the active tab of each window (never a hidden background tab)
   let tabs=(await chrome.tabs.query({})).filter(t=>t.url&&/^https?:/.test(t.url));
