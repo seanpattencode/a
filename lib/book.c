@@ -230,6 +230,8 @@ def _drip_loop(tgt, rate):
     _dw(state="done"); _dlog("queue done")
 def cmd_drip(args):
     sub = args[2] if len(args) > 2 else "status"
+    if sub in ("attach", "watch"):   # live stream; Ctrl-C detaches (tail only — never the unit)
+        os.execvp("tail", ["tail", "-n", "24", "-f", str(DRIP / "drip.log")])
     if sub == "engines":
         if len(args) > 3:
             want = [x.strip() for x in args[3].split(",") if x.strip()]
@@ -789,8 +791,10 @@ static int cmd_book(int argc,char**argv){
         else if(k=='t'||k=='d'){printf("\033[H\033[2J\033[0m");fflush(stdout);   /* transcribe pane: status + log tail + unit; r=resume-now x=stop */
             char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;echo '--- log ---';tail -n 16 '%s/local/bookdrip/drip.log' 2>/dev/null;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true",AROOT);
             (void)!system(dc);
-            printf("\n\033[7m [r]esume/probe now  [x]stop  [any]back \033[0m");fflush(stdout);
+            printf("\n\033[7m [a]ttach live  [r]esume/probe now  [x]stop  [any]back \033[0m");fflush(stdout);
             char t=0;(void)!read(0,&t,1);
+            if(t=='a'){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J-- live transcription log, Ctrl-C detaches --\n");fflush(stdout);
+                char ac[P];snprintf(ac,P,"%s/local/bookdrip/drip.log",AROOT);execlp("tail","tail","-n","24","-f",ac,(char*)0);}
             if(t=='r'){char rt[12]="20",fp2[P],rc[B];snprintf(fp2,P,"%s/local/bookdrip/state.json",AROOT);   /* keep the configured rate across resume */
                 size_t l2=0;char*j2=readf(fp2,&l2);if(j2){bk_jget(j2,"rate",rt,12);free(j2);if(!rt[0])strcpy(rt,"20");}
                 snprintf(rc,B,"a book drip auto %s >/dev/null 2>&1;systemctl --user restart bookdrip.service 2>/dev/null;sleep 1",rt);
