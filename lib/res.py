@@ -2,7 +2,7 @@
 """a res — resume agents: interactive pick, or save/restore the OPEN tmux windows across a reboot.
 (same command as `a resume` and `a snap`)
 
-  a res                                  type-to-search convo text live; ↵ resumes (codex/gemini/grok rows = native resume)
+  a res                                  [h] revive all ≤hrs · [c/g/k] native · [/] search · ↑↓↵ open
   a res save | show | restore [--dry]    snapshot / restore the tmux session across a reboot
 
 Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini/grok windows resume their session
@@ -267,11 +267,10 @@ def _claunch(sid, cwd):                               # resume one claude transc
     subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(cwd)}", "-c", cwd, RESUME["claude"] % sid])
 
 
-def pick():                                           # type-to-search resume picker: every key filters USER text live, ↵ opens
-    if not os.environ.get("TMUX"): print("x need tmux"); return
-    import termios, tty, select
-    t1 = time.perf_counter_ns(); rows = []              # [mt, sid, cwd, turns, user-text] — his words, not tool blobs
-    for f in sorted(glob.glob(f"{PROJ}/*/*.jsonl"), key=os.path.getmtime, reverse=True)[:150]:
+def _load(cut=0):                                     # rows [mt, sid, cwd, turns, text]; cut=mtime floor else newest 150
+    rows = []
+    for f in sorted(glob.glob(f"{PROJ}/*/*.jsonl"), key=os.path.getmtime, reverse=True)[:None if cut else 150]:
+        if cut and os.path.getmtime(f) < cut: break
         try: txt = open(f, errors="ignore").read()
         except OSError: continue
         ms = [x for x in re.findall(r'"role":"user","content":"([^"]{2,400})', txt)
@@ -280,41 +279,67 @@ def pick():                                           # type-to-search resume pi
         if len(ms) > 1 and c and os.path.isdir(c[1]):
             rows.append([os.path.getmtime(f), os.path.basename(f)[:-6], c[1], len(ms),
                          "\n".join(ms).replace('\\"', '"').replace("\\n", " ")])
+    return rows
+
+
+
+
+def pick():                                           # resume picker: menu keys by default; [/]=search, [h]=revive ≤hrs
+    if not os.environ.get("TMUX"): print("x need tmux"); return
+    import termios, tty, select
+    t1 = time.perf_counter_ns(); rows = _load()       # his words, not tool blobs
     if not sys.stdin.isatty():                        # scripted use: print once, never hang
         for r in rows[:20]: print(f"{_age(time.time()-r[0]):>4} {r[3]:3d}t {os.path.basename(r[2]):<12} {_snip(r[4], '', 58)}")
         return
     corp = [(r, (os.path.basename(r[2]) + "\n" + r[4]).lower()) for r in rows]
-    NAT = [("codex", "codex resume; exec bash"), ("gemini", RESUME["gemini"]),
-           ("grok", "grok --always-approve --resume; exec bash")]
-    q, sel, act = "", 0, None
+    NAT = {"c": ("codex", "codex resume; exec bash"), "g": ("gemini", RESUME["gemini"]),
+           "k": ("grok", "grok --always-approve --resume; exec bash")}
+    q, sel, act, mode = "", 0, None, ""
     old = termios.tcgetattr(0)
     sys.stdout.write("\x1b[?1049h\x1b[?25l")
     try:
         tty.setcbreak(0)
         while True:
-            ql = q.lower()                            # rank: most user-text hits first, then newest; best sits AT the menu
-            m = sorted(((r, l) for r, l in corp if ql in l), key=lambda x: (-x[1].count(ql), -x[0][0])) if q else corp
+            ql = q.lower() if mode == "/" else ""     # rank: most user-text hits first, then newest; best sits AT the menu
+            m = sorted(((r, l) for r, l in corp if ql in l), key=lambda x: (-x[1].count(ql), -x[0][0])) if ql else corp
             W, H = os.get_terminal_size()
-            items = [x for x in NAT if ql in x[0]] + [r for r, _l in reversed(m[:H - 5])]
+            items = [r for r, _l in reversed(m[:H - 5])]
             sel = max(0, min(sel, len(items) - 1))
             o = "\x1b[H" + "\x1b[K\n" * (H - 1 - len(items))
             for i, it in enumerate(items):
-                ln = f"   {it[0]} — native resume" if isinstance(it, tuple) \
-                    else f" {_age(time.time()-it[0]):>4} {it[3]:>4}t {os.path.basename(it[2]):<10.10} {_snip(it[4], ql, W-24)}"
+                ln = f" {_age(time.time()-it[0]):>4} {it[3]:>4}t {os.path.basename(it[2]):<10.10} {_snip(it[4], ql, W-24)}"
                 o += ("\x1b[7m" if i == len(items) - 1 - sel else "") + ln + "\x1b[0m\x1b[K\n"
-            o += f"/{q}▌ {len(m)}/{len(rows)} · type=search ↑↓ ↵=open esc=quit · {(time.perf_counter_ns()-t1)/1e6:.4f}ms"[:W] + "\x1b[K"
+            hh = float(v) if (v := q.rstrip("h")).replace(".", "", 1).isdigit() else 0
+            st = f"hrs: {q}▌ [ revive ALL {sum(r[0] >= time.time() - hh * 3600 for r in rows)} ≤{hh:g}h ] ↵=go esc=back" if mode == "h" \
+                else f"/{q}▌ {len(m)}/{len(rows)} ↵=open esc=back" if mode == "/" \
+                else "[/]search  [h]revive ≤hrs  [c]odex  [g]emini  [k]grok  ↑↓↵ open  [q]uit"
+            o += (st + f" · {(time.perf_counter_ns()-t1)/1e6:.4f}ms")[:W] + "\x1b[K"
             sys.stdout.write(o); sys.stdout.flush()
             b = os.read(0, 1); t1 = time.perf_counter_ns()
             if b in b"\x03\x04": return               # b""=EOF exits
             if b == b"\x1b":
-                if not select.select([0], [], [], 0.02)[0]: return
+                if not select.select([0], [], [], 0.02)[0]:
+                    if mode: mode = q = ""; continue
+                    return
                 b2 = os.read(0, 2); sel += b2.endswith(b"A") - b2.endswith(b"B")
-            elif b in b"\r\n" and items: act = items[len(items) - 1 - sel]; break
+            elif b in b"\r\n":
+                if mode == "h":
+                    if hh: act = ("hrs", hh); break
+                elif items: act = items[len(items) - 1 - sel]; break
             elif b in b"\x7f\x08": q, sel = q[:-1], 0
+            elif not mode:
+                if b == b"q": return
+                if (a := NAT.get(b.decode("utf-8", "ignore"))): act = a; break
+                if b in b"/h": mode, q = b.decode(), ""
+                elif b.isdigit(): mode, q = "h", b.decode()
             elif b >= b" ": q, sel = q + b.decode("utf-8", "ignore"), 0
     finally:
         termios.tcsetattr(0, termios.TCSADRAIN, old); sys.stdout.write("\x1b[?1049l\x1b[?25h"); sys.stdout.flush()
     if isinstance(act, list): _claunch(act[1], act[2])
+    elif act and act[0] == "hrs":
+        rs = _load(time.time() - act[1] * 3600)
+        for r in rs: _claunch(r[1], r[2])
+        print(f"+ revived {len(rs)} ≤{act[1]:g}h")
     elif act: subprocess.run(["tmux", "new-window", "-n", f"r-{act[0]}", act[1]])
 
 
