@@ -1,6 +1,6 @@
 /* data */
 static const char *dprompt(void) {
-    static char b[B*16]; const char*a=cfget("prompt");if(!*a)a="default";  /* B*4 truncated default.txt past ~16KB (cut the greats list mid-name); 64KB headroom */
+    static char b[B*32]; const char*a=cfget("prompt");if(!*a)a="default";  /* SILENTLY truncates default.txt past sizeof(b) — bit twice (16KB cut greats mid-name; 64KB cut tail sections at file 67KB, 2026-07): keep ~2x file-size headroom */
     char p[P]; snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,a);
     char *d=readf(p,NULL); b[0]=0; if(d){snprintf(b,sizeof(b),"%s ",d);free(d);} return b;
 }
@@ -31,8 +31,8 @@ static void init_db(void) {
     char d[P]; snprintf(d,P,"%s/workspace",SROOT); mkdirp(d);
     char p[P]; snprintf(p, P, "%s/workspace/config.txt", SROOT);
     if (!fexists(p)) {
-        char edp[B*4];esc_nl(dprompt(),edp,B*4);FILE*wf=fopen(p,"w");
-        if(wf){fprintf(wf,"claude_prompt: %1$s\ncodex_prompt: %1$s\ngemini_prompt: %1$s\ndefault_agent: c\nworktrees_dir: %2$s/worktrees\nclaude_prefix: Ultrathink. \ntmux_conf: y\n",edp,AROOT);fclose(wf);}
+        FILE*wf=fopen(p,"w");
+        if(wf){fprintf(wf,"default_agent: c\nworktrees_dir: %s/worktrees\nclaude_prefix: Ultrathink. \ntmux_conf: y\n",AROOT);fclose(wf);}
     }
     snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
     if (!fexists(p)) {
