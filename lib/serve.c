@@ -1062,11 +1062,6 @@ static void _handle(int c){
 static int cmd_cam(int c,char**v){(void)c;(void)v;AB;perf_disarm();
     (void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/cam");puts("✓ localhost:1111/cam");return 0;}
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
-    mkfifo("/tmp/a_dash.fifo",0644);(void)!open("/tmp/a_dash.fifo",O_RDWR|O_NONBLOCK);
-    unlink("/tmp/a_extreload.fifo");mkfifo("/tmp/a_extreload.fifo",0644); /* ext hot-reload channel; left unopened so writes only land when a worker is reading */
-    /* run-shell in a hook forks sh inside the tmux server = +0.55ms per window switch (measured); wait-for -S is ~us, bridge proc converts to fifo poke */
-    (void)!system("for h in after-new-window after-rename-window after-kill-pane session-window-changed;do tmux set-hook -g $h 'wait-for -S a_dash' 2>/dev/null;done;"
-        "p=/tmp/.a_dashbr.pid;kill -0 $(cat $p 2>/dev/null) 2>/dev/null||{ (while :;do tmux wait-for a_dash 2>/dev/null||sleep 1;echo x>/tmp/a_dash.fifo 2>&-;done)& echo $!>$p; }");
     {const char*op=getenv("PATH")?:"";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
     if(argc>3){if(!realpath(argv[3],_sdir)||!dexists(_sdir)){printf("x no dir %s\n",argv[3]);return 1;}
@@ -1077,8 +1072,17 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     int fd=socket(AF_INET,SOCK_STREAM,0);
     int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,4);
     struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port),.sin_addr={htonl(INADDR_ANY)}};
-    if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");free(_shtml);return 1;}
+    if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");free(_shtml);return 1;} /* lost the port race -> exit BEFORE any tmux touch, so N concurrent invokes can't stampede the dashboard bridge */
     listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
+    /* dashboard bridge — only the serve that actually owns the port reaches here. hooks are idempotent; the bridge is a flock singleton (was a racy `kill -0 $(cat pidfile)` TOCTOU: N serves each saw "none" and spawned N bridges, each a tight `tmux wait-for` loop that under window churn floods the server with client connects and could kill it). the 50ms coalesce caps tmux client spawns at ~20/s no matter how fast the hooks fire. flock fd auto-releases on death (no stale-pid wedge); pidfile path kept as a fallback where flock is absent (e.g. mac). */
+    mkfifo("/tmp/a_dash.fifo",0644);(void)!open("/tmp/a_dash.fifo",O_RDWR|O_NONBLOCK);
+    unlink("/tmp/a_extreload.fifo");mkfifo("/tmp/a_extreload.fifo",0644); /* ext hot-reload channel; left unopened so writes only land when a worker is reading */
+    (void)!system("for h in after-new-window after-rename-window after-kill-pane session-window-changed;do tmux set-hook -g $h 'wait-for -S a_dash' 2>/dev/null;done; "
+        "if command -v flock >/dev/null 2>&1; then "
+        "(flock -n 9||exit 0;while :;do tmux wait-for a_dash 2>/dev/null||sleep 1;echo x>/tmp/a_dash.fifo 2>&-;sleep 0.05;done) 9>/tmp/.a_dashbr.lock & "
+        "else "
+        "p=/tmp/.a_dashbr.pid;kill -0 $(cat $p 2>/dev/null) 2>/dev/null||{ (while :;do tmux wait-for a_dash 2>/dev/null||sleep 1;echo x>/tmp/a_dash.fifo 2>&-;sleep 0.05;done)& echo $!>$p;}; "
+        "fi");
     for(;;){int c=accept(fd,0,0);if(c<0)continue;
         struct timeval tv={2,0};setsockopt(c,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
         if(!fork()){close(fd);
