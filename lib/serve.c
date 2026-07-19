@@ -968,10 +968,10 @@ static void _handle(int c){
         pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
         if(fp>0)return;signal(SIGCHLD,SIG_DFL);
         char gc[1024];int remote=0;
-        if(strstr(req,"&c=1")){                                 /* camera: fuser-wait then EXEC one ffmpeg. exec = no shell parent, so client-gone SIGPIPE(local)/SIGHUP(ssh) kills ffmpeg and frees the device (a for-loop wrapper orphaned ffmpeg holding /dev/video0 for minutes -> next viewer EBUSY -> split-second-then-stop). fuser-wait(<=5s) rides the prior stream's release window so a quick reconnect doesn't hit EBUSY; it's BEFORE exec, so a mid-wait disconnect spawns no ffmpeg to orphan. native MJPG size (ffmpeg picks the cam's best mjpeg mode: 720p30 here / pi400) — no v4l2-ctl (absent on some boxes) and no forced -video_size (720p webcams only advertised 1080p) */
+        if(strstr(req,"&c=1")){                                 /* camera: EXEC one ffmpeg, native MJPG passthrough. ssh doesn't reliably reap the remote ffmpeg on client disconnect (it orphans holding /dev/video0 -> next viewer EBUSY -> "1s then stops"), so each REMOTE view reaps stale ffmpeg first (pkill -x, safe: matches only procs named ffmpeg, not this shell); then fuser-wait rides the release window. Local ffmpeg DOES die on SIGPIPE so it needs neither (and a local pkill would nuke unrelated audio ffmpeg). native size — no v4l2-ctl (absent on some boxes) / no forced -video_size (720p webcams only advertised 1080p) */
             static const char CV[]="i=0;while [ $i -lt 25 ];do fuser /dev/video0 >/dev/null 2>&1||break;sleep 0.2;i=$((i+1));done;exec ffmpeg -loglevel error -f v4l2 -input_format mjpeg -i /dev/video0 -c copy -f mjpeg -";
             char pre[600];int cr=_sshpre(dev,pre,600);if(cr<0)_exit(0);
-            if(cr)snprintf(gc,sizeof gc,"%s '%s'",pre,CV);else snprintf(gc,sizeof gc,"%s",CV);remote=1;}
+            if(cr)snprintf(gc,sizeof gc,"%s 'pkill -x ffmpeg 2>/dev/null;%s'",pre,CV);else snprintf(gc,sizeof gc,"%s",CV);remote=1;}
         else if(dev[0]&&strcmp(dev,"local")&&strcmp(dev,DEV)){       /* remote device: ssh in, capture to stdout */
             char pre[600];if(_sshpre(dev,pre,600)<1)_exit(0);
             char ro[64]="";                     /* remote output: &o= wins else auto-pick first (else grim grabs the whole composite) */
@@ -999,12 +999,13 @@ static void _handle(int c){
         while(buf&&(r=fread(tb,1,sizeof tb,g))>0){
             if(len+r>cap){cap=len+r+(1<<20);unsigned char*nb=realloc(buf,cap);if(!nb)break;buf=nb;}
             memcpy(buf+len,tb,r);len+=r;
-            for(size_t e=sc;e+1<len;e++)if(buf[e]==0xff&&buf[e+1]==0xd9){       /* FFD9=EOI: one complete frame */
-                size_t fl=e+2;char hd[96];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:image/jpeg\r\nContent-Length:%zu\r\n\r\n",fl);
-                if(write(c,hd,(size_t)hl)<0||write(c,buf,fl)<0||write(c,"\r\n",2)<0)_exit(0);   /* client gone -> exit -> SIGPIPE ends the pipeline (||break) */
-                if(++fn==1||fn%15==0){struct timeval w;gettimeofday(&w,NULL);double el=(double)(w.tv_sec-t0.tv_sec)+(w.tv_usec-t0.tv_usec)/1e6;
-                    FILE*lf=fopen(lg,"a");if(lf){fprintf(lf,"stream %s/%s %df %.1ffps %zuKB\n",dev[0]?dev:"local",out[0]?out:"all",fn,el>0?fn/el:0,fl/1024);fclose(lf);}}
-                memmove(buf,buf+fl,len-fl);len-=fl;e=(size_t)-1;sc=0;}
+            for(size_t e=sc;e+1<len;e++)if(buf[e]==0xff&&buf[e+1]==0xd9){       /* FFD9=EOI */
+                size_t s=0;while(s+1<e&&!(buf[s]==0xff&&buf[s+1]==0xd8))s++;    /* anchor the part on SOI: webcam -c copy pads a 00 between frames, and a part not starting FFD8 desyncs strict JPEG/multipart parsers (froze the browser mid-stream) */
+                if(buf[s]==0xff&&buf[s+1]==0xd8){size_t fl=e+2-s;char hd[96];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:image/jpeg\r\nContent-Length:%zu\r\n\r\n",fl);
+                    if(write(c,hd,(size_t)hl)<0||write(c,buf+s,fl)<0||write(c,"\r\n",2)<0)_exit(0);   /* client gone -> exit -> SIGPIPE ends the pipeline */
+                    if(++fn==1||fn%15==0){struct timeval w;gettimeofday(&w,NULL);double el=(double)(w.tv_sec-t0.tv_sec)+(w.tv_usec-t0.tv_usec)/1e6;
+                        FILE*lf=fopen(lg,"a");if(lf){fprintf(lf,"stream %s/%s %df %.1ffps %zuKB\n",dev[0]?dev:"local",out[0]?out:"all",fn,el>0?fn/el:0,fl/1024);fclose(lf);}}}
+                memmove(buf,buf+e+2,len-e-2);len-=e+2;e=(size_t)-1;sc=0;}
             sc=len>1?len-1:0;}
         close(c);_exit(0);}
     if(!strncmp(req,"GET /stream",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
