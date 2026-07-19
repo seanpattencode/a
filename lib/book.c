@@ -205,6 +205,9 @@ def _drip_loop(tgt, rate):
         for n in miss:
             pf = 0   # poison track: page fails while the PRIMARY engine is provably alive (Maxwellians p1: 5m hang -> timeout -> looked like quota, livelocked the queue)
             pdf = b / "pages" / f"page_{n:04d}.pdf"
+            if not pdf.is_file():   # split skipped a corrupt page object — engines would strike a ghost (OOTP p1); pdftoppm -f N renders what PyPDF2 can't
+                (b / "transcriptions" / f"page_{n:04d}.txt").write_text("<transcription>[source page missing from split — render: pdftoppm -f N -l N source.pdf, then transcribe]</transcription>")
+                _dlog(f"{b.name} p{n} no split pdf — placeholder"); continue
             while True:
                 used = next((e for e in engines if (_eng_page(e, pdf, b / "transcriptions") or "").strip()), None)
                 if used:
