@@ -49,7 +49,7 @@ static int _notes_build(char*h,int cap,const char*kind){   /* kind = "notes" or 
         FILE*f=fopen(fp,"r");if(!f)continue;char ln[4096];int got=0;
         while(fgets(ln,4096,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
             const char*u=strrchr(names[i],'_');char hu[48]="";if(u){char ts[16];snprintf(ts,16,"%.15s",u+1);ts_human(ts,hu,48);}
-            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"%s('%s',this)\" class=nx>x</button><span style=\"color:#789;display:inline-block;width:104px\">%s</span><span style=\"flex:1\">%s</span><a href=\"/doc?f=%s/%s\" style=\"color:#789;margin-left:8px;text-decoration:none\">edit</a></div>",arc,names[i],hu,ln+6,kind,names[i]);got=1;break;}}
+            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"%s('%s',this)\" class=nx>x</button><span style=\"color:#888;display:inline-block;width:104px\">%s</span><span style=\"flex:1\">%s</span><a href=\"/doc?f=%s/%s\" style=\"color:#888;margin-left:8px;text-decoration:none\">edit</a></div>",arc,names[i],hu,ln+6,kind,names[i]);got=1;break;}}
         fclose(f);shown+=got;}free(names);return hl;
 }
 static int _tasks_build(char*h,int cap,const char*sort){
@@ -81,14 +81,14 @@ static int _tasks_build(char*h,int cap,const char*sort){
     for(int i=1;i<nr;i++){typeof(rows[0]) k=rows[i];int j=i-1;const char*kk=k.dl[0]?k.dl:"~";
         while(j>=0){int bf=md==1?strcmp(k.name,rows[j].name)>0:md==2?strcmp(kk,rows[j].dl[0]?rows[j].dl:"~")<0:strcmp(rows[j].pri,k.pri)>0;
             if(!bf)break;rows[j+1]=rows[j];j--;}rows[j+1]=k;}
-    int hl=snprintf(h,(size_t)cap,SYNC_HTML "<div class=ni style=\"color:#789;border-bottom:1px solid #444;margin-top:10px\"><span class=nx style=\"visibility:hidden\">x</span><span style=\"display:inline-block;width:124px\">WHEN</span><span style=\"display:inline-block;width:54px\">PRI</span>TASK <span style=\"color:#456\">— ⚑=deadline else created · red P≤1000</span></div>",sync_age());
+    int hl=snprintf(h,(size_t)cap,SYNC_HTML "<div class=ni style=\"color:#888;border-bottom:1px solid #444;margin-top:10px\"><span class=nx style=\"visibility:hidden\">x</span><span style=\"display:inline-block;width:124px\">WHEN</span><span style=\"display:inline-block;width:54px\">PRI</span>TASK <span style=\"color:#555\">— ⚑=deadline else created · red P≤1000</span></div>",sync_age());
     for(int i=0;i<nr&&i<4&&hl<cap-512;i++){   /* top 4 */
-        const char*c=strcmp(rows[i].pri,"01000")<=0?"#f44":strcmp(rows[i].pri,"10000")<=0?"#fa0":"#aaa";
+        const char*c=strcmp(rows[i].pri,"01000")<=0?"#fff":strcmp(rows[i].pri,"10000")<=0?"#ccc":"#aaa";
         char fr[40];{int y,mo,dd,h=0,mi=0;struct tm t={0};
             if(rows[i].dl[0]&&sscanf(rows[i].dl,"%d-%d-%d %d:%d",&y,&mo,&dd,&h,&mi)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=dd;mktime(&t);
                 char b[32];int bl2=(int)strftime(b,32,"%b %-d",&t);int h12=h%12;if(!h12)h12=12;snprintf(b+bl2,32-(size_t)bl2," %d:%02d%s",h12,mi,h>=12?"pm":"am");snprintf(fr,40,"⚑%s",b);}
             else{const char*u=strrchr(rows[i].name,'_');char ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,40);}}
-        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:#9cf;display:inline-block;width:124px\">%s</span><span style=\"color:%s;display:inline-block;width:54px\">P%s</span>%s</div>",rows[i].name,fr,c,rows[i].pri,rows[i].txt);}
+        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:#fff;display:inline-block;width:124px\">%s</span><span style=\"color:%s;display:inline-block;width:54px\">P%s</span>%s</div>",rows[i].name,fr,c,rows[i].pri,rows[i].txt);}
     if(!hl)hl=snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
     return hl;
 }
@@ -193,7 +193,7 @@ static void _bkfile(const char*nm,char*tf){  /* reading text resolution order, s
     if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/source.txt",AROOT,nm);}
 static void _docpage(int c,const char*rel,const char*body,size_t bl,const char*saved,const char*ds){
     char*h=malloc(bl*6+2048);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
-    int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#6cf}button{background:#13320f;color:#9f9;border:1px solid #2a5a2a;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#6c6}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
+    int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:13px/1.5 ui-monospace,monospace}#bar{position:sticky;top:0;background:#000;padding:7px 12px;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center}#bar b{color:#fff}button{background:#222;color:#fff;border:1px solid #555;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#bbb}textarea{display:block;width:100%%;height:calc(100vh - 37px);box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:12px;font:inherit;resize:none;white-space:pre-wrap;word-break:break-word}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
     for(size_t i=0;i<bl;i++){char k=body[i];
         if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
         else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
@@ -209,9 +209,9 @@ static int _docls(char*h,int hl,const char*rel,int off){
     for(int i=0;i<n&&hl<(1<<18)-512;i++){char r2[P];snprintf(r2,P,"%s/%s",rel,nm[i]);
         char fp[P];snprintf(fp,P,"%s/%s",SROOT,r2);struct stat st;
         if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){if(!strcmp(nm[i],"archive"))continue; /* archived: reachable via /doc?f= + fs only */
-            hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=color:#778;padding:4px 16px>%s/</div>",r2+off);hl=_docls(h,hl,r2,(int)strlen(r2)+1);}
+            hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=color:#777;padding:4px 16px>%s/</div>",r2+off);hl=_docls(h,hl,r2,(int)strlen(r2)+1);}
         else if(strstr(r2,"/archive/"))hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<a href=\"/doc?f=%s\">%s</a>",r2,r2+off);
-        else hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=\"display:flex\"><a style=\"flex:1\" href=\"/doc?f=%s\">%s</a><a href=\"#\" style=\"color:#556\" onclick=\"fetch('/doc-arch?f=%s').then(function(){location.reload()});return false\">arch</a></div>",r2,r2+off,r2);}
+        else hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=\"display:flex\"><a style=\"flex:1\" href=\"/doc?f=%s\">%s</a><a href=\"#\" style=\"color:#555\" onclick=\"fetch('/doc-arch?f=%s').then(function(){location.reload()});return false\">arch</a></div>",r2,r2+off,r2);}
     return hl;}
 static int _ws_upgrade(int c,const char*req){
     const char*k=strstr(req,"Sec-WebSocket-Key: ");if(!k)return 0;
@@ -282,7 +282,7 @@ static void _ws_reload(int c){ /* dev hot-reload: relay a FIFO byte -> WS "reloa
 static char*_cloud_html(void){
     char cmd[P];snprintf(cmd,P,"sh '%s/lib/cloudls.sh'",SDIR);FILE*p=popen(cmd,"r");
     char rl[4096]={0};if(p){(void)!fread(rl,1,4095,p);pclose(p);}
-    int cap=32768;char*h=malloc(cap);int hl=snprintf(h,cap,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{display:block;text-decoration:none;color:inherit;cursor:pointer}a:hover div{background:#111}div{padding:14px;border-bottom:1px solid #222}.e{font-weight:600}.s{color:#888;font-size:13px}.o{display:inline-block;margin-top:8px;background:#1a73e8;color:#fff;border-radius:6px;padding:6px 12px;font-size:14px}select{background:#111;color:#fff;border:1px solid #333;padding:6px;font:inherit;border-radius:6px;margin:4px 0}button.cp{background:#a142f4;color:#fff;border:0;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}#cpstat{margin-top:10px;font-size:14px}</style><h3 style=color:#888>Cloud storage</h3>");
+    int cap=32768;char*h=malloc(cap);int hl=snprintf(h,cap,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{display:block;text-decoration:none;color:inherit;cursor:pointer}a:hover div{background:#111}div{padding:14px;border-bottom:1px solid #222}.e{font-weight:600}.s{color:#888;font-size:13px}.o{display:inline-block;margin-top:8px;background:#555;color:#fff;border-radius:6px;padding:6px 12px;font-size:14px}select{background:#111;color:#fff;border:1px solid #333;padding:6px;font:inherit;border-radius:6px;margin:4px 0}button.cp{background:#555;color:#fff;border:0;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}#cpstat{margin-top:10px;font-size:14px}</style><h3 style=color:#888>Cloud storage</h3>");
     char opts[2048];int ol=0;
     for(char*l=rl,*nl;(nl=strchr(l,'\n'));l=nl+1){*nl=0;if(!*l)continue;
         char*ty=strchr(l,'|'),*id=0,*s=0;if(ty)*ty++=0;if(ty)id=strchr(ty,'|');if(id)*id++=0;if(id)s=strchr(id,'|');if(s)*s++=0;
@@ -292,9 +292,9 @@ static char*_cloud_html(void){
         hl+=snprintf(h+hl,(size_t)(cap-hl),"<a href=\"%s\" target=_blank><div><span class=e>%s</span><br><span class=s>%s</span><br><span class=o>%s</span></div></a>",url,id&&*id?id:l,s?s:"",icl?"Open iCloud Drive":"Open Google Drive");
         char nm[64];snprintf(nm,64,"%s",l);char*cl=strrchr(nm,':');if(cl)*cl=0;
         ol+=snprintf(opts+ol,(size_t)(2048-ol),"<option value=\"%s\">%s%s%s</option>",nm,nm,id&&*id?" - ":"",id&&*id?id:"");}
-    hl+=snprintf(h+hl,(size_t)(cap-hl),"<a href=\"/op?w=cloudadd\"><div><span class=o style=background:#34a853>+ Add cloud service</span></div></a>");
-    hl+=snprintf(h+hl,(size_t)(cap-hl),"<div><h3 style=color:#888>Copy between clouds</h3>from <select id=src>%s</select> to <select id=dst>%s</select> <button class=cp onclick=startcp()>Copy</button> <button class=cp onclick=stopcp() style=background:#d33>Stop</button><div id=cpstat></div></div>",opts,opts);
-    hl+=snprintf(h+hl,(size_t)(cap-hl),"%s","<script>function cpoll(){fetch('/api/cloudcp-status').then(r=>r.text()).then(t=>{var e=document.getElementById('cpstat'),p=t.split('|');if(p[0]=='running'){e.innerHTML='Copying '+(p[1]||'')+' ...';setTimeout(cpoll,2000)}else if(p[0]=='done'){e.innerHTML='Finished - <a target=_blank style=color:#4af href=\"'+p[1]+'\">'+p[1]+'</a>'}else if(p[0]=='stopped'){e.innerHTML='<span style=color:#fa0>Stopped: '+(p[1]||'')+'</span>'}else if(p[0]=='error'){e.innerHTML='<span style=color:#f44>Error: '+(p[1]||'')+'</span>'}else{e.textContent=''}})}function startcp(){var s=document.getElementById('src').value,d=document.getElementById('dst').value;if(s==d){alert('pick two different remotes');return}document.getElementById('cpstat').textContent='Starting ...';fetch('/api/cloudcp?src='+encodeURIComponent(s)+'&dst='+encodeURIComponent(d),{method:'POST'}).then(function(){setTimeout(cpoll,800)})}function stopcp(){fetch('/api/cloudcp-stop',{method:'POST'}).then(function(){setTimeout(cpoll,400)})}cpoll();</script>");
+    hl+=snprintf(h+hl,(size_t)(cap-hl),"<a href=\"/op?w=cloudadd\"><div><span class=o style=background:#555>+ Add cloud service</span></div></a>");
+    hl+=snprintf(h+hl,(size_t)(cap-hl),"<div><h3 style=color:#888>Copy between clouds</h3>from <select id=src>%s</select> to <select id=dst>%s</select> <button class=cp onclick=startcp()>Copy</button> <button class=cp onclick=stopcp() style=background:#bbb>Stop</button><div id=cpstat></div></div>",opts,opts);
+    hl+=snprintf(h+hl,(size_t)(cap-hl),"%s","<script>function cpoll(){fetch('/api/cloudcp-status').then(r=>r.text()).then(t=>{var e=document.getElementById('cpstat'),p=t.split('|');if(p[0]=='running'){e.innerHTML='Copying '+(p[1]||'')+' ...';setTimeout(cpoll,2000)}else if(p[0]=='done'){e.innerHTML='Finished - <a target=_blank style=color:#fff href=\"'+p[1]+'\">'+p[1]+'</a>'}else if(p[0]=='stopped'){e.innerHTML='<span style=color:#ccc>Stopped: '+(p[1]||'')+'</span>'}else if(p[0]=='error'){e.innerHTML='<span style=color:#fff>Error: '+(p[1]||'')+'</span>'}else{e.textContent=''}})}function startcp(){var s=document.getElementById('src').value,d=document.getElementById('dst').value;if(s==d){alert('pick two different remotes');return}document.getElementById('cpstat').textContent='Starting ...';fetch('/api/cloudcp?src='+encodeURIComponent(s)+'&dst='+encodeURIComponent(d),{method:'POST'}).then(function(){setTimeout(cpoll,800)})}function stopcp(){fetch('/api/cloudcp-stop',{method:'POST'}).then(function(){setTimeout(cpoll,400)})}cpoll();</script>");
     return h;}
 static char*_phtml;static int _phlen;static time_t _pgen_t;
 static void _prompt_gen(void){ /* cached; GET /prompt regens when sources newer than cache (mtime check) */
@@ -320,18 +320,18 @@ static void _prompt_gen(void){ /* cached; GET /prompt regens when sources newer 
         char pfs[64][P];int np2=0;{char pdir[P];snprintf(pdir,P,"%s/common/prompts",SROOT);np2=listdir(pdir,pfs,64);}
         cl=snprintf(cm,8192,"<div class=c><b>prompt files</b> <span class=g>· view/edit · ★ active · load: a prompt &lt;name&gt;</span><br>");
         for(int i=0;i<np2;i++){const char*b=bname(pfs[i]),*dot=strrchr(b,'.');char nm[64];snprintf(nm,64,"%.*s",(int)(dot?dot-b:(long)strlen(b)),b);
-            int act=!strcmp(nm,pap);cl+=snprintf(cm+cl,(size_t)(8192-cl),"<a class=k href=\"/doc?f=common/prompts/%s\"%s>%s%s</a>&nbsp; ",b,act?" style=color:#6f6":"",act?"★":"",nm);}
+            int act=!strcmp(nm,pap);cl+=snprintf(cm+cl,(size_t)(8192-cl),"<a class=k href=\"/doc?f=common/prompts/%s\"%s>%s%s</a>&nbsp; ",b,act?" style=color:#ddd":"",act?"★":"",nm);}
         cl+=snprintf(cm+cl,(size_t)(8192-cl),"</div>");
         cl+=snprintf(cm+cl,(size_t)(8192-cl),"<div class=c><b>unified prompt</b> <span class=g>= active prompt file + AGENTS.md + mem index + tools + codebase · click to jump · edit → saves to git</span><br>");
         for(int i=0;i<N;i++){char fp[P]="";if(CP[i].fmt[0])snprintf(fp,P,CP[i].fmt,CP[i].root);
             struct stat st;long sz=fp[0]&&!stat(fp,&st)?(long)st.st_size:-1;
             const char*d=fp[0]?fp:"(generated)";if(fp[0]&&!strncmp(d,HOME,HL)&&d[HL]=='/')d+=HL+1;
             char ed[160]="";int ec=CP[i].root==SROOT||CP[i].root==SDIR;  /* editable: backed by a git file (fmt+3 skips "%s/") */
-            if(ec)snprintf(ed,160," <a class=k href=\"/doc?f=%s%s\" style=color:#9f9>edit</a>",CP[i].fmt+3,CP[i].root==SDIR?"&d=code":"");
+            if(ec)snprintf(ed,160," <a class=k href=\"/doc?f=%s%s\" style=color:#fff>edit</a>",CP[i].fmt+3,CP[i].root==SDIR?"&d=code":"");
             if(CP[i].off>=0)cl+=snprintf(cm+cl,(size_t)(8192-cl),"<a class=k href=\"#c%d\">%s</a> <span class=p>%s</span> %ld tok%s<br>",i,CP[i].lbl,d,sz/4,ed);
             else cl+=snprintf(cm+cl,(size_t)(8192-cl),"<span class=k style=color:#777>%s</span> <span class=p>%s</span> %ld tok%s<br>",CP[i].lbl,d,sz/4,ed);}
         cl+=snprintf(cm+cl,(size_t)(8192-cl),"</div>");
-        int hl=snprintf(h,(size_t)(ol*6+2048),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#6cf;padding:8px 16px;border-bottom:1px solid #222;z-index:2}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.8}.g{color:#888}.k{color:#6cf;text-decoration:none}.k:hover{text-decoration:underline}.p{color:#9c9}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}pre span{scroll-margin-top:46px}</style><header><b>unified prompt</b> — every agent (claude·codex·gemini·m) · %zu tok</header>%s<pre>",ol/4,cm);
+        int hl=snprintf(h,(size_t)(ol*6+2048),"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>unified prompt</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:13px/1.5 ui-monospace,monospace}header{position:sticky;top:0;background:#000;color:#fff;padding:8px 16px;border-bottom:1px solid #222;z-index:2}.c{padding:10px 16px;border-bottom:1px solid #222;background:#0d0d0d;font-size:12px;line-height:1.8}.g{color:#888}.k{color:#fff;text-decoration:none}.k:hover{text-decoration:underline}.p{color:#bbb}b{color:#fff}pre{white-space:pre-wrap;word-break:break-word;padding:16px;margin:0}pre span{scroll-margin-top:46px}</style><header><b>unified prompt</b> — every agent (claude·codex·gemini·m) · %zu tok</header>%s<pre>",ol/4,cm);
         for(size_t i=0;i<ol;i++){
             for(int z=0;z<N;z++)if(CP[z].off==(long)i)hl+=snprintf(h+hl,40,"<span id=c%d></span>",z);
             char k=o[i];
@@ -431,7 +431,7 @@ static void _handle(int c){
                 "else echo 'ERR overlapping edit on origin — reopen & redo on latest';fi;rm -f $T $M $I '%s'",base,rel,bf,bf,bf);
             pcmd(gc,gurl,B);gurl[strcspn(gurl,"\n")]=0;
             char ts[16];time_t t=time(0);strftime(ts,16,"%H:%M:%S",localtime(&t));
-            if(!strncmp(gurl,"https",5)){const char*h=strrchr(gurl,'/')+1;snprintf(saved,512,"✓ %s pushed · <a href=\"%s\" style=color:#6cf>%s</a>",ts,gurl,h);}
+            if(!strncmp(gurl,"https",5)){const char*h=strrchr(gurl,'/')+1;snprintf(saved,512,"✓ %s pushed · <a href=\"%s\" style=color:#fff>%s</a>",ts,gurl,h);}
             else snprintf(saved,512,"✓ %s saved locally · ✗ not pushed — %s",ts,gurl[0]?gurl:"no git output");
         }else snprintf(saved,512,"✗ SAVE FAILED");
         {char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*l=fopen(lg,"a");if(l){fprintf(l,"save %s %s\n",rel,ok?gurl:"WRITEFAIL");fclose(l);}}
@@ -524,12 +524,12 @@ static void _handle(int c){
             else{qsort(names,(size_t)n,128,_scmp);for(int i=0;i<n;i++)idx[i]=i;}
             int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
                 "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
-                "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:15px/1.3 system-ui}h3{color:#6cf;padding:14px 16px 6px;margin:0}"
+                "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:15px/1.3 system-ui}h3{color:#fff;padding:14px 16px 6px;margin:0}"
                 ".r{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1a1a1a}.r:hover{background:#161616}"
-                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9cf;text-decoration:none}.r.x .t{color:#5a6b7a}"
-                ".c{flex:none;color:#6a9;text-decoration:none;font-size:15px}.s{flex:none;min-width:48px;text-align:right;color:#667;font:11px ui-monospace,monospace;text-transform:uppercase}.s a{color:#667;text-decoration:none}.s a:hover{color:#6cf}"
-                ".h{position:sticky;top:0;background:#0b0b0b;color:#5af;font-weight:700;font-size:12px;letter-spacing:.09em;text-transform:uppercase;padding:16px 16px 5px;border-bottom:1px solid #1a1a1a}"
-                ".r.in{padding-left:30px}.nav{padding:4px 16px 10px;font-size:14px}.nav a{color:#789;text-decoration:none;margin-right:14px}.nav a.on{color:#6cf;font-weight:600}</style>"
+                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none}.r.x .t{color:#666}"
+                ".c{flex:none;color:#999;text-decoration:none;font-size:15px}.s{flex:none;min-width:48px;text-align:right;color:#666;font:11px ui-monospace,monospace;text-transform:uppercase}.s a{color:#666;text-decoration:none}.s a:hover{color:#fff}"
+                ".h{position:sticky;top:0;background:#0b0b0b;color:#fff;font-weight:700;font-size:12px;letter-spacing:.09em;text-transform:uppercase;padding:16px 16px 5px;border-bottom:1px solid #1a1a1a}"
+                ".r.in{padding-left:30px}.nav{padding:4px 16px 10px;font-size:14px}.nav a{color:#888;text-decoration:none;margin-right:14px}.nav a.on{color:#fff;font-weight:600}</style>"
                 "<script>function _ax(e){var a=e.target.closest('a.x');if(!a)return;e.preventDefault();e.stopImmediatePropagation();"
                 "if(e.type!='pointerdown')return;fetch(a.href).then(function(r){if(r.ok){a.closest('.r').style.opacity=.35;a.outerHTML='<span class=c>\xe2\x9c\x93</span>'}else a.textContent='\xe2\x9c\x97'},function(){a.textContent='\xe2\x9c\x97'})}"
                 "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true)</script>" TAPJS
@@ -556,7 +556,7 @@ static void _handle(int c){
         if(!txt){char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);int reg=0;  /* in synced index but not local: pull in bg, page retries */
             if(ix){char pat[140];snprintf(pat,140,"\t%s\t",nm);reg=!!strstr(ix,pat);free(ix);}
             if(reg){if(!fork()){signal(SIGCHLD,SIG_DFL);int z=open("/dev/null",O_WRONLY);if(z>=0){dup2(z,1);dup2(z,2);}execlp("a","a","book","pull",nm,(char*)0);_exit(1);}
-                char b[512];int bl=snprintf(b,512,"<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=5><body style=\"background:#0b0b0b;color:#6cf;font:16px ui-monospace,monospace;padding:40px\">syncing %s from cloud\xe2\x80\xa6 auto-retrying</body>",nm);
+                char b[512];int bl=snprintf(b,512,"<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=5><body style=\"background:#0b0b0b;color:#fff;font:16px ui-monospace,monospace;padding:40px\">syncing %s from cloud\xe2\x80\xa6 auto-retrying</body>",nm);
                 _sdoc(c,b,bl);return;}
             _sresp(c,404,"text/plain","no text — a book transcribe first",34);return;}
         long pos=_bkpos(nm);if(pos<0)pos=0;
@@ -574,10 +574,10 @@ static void _handle(int c){
             "#bk{position:fixed;top:0;bottom:0;left:0;right:0;max-width:760px;margin:0 auto;overflow:hidden;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:0 18px;box-sizing:border-box}"
             /* one top-right line: marks controls + hud share #tr so nothing stacks (Sean: only take one line) */
             "#tr{position:fixed;top:0;right:0;display:flex;align-items:center;background:#000;opacity:.85;z-index:9}"
-            "#tr a{color:#6cf;text-decoration:none;padding:5px 10px;font:14px ui-monospace,monospace}"
-            "#hud{color:#6cf;font:12px ui-monospace,monospace;padding:4px 8px 4px 0}"
-            "#mp{display:none;position:fixed;top:28px;right:0;max-width:88vw;max-height:60vh;overflow:auto;background:#000;color:#9cf;font:13px ui-monospace,monospace;z-index:9}"
-            "#mp div{padding:9px 10px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#f66;font-weight:400;padding:0 8px}</style>"
+            "#tr a{color:#fff;text-decoration:none;padding:5px 10px;font:14px ui-monospace,monospace}"
+            "#hud{color:#fff;font:12px ui-monospace,monospace;padding:4px 8px 4px 0}"
+            "#mp{display:none;position:fixed;top:28px;right:0;max-width:88vw;max-height:60vh;overflow:auto;background:#000;color:#fff;font:13px ui-monospace,monospace;z-index:9}"
+            "#mp div{padding:9px 10px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 8px}</style>"
             "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
@@ -665,10 +665,10 @@ static void _handle(int c){
     if(!strncmp(req,"GET /docs",9)){
         /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
         char*h=malloc(1<<18);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
-        int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:14px/1.6 ui-monospace,monospace}h3{color:#6cf;padding:12px 16px 4px;margin:0}a{display:block;color:#9cf;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style><a href=# onclick=\"var n=prompt('new adoc filename');if(n)location='/doc?f=adocs/'+n;return false\" style=color:#9f9>+ new adoc</a> <a href=# onclick=\"var n=prompt('new folder name');if(n)fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q=docs mkdir '+encodeURIComponent(n)}).then(function(){location.reload()});return false\" style=color:#9cf>+ new folder</a>" TAPJS);
+        int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:0;font:14px/1.6 ui-monospace,monospace}h3{color:#fff;padding:12px 16px 4px;margin:0}a{display:block;color:#fff;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style><a href=# onclick=\"var n=prompt('new adoc filename');if(n)location='/doc?f=adocs/'+n;return false\" style=color:#fff>+ new adoc</a> <a href=# onclick=\"var n=prompt('new folder name');if(n)fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q=docs mkdir '+encodeURIComponent(n)}).then(function(){location.reload()});return false\" style=color:#fff>+ new folder</a>" TAPJS);
         char*ar=strstr(req,"arch=1"),*eol=strstr(req,"\r\n");int arch=ar&&eol&&ar<eol;
         const char*dn[]={"mem","adocs"},*da[]={"mem/archive","adocs/archive"};const char**dirs=arch?da:dn;
-        hl+=snprintf(h+hl,(size_t)((1<<18)-hl),arch?"<a href=\"/docs\" style=color:#9cf>&#9666; back to docs</a>":"<a href=\"/docs?arch=1\" style=color:#557>&#9656; archived</a>");
+        hl+=snprintf(h+hl,(size_t)((1<<18)-hl),arch?"<a href=\"/docs\" style=color:#fff>&#9666; back to docs</a>":"<a href=\"/docs?arch=1\" style=color:#555>&#9656; archived</a>");
         for(int k=0;k<2;k++){hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<h3>%s/</h3>",dirs[k]);
             hl=_docls(h,hl,dirs[k],(int)strlen(dirs[k])+1);}
         _sdoc(c,h,hl);free(h);return;}
@@ -690,12 +690,12 @@ static void _handle(int c){
         char out[B]="";int ol=0,pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","i",(char*)0);_exit(1);}
         close(pp[1]);{int r;while((r=(int)read(pp[0],out+ol,(size_t)(B-1-ol)))>0)ol+=r;}close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
-        char h[B*2];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:18px system-ui;margin:16px}h3{color:#888;font-weight:400}.r{padding:10px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px}.o{color:#555;min-width:1.4em;text-align:right}.r b{flex:1;font-weight:400}button{background:#1a1a1a;color:#4af;border:1px solid #333;border-radius:6px;padding:7px 13px;font:inherit;cursor:pointer}#st{color:#666;padding:4px 0 12px;min-height:1.2em;font-size:15px}</style><h3>projects</h3><div id=st>ready \xe2\x80\x94 \xe2\x86\x91\xe2\x86\x93 reorder, saves via CLI</div>");
+        char h[B*2];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:18px system-ui;margin:16px}h3{color:#888;font-weight:400}.r{padding:10px;border-bottom:1px solid #222;display:flex;align-items:center;gap:10px}.o{color:#555;min-width:1.4em;text-align:right}.r b{flex:1;font-weight:400}button{background:#1a1a1a;color:#fff;border:1px solid #333;border-radius:6px;padding:7px 13px;font:inherit;cursor:pointer}#st{color:#666;padding:4px 0 12px;min-height:1.2em;font-size:15px}</style><h3>projects</h3><div id=st>ready \xe2\x80\x94 \xe2\x86\x91\xe2\x86\x93 reorder, saves via CLI</div>");
         for(char*l=out;*l;){char*nl=strchr(l,'\n');if(nl)*nl=0;char*tab=strstr(l,"\tproject");
             if(tab){*tab=0;int i=atoi(l);char*nm=strchr(l,' ');nm=nm?nm+1:l;
                 hl+=snprintf(h+hl,(size_t)(sizeof h-(size_t)hl),"<div class=r><span class=o>%d</span><b>%s</b><button onclick='mv(%d,%d)'>↑</button><button onclick='mv(%d,%d)'>↓</button></div>",i,nm,i,i-1,i,i+1);}
             l=nl?nl+1:l+strlen(l);}
-        hl+=snprintf(h+hl,(size_t)(sizeof h-(size_t)hl),"<script>var st=document.getElementById('st'),m=sessionStorage.pmsg;if(m){st.innerHTML=m;sessionStorage.removeItem('pmsg')}function mv(f,t){var n=document.querySelectorAll('.r').length;if(t<0||t>=n)return;st.textContent='saving… a move '+f+' '+t;st.style.color='#fa0';fetch('/api/omni',{method:'POST',body:'q=move '+f+' '+t}).then(r=>r.text()).then(x=>{x=x.replace(/<[^>]*>/g,'').split('\\n').map(l=>l.trim()).filter(l=>l&&l.indexOf('tokens')<0).pop()||'(no output)';var ok=x.indexOf('✓')>=0;sessionStorage.pmsg='<span style=color:'+(ok?'#4a4':'#f44')+'>'+(ok?'saved · ':'NOT saved · ')+x+'</span>';location.reload()}).catch(e=>{st.textContent='✗ CLI unreachable';st.style.color='#f44'})}</script>");
+        hl+=snprintf(h+hl,(size_t)(sizeof h-(size_t)hl),"<script>var st=document.getElementById('st'),m=sessionStorage.pmsg;if(m){st.innerHTML=m;sessionStorage.removeItem('pmsg')}function mv(f,t){var n=document.querySelectorAll('.r').length;if(t<0||t>=n)return;st.textContent='saving… a move '+f+' '+t;st.style.color='#ccc';fetch('/api/omni',{method:'POST',body:'q=move '+f+' '+t}).then(r=>r.text()).then(x=>{x=x.replace(/<[^>]*>/g,'').split('\\n').map(l=>l.trim()).filter(l=>l&&l.indexOf('tokens')<0).pop()||'(no output)';var ok=x.indexOf('✓')>=0;sessionStorage.pmsg='<span style=color:'+(ok?'#ccc':'#fff')+'>'+(ok?'saved · ':'NOT saved · ')+x+'</span>';location.reload()}).catch(e=>{st.textContent='✗ CLI unreachable';st.style.color='#fff'})}</script>");
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"POST /api/omni",14)||!strncmp(req,"POST /note",10)){
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
@@ -753,13 +753,13 @@ static void _handle(int c){
         int cap=1<<19;char*buf=malloc((size_t)cap);if(!buf){_sresp(c,500,"text/plain","oom",3);return;}
         const char*sort="pri";char*q=strstr(req,"sort="),*eol=strchr(req,'\n');
         if(q&&(!eol||q<eol)){q+=5;if(!strncmp(q,"new",3))sort="new";else if(!strncmp(q,"due",3))sort="due";}
-        int bl=snprintf(buf,3200,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>flow</title><style>body{background:#111;color:#ddd;font:14px/1.5 ui-monospace,monospace;margin:0;padding:8px 12px 9em}h3{color:#6cf;margin:16px 0 4px;font-size:15px}.ni{display:flex;align-items:flex-start;padding:6px 0;border-bottom:1px solid #1c1c1c;word-break:break-word}.nx{background:none;border:1px solid #555;color:#999;padding:5px 10px;margin-right:9px;border-radius:4px;cursor:pointer;flex:none}button{background:#0b0f1a;color:#9cf;border:1px solid #2a3a5a;border-radius:6px;padding:6px 11px;margin:0 2px;cursor:pointer;font:13px monospace}a{color:#9cf}</style><body><h3>NOTES <button onclick=\"fadd('note','note')\">+</button></h3>");
+        int bl=snprintf(buf,3200,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>flow</title><style>body{background:#111;color:#ddd;font:14px/1.5 ui-monospace,monospace;margin:0;padding:8px 12px 9em}h3{color:#fff;margin:16px 0 4px;font-size:15px}.ni{display:flex;align-items:flex-start;padding:6px 0;border-bottom:1px solid #1c1c1c;word-break:break-word}.nx{background:none;border:1px solid #555;color:#999;padding:5px 10px;margin-right:9px;border-radius:4px;cursor:pointer;flex:none}button{background:#111;color:#fff;border:1px solid #444;border-radius:6px;padding:6px 11px;margin:0 2px;cursor:pointer;font:13px monospace}a{color:#fff}</style><body><h3>NOTES <button onclick=\"fadd('note','note')\">+</button></h3>");
         bl+=_notes_build(buf+bl,cap-bl,"notes");
-        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>TASKS <button onclick=\"fadd('task add -u','task')\">+</button> <span style=\"color:#456;font-size:12px\">sort: <a href=/flow?sort=pri>pri</a> <a href=/flow?sort=new>created</a> <a href=/flow?sort=due>deadline</a></span></h3>");
+        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>TASKS <button onclick=\"fadd('task add -u','task')\">+</button> <span style=\"color:#555;font-size:12px\">sort: <a href=/flow?sort=pri>pri</a> <a href=/flow?sort=new>created</a> <a href=/flow?sort=due>deadline</a></span></h3>");
         bl+=_tasks_build(buf+bl,cap-bl,sort);
         bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>PROMPT CANDIDATES <button onclick=\"fadd('prompt c','prompt')\">+</button></h3>");
         bl+=_notes_build(buf+bl,cap-bl,"prompts");
-        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<div style=\"position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #333;padding:.6em;text-align:center\"><button onclick=fgen()>\342\234\246 suggest (book \342\206\222 claude)</button> <a href=\"/doc?f=common/prompts/propose.txt\">edit lens</a> <span id=fs style=color:#6a6></span></div><script>function omni(c){fs.textContent='\342\200\246';fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(c)}).then(function(r){return r.text()}).then(function(){location.reload()})}function fadd(c,k){var v=prompt('new '+k);if(v)omni(c+' '+v)}function arc(u,key,f){var b={};b[key]=f;fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(){location.reload()})}function arcn(f){arc('/api/note/archive','f',f)}function arct(d){arc('/api/task/archive','d',d)}function arcp(f){arc('/api/prompt/archive','f',f)}function fgen(){var s=prompt('seed idea');if(!s)return;var b=prompt('book name as full context (blank=none)')||'-';omni('flow gen '+b+' '+s)}</script>");
+        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<div style=\"position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #333;padding:.6em;text-align:center\"><button onclick=fgen()>\342\234\246 suggest (book \342\206\222 claude)</button> <a href=\"/doc?f=common/prompts/propose.txt\">edit lens</a> <span id=fs style=color:#bbb></span></div><script>function omni(c){fs.textContent='\342\200\246';fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(c)}).then(function(r){return r.text()}).then(function(){location.reload()})}function fadd(c,k){var v=prompt('new '+k);if(v)omni(c+' '+v)}function arc(u,key,f){var b={};b[key]=f;fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(){location.reload()})}function arcn(f){arc('/api/note/archive','f',f)}function arct(d){arc('/api/task/archive','d',d)}function arcp(f){arc('/api/prompt/archive','f',f)}function fgen(){var s=prompt('seed idea');if(!s)return;var b=prompt('book name as full context (blank=none)')||'-';omni('flow gen '+b+' '+s)}</script>");
         _sdoc(c,buf,bl);free(buf);return;}
     if(!strncmp(req,"POST /flowsplit",15)){   /* body=raw note text -> a split json -> {"segs":[..],"lossless":bool} */
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}body+=4;
@@ -788,8 +788,8 @@ static void _handle(int c){
     if(!strncmp(req,"GET /feed",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* terminal as API: page = live `a feed` output, streamed (shell paints instantly, content lands on fleet-scan drain) */
         static const char FH[]="HTTP/1.1 200 OK\r\nContent-Type:text/html; charset=utf-8\r\nCache-Control:no-store\r\nConnection:close\r\n\r\n"
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>feed</title>"
-            "<style>body{margin:0;background:#0b0b0b;color:#ddd;font:14px/1.7 ui-monospace,monospace}h3{color:#6cf;margin:0;padding:12px 14px 4px}#ms{color:#6c6;font-size:12px}pre{margin:0;padding:2px 14px 14px;white-space:pre-wrap}</style>"
-            "<h3>a feed <span id=ms>⟳ scanning fleet…</span> <span style=\"color:#456;font-size:12px\">j/k \xe2\x86\x91\xe2\x86\x93 move · \xe2\x86\xb5 open box</span></h3><pre>";
+            "<style>body{margin:0;background:#0b0b0b;color:#ddd;font:14px/1.7 ui-monospace,monospace}h3{color:#fff;margin:0;padding:12px 14px 4px}#ms{color:#bbb;font-size:12px}pre{margin:0;padding:2px 14px 14px;white-space:pre-wrap}</style>"
+            "<h3>a feed <span id=ms>⟳ scanning fleet…</span> <span style=\"color:#555;font-size:12px\">j/k \xe2\x86\x91\xe2\x86\x93 move · \xe2\x86\xb5 open box</span></h3><pre>";
         (void)!write(c,FH,sizeof FH-1);
         struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
         int pp[2];if(pipe(pp))return;pid_t ch=fork();
@@ -803,13 +803,13 @@ static void _handle(int c){
             "var Pr=document.querySelector('pre'),ls=Pr.textContent.split('\\n');"
             "Pr.innerHTML=ls.map(function(l){return '<div>'+l.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'}).join('');"
             "var rs=[].slice.call(Pr.children).filter(function(d,i){return i>1&&(d.textContent[0]=='\xe2\x97\x8f'||d.textContent[0]=='\xe2\x8f\xb8')}),s=0;"
-            "function H(){rs.forEach(function(d,i){d.style.background=i==s?'#1c2f45':''});rs[s]&&rs[s].scrollIntoView({block:'nearest'})}"
+            "function H(){rs.forEach(function(d,i){d.style.background=i==s?'#333':''});rs[s]&&rs[s].scrollIntoView({block:'nearest'})}"
             "onkeydown=function(e){var k=e.key;if(k=='j'||k=='ArrowDown')s=Math.min(s+1,rs.length-1);else if(k=='k'||k=='ArrowUp')s=Math.max(s-1,0);"
             "else if(k=='Enter'&&rs[s]){location='/op?w=ssh:'+encodeURIComponent(rs[s].textContent.slice(2,16).trim());return}else return;e.preventDefault();H()};"
             "if(rs.length)H()</script>",(double)(t1.tv_sec-t0.tv_sec)*1e3+(double)(t1.tv_nsec-t0.tv_nsec)/1e6);
         (void)!write(c,ft,(size_t)fl);return;}
     if(!strncmp(req,"GET /dash",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){
-        static const char H[]="<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{color:#4af;text-decoration:none;display:block;padding:10px;border-bottom:1px solid #222}h3{color:#888;font-weight:400;font-size:14px;margin:16px 0 4px}</style><div id=d>...</div><script>new EventSource('/dash/s').onmessage=m=>{var g={},o=[];m.data.split('|').filter(l=>l).forEach(w=>{var p=w.split('\\t');if(!g[p[0]])o.push(p[0]),g[p[0]]='';g[p[0]]+='<a href=\"/op?w='+encodeURIComponent(p[1])+'\">'+(p[2]||p[1])+'</a>'});d.innerHTML=o.map(x=>'<h3>'+x+'</h3>'+g[x]).join('')}</script>" TAPJS;
+        static const char H[]="<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{color:#fff;text-decoration:none;display:block;padding:10px;border-bottom:1px solid #222}h3{color:#888;font-weight:400;font-size:14px;margin:16px 0 4px}</style><div id=d>...</div><script>new EventSource('/dash/s').onmessage=m=>{var g={},o=[];m.data.split('|').filter(l=>l).forEach(w=>{var p=w.split('\\t');if(!g[p[0]])o.push(p[0]),g[p[0]]='';g[p[0]]+='<a href=\"/op?w='+encodeURIComponent(p[1])+'\">'+(p[2]||p[1])+'</a>'});d.innerHTML=o.map(x=>'<h3>'+x+'</h3>'+g[x]).join('')}</script>" TAPJS;
         _sresp(c,200,"text/html",H,sizeof H-1);return;}
     if(!strncmp(req,"GET /dash/s",11)){
         pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
@@ -851,7 +851,7 @@ static void _handle(int c){
         {int s=socket(AF_INET,SOCK_STREAM,0),good=0;   /* ssh -L opens the local port even if remote :1111 is dead — verify it actually answers */
          if(s>=0){struct timeval tv={3,0};setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
             if(connect(s,(void*)&la,sizeof la)==0){const char g[]="GET / HTTP/1.0\r\nHost:x\r\n\r\n";(void)!write(s,g,sizeof g-1);char b[16];good=read(s,b,sizeof b)>0;}close(s);}
-         if(!good){static const char NS[]="<body style='background:#000;color:#f88;font:15px ui-monospace,monospace;padding:20px'>\xe2\x9c\x97 not serving \xe2\x80\x94 no <code>a serve</code> on :1111 of this device.<br><br><a style=color:#6cf href=/dev>\xe2\x86\x90 devices</a>";_sresp(c,503,"text/html",NS,sizeof NS-1);return;}}
+         if(!good){static const char NS[]="<body style='background:#000;color:#ddd;font:15px ui-monospace,monospace;padding:20px'>\xe2\x9c\x97 not serving \xe2\x80\x94 no <code>a serve</code> on :1111 of this device.<br><br><a style=color:#fff href=/dev>\xe2\x86\x90 devices</a>";_sresp(c,503,"text/html",NS,sizeof NS-1);return;}}
         char url[64];snprintf(url,64,"http://127.0.0.1:%d/",lp);_redir(c,url);return;}
 /* timeout-bounded ssh serve-check → "serving"|"noserve"|"offline" (timeout 7 = hard cap so a stalled ssh handshake can't hang the row) */
 #define DEV_RCHECK " 'bash -c \"exec 3<>/dev/tcp/127.0.0.1/1111\" >/dev/null 2>&1 && echo SERVING || echo NOSERVE' 2>/dev/null"
@@ -892,10 +892,10 @@ static void _handle(int c){
     if(!strncmp(req,"GET /dev",8)&&(req[8]==' '||req[8]=='?'||req[8]=='\r')){   /* device list — each opens its own served html over ssh; status dots probe on click / check-all */
         char*h=malloc(1<<16);if(!h){_sresp(c,500,"text/plain","oom",3);return;}
         int hl=snprintf(h,1<<16,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>devices</title>"
-            "<style>body{margin:0;background:#000;color:#ddd;font:15px ui-monospace,monospace;padding:14px}h1{font-size:15px;color:#6cf;margin:2px 0 8px;font-weight:normal}"
-            "button{background:#0b0f1a;color:#9cf;border:1px solid #2a3a5a;border-radius:6px;padding:7px 14px;font:13px ui-monospace,monospace;cursor:pointer}#cs{color:#666;font-size:12px;margin-left:8px}"
-            "a.d{display:flex;align-items:center;gap:10px;color:#9cf;text-decoration:none;padding:12px 14px;margin:7px 0;border:1px solid #233;border-radius:7px;background:#0a0a0a}a.d:active{background:#13320f}a.d.dead{opacity:.45}"
-            ".st{flex:none;width:11px;height:11px;border-radius:50%%;background:#3a3a3a}.st.wait{background:#46c}.st.ok{background:#3c3}.st.no{background:#c93}.st.off{background:#333}"
+            "<style>body{margin:0;background:#000;color:#ddd;font:15px ui-monospace,monospace;padding:14px}h1{font-size:15px;color:#fff;margin:2px 0 8px;font-weight:normal}"
+            "button{background:#111;color:#fff;border:1px solid #444;border-radius:6px;padding:7px 14px;font:13px ui-monospace,monospace;cursor:pointer}#cs{color:#666;font-size:12px;margin-left:8px}"
+            "a.d{display:flex;align-items:center;gap:10px;color:#fff;text-decoration:none;padding:12px 14px;margin:7px 0;border:1px solid #333;border-radius:7px;background:#0a0a0a}a.d:active{background:#222}a.d.dead{opacity:.45}"
+            ".st{flex:none;width:11px;height:11px;border-radius:50%%;background:#3a3a3a}.st.wait{background:#888}.st.ok{background:#fff}.st.no{background:#555}.st.off{background:#333}"
             ".nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}small{color:#666;font-size:12px}.msg{flex:none;color:#888;font-size:12px}</style>"
             "<h1>devices &mdash; open each one's own <code>a serve</code> over ssh</h1>"
             "<div><button onclick=checkAll()>\xe2\x9f\xb3 check all</button><span id=cs></span></div>");
@@ -935,10 +935,10 @@ static void _handle(int c){
             "#w{position:fixed;inset:0 0 108px 0;display:flex}#w img{flex:1;min-width:0;object-fit:contain}"
             "#b{position:fixed;left:0;right:0;bottom:0;padding:5px;display:flex;flex-direction:column;gap:5px;background:#0a0a0a}"
             "#L{position:fixed;inset:0 0 108px 0;background:#000e;display:none;flex-direction:column;gap:5px;padding:8px;overflow-y:auto}"
-            "#st{color:#7d9;text-align:center;height:15px}.r{display:flex;gap:5px}"
-            ".r button,#L button{flex:1;padding:10px 2px;background:#111;color:#9cf;border:1px solid #233;border-radius:6px;font:inherit;overflow:hidden}"
+            "#st{color:#bbb;text-align:center;height:15px}.r{display:flex;gap:5px}"
+            ".r button,#L button{flex:1;padding:10px 2px;background:#111;color:#fff;border:1px solid #333;border-radius:6px;font:inherit;overflow:hidden}"
             "#d{overflow-x:auto}#d button,#L button{flex:0 0 auto;padding:10px 8px}"
-            ".on{background:#13320f;color:#9f9}</style>"
+            ".on{background:#222;color:#fff}</style>"
             "<div id=w></div><div id=L>%s</div><div id=b><div id=st>pick a device</div><div class=r id=d></div>"
             "<div class=r><button id=sn>&#128247; snap</button><button id=mi>&#127908; mic</button></div></div>"
             "<script>var g=function(i){return document.getElementById(i)},H='%s',img=null,au=null,cur='';"
@@ -1009,14 +1009,14 @@ static void _handle(int c){
             sc=len>1?len-1:0;}
         close(c);_exit(0);}
     if(!strncmp(req,"GET /stream",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
-        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=# onclick=\"if(cur)sel(cur);return false\" style=\"color:#f99;border-color:#5a2a2a\">\xe2\x96\xa0 stop</a><a data-d=local href=# onclick=\"sel('local');return false\" title=\"this machine \xc2\xb7 all monitors\">\xe2\x97\x89 %s \xc2\xb7 local</a>",DEV);
+        char nav[4096];int nl=snprintf(nav,sizeof nav,"<a href=# onclick=\"if(cur)sel(cur);return false\" style=\"color:#ddd;border-color:#444\">\xe2\x96\xa0 stop</a><a data-d=local href=# onclick=\"sel('local');return false\" title=\"this machine \xc2\xb7 all monitors\">\xe2\x97\x89 %s \xc2\xb7 local</a>",DEV);
         {FILE*p=popen("R=${XDG_RUNTIME_DIR:-/run/user/$(id -u)};S=$(ls $R/sway-ipc.*.sock 2>/dev/null|head -1);SWAYSOCK=$S swaymsg -t get_outputs 2>/dev/null|python3 -c 'import sys,json;[print(o[\"name\"]) for o in json.load(sys.stdin)]' 2>/dev/null","r");   /* enumerate local monitors; device click streams them all stacked (composited whole-layout = 100Mpx/frame, unusable) */
          char on[64];if(p){while(fgets(on,64,p)&&nl<3100){on[strcspn(on,"\n")]=0;if(!on[0])continue;
              nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a class=sub data-d=\"local:%s\" href=# onclick=\"sel('local:%s');return false\">\xe2\x96\xa1 %s</a>",on,on,on);}pclose(p);}}
         {char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int n=listdir(ddir,paths,64);
          for(int i=0;i<n&&nl<3500;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name");
             if(nm)nl+=snprintf(nav+nl,(size_t)(sizeof nav-(size_t)nl),"<a data-d=\"%s\" href=# onclick=\"sel('%s');return false\">%s</a>",nm,nm,nm);}}
-        char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#9cf;text-decoration:none;padding:7px 9px;border:1px solid #233;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}#b a.on{background:#13320f;color:#9f9;border-color:#2a5a2a}#b a.sub{margin-left:14px;font-size:11px;border-left:3px solid #2a5a2a;border-radius:0 5px 5px 0;color:#8be}#st{position:fixed;bottom:10px;right:14px;display:none;color:#7d9;font:12px ui-monospace,monospace;background:#000a;padding:4px 10px;border-radius:6px;z-index:6}#st.ld{color:#9cf;animation:pl 1s infinite}@keyframes pl{50%%{opacity:.4}}#w{position:fixed;inset:0 0 0 160px;display:flex;flex-direction:column}#w img{flex:1;min-height:0;object-fit:contain}#w p{margin:auto;color:#888}</style><div id=b>%s</div><div id=w><p>\xe2\x86\x90 pick a device</p></div><div id=st></div><script>var w=document.getElementById('w'),st=document.getElementById('st'),cur='',n=0;function P(){document.querySelectorAll('#b a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-d')===cur)})}function sel(d){w.innerHTML='';if(cur===d){cur='';st.style.display='none';P();return}cur=d;n=0;st.style.display='block';st.className='ld';st.textContent='\xe2\x9f\xb3 starting '+d+'\xe2\x80\xa6';var s=[].slice.call(document.querySelectorAll('#b a.sub')).map(function(a){return a.getAttribute('data-d')}).filter(function(x){return x.indexOf(d+':')==0});(s.length>1?s:[d]).forEach(function(m){var i=new Image();i.onload=function(){st.className='';st.textContent='\xe2\x97\x8f '+d+' \xc2\xb7 '+(++n)+' frames'};i.onerror=function(){st.className='';st.textContent='\xe2\x9c\x97 failed \xc2\xb7 '+d};var q=m.split(':');i.src='/stream/s?dev='+encodeURIComponent(q[0])+(q[1]?'&o='+encodeURIComponent(q[1]):'');w.appendChild(i)});P()}</script>",nav);
+        char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#fff;text-decoration:none;padding:7px 9px;border:1px solid #333;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}#b a.on{background:#222;color:#fff;border-color:#555}#b a.sub{margin-left:14px;font-size:11px;border-left:3px solid #555;border-radius:0 5px 5px 0;color:#ccc}#st{position:fixed;bottom:10px;right:14px;display:none;color:#bbb;font:12px ui-monospace,monospace;background:#000a;padding:4px 10px;border-radius:6px;z-index:6}#st.ld{color:#fff;animation:pl 1s infinite}@keyframes pl{50%%{opacity:.4}}#w{position:fixed;inset:0 0 0 160px;display:flex;flex-direction:column}#w img{flex:1;min-height:0;object-fit:contain}#w p{margin:auto;color:#888}</style><div id=b>%s</div><div id=w><p>\xe2\x86\x90 pick a device</p></div><div id=st></div><script>var w=document.getElementById('w'),st=document.getElementById('st'),cur='',n=0;function P(){document.querySelectorAll('#b a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-d')===cur)})}function sel(d){w.innerHTML='';if(cur===d){cur='';st.style.display='none';P();return}cur=d;n=0;st.style.display='block';st.className='ld';st.textContent='\xe2\x9f\xb3 starting '+d+'\xe2\x80\xa6';var s=[].slice.call(document.querySelectorAll('#b a.sub')).map(function(a){return a.getAttribute('data-d')}).filter(function(x){return x.indexOf(d+':')==0});(s.length>1?s:[d]).forEach(function(m){var i=new Image();i.onload=function(){st.className='';st.textContent='\xe2\x97\x8f '+d+' \xc2\xb7 '+(++n)+' frames'};i.onerror=function(){st.className='';st.textContent='\xe2\x9c\x97 failed \xc2\xb7 '+d};var q=m.split(':');i.src='/stream/s?dev='+encodeURIComponent(q[0])+(q[1]?'&o='+encodeURIComponent(q[1]):'');w.appendChild(i)});P()}</script>",nav);
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
         const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3]))?atoi(qw+3):-1;
@@ -1025,7 +1025,7 @@ static void _handle(int c){
             FILE*pp=popen(tc,"r");char nm[64]={0};
             if(pp){if(fgets(nm,64,pp))nm[strcspn(nm,"\n")]=0;pclose(pp);}
             if(strcmp(nm,"claude")&&strcmp(nm,"codex")&&strcmp(nm,"gemini")&&strcmp(nm,"aider")){
-                static const char NO[]="<!doctype html><style>body{background:#000;color:#fff;font:16px system-ui;text-align:center;padding-top:40vh}a{color:#4af}</style>no agent<br><br><a href=/dash>← dash</a>";
+                static const char NO[]="<!doctype html><style>body{background:#000;color:#fff;font:16px system-ui;text-align:center;padding-top:40vh}a{color:#fff}</style>no agent<br><br><a href=/dash>← dash</a>";
                 _sresp(c,200,"text/html",NO,sizeof NO-1);return;}}
         char tf[P];snprintf(tf,P,"%s/lib/term.html",SDIR);size_t tl=0;char*th=readf(tf,&tl); /* direct-DOM terminal page (replaced xterm.js CDN 7/10) */
         if(th){_sresp(c,200,"text/html",th,(int)tl);free(th);}
