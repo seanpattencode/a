@@ -125,7 +125,8 @@ static size_t gp_dec(const char*m,size_t half,size_t ho,size_t hl,GPHIT*h){
     const char*o=m+ho,*ls=o;
     while(ls>m&&ls[-1]!='\n')ls--;
     const char*le=memchr(o,'\n',half-ho);if(!le)le=m+half;
-    const char*hd=memrchr(m,1,ho),*hp=hd?hd+1:m;
+    const char*hd=0;for(const char*p=m+ho;p>m;)if(*--p==1){hd=p;break;}  /* memrchr: no BSD/macOS libc */
+    const char*hp=hd?hd+1:m;
     const char*he=memchr(hp,'\n',(size_t)(m+half-hp));if(!he)he=m+half;
     h->fp=hp;h->fpl=(int)(he-hp);
     h->foff=ls>he?(size_t)(ls-(he+1)):0;
