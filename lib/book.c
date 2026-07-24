@@ -177,6 +177,29 @@ def _codex_alive():   # trivial probe: distinguishes quota-out from a poison pag
     finally:
         try: os.unlink(f.name)
         except OSError: pass
+def _drip_text(b, rate):   # chunk jobs (translation etc): chunks/*.txt + prompt.txt -> output/en/<chunk>; all done -> output/translation.txt
+    en = b / "output" / "en"; en.mkdir(parents=True, exist_ok=True)
+    prompt = (b / "prompt.txt").read_text(); chunks = sorted(p.name for p in (b / "chunks").glob("*.txt"))
+    eng = next((e for e in _dengines() if e != "codex"), "opus")   # claude engines only: codex call shape is pdf-specific
+    miss = [c for c in chunks if not (en / c).exists() or not (en / c).stat().st_size]
+    if miss: _dlog(f"{b.name} text start: {len(miss)}/{len(chunks)} to go, {rate}/h ({eng})")
+    for c in miss:
+        src = (b / "chunks" / c).read_text()
+        try:
+            r = subprocess.run(["claude", "--dangerously-skip-permissions", "--print", "--model", eng], input=f"{prompt}\n\n{src}", text=True, capture_output=True, timeout=300)
+            o = r.stdout.strip() if r.returncode == 0 else ""
+        except Exception: o = ""
+        if o and len(o) > len(src) // 4 and "API Error" not in o:
+            (en / c).write_text(o + "\n"); _dw(book=b.name, page=c, left=len(miss) - miss.index(c) - 1, total=len(chunks), state="running", reason=""); _dlog(f"{b.name} {c} ok ({eng})")
+        elif not _eng_alive(eng):
+            _dw(state="paused", reason=f"{eng} down (quota?)"); _dlog("PAUSED — reprobe in 30m"); time.sleep(1800); _dw(state="running", reason="")
+        else: _dlog(f"{b.name} {c} failed, {eng} alive — deferred")
+        time.sleep(3600 / rate)
+    left = [c for c in chunks if not (en / c).exists() or not (en / c).stat().st_size]
+    if left: _dlog(f"{b.name} text incomplete ({len(left)} deferred) — no assembly"); return
+    if chunks and not (b / "output" / "translation.txt").exists():
+        (b / "output" / "translation.txt").write_text("\n\n".join((en / c).read_text().strip() for c in chunks) + "\n")
+        _dlog(f"{b.name} TEXT COMPLETE {len(chunks)} chunks -> output/translation.txt")
 def _drip_loop(tgt, rate):
     os.environ["A_BOOK_CODEX"] = "1"   # codex only: claude content-filters scans
     os.environ["PATH"] = f"{Path.home()}/.local/bin:" + os.environ.get("PATH", "")   # systemd unit PATH lacks ~/.local/bin: codex was FileNotFound -> instant 'empty', read as quota
@@ -191,6 +214,7 @@ def _drip_loop(tgt, rate):
             try: subprocess.run(["ebook-convert", str(src2), str(out)], capture_output=True, timeout=180)
             except Exception: pass
             _dlog(f"{b.name} convert {'ok' if out.exists() and out.stat().st_size else 'failed'}")
+    for b in [x for x in books if (x / "chunks").is_dir() and (x / "prompt.txt").is_file()]: _drip_text(b, rate)
     books = [b for b in books if (b / "source.pdf").is_file()]
     _dw(qtotal=len(books), qdone=0)
     fails = 0
