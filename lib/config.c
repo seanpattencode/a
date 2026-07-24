@@ -200,7 +200,7 @@ static int cmd_remove(int argc, char **argv) {
         if (idx < NPJ) {
             char f[P]; snprintf(f, P, "%s/workspace/projects/%s.txt", SROOT, PJ[idx].name);
             unlink(f);
-            printf("✓ Removed: %s\n", PJ[idx].name); list_all(1, 0); return 0;
+            printf("✓ Removed: %s%s%s\n", PJ[idx].name, PJ[idx].repo[0]?" · ":"", PJ[idx].repo); list_all(1, 0); return 0;
         }
         int ai = idx - NPJ;
         if (ai >= 0 && ai < NAP) {
