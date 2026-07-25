@@ -112,18 +112,21 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);size_t wl;char*wr=readf(wp,&wl);
      if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
-    static char wb[32768];size_t wl=0;
+    static char wb[65536];size_t wl=0;
     {/* win rows (bare menu AND a-tmux view): fork-free read of one rich cache — NAME\twin\t@id START · …in-order tail of last output — detached ≤1/s bg regen keeps it warm. -t TMS not -a: grouped a-<pid> sessions re-list the same windows. START = first-pane pid birth (a done splits excluded; restored wins = restore time) */
         char wc[P];snprintf(wc,P,"%s/win_cache.txt",DDIR);size_t cl;char*cw=readf(wc,&cl);
-        if(cw){if(cl>32767)cl=32767;memcpy(wb,cw,cl);wb[cl]=0;wl=cl;free(cw);}
-        else{FILE*p=popen("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,32767,p);pclose(p);wb[wl]=0;}}  /* first run: names now, rich next open */
+        if(cw){if(cl>65535)cl=65535;memcpy(wb,cw,cl);wb[cl]=0;wl=cl;free(cw);}
+        else{FILE*p=popen("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,65535,p);pclose(p);wb[wl]=0;}}  /* first run: names now, rich next open */
         struct stat ws;if(stat(wc,&ws)!=0||time(0)-ws.st_mtime>=1){if(fork()==0){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
             char cm[P*3];snprintf(cm,sizeof cm,
-                "td=$(date +%%b%%e|tr -d ' ');tmux lsp -s -t '"TMS"' -F '#{window_id} #{pane_id} #{pane_pid} #{window_name}' 2>/dev/null|while read -r i d p w;do "
+                "td=$(date +%%b%%e|tr -d ' ');tmux lsp -s -t '"TMS"' -F '#{window_id} #{pane_id} #{pane_pid} #{window_name} #{pane_start_command}' 2>/dev/null|while read -r i d p w sc;do "
                 "[ \"$i\" = \"$li\" ]&&continue;li=$i;"
                 "st=$(ps -o lstart= -p \"$p\" 2>/dev/null|awk -v td=\"$td\" '{split($4,T,\":\");h=T[1]+0;a=h<12?\"a\":\"p\";h=h%%12;if(!h)h=12;t=sprintf(\"%%d%%02d%%s\",h,T[2],a);if(($2 $3)==td)print t;else print $2 $3\" \"t}');"
                 "tl=$(tmux capturep -pJt \"$d\" -S -50 2>/dev/null|awk '{gsub(/^ +| +$/,\"\")}!/[a-z]/||/tokens|bypass|esc to interrupt|for shortcuts/{next}/^[^a-zA-Z0-9]/&&/ for [0-9]+[ms]/{next}{L[++i]=$0}END{s=\"\";for(j=i>8?i-7:1;j<=i;j++)s=s (s==\"\"?\"\":\" \")L[j];gsub(/\\(disable recaps in \\/config\\)/,\"\",s);gsub(/current: [0-9.]+ · latest: [0-9.]+/,\"\",s);gsub(/  +/,\" \",s);gsub(/ +$/,\"\",s);n=length(s);b=200;if(n>b){p=n-b+2;q=index(substr(s,p,30),\" \");if(q)p+=q;print \"…\"substr(s,p)}else print s}');"
-                "printf '%%s\twin\t%%s%%s · %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$tl\";done >'%s.%ld'&&mv '%s.%ld' '%s'",wc,(long)getpid(),wc,(long)getpid(),wc);
+                "sid=$(printf %%s \"$sc\"|grep -oE '[0-9a-f-]{36}'|head -1);sb=;"  /* convo-word bag mid-desc: filter sees it, display's middle-elision hides it. sid from --resume argv → transcript user-words; else deep scrollback */
+                "[ -n \"$sid\" ]&&sb=$(tail -c 400000 \"$HOME\"/.claude/projects/*/\"$sid\".jsonl 2>/dev/null|grep -o '\"role\":\"user\",\"content\":\"[^\"]\\{3,200\\}'|tail -25|cut -c26-|tr -cs 'A-Za-z0-9' '\\n'|awk '!s[$0]++'|tr '\\n' ' '|cut -c1-900);"
+                "[ -n \"$sb\" ]||sb=$(tmux capturep -pJt \"$d\" -S -1500 2>/dev/null|tr -cs 'A-Za-z0-9' ' '|tail -c 400);"
+                "printf '%%s\twin\t%%s%%s · %%s %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$sb\" \"$tl\";done >'%s.%ld'&&mv '%s.%ld' '%s'",wc,(long)getpid(),wc,(long)getpid(),wc);
             execlp("sh","sh","-c",cm,(char*)0);_exit(0);}}}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
@@ -303,7 +306,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 (void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,u);return 0;}
             execvp("a",(char*[]){"a",lastnote,NULL});return 0;}
         if(do_pick&&nm&&sel>=vo&&sel-vo<nm){char*m=fm[sel-vo],cmd[256];
-            {char*wt=strstr(m,"\twin\t@");if(wt){IRST;char wc[64];snprintf(wc,64,"tmux selectw -t %.*s",(int)strcspn(wt+5," "),wt+5);(void)!system(wc);return 0;}}
+            {char*wt=strstr(m,"\twin\t@");if(wt){IRST;char wc[64];snprintf(wc,64,"tmux selectw -t %.*s",(int)strcspn(wt+5," "),wt+5);(void)!system(wc);
+                if(!getenv("TMUX"))execlp("tmux","tmux","attach","-t",TMS,(char*)0);return 0;}}  /* outside tmux selectw is invisible — attach */
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
             else{int cl=tab?(int)(tab-m):(int)strlen(m);snprintf(cmd,256,"%.*s",cl,m);}
