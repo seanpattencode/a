@@ -957,21 +957,27 @@ static void _handle(int c){
             "g('L').style.display='none';sel(b.dataset.d)}"
             "g('d').addEventListener('pointerdown',T);g('L').addEventListener('pointerdown',T);"
             "g('mi').addEventListener('pointerdown',function(){mio(!au)});"
-            "g('sn').addEventListener('pointerdown',function(){if(!img||!img.naturalWidth){S('\\u2717 no stream');return}"
-            "var cv=document.createElement('canvas');cv.width=img.naturalWidth;cv.height=img.naturalHeight;cv.getContext('2d').drawImage(img,0,0);"
-            "var a=document.createElement('a');a.download='cam_'+(cur||'x')+'_'+Date.now()+'.jpg';a.href=cv.toDataURL('image/jpeg',.92);a.click();S('\\u2713 '+cv.width+'x'+cv.height)});"
+            "g('sn').addEventListener('pointerdown',function(){if(!cur){S('\\u2717 no stream');return}"
+            "var a=document.createElement('a');a.download='cam_'+cur+'.jpg';a.href='/stream/s?dev='+cur+'&pic=1';a.click()});"
             "R()</script>",nav,DEV);
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /stream/s",13)){
         char dev[64];_qp(req,"?dev=",dev,64);
         char out[64];_qp(req,"&o=",out,64);  /* local output: name, "all"=whole layout, or empty=focused */
+        char sp[96];snprintf(sp,96,"%s/a_snap_%s.jpg",TMP,dev[0]?dev:"local");
+        if(strstr(req,"&pic=1")){size_t n=0;char*j=readf(sp,&n);   /* snap = latest teed frame; no capture, no canvas */
+            if(j){_sresp(c,200,"image/jpeg",j,(int)n);free(j);}else _sresp(c,404,"text/plain","no snap",7);return;}
         pid_t fp=fork();if(fp<0){_sresp(c,500,"text/plain","fork",4);return;}
         if(fp>0)return;signal(SIGCHLD,SIG_DFL);
-        char gc[1024];int remote=0;
-        if(strstr(req,"&c=1")){                                 /* camera: EXEC one ffmpeg, native MJPG passthrough. ssh doesn't reliably reap the remote ffmpeg on client disconnect (it orphans holding /dev/video0 -> next viewer EBUSY -> "1s then stops"), so each REMOTE view reaps stale ffmpeg first (pkill -x, safe: matches only procs named ffmpeg, not this shell); then fuser-wait rides the release window. Local ffmpeg DOES die on SIGPIPE so it needs neither (and a local pkill would nuke unrelated audio ffmpeg). native size — no v4l2-ctl (absent on some boxes) / no forced -video_size (720p webcams only advertised 1080p) */
-            static const char CV[]="i=0;while [ $i -lt 25 ];do fuser /dev/video0 >/dev/null 2>&1||break;sleep 0.2;i=$((i+1));done;exec ffmpeg -loglevel error -f v4l2 -input_format mjpeg -i /dev/video0 -c copy -f mjpeg -";
+        char gc[1024],t2[104]="";int remote=0;
+        if(strstr(req,"&c=1")){                                 /* camera: ffmpeg retry-loop self-heals (EBUSY/USB blip; parser SOI-anchor eats the '.' probe + restarts), printf dies with client = no /dev/video0 orphan; F_GETLK kills the prior view (browsers keep abandoned img sockets open). native MJPG, no v4l2-ctl */
+            static const char CV[]="while printf .;do ffmpeg -loglevel error -f v4l2 -input_format mjpeg -i /dev/video0 -c copy -f mjpeg -;sleep .3;done";
             char pre[600];int cr=_sshpre(dev,pre,600);if(cr<0)_exit(0);
-            if(cr)snprintf(gc,sizeof gc,"%s 'pkill -x ffmpeg 2>/dev/null;%s'",pre,CV);else snprintf(gc,sizeof gc,"%s",CV);remote=1;}
+            if(cr)snprintf(gc,sizeof gc,"%s '%s'",pre,CV);else snprintf(gc,sizeof gc,"%s",CV);remote=1;
+            snprintf(t2,104,"%s.t",sp);
+            char lk[80];snprintf(lk,80,"%s/a_stream_%s",TMP,dev[0]?dev:"local");int lf=open(lk,O_RDWR|O_CREAT|O_CLOEXEC,0644);
+            struct flock fl={.l_type=F_WRLCK};
+            for(int i=0;lf>=0&&fcntl(lf,F_SETLK,&fl)<0&&i<50;i++){struct flock q=fl;if(!fcntl(lf,F_GETLK,&q)&&q.l_type!=F_UNLCK&&q.l_pid>0)kill(q.l_pid,SIGTERM);usleep(100000);}}
         else if(dev[0]&&strcmp(dev,"local")&&strcmp(dev,DEV)){       /* remote device: ssh in, capture to stdout */
             char pre[600];if(_sshpre(dev,pre,600)<1)_exit(0);
             char ro[64]="";                     /* remote output: &o= wins else auto-pick first (else grim grabs the whole composite) */
@@ -1003,6 +1009,7 @@ static void _handle(int c){
                 size_t s=0;while(s+1<e&&!(buf[s]==0xff&&buf[s+1]==0xd8))s++;    /* anchor the part on SOI: webcam -c copy pads a 00 between frames, and a part not starting FFD8 desyncs strict JPEG/multipart parsers (froze the browser mid-stream) */
                 if(buf[s]==0xff&&buf[s+1]==0xd8){size_t fl=e+2-s;char hd[96];int hl=snprintf(hd,sizeof hd,"--f\r\nContent-Type:image/jpeg\r\nContent-Length:%zu\r\n\r\n",fl);
                     if(write(c,hd,(size_t)hl)<0||write(c,buf+s,fl)<0||write(c,"\r\n",2)<0)_exit(0);   /* client gone -> exit -> SIGPIPE ends the pipeline */
+                    if(t2[0]){int td=open(t2,O_WRONLY|O_CREAT|O_TRUNC,0644);if(td>=0){(void)!write(td,buf+s,fl);close(td);(void)!rename(t2,sp);}}   /* tee latest frame, atomic, for &pic=1 */
                     if(++fn==1||fn%15==0){struct timeval w;gettimeofday(&w,NULL);double el=(double)(w.tv_sec-t0.tv_sec)+(w.tv_usec-t0.tv_usec)/1e6;
                         FILE*lf=fopen(lg,"a");if(lf){fprintf(lf,"stream %s/%s %df %.1ffps %zuKB\n",dev[0]?dev:"local",out[0]?out:"all",fn,el>0?fn/el:0,fl/1024);fclose(lf);}}}
                 memmove(buf,buf+e+2,len-e-2);len-=e+2;e=(size_t)-1;sc=0;}
