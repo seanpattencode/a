@@ -87,8 +87,9 @@ def process_page(source_path, output_dir, prompt, nocache=False):
         if out: print(f"  ✓ codex: {Path(source_path).name}"); return out
     return ""
 
+_TPROMPT = "Read this file and transcribe it. Remove headers, footers, page numbers, and section labels like 'INTRODUCTION xix'. For any graphs/charts/images, include a description in the format 'Graph: [description]'. If the page is blank or has no meaningful content, return empty <transcription></transcription> tags. Return ONLY the main body text wrapped in <transcription></transcription> tags"
 def transcribe_page(source_path, output_dir, nocache=False):
-    return process_page(source_path, output_dir, "Read this file and transcribe it. Remove headers, footers, page numbers, and section labels like 'INTRODUCTION xix'. For any graphs/charts/images, include a description in the format 'Graph: [description]'. If the page is blank or has no meaningful content, return empty <transcription></transcription> tags. Return ONLY the main body text wrapped in <transcription></transcription> tags", nocache)
+    return process_page(source_path, output_dir, _TPROMPT, nocache)
 
 def translate_page(source_path, output_dir, target_lang="English", nocache=False):
     return process_page(source_path, output_dir, f"Translate this scanned page to {target_lang}, preserving paragraph structure and section headers (\\section*{{}}). Render ALL mathematics as LaTeX — $..$ inline, \\[..\\] display — transcribing every formula exactly; translate only the prose, never alter or omit a formula. Keep footnote markers. Blank page → empty <transcription></transcription> tags. Return only the translated text wrapped in <transcription></transcription>", nocache)
@@ -145,6 +146,28 @@ def _dmiss(b):
     from PyPDF2 import PdfReader
     n = len(PdfReader(str(b / "source.pdf")).pages); t = b / "transcriptions"
     return n, [i for i in range(1, n + 1) if not (t / f"page_{i:04d}.txt").exists() or not (t / f"page_{i:04d}.txt").stat().st_size]
+ENG_OK = ("codex", "opus", "sonnet", "haiku")   # fable NEVER: interactive quota is not for batch burns
+def _dengines():
+    e = [x for x in _dstate().get("engines", ["codex", "opus"]) if x in ENG_OK]
+    return e or ["codex"]
+def _eng_page(eng, pdf, tdir):   # one engine, one page -> transcription text or ""
+    if eng == "codex": return transcribe_page(str(pdf), str(tdir))
+    try:
+        r = subprocess.run(["claude", "--dangerously-skip-permissions", "--print", "--model", eng],
+                           input=f"{_TPROMPT}: {pdf}", text=True, capture_output=True, timeout=240)
+        t = r.stdout.strip()
+        if r.returncode == 0 and t and "API Error" not in t and "content filtering" not in t.lower():
+            (Path(tdir) / f"{Path(pdf).stem}.txt").write_text(t if "<transcription>" in t else f"<transcription>\n{t}\n</transcription>")
+            return t
+    except Exception: pass
+    return ""
+def _eng_alive(eng):
+    if eng != "codex":
+        try:
+            r = subprocess.run(["claude", "-p", "reply with exactly: READY", "--model", eng, "--dangerously-skip-permissions"], capture_output=True, text=True, timeout=90)
+            return "READY" in r.stdout
+        except Exception: return False
+    return _codex_alive()
 def _codex_alive():   # trivial probe: distinguishes quota-out from a poison page
     f = tempfile.NamedTemporaryFile(suffix=".out", delete=False); f.close()
     try:
@@ -202,28 +225,82 @@ def _drip_loop(tgt, rate):
         total, miss = _dmiss(b)
         if not miss: continue
         _dlog(f"{b.name} start: {len(miss)}/{total} to go, {rate}/h")
+        engines = _dengines()
         for n in miss:
-            pf = 0   # poison track: page fails while codex is provably alive (Maxwellians p1: 5m hang -> timeout -> looked like quota, livelocked the queue)
-            while not (transcribe_page(str(b / "pages" / f"page_{n:04d}.pdf"), str(b / "transcriptions")) or "").strip():
-                if _codex_alive():
-                    pf += 1; _dlog(f"{b.name} p{n} failed, codex alive ({pf}/2)")
+            pf = 0   # poison track: page fails while the PRIMARY engine is provably alive (Maxwellians p1: 5m hang -> timeout -> looked like quota, livelocked the queue)
+            pdf = b / "pages" / f"page_{n:04d}.pdf"
+            if not pdf.is_file():   # split skipped a corrupt page object — engines would strike a ghost (OOTP p1); pdftoppm -f N renders what PyPDF2 can't
+                (b / "transcriptions" / f"page_{n:04d}.txt").write_text("<transcription>[source page missing from split — render: pdftoppm -f N -l N source.pdf, then transcribe]</transcription>")
+                _dlog(f"{b.name} p{n} no split pdf — placeholder"); continue
+            while True:
+                used = next((e for e in engines if (_eng_page(e, pdf, b / "transcriptions") or "").strip()), None)
+                if used:
+                    fails = 0; _dw(book=b.name, page=n, total=total, left=len(_dmiss(b)[1]), state="running", rate=rate, reason=""); _dlog(f"{b.name} p{n} ok ({used})"); break
+                if _eng_alive(engines[0]):
+                    pf += 1; _dlog(f"{b.name} p{n} failed, {engines[0]} alive ({pf}/2)")
                     if pf >= 2:
-                        (b / "transcriptions" / f"page_{n:04d}.txt").write_text("<transcription>[page unreadable — codex failed twice; redo: a book transcribe with --nocache]</transcription>")
+                        (b / "transcriptions" / f"page_{n:04d}.txt").write_text("<transcription>[page unreadable — engines failed twice; redo: a book transcribe with --nocache]</transcription>")
                         _dlog(f"{b.name} p{n} POISON — placeholder, moving on"); break
                     time.sleep(30)
+                elif any(_eng_alive(e) for e in engines[1:]):
+                    _dlog(f"{b.name} p{n} deferred ({engines[0]} down, fallback refused this page)"); break   # no placeholder: retried next pass when primary returns
                 else:
-                    fails += 1; _dlog(f"{b.name} p{n} empty ({min(fails,3)}/3, codex down)")   # blank pages return non-empty tags, not a failure
+                    fails += 1; _dlog(f"{b.name} p{n} empty ({min(fails,3)}/3, all engines down)")   # blank pages return non-empty tags, not a failure
                     if fails >= 3:   # quota-out = silent empties (7/11); park, reprobe, self-resume
-                        _dw(state="paused", reason="codex down (quota?)"); _dlog("PAUSED — reprobe in 30m"); time.sleep(1800); _dw(state="running", reason="")
+                        _dw(state="paused", reason="all engines down (quota?)"); _dlog("PAUSED — reprobe in 30m"); time.sleep(1800); _dw(state="running", reason="")
                     else: time.sleep(60)
-            fails = 0; _dw(book=b.name, page=n, total=total, left=len(_dmiss(b)[1]), state="running", rate=rate, reason=""); _dlog(f"{b.name} p{n} ok")
             time.sleep(3600 / rate)
+        if _dmiss(b)[1]: _dlog(f"{b.name} incomplete ({len(_dmiss(b)[1])} deferred) — no assembly"); continue
         texts = [(b / "transcriptions" / f"page_{i:04d}.txt").read_text().replace("<transcription>", "").replace("</transcription>", "").strip() for i in range(1, total + 1)]
         (b / "output").mkdir(exist_ok=True); (b / "output" / "transcript.txt").write_text("\n\n".join(t for t in texts if t) + "\n")
         _dlog(f"{b.name} COMPLETE {total}p -> output/transcript.txt")
     _dw(state="done"); _dlog("queue done")
 def cmd_drip(args):
     sub = args[2] if len(args) > 2 else "status"
+    if sub in ("attach", "watch"):   # live stream; Ctrl-C detaches (tail only — never the unit)
+        os.execvp("tail", ["tail", "-n", "24", "-f", str(DRIP / "drip.log")])
+    if sub == "jobs":   # book = job; pages are drill-down, not the default view
+        books = [d for d in sorted(DATA_DIR.glob("[!.]*")) if (d / "source.pdf").is_file()]
+        q = args[3] if len(args) > 3 else None
+        cur = _dstate().get("book", "")
+        if q:
+            m = [b for b in books if q.lower() in b.name.lower()]
+            if len(m) != 1:
+                print("\n".join(b.name for b in m[:20]) or f"no match: {q}"); return
+            b = m[0]; t = b / "transcriptions"
+            pages = sorted((b / "pages").glob("page_*.pdf")) if (b / "pages").is_dir() else []
+            have = {f.stem for f in t.glob("page_*.txt") if f.stat().st_size} if t.is_dir() else set()   # empty-tag blanks count as done
+            missing = [p.stem[-4:] for p in pages if p.stem not in have]
+            ph = [f.stem[-4:] for f in t.glob("page_*.txt") if t.is_dir() and (b"[page unreadable" in f.read_bytes() or b"[source page missing" in f.read_bytes())]   # marker match, not the word (telegraph prose says unreadable)
+            print(f"{b.name}\n  pages {len(have)}/{len(pages) or '?'} done"
+                  + (f"\n  missing: {' '.join(missing[:20])}{' …' if len(missing) > 20 else ''}" if missing else "")
+                  + (f"\n  placeholders: {' '.join(sorted(ph))}  (redo: a book transcribe <book> N N --nocache)" if ph else ""))
+            for l in (DRIP / "drip.log").read_text().splitlines()[::-1]:
+                if b.name[:30] in l: print(f"  {l}"); break
+            return
+        done = part = 0
+        rows = []
+        for b in books:
+            pages = len(list((b / "pages").glob("page_*.pdf"))) if (b / "pages").is_dir() else 0
+            t = b / "transcriptions"
+            n = sum(1 for f in t.glob("page_*.txt") if f.stat().st_size) if t.is_dir() else 0
+            g = "▶" if b.name == cur else "✓" if pages and n >= pages else "◐" if n else "·"
+            if g == "✓": done += 1
+            if g == "◐": part += 1
+            if g != "·" or len(books) <= 30:
+                nm = b.name if len(b.name) <= 48 else b.name[:23] + "…" + b.name[-24:]
+                rows.append(f" {g} {nm:<48} {n}/{max(pages, n) if pages else '?'}")   # ghost-page txts can exceed split pdfs
+        print(f"{done} done · {part} partial · {len(books) - done - part} queued of {len(books)} — drill: a book drip jobs <substr>")
+        print("\n".join(rows))
+        return
+    if sub == "engines":
+        if len(args) > 3:
+            want = [x.strip() for x in args[3].split(",") if x.strip()]
+            bad = [x for x in want if x not in ENG_OK]
+            if bad: sys.exit(f"x not allowed: {','.join(bad)} (fable is never batch-burned; options: {','.join(ENG_OK)})")
+            _dw(engines=want); print(f"+ engines: {' -> '.join(want)} (takes effect next page)")
+        else: print(f"engines: {' -> '.join(_dengines())}  (options: {','.join(ENG_OK)}; fable never)")
+        return
     if sub == "stop":
         if not subprocess.run(["systemctl", "--user", "is-active", "-q", "bookdrip.service"]).returncode:
             subprocess.run(["systemctl", "--user", "stop", "bookdrip.service"]); print("stopped bookdrip.service (auto mode still enabled — a book drip auto off to disable)")
@@ -272,7 +349,7 @@ def cmd_drip(args):
           + (f"  eta {left / rate:.1f}h" if isinstance(left, int) and rate else ""))
     try: mdl = next(l.split("=", 1)[1].strip().strip('"') for l in (Path.home() / ".codex/config.toml").read_text().splitlines() if l.replace(" ", "").startswith("model="))
     except Exception: mdl = "?"
-    print(f"  engine: codex exec ({mdl}), page pdf->200dpi png->transcribe; claude unused (content-filters scans)")
+    print(f"  engines: {' -> '.join(_dengines())} (fable never); codex model {mdl}; set: a book drip engines codex,opus")
     if s.get("state") == "paused": print(f"  next probe ~{time.strftime('%H:%M', time.localtime(s.get('ts', 0) + 1800))}")
     elif s.get("state") == "running" and rate: print(f"  next page ~{time.strftime('%H:%M', time.localtime(s.get('ts', 0) + int(3600 / rate)))}")
     for l in (DRIP / "drip.log").read_text().splitlines()[-4:] if (DRIP / "drip.log").exists() else []: print(f"  {l}")
@@ -773,10 +850,12 @@ static int cmd_book(int argc,char**argv){
         else if(k=='b'&&m){cur-=ps;if(cur<0)cur=0;}
         else if(k=='s'){sm^=1;cur=0;}   /* toggle name <-> author grouping */
         else if(k=='t'||k=='d'){printf("\033[H\033[2J\033[0m");fflush(stdout);   /* transcribe pane: status + log tail + unit; r=resume-now x=stop */
-            char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;echo '--- log ---';tail -n 16 '%s/local/bookdrip/drip.log' 2>/dev/null;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true",AROOT);
+            char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;a book drip jobs 2>/dev/null|head -16;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true");
             (void)!system(dc);
-            printf("\n\033[7m [r]esume/probe now  [x]stop  [any]back \033[0m");fflush(stdout);
+            printf("\n\033[7m [a]ttach live  [r]esume/probe now  [x]stop  [any]back \033[0m");fflush(stdout);
             char t=0;(void)!read(0,&t,1);
+            if(t=='a'){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J-- live transcription log, Ctrl-C detaches --\n");fflush(stdout);
+                char ac[P];snprintf(ac,P,"%s/local/bookdrip/drip.log",AROOT);execlp("tail","tail","-n","24","-f",ac,(char*)0);}
             if(t=='r'){char rt[12]="20",fp2[P],rc[B];snprintf(fp2,P,"%s/local/bookdrip/state.json",AROOT);   /* keep the configured rate across resume */
                 size_t l2=0;char*j2=readf(fp2,&l2);if(j2){bk_jget(j2,"rate",rt,12);free(j2);if(!rt[0])strcpy(rt,"20");}
                 snprintf(rc,B,"a book drip auto %s >/dev/null 2>&1;systemctl --user restart bookdrip.service 2>/dev/null;sleep 1",rt);

@@ -2,7 +2,8 @@
    trip is one file). No prompt path reads cal/ — stays out of agent context. Bare tty → TUI per
    mem/tui.md (book.c model): j/k+arrows, e archive (line → .archive.txt, instant promote), c compose
    (dl_norm shorthand). Past grey, cursor starts at next upcoming. Exit: receipts re-read from
-   .archive.txt + one cal-scoped commit URL (rule 2, ARCH #13). Args/no-tty: add | ai | <name> | dump. */
+   .archive.txt + one cal-scoped commit URL (rule 2, ARCH #13). Args/no-tty: add | ai | <name> | dump.
+   a cal g [...] → lib/gcal.py = Google Calendar (service account; a cal g setup prints the recipe). */
 /* CEv typedef + CFp + prototypes live at note.c top — flow's CAL page needs them before this file */
 static int cev_cmp(const void*a,const void*b){return strcmp(((const CEv*)a)->ln,((const CEv*)b)->ln);}
 static int cal_load(const char*d,CEv*ev,int max){
@@ -45,6 +46,9 @@ static int cal_arch(const char*d,CEv*e){   /* drop the line from its source; app
     free(c);free(nw);return rm;}
 static int cmd_cal(int c,char**v){perf_disarm();
     char d[P];snprintf(d,P,"%s/cal",SROOT);mkdirp(d);
+    if(c>2&&!strcmp(v[2],"g")){static char pf[P];snprintf(pf,P,"%s/lib/gcal.py",SDIR);
+        static char*nv[32];int m=0;nv[m++]="python3";nv[m++]=pf;for(int i=3;i<c&&m<31;i++)nv[m++]=v[i];nv[m]=0;
+        execvp("python3",nv);perror("python3");return 1;}
     if(c>2&&!strcmp(v[2],"add")){char raw[B]="";ajoin(raw,B,c,v,3);return!cal_write(d,raw);}
     if(c>2&&!strcmp(v[2],"ai")){char ex[B]="",pr[B]="",pm[B*2],tdy[16];ajoin(pr,B,c,v,3);
         {char cm[P];snprintf(cm,P,"cat '%s'/*.txt 2>/dev/null",d);pcmd(cm,ex,B);}
