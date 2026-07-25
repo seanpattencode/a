@@ -259,6 +259,40 @@ def cmd_drip(args):
     sub = args[2] if len(args) > 2 else "status"
     if sub in ("attach", "watch"):   # live stream; Ctrl-C detaches (tail only — never the unit)
         os.execvp("tail", ["tail", "-n", "24", "-f", str(DRIP / "drip.log")])
+    if sub == "jobs":   # book = job; pages are drill-down, not the default view
+        books = [d for d in sorted(DATA_DIR.glob("[!.]*")) if (d / "source.pdf").is_file()]
+        q = args[3] if len(args) > 3 else None
+        cur = _dstate().get("book", "")
+        if q:
+            m = [b for b in books if q.lower() in b.name.lower()]
+            if len(m) != 1:
+                print("\n".join(b.name for b in m[:20]) or f"no match: {q}"); return
+            b = m[0]; t = b / "transcriptions"
+            pages = sorted((b / "pages").glob("page_*.pdf")) if (b / "pages").is_dir() else []
+            have = {f.stem for f in t.glob("page_*.txt") if f.stat().st_size} if t.is_dir() else set()   # empty-tag blanks count as done
+            missing = [p.stem[-4:] for p in pages if p.stem not in have]
+            ph = [f.stem[-4:] for f in t.glob("page_*.txt") if t.is_dir() and (b"[page unreadable" in f.read_bytes() or b"[source page missing" in f.read_bytes())]   # marker match, not the word (telegraph prose says unreadable)
+            print(f"{b.name}\n  pages {len(have)}/{len(pages) or '?'} done"
+                  + (f"\n  missing: {' '.join(missing[:20])}{' …' if len(missing) > 20 else ''}" if missing else "")
+                  + (f"\n  placeholders: {' '.join(sorted(ph))}  (redo: a book transcribe <book> N N --nocache)" if ph else ""))
+            for l in (DRIP / "drip.log").read_text().splitlines()[::-1]:
+                if b.name[:30] in l: print(f"  {l}"); break
+            return
+        done = part = 0
+        rows = []
+        for b in books:
+            pages = len(list((b / "pages").glob("page_*.pdf"))) if (b / "pages").is_dir() else 0
+            t = b / "transcriptions"
+            n = sum(1 for f in t.glob("page_*.txt") if f.stat().st_size) if t.is_dir() else 0
+            g = "▶" if b.name == cur else "✓" if pages and n >= pages else "◐" if n else "·"
+            if g == "✓": done += 1
+            if g == "◐": part += 1
+            if g != "·" or len(books) <= 30:
+                nm = b.name if len(b.name) <= 48 else b.name[:23] + "…" + b.name[-24:]
+                rows.append(f" {g} {nm:<48} {n}/{max(pages, n) if pages else '?'}")   # ghost-page txts can exceed split pdfs
+        print(f"{done} done · {part} partial · {len(books) - done - part} queued of {len(books)} — drill: a book drip jobs <substr>")
+        print("\n".join(rows))
+        return
     if sub == "engines":
         if len(args) > 3:
             want = [x.strip() for x in args[3].split(",") if x.strip()]
@@ -816,7 +850,7 @@ static int cmd_book(int argc,char**argv){
         else if(k=='b'&&m){cur-=ps;if(cur<0)cur=0;}
         else if(k=='s'){sm^=1;cur=0;}   /* toggle name <-> author grouping */
         else if(k=='t'||k=='d'){printf("\033[H\033[2J\033[0m");fflush(stdout);   /* transcribe pane: status + log tail + unit; r=resume-now x=stop */
-            char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;echo '--- log ---';tail -n 16 '%s/local/bookdrip/drip.log' 2>/dev/null;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true",AROOT);
+            char dc[B];snprintf(dc,B,"a book drip 2>/dev/null;echo;a book drip jobs 2>/dev/null|head -16;printf 'unit: ';systemctl --user is-active bookdrip.service 2>/dev/null||true");
             (void)!system(dc);
             printf("\n\033[7m [a]ttach live  [r]esume/probe now  [x]stop  [any]back \033[0m");fflush(stdout);
             char t=0;(void)!read(0,&t,1);
