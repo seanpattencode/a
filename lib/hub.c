@@ -188,9 +188,8 @@ static int cmd_hub(int argc, char **argv) {
 #else
         {char c[B];snprintf(c,B,
             "systemctl --user list-unit-files --type=timer --no-legend 2>/dev/null|awk '/^(a|aio)-/{print $1}'|xargs -r systemctl --user disable --now >/dev/null 2>&1;"
-            "rm -f %s/.config/systemd/user/a-*.timer %s/.config/systemd/user/a-*.service "
-            "%s/.config/systemd/user/aio-*.timer %s/.config/systemd/user/aio-*.service;"
-            "systemctl --user daemon-reload",HOME,HOME,HOME,HOME);(void)!system(c);}
+            "cd %s/.config/systemd/user&&ls a-*.timer a-*.service aio-*.timer aio-*.service 2>/dev/null|grep -v '^a-ui\\.'|xargs -r rm -f;"  /* a-ui.service = `a ui on`'s unit, not a hub job */
+            "systemctl --user daemon-reload",HOME);(void)!system(c);}
 #endif
         int m=0; for(int i=0;i<NJ;i++) if(!strcmp(HJ[i].d,DEV)&&HJ[i].en) { hub_timer(&HJ[i],1); m++; }
         printf("✓ synced %d jobs\n",m); return 0;
