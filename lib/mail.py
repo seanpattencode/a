@@ -6,6 +6,9 @@ Why drafts and not SMTP: spatten2@fordham.edu is Workspace behind Fordham SAML S
 no password auth exists; and a compose-wrapper (Thunderbird) was rejected: Gmail web is
 the mailbox that's actually used. OAuth (loopback, desktop client) with scopes
 openid email gmail.compose; gmail.compose covers drafts.* (create/get/list). Stdlib only.
+2026-07-27 (Sean): the rclone-derived OAuth client will NOT work for spatten2@fordham.edu —
+don't retry auth on it; Fordham path = relay (draft in an authorized personal account
+To: spatten2, then copy+send from Fordham Gmail web).
 
   a mail auth [email]   one-time OAuth for that account (browser consent; token stored)
   a mail who            which account(s) a mail is registered as — THE identity that drafts land in
