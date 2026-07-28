@@ -94,6 +94,24 @@ def transcribe_page(source_path, output_dir, nocache=False):
 def translate_page(source_path, output_dir, target_lang="English", nocache=False):
     return process_page(source_path, output_dir, f"Translate this scanned page to {target_lang}, preserving paragraph structure and section headers (\\section*{{}}). Render ALL mathematics as LaTeX — $..$ inline, \\[..\\] display — transcribing every formula exactly; translate only the prose, never alter or omit a formula. Keep footnote markers. Blank page → empty <transcription></transcription> tags. Return only the translated text wrapped in <transcription></transcription>", nocache)
 
+_CPROMPT = ("One page of a comic/manga. %D Number EVERY panel in reading order.\nOutput exactly:\nDIR: LTR|RTL (evidence: <short>)\nPAGE: <printed number or ->\nPANELS: <count, must equal the P lines>\n"
+    "P1: Art: <1-2 sentences: characters, action, setting, framing>\n    Text: <dialogue/caption verbatim, speaker if clear>\n    SFX: <verbatim>\nP2: ...\n"
+    "Omit Text:/SFX: when absent. Never invent dialogue. Wrap in <transcription></transcription>")
+def comic_vote(book, start, end):   # ONE direction for the volume: per-page detection flips (splash/front-matter pages carry no cues), which would scramble panel order mid-book
+    import re
+    from collections import Counter
+    ps = sorted((book / "pages").glob("page_*"))[start - 1:end]
+    if not ps: return ""
+    sample = [ps[len(ps) * k // 4] for k in (1, 2, 3)] if len(ps) >= 4 else ps[:1]
+    c = Counter(re.findall(r"DIR:\s*(LTR|RTL)", "".join(comic_page(str(p), str(book / "panels" / ".vote"), "", True) or "" for p in sample)))
+    d = c.most_common(1)[0][0] if c else ""
+    print(f"direction vote {dict(c)} -> {d or '?'}  (force with --ltr / --rtl)")
+    return d
+
+def comic_page(source_path, output_dir, dirhint="", nocache=False):
+    d = f"Reading direction IS {dirhint}; use it." if dirhint else "DETECT reading direction from the page (which side the page number sits, panel/balloon layout, whether art looks flipped, script)."
+    return process_page(source_path, output_dir, _CPROMPT.replace("%D", d), nocache)
+
 def latex_page(source_path, output_dir, nocache=False):
     return process_page(source_path, output_dir, "Transcribe to LaTeX body (no preamble/documentclass/begin{document}). $..$ inline, \\[..\\] display, \\section*{}, \\footnote{}, \\textit{}. Blank→empty tags. Wrap in <transcription></transcription>", nocache)
 
@@ -105,7 +123,7 @@ def process_range(book_dir, start, end, page_func, source_subdir, cache_subdir, 
     book_dir = Path(book_dir)
     source_dir, cache_dir, output_dir = book_dir / source_subdir, book_dir / cache_subdir, book_dir / "output"
     output_dir.mkdir(exist_ok=True)
-    ext = ".txt" if source_subdir in ("translations", "transcriptions") else ".pdf"
+    ext = ".txt" if source_subdir in ("translations", "transcriptions") else next((p.suffix for p in sorted(source_dir.glob("page_0001.*"))), ".pdf")   # comics split to .jpg, books to .pdf
     pages = [str(source_dir / f"page_{i:04d}{ext}") for i in range(start, end + 1)]
     with ThreadPoolExecutor(max_workers=workers) as ex:
         results = list(ex.map(lambda p: page_func(p, str(cache_dir), **kwargs), pages))
@@ -115,12 +133,19 @@ def process_range(book_dir, start, end, page_func, source_subdir, cache_subdir, 
     print(f"Processed pages {start}-{end}, saved to {output_dir / fname}")
 
 def split_pdf(book_dir, nocache=False):
-    from PyPDF2 import PdfReader, PdfWriter
     book_dir = Path(book_dir)
     pages_dir = book_dir / "pages"
-    if not nocache and pages_dir.exists() and list(pages_dir.glob("*.pdf")):
+    if not nocache and pages_dir.exists() and list(pages_dir.glob("page_*")):
         print(f"Using cached pages from {pages_dir}"); return
     pages_dir.mkdir(parents=True, exist_ok=True)
+    cb = next(iter(sorted(book_dir.glob("source.cb[zr]"))), None)
+    if cb:   # comic/manga archive = zip of page images; already one file per page
+        import zipfile
+        with zipfile.ZipFile(cb) as z:
+            ns = sorted(n for n in z.namelist() if n.lower().endswith((".jpg", ".jpeg", ".png")))
+            for i, n in enumerate(ns, 1): (pages_dir / f"page_{i:04d}{Path(n).suffix.lower()}").write_bytes(z.read(n))
+        print(f"extracted {len(ns)} pages from {cb.name}"); return
+    from PyPDF2 import PdfReader, PdfWriter
     reader = PdfReader(str(book_dir / "source.pdf"))
     def save(args):
         r, i, d = args
@@ -146,6 +171,12 @@ def _dmiss(b):
     from PyPDF2 import PdfReader
     n = len(PdfReader(str(b / "source.pdf")).pages); t = b / "transcriptions"
     return n, [i for i in range(1, n + 1) if not (t / f"page_{i:04d}.txt").exists() or not (t / f"page_{i:04d}.txt").stat().st_size]
+PRI = ADATA / "git" / "books" / "priority.txt"   # ordered substrings; unlisted follow alphabetically
+def _dpri(): return [l.strip() for l in PRI.read_text().splitlines() if l.strip() and l[0] != "#"] if PRI.exists() else []
+def _dorder(bs):
+    p = _dpri(); return sorted(bs, key=lambda b: next((i for i, s in enumerate(p) if s.lower() in b.name.lower()), len(p)))
+def _dtodo(b):   # output/transcript.txt = the drip's own COMPLETE marker; without it finished books re-ran (gates 1621p)
+    return (b / "source.pdf").is_file() and not (b / "output" / "transcript.txt").is_file()
 ENG_OK = ("codex", "opus", "sonnet", "haiku")   # fable NEVER: interactive quota is not for batch burns
 def _dengines():
     e = [x for x in _dstate().get("engines", ["codex", "opus"]) if x in ENG_OK]
@@ -213,9 +244,10 @@ def _drip_loop(tgt, rate):
             out.parent.mkdir(parents=True, exist_ok=True)
             try: subprocess.run(["ebook-convert", str(src2), str(out)], capture_output=True, timeout=180)
             except Exception: pass
-            _dlog(f"{b.name} convert {'ok' if out.exists() and out.stat().st_size else 'failed'}")
+            if out.exists() and not out.stat().st_size: out.unlink()   # 0-byte stub reads as "has text" + syncs to cloud
+            _dlog(f"{b.name} convert {'ok' if out.exists() else 'failed'}")
     for b in [x for x in books if (x / "chunks").is_dir() and (x / "prompt.txt").is_file()]: _drip_text(b, rate)
-    books = [b for b in books if (b / "source.pdf").is_file()]
+    books = _dorder([b for b in books if _dtodo(b)])
     _dw(qtotal=len(books), qdone=0)
     fails = 0
     for qi, b in enumerate(books):
@@ -225,8 +257,8 @@ def _drip_loop(tgt, rate):
         total, miss = _dmiss(b)
         if not miss: continue
         _dlog(f"{b.name} start: {len(miss)}/{total} to go, {rate}/h")
-        engines = _dengines()
         for n in miss:
+            engines = _dengines()
             pf = 0   # poison track: page fails while the PRIMARY engine is provably alive (Maxwellians p1: 5m hang -> timeout -> looked like quota, livelocked the queue)
             pdf = b / "pages" / f"page_{n:04d}.pdf"
             if not pdf.is_file():   # split skipped a corrupt page object — engines would strike a ghost (OOTP p1); pdftoppm -f N renders what PyPDF2 can't
@@ -279,19 +311,24 @@ def cmd_drip(args):
                 if b.name[:30] in l: print(f"  {l}"); break
             return
         done = part = 0
-        rows = []
-        for b in books:
+        rows = []; cum = 0; rate = _dstate().get("rate") or 20
+        for b in _dorder(books):
             pages = len(list((b / "pages").glob("page_*.pdf"))) if (b / "pages").is_dir() else 0
             t = b / "transcriptions"
             n = sum(1 for f in t.glob("page_*.txt") if f.stat().st_size) if t.is_dir() else 0
-            g = "▶" if b.name == cur else "✓" if pages and n >= pages else "◐" if n else "·"
-            if g == "✓": done += 1
-            if g == "◐": part += 1
-            if g != "·" or len(books) <= 30:
-                nm = b.name if len(b.name) <= 48 else b.name[:23] + "…" + b.name[-24:]
-                rows.append(f" {g} {nm:<48} {n}/{max(pages, n) if pages else '?'}")   # ghost-page txts can exceed split pdfs
-        print(f"{done} done · {part} partial · {len(books) - done - part} queued of {len(books)} — drill: a book drip jobs <substr>")
+            left = max((pages or (b / "source.pdf").stat().st_size // 30000) - n, 0)   # unsplit pdf -> ~size estimate, marked ~
+            if not left or not _dtodo(b): done += 1; continue   # done books are a count, not 600 rows
+            part += n > 0; cum += left
+            if len(rows) < 25:
+                nm = b.name if len(b.name) <= 44 else b.name[:21] + "…" + b.name[-22:]
+                rows.append(f" {'▶' if b.name == cur else '◐' if n else '·'} {nm:<44} {n}/{pages or n + left}{'' if pages else '~'} {left:>5}p {left / rate:>5.1f}h by{cum / rate / 24:>6.1f}d")
+        print(f"{done} done · {part} partial · {len(books) - done} queued — {cum:,}p {cum / rate / 24:.0f}d at {rate}/h — order: a book drip pri <substr>…")
         print("\n".join(rows))
+        return
+    if sub == "pri":   # what runs first; queue order + eta column both follow it
+        if len(args) > 3: PRI.parent.mkdir(parents=True, exist_ok=True); PRI.write_text("\n".join(args[3:]) + "\n")
+        print("\n".join(_dpri()) or "(none — alphabetical)")
+        print(f"  set: a book drip pri <substr>…   edit: e {PRI}")
         return
     if sub == "engines":
         if len(args) > 3:
@@ -354,8 +391,7 @@ def cmd_drip(args):
     elif s.get("state") == "running" and rate: print(f"  next page ~{time.strftime('%H:%M', time.localtime(s.get('ts', 0) + int(3600 / rate)))}")
     for l in (DRIP / "drip.log").read_text().splitlines()[-4:] if (DRIP / "drip.log").exists() else []: print(f"  {l}")
 def cmd_sync():
-    remote = "a-gdrive"
-    path = f"{remote}:adata/books/"
+    path = "a-gdrive:adata/books/"
     # registry upsert FIRST — the list is instantly complete everywhere; content streams up behind it (pull-on-open)
     IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
     rows = [l for l in IDX.read_text().splitlines() if l.strip()]
@@ -372,9 +408,9 @@ def cmd_sync():
     # text only (output/*.txt + source.txt): whole library ~300MB vs tens of GB with scans; devices pull-on-open
     print(f"Syncing book text {DATA_DIR} -> {path}")
     subprocess.run(["rclone", "copy", str(DATA_DIR), path, "--filter", "- .*/**", "--filter", "+ */output/*.txt",
-                    "--filter", "+ */source.txt", "--filter", "- *", "--transfers=16", "--progress", "-L"], check=False)
+                    "--filter", "+ */source.txt", "--filter", "- *", "--transfers=16", "--progress", "-L", "--update"], check=False)   # --update: else a stale device re-uploads old text over a correction
     print(f"Pulling {path} -> {DATA_DIR}")
-    subprocess.run(["rclone", "copy", path, str(DATA_DIR), "--progress", "-L", "--ignore-existing"], check=False)
+    subprocess.run(["rclone", "copy", path, str(DATA_DIR), "--progress", "-L", "--update"], check=False)   # --update: corrections must reach every device
 
 def cmd_add(path):
     p = Path(path)
@@ -455,14 +491,8 @@ def cmd_yt(great, urls):
         for title, t in secs: f.write(f"\n\n== [youtube] {title} ==\n\n{t}")
     print(f"+ appended {len(secs)} transcript(s), {sum(len(t.split()) for _,t in secs):,} words → {dst}")
 
-def _gdrive_info():
-    from _common import get_rclone, _configured_remotes
-    rc=get_rclone();remotes=_configured_remotes() if rc else []
-    if not remotes: return None
-    return f"gdrive ({remotes[0]}): https://drive.google.com/drive/search?q=adata%2Fbooks"
-
 def cmd_list(show_all=False):
-    books = sorted(p.parent.name for p in DATA_DIR.glob("[!.]*/source.*"))
+    books = sorted(d.name for d in DATA_DIR.glob("[!.]*") if list(d.glob("source.*")) or list(d.glob("output/*.txt")))   # mirror devices hold text only, no source
     if not books: print("No books in", DATA_DIR); return
     limit=len(books) if show_all else 4
     for b in books[:limit]:
@@ -471,8 +501,6 @@ def cmd_list(show_all=False):
         status = f" [{len(out)} outputs]" if out else ""
         print(f"  {b}{status}")
     if not show_all and len(books)>4: print(f"  ... +{len(books)-4} more (a book list)")
-    gi=_gdrive_info()
-    if gi: print(f"\n  {gi}")
     print("\na book <name>  show book menu\na book add <file>  import PDF\na book sync  cloud sync")
 
 def cmd_show(name):
@@ -505,7 +533,7 @@ if __name__ == "__main__":
               "a book push|pull <name>  rclone copy to/from a-gdrive:books/<name>/\n"
               "a book read <name>  open in e -r at saved position; Ctrl-T speaks line; quit saves pos\n"
               "a book chat <name>  interactive Q&A against the book's processed output\n"
-              "a book transcribe|translate|explain <name>  OCR / translate / annotate pages\n"
+              "a book transcribe|translate|explain|comic <name>  OCR / translate / annotate / manga panels (--rtl|--ltr)\n"
               "a book corpus <author>  single-author .txt → adata/corpus/ (gutenberg dump + outputs), for evals\n"
               "a book yt <great> <url>  append youtube talk/interview transcripts to that great's corpus\n"
               "a book list | index | serve [start|stop] | sync\n"
@@ -535,15 +563,20 @@ if __name__ == "__main__":
         cmd_corpus(" ".join(args[2:])) if len(args) > 2 else sys.exit("Usage: a book corpus <author>")
     elif cmd == "yt":
         cmd_yt(args[2], args[3:]) if len(args) > 3 else sys.exit("Usage: a book yt <great> <youtube-url|channel|ytsearchN:query> ...")
-    elif cmd in ("transcribe", "latex"):
-        from PyPDF2 import PdfReader
-        fn, cd, sf = (transcribe_page,"transcriptions","transcript") if cmd=="transcribe" else (latex_page,"latex","latex")
+    elif cmd in ("transcribe", "latex", "comic"):   # comic = panels in reading order + art descriptions; --rtl/--ltr forces direction, else per-page detection
+        fn, cd, sf = {"transcribe": (transcribe_page, "transcriptions", "transcript"), "latex": (latex_page, "latex", "latex"), "comic": (comic_page, "panels", "panels")}[cmd]
         book = resolve_book(args[2] if len(args) > 2 else None)
         split_pdf(book, nocache=nocache)
-        total = len(PdfReader(str(book / "source.pdf")).pages)
+        if cmd == "comic": total = len(list((book / "pages").glob("page_*")))
+        else:
+            from PyPDF2 import PdfReader
+            total = len(PdfReader(str(book / "source.pdf")).pages)
         start, end = (int(args[3]), int(args[4])) if len(args) >= 5 else (1, total)
         workers = int(args[5]) if len(args) >= 6 else 1
-        process_range(book, start, end, fn, "pages", cd, sf, workers, total, nocache=nocache)
+        kw = {}
+        if cmd == "comic":
+            kw["dirhint"] = "RTL" if "--rtl" in sys.argv else "LTR" if "--ltr" in sys.argv else comic_vote(book, start, end)
+        process_range(book, start, end, fn, "pages", cd, sf, workers, total, nocache=nocache, **kw)
     elif cmd == "translate":
         from PyPDF2 import PdfReader
         book = resolve_book(args[2] if len(args) > 2 else None)
