@@ -94,9 +94,54 @@ def transcribe_page(source_path, output_dir, nocache=False):
 def translate_page(source_path, output_dir, target_lang="English", nocache=False):
     return process_page(source_path, output_dir, f"Translate this scanned page to {target_lang}, preserving paragraph structure and section headers (\\section*{{}}). Render ALL mathematics as LaTeX — $..$ inline, \\[..\\] display — transcribing every formula exactly; translate only the prose, never alter or omit a formula. Keep footnote markers. Blank page → empty <transcription></transcription> tags. Return only the translated text wrapped in <transcription></transcription>", nocache)
 
-_CPROMPT = ("One page of a comic/manga. %D Number EVERY panel in reading order.\nOutput exactly:\nDIR: LTR|RTL (evidence: <short>)\nPAGE: <printed number or ->\nPANELS: <count, must equal the P lines>\n"
-    "P1: Art: <1-2 sentences: characters, action, setting, framing>\n    Text: <dialogue/caption verbatim, speaker if clear>\n    SFX: <verbatim>\nP2: ...\n"
-    "Omit Text:/SFX: when absent. Never invent dialogue. Wrap in <transcription></transcription>")
+_CPROMPT = ("Comic/manga page. %D Number EVERY panel in reading order:\nDIR: LTR|RTL (evidence)\nPAGE: <printed no.|->\nPANELS: <n>\n"
+    "P1: Art: <who, action, setting, framing; 1-2 sentences>\n    Text: <dialogue/caption verbatim + speaker>\n    SFX: <verbatim>\nP2: ...\n"
+    "Omit empty Text:/SFX:. Never invent dialogue. Cover/text page = 1 panel. Output only the schema; PANELS = P lines, fix silently.")
+_BAD = r"API Error|content filtering|can'?t reproduce|copyrighted material|\[page unreadable|\[source page missing"
+def page_defects(f, comic):   # what's wrong with one cached page; [] = clean. Machine-checkable, so repair needs no human read.
+    import re
+    t = f.read_text(errors="ignore") if f.exists() else ""
+    d = ["empty"] if len(t.strip()) < 40 else []
+    if re.search(_BAD, t, re.I): d.append("refusal/placeholder")
+    if comic:
+        if len(re.findall(r"^DIR:", t, re.M)) > 1: d.append("dup block")   # model re-listed the page after arguing with itself
+        m, n = re.search(r"^PANELS:\s*(\d+)", t, re.M), len(re.findall(r"^P\d+:", t, re.M))
+        if m and n and int(m[1]) != n: d.append(f"PANELS {m[1]}!={n}")
+        j = [l for l in t.splitlines() if l.strip() and not re.match(r"\s*(DIR:|PAGE:|PANELS:|P\d+:|Text:|SFX:|<|\()", l)]
+        if j: d.append(f"{len(j)} stray lines")
+    return d
+
+_RPROMPT = "Judge this transcription against the page image. Reply OK if faithful: every panel present, right reading order, dialogue and SFX verbatim, nothing invented. Else reply BAD <short reason>."
+def api_defects(f, src):   # the semantic half no regex can do: wrong panel order, invented dialogue, missed text
+    try:
+        r = subprocess.run(["claude", "--dangerously-skip-permissions", "--print", "--model", "opus"], timeout=240, text=True, capture_output=True,
+                           input=f"{_RPROMPT}\n\nPAGE IMAGE: {src}\n\nTRANSCRIPTION:\n{f.read_text(errors='ignore')}")
+        o = " ".join(r.stdout.split())
+    except Exception as e: return [f"api {type(e).__name__}"]
+    return [] if o[:2].upper() == "OK" or not o else ["api: " + o[:90]]
+
+def cmd_repair(book, start, end, comic, dirhint, tries=3, api=False):
+    cache = book / ("panels" if comic else "transcriptions")
+    fn, kw = (comic_page, {"dirhint": dirhint}) if comic else (transcribe_page, {})
+    src = lambda i: next(iter(sorted((book / "pages").glob(f"page_{i:04d}.*"))), None)
+    def chk(i):   # mechanical always (free); --api adds the model review on top
+        f = cache / f"page_{i:04d}.txt"
+        return page_defects(f, comic) or (api_defects(f, src(i)) if api and src(i) else [])
+    bad = [(i, d) for i in range(start, end + 1) for d in [chk(i)] if d]
+    print(f"{end - start + 1} pages checked ({'mechanical+api' if api else 'mechanical'}) · {len(bad)} need repair")
+    for i, d in bad: print(f"  p{i:04d}  {', '.join(d)}")
+    fixed, failed = [], []
+    for i, _ in bad:
+        if not src(i): failed.append(i); print(f"  p{i:04d} no source page"); continue
+        for a in range(tries):
+            fn(str(src(i)), str(cache), nocache=True, **kw)
+            d = chk(i)
+            if not d: fixed.append(i); print(f"  p{i:04d} fixed (try {a + 1})"); break
+            print(f"  p{i:04d} try {a + 1}/{tries}: {', '.join(d)}")
+        else: failed.append(i)
+    print(f"+ {len(fixed)} fixed · {len(failed)} still bad", *(f"p{i:04d}" for i in failed))
+    return fixed, failed
+
 def comic_vote(book, start, end):   # ONE direction for the volume: per-page detection flips (splash/front-matter pages carry no cues), which would scramble panel order mid-book
     import re
     from collections import Counter
@@ -522,6 +567,7 @@ def cmd_show(name):
 
 if __name__ == "__main__":
     nocache = "--nocache" in sys.argv
+    dirf = "RTL" if "--rtl" in sys.argv else "LTR" if "--ltr" in sys.argv else ""
     from_translation = "--from-translation" in sys.argv
     from_transcription = "--from-transcription" in sys.argv
     args = [a for a in sys.argv if not a.startswith("--")]
@@ -534,6 +580,7 @@ if __name__ == "__main__":
               "a book read <name>  open in e -r at saved position; Ctrl-T speaks line; quit saves pos\n"
               "a book chat <name>  interactive Q&A against the book's processed output\n"
               "a book transcribe|translate|explain|comic <name>  OCR / translate / annotate / manga panels (--rtl|--ltr)\n"
+              "a book repair <name> [s e] [tries] [--api]  find defective pages (--api = model review too, not just schema), re-run only those (exit 1 if any fail)\n"
               "a book corpus <author>  single-author .txt → adata/corpus/ (gutenberg dump + outputs), for evals\n"
               "a book yt <great> <url>  append youtube talk/interview transcripts to that great's corpus\n"
               "a book list | index | serve [start|stop] | sync\n"
@@ -563,6 +610,15 @@ if __name__ == "__main__":
         cmd_corpus(" ".join(args[2:])) if len(args) > 2 else sys.exit("Usage: a book corpus <author>")
     elif cmd == "yt":
         cmd_yt(args[2], args[3:]) if len(args) > 3 else sys.exit("Usage: a book yt <great> <youtube-url|channel|ytsearchN:query> ...")
+    elif cmd == "repair":   # scan cached pages for defects -> re-run just those, 3 tries each -> reassemble. exit 1 if any still bad, so it chains: a book repair X && a book chat X
+        book = resolve_book(args[2] if len(args) > 2 else None)
+        comic = (book / "panels").is_dir() or any(book.glob("source.cb[zr]"))
+        cd, sf, fn = ("panels", "panels", comic_page) if comic else ("transcriptions", "transcript", transcribe_page)
+        total = len(list((book / "pages").glob("page_*")))
+        start, end = (int(args[3]), int(args[4])) if len(args) >= 5 else (1, total)
+        fixed, failed = cmd_repair(book, start, end, comic, dirf, int(args[5]) if len(args) >= 6 else 3, "--api" in sys.argv)
+        if fixed: process_range(book, 1, total, fn, "pages", cd, sf, 1, total, **({"dirhint": ""} if comic else {}))   # cache is warm: reassembles, no new calls
+        sys.exit(1 if failed else 0)
     elif cmd in ("transcribe", "latex", "comic"):   # comic = panels in reading order + art descriptions; --rtl/--ltr forces direction, else per-page detection
         fn, cd, sf = {"transcribe": (transcribe_page, "transcriptions", "transcript"), "latex": (latex_page, "latex", "latex"), "comic": (comic_page, "panels", "panels")}[cmd]
         book = resolve_book(args[2] if len(args) > 2 else None)
@@ -575,7 +631,7 @@ if __name__ == "__main__":
         workers = int(args[5]) if len(args) >= 6 else 1
         kw = {}
         if cmd == "comic":
-            kw["dirhint"] = "RTL" if "--rtl" in sys.argv else "LTR" if "--ltr" in sys.argv else comic_vote(book, start, end)
+            kw["dirhint"] = dirf or comic_vote(book, start, end)
         process_range(book, start, end, fn, "pages", cd, sf, workers, total, nocache=nocache, **kw)
     elif cmd == "translate":
         from PyPDF2 import PdfReader
