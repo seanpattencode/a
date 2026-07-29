@@ -95,11 +95,20 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
     perf_disarm(); init_db(); load_cfg();
     CWD(cwd);
-    char cache[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);
+    char cache[P],wc[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);snprintf(wc,P,"%s/win_cache.txt",DDIR);time_t wcm=0;
     {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications"};  /* regen when a source is newer; >= = same-second; %.0s eats SROOT; dirs: mtime bumps on add/rm/rename incl. sync pulls */
     if(!stat(cache,&c))for(int i=0;i<6;i++){snprintf(q,P,F[i],SROOT,HOME);if(!stat(q,&s)&&s.st_mtime>=c.st_mtime){unlink(cache);break;}}}
     char*lines[2048];int n=0;const char*ft0=getenv("A_FILT_TAG");
     size_t len=0;char*raw=0;
+    struct winsize ws;
+    struct termios old,raw_t;
+    if(isatty(0)){tcgetattr(STDIN_FILENO,&old);raw_t=old;
+    raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
+    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);if(!ifr_on)write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);}
+    int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="",lastnote[P]="";time_t lastfire=0;
+    static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
+    struct timespec tk=_t0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since _t0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
+    bld:n=0;free(raw);  /* detached regen lands AFTER our read → mtime flip re-enters (typed buf survives): first launch matches live convo */
     {
     raw=readf(cache,&len);
     if(!raw){gen_icache();raw=readf(cache,&len);if(!raw)return 1;}
@@ -109,15 +118,15 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     fq_index();
     for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
-    {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);size_t wl;char*wr=readf(wp,&wl);
+    {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);size_t wl;static char*wr;free(wr);wr=readf(wp,&wl);
      if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
     static char wb[65536];size_t wl=0;
     {/* win rows (bare menu AND a-tmux view): fork-free read of one rich cache — NAME\twin\t@id START · …in-order tail of last output — detached ≤1/s bg regen keeps it warm. -t TMS not -a: grouped a-<pid> sessions re-list the same windows. START = first-pane pid birth (a done splits excluded; restored wins = restore time) */
-        char wc[P];snprintf(wc,P,"%s/win_cache.txt",DDIR);size_t cl;char*cw=readf(wc,&cl);
+        size_t cl;char*cw=readf(wc,&cl);
         if(cw){if(cl>65535)cl=65535;memcpy(wb,cw,cl);wb[cl]=0;wl=cl;free(cw);}
-        else{FILE*p=popen("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null","r");if(p){wl=fread(wb,1,65535,p);pclose(p);wb[wl]=0;}}  /* first run: names now, rich next open */
-        struct stat ws;if(stat(wc,&ws)!=0||time(0)-ws.st_mtime>=1){if(fork()==0){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
+        else{pcmd("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null",wb,65536);wl=strlen(wb);}  /* first run: names now, rich on the mtime flip */
+        struct stat st;int sr=stat(wc,&st);wcm=sr?0:st.st_mtime;if(sr||time(0)-st.st_mtime>=1){if(fork()==0){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
             char cm[P*3];snprintf(cm,sizeof cm,
                 "td=$(date +%%b%%e|tr -d ' ');tmux lsp -s -t '"TMS"' -F '#{window_id} #{pane_id} #{pane_pid} #{window_name} #{pane_start_command}' 2>/dev/null|while read -r i d p w sc;do "
                 "[ \"$i\" = \"$li\" ]&&continue;li=$i;"
@@ -138,7 +147,6 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         "m effort low\tm\tlow reasoning effort","m effort medium\tm\tmedium effort","m effort high\tm\thigh effort","m effort max\tm\tmax (Claude only)","m effort xhigh\tm\txhigh (Codex only)",
         "m tier default\tm\tdefault tier","m tier fast\tm\tpriority/fast tier","m tier flex\tm\tflex tier (cheap, slow)",0};
     for(int i=0;acts[i]&&n<2048;i++)lines[n++]=(char*)acts[i];}
-    if(!n){puts("Empty cache");free(raw);return 1;}
     {static LNK lk[2048];for(int i=0;i<n;i++){lk[i].s=lines[i];lk[i].k=fq_get(lines[i]);lk[i].i=i;}
      qsort(lk,(size_t)n,sizeof*lk,lnk_cmp);for(int i=0;i<n;i++)lines[i]=lk[i].s;}
     }
@@ -149,17 +157,11 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(strstr(ft0,tg))lines[j++]=lines[i];}n=j;}}
     int m_mode=ft0&&!strcmp(ft0,"m");
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
-    struct winsize ws;
-    struct termios old,raw_t;tcgetattr(STDIN_FILENO,&old);raw_t=old;
-    raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
-    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);if(!ifr_on)write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);
-    int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="",lastnote[P]="";time_t lastfire=0;
-    static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
     #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)  /* heap buf: paste of any length */
     #define SNIP do{int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}while(0)  /* receipt snippet: head of what went, UTF-8-safe cut */
     #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw);free(buf)
-    struct timespec tk=_t0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since _t0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
     while (1) {
+        {struct stat st;if(!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: input-box rules */
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
         if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],buf))continue;fm[nm++]=(char*)ICFG[i];}}
