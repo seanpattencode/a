@@ -34,25 +34,18 @@ static int cmd_install(int argc, char **argv) { (void)argc;(void)argv; AB;
 }
 
 static int cmd_uninstall(int argc, char **argv) { (void)argc;(void)argv;
-    printf("Uninstall aio? (y/n): "); char buf[16];
+    printf("Uninstall a? (removes binaries+shell hooks+timers; keeps %s = code+data) (y/n): ", SDIR); char buf[16];
     if (!fgets(buf, 16, stdin) || (buf[0] != 'y' && buf[0] != 'Y')) return 0;
-    char p[P];
-    snprintf(p, P, "%s/.local/bin/a", HOME); unlink(p);
-    puts("✓ uninstalled"); _exit(0);
-}
-
-static int cmd_deps(int argc, char **argv) { (void)argc;(void)argv; AB;
-    (void)!system("which tmux >/dev/null 2>&1 || sudo apt-get install -y tmux 2>/dev/null");
-    printf("%s tmux\n", system("which tmux >/dev/null 2>&1") == 0 ? "✓" : "x");
-    (void)!system("which node >/dev/null 2>&1 || sudo apt-get install -y nodejs npm 2>/dev/null");
-    printf("%s node\n", system("which node >/dev/null 2>&1") == 0 ? "✓" : "x");
-    const char *tools[][2] = {{"codex","npm i -g @openai/codex"},{"claude","curl -fsSL https://claude.ai/install.sh | bash"},{"gemini","npm i -g @google/gemini-cli"}};
-    for (int i = 0; i < 3; i++) {
-        char c[256]; snprintf(c, 256, "p=$(which %s 2>/dev/null);[ -n \"$p\" ] && [ \"${p:0:5}\" != /mnt/ ] || %s 2>/dev/null", tools[i][0], tools[i][1]); (void)!system(c);
-        snprintf(c, 256, "p=$(which %s 2>/dev/null);[ -n \"$p\" ] && [ \"${p:0:5}\" != /mnt/ ]", tools[i][0]);
-        printf("%s %s\n", system(c) == 0 ? "✓" : "x", tools[i][0]);
-    }
-    return 0;
+    char c[B];
+    snprintf(c,B,
+        "rm -f '%s/.local/bin/a' '%s/.local/bin/e' '%s/.local/bin/h';"
+        "command -v systemctl >/dev/null&&{ systemctl --user disable --now $(systemctl --user list-unit-files --no-legend 'a-*' 2>/dev/null|awk '{print $1}') 2>/dev/null;rm -f '%s/.config/systemd/user'/a-*.service '%s/.config/systemd/user'/a-*.timer;systemctl --user daemon-reload 2>/dev/null;};"
+        "for p in '%s/Library/LaunchAgents'/a-*.plist;do [ -f \"$p\" ]&&{ launchctl unload \"$p\" 2>/dev/null;rm -f \"$p\"; };done;"
+        "for RC in '%s/.bashrc' '%s/.zshrc';do [ -f \"$RC\" ]&&{ sed -i.bak '/^_ADD=/d;/^a() {/,/^}/d;/^aio() /d;/^ai() /d;/aios/d;/a-tmux-env-fix/,+1d' \"$RC\";rm -f \"$RC.bak\"; };done",
+        HOME,HOME,HOME,HOME,HOME,HOME,HOME,HOME);
+    (void)!system(c);
+    printf("✓ uninstalled — kept: %s + ~/e (rm -rf them to purge), ~/.local/bin PATH line, /etc/hosts a.local\n", SDIR);
+    fflush(stdout); _exit(0);
 }
 
 static int cmd_e(int argc, char **argv) { AB;

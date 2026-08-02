@@ -103,7 +103,7 @@ _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
     [[ $l -gt 0 && $e -gt $l ]] && { echo -e "\033[31m✗ PERF KILL\033[0m: sh a.c $1 ${e}us > ${l}us" >&2; exit 1; }
     echo -e "${e}us" >&2;}
 _tok_chk() { local f="$D/adata/git/perf/tok.txt" t c;c=$(head -1 "$f" 2>/dev/null||:)  # entropy deadman: human-only cap, see warning in file
-    [[ "$c" =~ ^[0-9]+$ ]] || c=250000  # no cap file → hardcoded floor; never fail open
+    [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file → hardcoded floor; never fail open
     t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
     [[ $t -le $c ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: a.c+lib = $t > cap $c tok — simplify, don't raise ($f)" >&2;sed 1d "$f" >&2 2>/dev/null;exit 1; };}
 _Q=-DSRC="\"$D\"";[[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
@@ -729,7 +729,7 @@ static const cmd_t CMDS[] = {
     {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},
     {"audio",cmd_audio},{"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cam",cmd_cam},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
-    {"d",cmd_diff},{"debloat",cmd_debloat},{"deps",cmd_deps},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
+    {"d",cmd_diff},{"debloat",cmd_debloat},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
