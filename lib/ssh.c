@@ -5,7 +5,7 @@
    device (adb pair/connect over mDNS, then `adb shell`); ssh is supported but
    secondary for Android. */
 #define SMUX " -oControlMaster=auto -oControlPath=%%d/.ssh/a-%%C -oControlPersist=300"
-#define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"
+#define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7}';ipconfig getifaddr en0 2>/dev/null"
 /* live-filter picker (moved from m.c): anchors menu at bottom of pane via ABSOLUTE row positioning. caller sets raw mode. */
 static int m_pick(const char *cat,const char *const *items,int n,char *out,size_t osz){
     struct winsize ws; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row:24;
@@ -95,8 +95,8 @@ static int cmd_ssh(int argc,char**argv){
             if(f<0||strcmp(H[f].host,h)){ssh_savex(dir,sn,h,f>=0?H[f].pw:NULL,0,0);
                 if(f<0&&nh<32){snprintf(H[nh].name,128,"%s",sn);snprintf(H[nh].host,256,"%s",h);H[nh].pw[0]=0;nh++;}
                 else if(f>=0)snprintf(H[f].host,256,"%s",h);}}
-        int on=!system("pgrep -x sshd >/dev/null 2>&1"),acc=0;
-        if(on&&ip[0]){char pb[256];snprintf(pb,256,"timeout 1 bash -c 'exec 3<>/dev/tcp/%s/%s' 2>/dev/null",ip,port);acc=!system(pb);}
+        int acc=0;if(ip[0]){char pb[256];snprintf(pb,256,"bash -c 'exec 3<>/dev/tcp/%s/%s' 2>/dev/null",ip,port);acc=!system(pb);}
+        int on=acc||!system("pgrep -x sshd >/dev/null");
         size_t dl=strlen(DEV);
         char st[480];int sl=snprintf(st,480,"%s others %s%s\033[0m · as",
             on?"\033[30;42m SSHD ON \033[0m":"\033[97;41m SSHD OFF \033[0m",acc?"\033[32m✓ ":"\033[31mx no access",acc?h:"");
@@ -119,7 +119,7 @@ static int cmd_ssh(int argc,char**argv){
         execvp("a",(char*[]){"a","ssh",sel,NULL});return 1;}
 
     /* start/stop/status */
-    if(!strcmp(sub,"start")){int r=system("sshd 2>/dev/null||service ssh start 2>/dev/null||sudo service ssh start 2>/dev/null||/usr/sbin/sshd 2>/dev/null||sudo /usr/sbin/sshd 2>/dev/null");puts(r?"x sshd":"\033[30;42m SSHD ON \033[0m");return r!=0;}
+    if(!strcmp(sub,"start")){int r=system("sshd 2>/dev/null||service ssh start 2>/dev/null||sudo service ssh start 2>/dev/null||sudo /usr/sbin/sshd 2>/dev/null");puts(r?"x sshd":"\033[30;42m SSHD ON \033[0m");return r!=0;}
     if(!strcmp(sub,"stop")){(void)!system("pkill -x sshd 2>/dev/null||sudo pkill -x sshd");puts("\033[97;41m SSHD OFF \033[0m");return 0;}
     if(!strcmp(sub,"status")||!strcmp(sub,"s")){
         int on=!system("pgrep -x sshd >/dev/null 2>&1");char ip[128];
