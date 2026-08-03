@@ -14,23 +14,10 @@ every command double-execute and responses interleave one-behind):
   by Google sign-in ("browser may not be secure"); extension context is a real
   user. Launch Firefox WITHOUT -marionette → sign into target site once.
 
-Drive shortcuts (bridge must already be running in another process):
-  bri <url>          navigate (http/https prefix detected)
-  bri text [sel]     read body or selected element (sel defaults to "body")
-  bri click <sel>    click element
-  bri type <sel> <s> type into element (handles contenteditable like rich-textarea)
-  bri keys <sel> <k> dispatch keydown/keyup (e.g. "Enter" to submit)
-  bri url            return current URL
-  bri grab [host]    full innerText of the tab whose URL has <host> — the select-all+copy
-                     equivalent; no host = focused tab, --html = full DOM instead of text
-  bri research <q>   human deep research in the REAL signed-in browser: google+bing+ddg
-                     -> open every unique result; primitives: links/openall/tabs/grabs/closeall
-  bri deploy         rebuild lib/bri-ext xpi + restart Firefox (zero-click extension bump)
-  bri restart        quit + relaunch Firefox Nightly (clears tab leaks)
-  bri mon            snapshot bri.py + Firefox CPU/RAM/tabs/connections
-  bri '{json}'       raw passthrough — full 9-action protocol, all fields
-                     (id, sel, text, code, args, ms, keys, …). Use when a
-                     shortcut shape doesn't fit, e.g. eval/wait/html/custom id.
+Drive shortcuts (`a bri` with no args prints the full MENU): <url> text click type keys url
+grab links openall tabs grabs closeall research new hint hint-click save screenshot '{json}'.
+EVERY command goes to ONE browser — default firefox; @chrome / @all prefix or BRI_TO env to
+change; raw '{json}' too (an explicit "to" field in the JSON wins).
 
 Driving a chat/web UI — do NOT hardcode per-site selectors here. They DRIFT and
 break SILENTLY: a script acts but cannot perceive, so it reports ok on a stale
@@ -193,6 +180,17 @@ def main(browser='none'):
         c,addr = s.accept()
         threading.Thread(target=handle, args=(c,addr), daemon=True).start()
 
+def _sock():
+    for i in range(50):
+        try:
+            s=socket.socket(); s.connect(('127.0.0.1',CMD)); return s
+        except OSError:
+            if not i:
+                import subprocess
+                subprocess.Popen([sys.executable,__file__,'serve'],stdout=-3,stderr=-3,start_new_session=True)
+            time.sleep(.1)
+    sys.exit('x bridge failed to start')
+
 # Shortcut CLI: thin client that pushes JSON to a running bridge on :1235 and
 # prints the response. The raw '{json}' form remains the full API.
 _MONP = lambda: __import__('os').path.expanduser('~/a/adata/local/bri_monitor.txt')
@@ -316,9 +314,7 @@ def _hl(host='', code=None):
 def _send(j, to=None):  # push one command to :1235, return the parsed response objects
     j.setdefault('id', int(time.time()*1000) % 10**9)
     if to and to != 'all': j['to'] = to
-    s = socket.socket()
-    try: s.connect(('127.0.0.1', CMD))
-    except OSError: sys.stderr.write('x bridge not running — start it: a bri\n'); sys.exit(1)
+    s = _sock()
     s.sendall((json.dumps(j)+'\n').encode()); buf = b''
     while (ch := s.recv(1<<16)): buf += ch
     out = []
@@ -371,7 +367,7 @@ def client(args):
         return
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
     if a == 'new':  # open a new job tab tagged in the URL; drive it with `a bri hint brijob=<id>`
-        import os, subprocess
+        import subprocess
         if len(args) < 2: sys.stderr.write('usage: a bri new <id> [url]   (default url: chatgpt.com)\n'); sys.exit(1)
         jid, url = args[1], (args[2] if len(args) > 2 else 'chatgpt.com')
         if not url.startswith(('http://','https://')): url = 'https://' + url
@@ -434,14 +430,13 @@ def client(args):
         print(f"next: a bri grabs <url-substring> | a bri tabs | a bri closeall '?q={q[:40]}'")
         return
     if a == 'save':  # generic URL log (replaces the per-site dr.sh appenders); a bri <N> reopens
-        import datetime, urllib.parse, os
+        import datetime, urllib.parse
         if len(args) < 2: sys.stderr.write('usage: a bri save <url> [note...]\n'); sys.exit(1)
         src = urllib.parse.urlparse(args[1]).hostname or 'web'
         line = f'{datetime.datetime.now().astimezone().isoformat(timespec="seconds")} {src} {args[1]} {" ".join(args[2:])}\n'
         p = os.path.expanduser('~/a/adata/git/urls.txt'); os.makedirs(os.path.dirname(p), exist_ok=True)
         open(p, 'a').write(line); sys.stdout.write('+ saved → adata/git/urls.txt\n' + line); return
     if a == 'screen':
-        import os
         p = _MONP(); os.makedirs(os.path.dirname(p), exist_ok=True)
         if len(args) > 1:
             v = '' if args[1] == '-' else args[1]
@@ -460,7 +455,7 @@ def client(args):
             print('set: a bri screen <name>   clear: a bri screen -')
         return
     if a.isdigit():  # `a bri <N>` opens the Nth recent research URL in default browser
-        import os, subprocess
+        import subprocess
         p = os.path.expanduser('~/a/adata/git/urls.txt')
         if not os.path.exists(p): print('no urls.txt'); return
         ln = [l.strip() for l in open(p) if l.strip()][-4:]; n = int(a)
@@ -474,14 +469,14 @@ def client(args):
         # timestamped (or named) file under adata/tmp/ while the user drives a
         # workflow manually via `a bri <cmd>`. Then point an LLM at the file:
         # "turn this into a replay script". The recording IS the ground truth.
-        import os, datetime as dt
+        import datetime as dt
         d = os.path.expanduser('~/a/adata/tmp'); os.makedirs(d, exist_ok=True)
         name = args[1] if len(args) > 1 else dt.datetime.now().strftime('%Y%m%d-%H%M%S')
         f = f'{d}/bri-{name}.log'
         print(f'+ recording → {f}\n  drive workflow in another shell with `a bri <cmd>` then Ctrl-C\n')
         os.execvp('sh', ['sh', '-c', f'tail -F -n 0 {LOG} | tee {f!r}']); return
     if a == 'deploy':  # zero-click rebuild+install of the FF extension + Firefox restart
-        import subprocess, shutil, os, glob, briext
+        import subprocess, shutil, glob, briext
         briext.build()  # regenerate from single source first
         extdir = os.path.join(briext.OUT, 'bri-ext')
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi']
@@ -498,8 +493,12 @@ def client(args):
         print(f'  → {prof[0]}/extensions/')
         _ff_restart()
         print(f'deployed bri-ext v{json.load(open(f"{extdir}/manifest.json"))["version"]}'); return
-    if a.startswith('{'):
-        msg = a
+    if a.startswith('{'):  # raw JSON gets the same default target — verbatim passthrough broadcast to BOTH browsers (every webx eval double-ran, 2026-08-02); explicit 'to' wins
+        try:
+            jr = json.loads(a)
+            if to != 'all': jr.setdefault('to', to)
+            msg = json.dumps(jr)
+        except ValueError: msg = a
     else:
         RID = int(time.time()*1000) % 10**9          # unique per invocation — id:1 reuse cross-routed slow frames' replies into the NEXT command's window
         if a.startswith(('http://','https://')): j = {'action':'navigate','url':a}  # no id: page unloads
@@ -512,10 +511,7 @@ def client(args):
         elif a in ('hint-click','hc'):
             if len(args)<2: sys.stderr.write('usage: a bri hint-click <CODE> [host]\n'); sys.exit(1)
             j = {'id':RID,'action':'eval','code':_hl(args[2] if len(args)>2 else '', args[1])}
-        # NOT recommended — prefer text/html/url. PNG is lossy for any text-bearing
-        # page, heavy (200KB+), and requires a vision model to parse. Use only when
-        # the rendered pixels themselves are the artifact (canvas, layout bug, etc).
-        elif a=='screenshot':
+        elif a=='screenshot':  # avoid when text/html/url can serve — the MENU entry carries the policy
             import base64, time as _t
             out = args[1] if len(args)>1 else f'/tmp/bri-{int(_t.time())}.png'
             for r in _send({'action':'screenshot'}, to):
@@ -533,13 +529,11 @@ def client(args):
                 "eval/wait/html or any control the shortcuts hide.\n"); sys.exit(1)
         if to != 'all': j['to'] = to   # CLI targets firefox by default; @all (or BRI_TO=all) broadcasts to every browser
         msg = json.dumps(j)
-    s = socket.socket()
-    try: s.connect(('127.0.0.1', CMD))
-    except OSError: sys.stderr.write("x bridge not running — start it: a bri\n"); sys.exit(1)
+    s = _sock()
     s.sendall((msg+'\n').encode())
     while (ch := s.recv(1<<16)): sys.stdout.write(ch.decode(errors='replace'))
 
-MENU = """a bri <cmd>     extension bridge to Firefox/Chrome (bri-ext / bri-chrome)
+MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per cmd: firefox default, @chrome/@all prefix retargets
   serve [ff]       start bridge (:1234 http, :1235 cmd) — serves Chrome+FF both; add 'ff' to also launch Firefox on monitor
   deploy           rebuild lib/bri-ext xpi + install + restart FF (zero-click)
   restart          quit + relaunch FF Nightly
@@ -567,7 +561,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome (bri-ext / bri-chro
   screenshot [p]   PNG of active tab → p (default /tmp/bri-<ts>.png)
                    ! avoid if possible — prefer text/html/url (text is the
                      artifact, PNG is lossy + heavy + needs a vision model)
-  '{json}'         raw passthrough — full 9-action protocol
+  '{json}'         raw passthrough — full 9-action protocol (default-targeted too; a "to" field overrides)
 first run — Firefox: a bri serve ff then a bri deploy   ·   Chrome: a bri serve then load bri-chrome (a extload)"""
 
 if __name__=='__main__':
@@ -576,6 +570,10 @@ if __name__=='__main__':
     if not args:
         up = __import__('subprocess').run(['ss','-ltn','sport = :1234'],capture_output=True,text=True).stdout
         print(f"[{'running' if ':1234' in up else 'stopped'}] :1234")
+        if ':1234' in up:  # connected browsers + default target were invisible — dual-browser confusion 2026-08-02
+            s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
+            m = re.search(r'connected: [^)\n]*', r)
+            print(f"  target: firefox by default (@chrome @all or BRI_TO override) · {m.group(0) if m else '?'}")
         # Recent research URLs — logged generically via `a bri save <url>` (any site).
         # Numbered → `a bri <N>` opens URL N. URL on its own line so terminals
         # that auto-detect plain URLs make them clickable too.
