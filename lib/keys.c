@@ -48,7 +48,8 @@ AHK
         ok "WSL: right shift = Ctrl+PageDown"
         exit 0
     fi
-    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\nrightshift = overloadt2(shift, A-right, 200)\n\n[control]\ntab = A-right\n\n[control+shift]\ntab = A-left\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → Ctrl+Tab/Ctrl+Shift+Tab + R-shift tap = next/prev window" || warn "keyd skipped" ;;
+    { command -v keyd >/dev/null || sudo apt install -y keyd 2>/dev/null || sudo dnf install -y keyd 2>/dev/null || sudo pacman -S --noconfirm keyd 2>/dev/null; } && printf '[ids]\n*\n\n[main]\ncapslock = f13\nrightshift = overloadt2(shift, A-right, 200)\n\n[control]\ntab = A-right\n\n[control+shift]\ntab = A-left\n' | sudo tee /etc/keyd/default.conf >/dev/null && sudo systemctl enable --now keyd 2>/dev/null && sudo systemctl restart keyd && ok "keyd → caps=summon picker · Ctrl+Tab + R-shift tap = next/prev window" || warn "keyd skipped"
+    SC=$HOME/.config/sway/config; [[ -f "$SC" ]] && ! grep -q a-summon "$SC" && printf 'for_window [app_id="a-summon"] floating enable\nbindcode 191 exec foot -a a-summon %s/a i\n' "$ABIN" >> "$SC" && swaymsg reload 2>/dev/null && ok "sway: caps → a i picker" || : ;;
 darwin*)
     pgrep -x Hammerspoon >/dev/null && { killall Hammerspoon 2>/dev/null; rm -f ~/.hammerspoon/init.lua; info "stopped Hammerspoon"; }
     command -v swiftc >/dev/null || { warn "need Command Line Tools: xcode-select --install"; exit 1; }
