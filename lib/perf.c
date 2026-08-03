@@ -26,6 +26,7 @@ static unsigned perf_field(const char *data, const char *cmd, int field) {
 
 /* display in ms, enforce in us. 27us overhead × 5B users = 1 human lifetime/year */
 #define fmt_us(us,buf,sz) snprintf(buf,sz,"%.3fms",(us)/1000.0)
+#define el_us(a,b) ((unsigned)(((a).tv_sec-(b).tv_sec)*1000000+((a).tv_nsec-(b).tv_nsec)/1000))
 
 static int cmd_perf(int argc, char **argv) {
     perf_disarm();
@@ -94,6 +95,7 @@ static int cmd_perf(int argc, char **argv) {
                 execl(bin, "a", BENCH_CMDS[i], (char *)NULL);
                 _exit(127);
             }
+            if (p < 0) { res[i].skip = res[i].done = 1; continue; }  /* fork failed: pid -1 would make the timeout path kill(-1) = SIGKILL everything we own */
             res[i].pid = p;
             setpgid(p, p);
         }
@@ -103,13 +105,12 @@ static int cmd_perf(int argc, char **argv) {
         int remaining = 0; for (int i = 0; i < ncmds; i++) if (!res[i].skip) remaining++;
         while (remaining > 0) {
             struct timespec now; clock_gettime(CLOCK_MONOTONIC, &now);
-            unsigned elapsed = (unsigned)((now.tv_sec - t0.tv_sec) * 1000000
-                + (now.tv_nsec - t0.tv_nsec) / 1000);
+            unsigned elapsed = el_us(now, t0);
             if (elapsed > 1000000) {
                 for (int i = 0; i < ncmds; i++) if (!res[i].done) {
                     kill(-res[i].pid, SIGKILL); kill(res[i].pid, SIGKILL);
                     waitpid(res[i].pid, NULL, 0);
-                    res[i].done = 1; res[i].us = (unsigned)elapsed; remaining--;
+                    res[i].done = 1; res[i].us = elapsed; remaining--;
                 }
                 fprintf(stderr, "\033[31mx\033[0m a perf bench exceeded 1s — make slow commands faster\n");
                 break;
@@ -120,8 +121,7 @@ static int cmd_perf(int argc, char **argv) {
                 int status; pid_t p = waitpid(res[i].pid, &status, WNOHANG);
                 if (p <= 0) continue;
                 clock_gettime(CLOCK_MONOTONIC, &now);
-                res[i].us = (unsigned)((now.tv_sec - t0.tv_sec) * 1000000
-                    + (now.tv_nsec - t0.tv_nsec) / 1000);
+                res[i].us = el_us(now, t0);
                 res[i].done = 1; remaining--; any = 1;
                 res[i].pass = !WIFSIGNALED(status);
             }
@@ -129,7 +129,7 @@ static int cmd_perf(int argc, char **argv) {
         }
 
         struct timespec tend; clock_gettime(CLOCK_MONOTONIC, &tend);
-        char ft_total[32]; fmt_us((unsigned)((tend.tv_sec-t0.tv_sec)*1000000+(tend.tv_nsec-t0.tv_nsec)/1000),ft_total,32);
+        char ft_total[32]; fmt_us(el_us(tend,t0),ft_total,32);
         printf("PERF BENCH — device: %s (%s)\n", DEV, ft_total);
         puts("─────────────────────────────────────────────────────────────");
         printf("%-12s %10s %10s %10s  %s\n", "COMMAND", "TIME", "LIMIT", "NEW", "STATUS");
@@ -155,7 +155,7 @@ static int cmd_perf(int argc, char **argv) {
             printf("%-12s %10s %10s %10s  %s\n", label, ft, old ? fo : "-", fn, st);
         }
         puts("─────────────────────────────────────────────────────────────");
-        printf("%d/%d passed, %d tightened\n\n", passed, shown, tightened);
+        printf("%d/%d passed, %d tightened\n", passed, shown, tightened);
         {char pd[P]; snprintf(pd, P, "%s/perf", SROOT); mkdirp(pd);
             FILE *f = fopen(pf, "w");
             if (f) {
@@ -168,7 +168,6 @@ static int cmd_perf(int argc, char **argv) {
                 fclose(f);
             }
         }
-        printf("%d/%d passed, %d tightened\n", passed, shown, tightened);
         free(data); free(res);
         return 0;
     }

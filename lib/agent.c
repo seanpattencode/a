@@ -26,9 +26,10 @@ static int cmd_a_default(int c,char**v){
     init_db();load_cfg();load_sess();const char*k=cfget("default_agent");
     static char kb[16];snprintf(kb,16,"%s",k[0]?k:"c");v[1]=kb;return cmd_sess(c,v);}
 
+static int agls(void){char p[P];snprintf(p,P,"%s/scan",SROOT);struct dirent**e;int n=scandir(p,&e,NULL,alphasort);  /* C, not ls|xargs basename: ~30 forks = 50ms, blew the 0.865ms gate → bare `a agent` printed nothing */
+    for(int i=0;i<n;i++){char*b=e[i]->d_name,*s=strstr(b,".py");if(s&&!s[3]&&strcmp(b,"base.py"))printf("%.*s\n",(int)(s-b),b);}return n<0;}
 static int cmd_agent(int argc, char **argv) {
-    if(argc<3){char c[B];snprintf(c,B,"ls %s/scan/*.py 2>/dev/null|xargs -I{} basename {} .py|grep -v base",SROOT);
-        return system(c);}
+    if(argc<3)return agls();
     if(!strcmp(argv[2],"run")&&argc>3){char f[P];
         snprintf(f,P,"%s/scan/%s.py",SROOT,argv[3]);
         if(!fexists(f)){snprintf(f,P,"%s/lib/platonic_agents/%s.py",SDIR,argv[3]);
@@ -55,46 +56,27 @@ static int cmd_agent(int argc, char **argv) {
         create_sess(sn,wd,cmd,NULL);
         tm_go(sn);return 0;
     }
-    init_db(); load_cfg(); load_sess();
-    const char *wda = argv[2];
-    sess_t *s = find_sess(wda);
-    const char *task;
-    if (s) { task = argc > 3 ? argv[3] : NULL; }
-    else { s = find_sess("g"); task = wda; /* default to gemini */ }
-    if (!task || !task[0]) { puts("Usage: a agent [g|c|l] <task>"); return 1; }
-    /* Build task string */
-    char taskstr[B]=""; int si=(s&&!strcmp(wda,s->key))?3:2;
-    ajoin(taskstr,B,argc,argv,si);
-    CWD(wd);
-    char sn[256]; snprintf(sn, 256, "agent-%s-%ld", s->key, (long)time(NULL));
-    printf("Agent: %s | Task: %.50s...\n", s->key, taskstr);
-    create_sess(sn, wd, s->cmd, NULL);
-    /* Wait for agent to start */
+    init_db();load_cfg();load_sess();
+    const char*wda=argv[2];sess_t*s=find_sess(wda);const char*task=s?(argc>3?argv[3]:NULL):wda;
+    if(!s)s=find_sess("g");  /* default to gemini */
+    if(!task||!task[0]){puts("Usage: a agent [g|c|l] <task>");return 1;}
+    char taskstr[B]="";ajoin(taskstr,B,argc,argv,(s&&!strcmp(wda,s->key))?3:2);
+    CWD(wd);char sn[256];snprintf(sn,256,"agent-%s-%ld",s->key,(long)time(NULL));
+    printf("Agent: %s | Task: %.50s...\n",s->key,taskstr);create_sess(sn,wd,s->cmd,NULL);
     puts("Waiting for agent to start...");
-    for (int i = 0; i < 60; i++) {
-        sleep(1);
-        char out[B]; tm_read(sn, out, B);
-        if (strstr(out, "Type your message") || strstr(out, "claude") || strstr(out, "gemini")) break;
-    }
-    /* Send task with instructions */
-    char prompt[B*2]; snprintf(prompt, sizeof(prompt),
-        "%s\n\nCommands: \"a agent g <task>\" spawns gemini subagent, \"a agent l <task>\" spawns claude subagent. When YOUR task is fully complete, run: a done",
-        taskstr);
-    tm_send(sn, prompt); usleep(300000);
-    tm_key(sn, "Enter");
-    /* Wait for done file */
-    char donef[P]; snprintf(donef, P, "%s/.done", DDIR); unlink(donef);
+    for(int i=0;i<60;i++){sleep(1);char o[B];tm_read(sn,o,B);
+        if(strstr(o,"Type your message")||strstr(o,"claude")||strstr(o,"gemini"))break;}
+    char prompt[B*2];snprintf(prompt,sizeof prompt,"%s\n\nCommands: \"a agent g <task>\" spawns gemini subagent, \"a agent l <task>\" spawns claude subagent. When YOUR task is fully complete, run: a done",taskstr);
+    tm_send(sn,prompt);usleep(300000);tm_key(sn,"Enter");
+    char donef[P];snprintf(donef,P,"%s/.done",DDIR);unlink(donef);
     puts("Waiting for completion...");
-    time_t start = time(NULL);
-    while (!fexists(donef) && time(NULL) - start < 300) sleep(1);
-    /* Capture output */
-    char out[B*4]; tm_read(sn, out, sizeof(out));
-    printf("--- Output ---\n%s\n--- End ---\n", out);
+    for(time_t t0=time(NULL);!fexists(donef)&&time(NULL)-t0<300;)sleep(1);
+    char out[B*4];tm_read(sn,out,sizeof out);printf("--- Output ---\n%s\n--- End ---\n",out);
     return 0;
 }
 
 static int cmd_scan(int argc, char **argv) {
-    if(argc<3){char c[B];snprintf(c,B,"ls %s/scan/*.py 2>/dev/null|xargs -I{} basename {} .py|grep -v base",SROOT);return system(c);}
+    if(argc<3)return agls();
     char *nv[64];nv[0]=argv[0];nv[1]=(char*)"agent";nv[2]=(char*)"run";
     for(int i=2;i<argc&&i<61;i++)nv[i+1]=argv[i];nv[argc+1]=NULL;
     return cmd_agent(argc+1,nv);

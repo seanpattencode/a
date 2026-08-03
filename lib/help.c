@@ -21,26 +21,25 @@ static void list_all(int cache, int quiet) {
     load_proj(); load_apps();
     char pf[P];snprintf(pf,P,"%s/projects.txt",DDIR);
     FILE*fp=fopen(pf,"w");if(fp){for(int i=0;i<NPJ;i++)fprintf(fp,"%s\n",PJ[i].path);fclose(fp);}
-    if(quiet&&!cache)return;
     char out[B*4]="";int o=0;
     for(int i=0;i<NPJ;i++){char mk=dexists(PJ[i].path)?'+':(PJ[i].repo[0]?'~':'x');
         o+=sprintf(out+o,"%s%d. %c %s\n",i?"":"PROJECTS:\n",i,mk,PJ[i].path);}
     for(int i=0;i<NAP;i++)o+=sprintf(out+o,"%s%d. %s -> %.60s\n",i?"":"COMMANDS:\n",NPJ+i,AP[i].name,AP[i].cmd);
-    if(!quiet&&out[0])printf("%s",out);
-    if(cache){char cf[P];snprintf(cf,P,"%s/help_cache.txt",DDIR);
-        FILE*f=fopen(cf,"w");if(f){fprintf(f,"%s\n%s",HELP_SHORT,out);fclose(f);}
+    if(!quiet)fputs(out,stdout);
+    if(cache){char cf[P];snprintf(cf,P,"%s/help_list.txt",DDIR);
+        FILE*f=fopen(cf,"w");if(f){fputs(out,f);fclose(f);}
         snprintf(cf,P,"%s/i_cache.txt",DDIR);unlink(cf);}
 }
 
-static void gen_icache(void) {
-    load_proj(); load_apps(); load_cfg(); load_sess();
-    char ic[P]; snprintf(ic, P, "%s/i_cache.txt", DDIR);
-    FILE *f = fopen(ic, "w"); if (!f) return;
+static void gen_icache(void){
+    load_proj();load_apps();load_cfg();load_sess();
+    char ic[P];snprintf(ic,P,"%s/i_cache.txt",DDIR);
+    FILE*f=fopen(ic,"w");if(!f)return;
     fputs("a\tdefault agent\n",f);
     {char bf[P];snprintf(bf,P,"%s/bookmarks.txt",SROOT);size_t bl;char*bd=readf(bf,&bl);if(bd){fwrite(bd,1,bl,f);if(bl&&bd[bl-1]!='\n')fputc('\n',f);free(bd);}}
     int i; for(i=0;i<NPJ;i++){fprintf(f,"%d: %s\tproject\n",i,PJ[i].name);
         DIR*sd=opendir(PJ[i].path);struct dirent*se;if(sd){while((se=readdir(sd)))if(se->d_name[0]!='.'&&se->d_type==DT_DIR)fprintf(f,"%s/%s\tdir\n",PJ[i].path,se->d_name);closedir(sd);}}
-    for (i=0;i<NAP;i++) fprintf(f, "%d: %s\tcmd\n", NPJ+i, AP[i].name);
+    for(i=0;i<NAP;i++)fprintf(f,"%d: %s\tcmd\n",NPJ+i,AP[i].name);
     for(i=0;i<NSE;i++)fprintf(f,"%s\t%s\n",SE[i].key,SE[i].name);
 #ifdef __ANDROID__
     {char af[P];snprintf(af,P,"%s/local/apps.txt",AROOT);
@@ -85,12 +84,10 @@ static void gen_icache(void) {
     "task add\tadd\ntask l\tlist\ntask r\treview\ntask rank\trank\n"
     "prompt\tdefault prompt\npow\tpower\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
     "tutorial\tguided intro\noperator\toperator\n",f);
-    char sd[P]; snprintf(sd, P, "%s/ssh", SROOT);
-    char sp[32][P]; int sn = listdir(sd, sp, 32);
-    for (i=0;i<sn;i++) {
-        kvs_t kv = kvfile(sp[i]);
-        const char *nm = kvget(&kv,"Name"); if (!nm) continue;  fprintf(f, "ssh %s\thost\n", nm);
-    }
+    char sd[P];snprintf(sd,P,"%s/ssh",SROOT);
+    char sp[32][P];int sn=listdir(sd,sp,32);
+    for(i=0;i<sn;i++){kvs_t kv=kvfile(sp[i]);const char*nm=kvget(&kv,"Name");
+        if(nm)fprintf(f,"ssh %s\thost\n",nm);}
 #ifdef __APPLE__
     {const char*ad[]={"/Applications","/System/Applications"};
     for(int di=0;di<2;di++){DIR*d=opendir(ad[di]);if(!d)continue;struct dirent*e;
@@ -159,11 +156,12 @@ static void gen_icache(void) {
         _exit(0);}
 }
 
-static int cmd_help(int c,char**v){(void)c;(void)v;
-    char p[P];snprintf(p,P,"%s/help_cache.txt",DDIR);
-    if(catf(p)<0){init_db();load_cfg();printf("%s\n",HELP_SHORT);list_all(1,0);}return 0;}
+/* cached list: rescanning projects blew help's 879us budget. catf raw-write(2)s, so flush first */
+static int help_p(const char*h){char p[P];snprintf(p,P,"%s/help_list.txt",DDIR);puts(h);fflush(stdout);
+    if(catf(p)<0){init_db();load_cfg();list_all(1,0);}return 0;}
+static int cmd_help(int c,char**v){(void)c;(void)v;return help_p(HELP_SHORT);}
 static int cmd_hi(int c,char**v){(void)c;(void)v;for(int i=1;i<=10;i++)printf("%d\n",i);puts("hi");return 0;}
-static int cmd_help_full(int c,char**v){(void)c;(void)v;init_db();load_cfg();printf("%s\n",HELP_FULL);list_all(1,0);return 0;}
+static int cmd_help_full(int c,char**v){(void)c;(void)v;return help_p(HELP_FULL);}
 
 static int cmd_done(int argc,char**argv){AB;
     char p[P],msg[B]="";snprintf(p,P,"%s/.done",DDIR);ajoin(msg,B,argc,argv,2);
