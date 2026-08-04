@@ -1,9 +1,7 @@
-/* git */
 static int git_in_repo(const char *p) {
     char c[P]; snprintf(c, P, "%s/.git", p); return dexists(c)||fexists(c);
 }
 
-/* adata setup */
 static void ensure_adata(void) {
     char c[B];
     if(!git_in_repo(SROOT)){
@@ -26,27 +24,24 @@ static void ensure_git_id(void) {
     snprintf(c,B,"git config --global user.name '%s'&&git config --global user.email '%s'",n,e);
     (void)!system(c);printf("✓ git id: %s <%s>\n",n,e);
 }
-/* sync — flock serializes concurrent git ops */
 static void sync_repo(void) {
     ensure_git_id();
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);
     if(fd>=0&&flock(fd,LOCK_EX|LOCK_NB)){close(fd);return;}
     char c[B];
-    /* self-heal (7/8 wedge): a sync orphan died mid `pull --rebase`; the stateful rebase-merge dir then blocked every sync silently for a day.
-       heal each run: pin HEAD to rescue-*, abort dead state, commit churn, merge rescue back (-X ours: state files last-writer-wins), atomic merge-pull (never rebase). */
     snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
-        "[ -f \"$D/.git/index.lock\" ]&&! pgrep -x git >/dev/null&&rm -f \"$D/.git/index.lock\";"   /* killed git strands the lock; every later sync then no-ops silently (tablet 7/15: 37k behind) */
+        "[ -f \"$D/.git/index.lock\" ]&&! pgrep -x git >/dev/null&&rm -f \"$D/.git/index.lock\";"
         "[ -d \"$D/.git/rebase-merge\" ]&&{ g branch -f rescue-$(date +%%s) HEAD;g rebase --abort;};"
         "[ -f \"$D/.git/MERGE_HEAD\" ]&&g merge --abort;"
-        "[ -s \"$D/.git/index\" ]||g read-tree HEAD;g add --sparse -A;g commit -qm sync;"
+        "g add -A -- . ':!activity';g ls-files -z --others --exclude-standard activity|g add --sparse --pathspec-from-file=- --pathspec-file-nul;g commit -qm sync;"
         "g fetch -q origin main 2>/dev/null;b=$(g rev-list --count HEAD..origin/main 2>/dev/null);"
-        "[ \"${b:-0}\" -gt 500 ]&&{ g branch -f rescue-$(date +%%s) HEAD;g checkout -qB main origin/main;};"   /* far behind: merge livelocks weak boxes (pi400/pixel 7/15) — adopt origin, replay local via rescue */
-        "for r in $(g branch --list 'rescue-*'|tr -d ' *');do g merge -X ours --no-edit -q \"$r\"&&g branch -D \"$r\";done;"
+        "[ \"${b:-0}\" -gt 0 ]&&g branch -f rescue-$(date +%%s) HEAD;"
+        "n=$(g rev-parse origin/main);o=$n;for r in $(g for-each-ref --sort=refname --format='%%(refname:short)' 'refs/heads/rescue-*');do t=$(g merge-tree --write-tree --no-messages -X ours -X no-renames $r $n)||exit;n=$(printf sync|g commit-tree $t -p $n -p $r)||exit;g branch -D $r;done;[ \"$n\" = \"$o\" ]||{ h=$(g rev-parse HEAD);g diff --no-renames --name-only -z $h $n -- . ':!activity'|g restore --source=$n --worktree --pathspec-from-file=- --pathspec-file-nul;g reset -q --soft $n;g read-tree $n;g ls-files -z activity|g update-index --skip-worktree -z --stdin;};"
         "g pull --no-rebase --no-edit -q origin main||g merge --abort;g push -q origin main;} >/dev/null 2>&1",SROOT);
     (void)!system(c);if(fd>=0)close(fd);
 }
 static void sync_bg(void) {
-    fflush(NULL);   /* flush before fork, else children re-emit buffered stdout */
+    fflush(NULL);
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }

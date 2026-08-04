@@ -77,14 +77,13 @@ static int m_slash(char *m,size_t sz){
     else{const char*ef=cfget("m_effort");snprintf(nc,B,"claude -p --tools '' --model '%s' --effort '%s'",sel,*ef?ef:"max");}
     cfset("m_cmd",nc);snprintf(m,sz,"/new");return 1;  /* pick = fresh agent: old convo pollutes the new model */
 }
-/* box input — the CC/codex core idea in C: box = f(buffer,width), FULL repaint per keystroke (CC=react+yoga,
- * codex=ratatui wrap_ranges; nobody is incremental). Bottom-anchored ABSOLUTE rows (m_pick pattern) → zero drift. */
 #define M_ST(st,fn) {load_cfg();char _mc[B];m_cmdstr(_mc,B);snprintf(st,B,"%s · %.60s · /=menu",fn,_mc);}
 /* menu=1: chat (sfn=agent name, '/' opens m_slash). menu=0: generic box (sfn=literal status), for a i etc.
  * Buffer is heap-grown (any length); *out = the text (static, valid until next call). */
 static size_t m_input(char **out,const char *sfn,int menu){
     static size_t cap;static char *m;if(!m){cap=4096;m=malloc(cap);}
     char st[B];if(menu)M_ST(st,sfn)else snprintf(st,B,"%s",sfn);
+    struct sigaction sa={0},osa;sa.sa_handler=m_sint;sigaction(SIGWINCH,&sa,&osa);
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSANOW,&r);
     fputs("\033[?2004h",stdout);
     size_t l=0;int paste=0,q=0,ctop=1,pTR=0,mtR=1;
@@ -114,7 +113,7 @@ static size_t m_input(char **out,const char *sfn,int menu){
         {struct timespec p1;clock_gettime(CLOCK_MONOTONIC,&p1);
          printf(" \033[2m%.3fms\033[0m",(double)(p1.tv_sec-p0.tv_sec)*1e3+(double)(p1.tv_nsec-p0.tv_nsec)/1e6);}
         printf("\033[%d;%dH",top+eR,cc);fflush(stdout);
-        unsigned char c;rd:if(read(0,&c,1)!=1)break;
+        unsigned char c;rd:if(read(0,&c,1)!=1){if(g_halt){g_halt=0;if(l)continue;q=2;}break;}
         if(c==27){char s[8];int av=0;usleep(2000);ioctl(0,FIONREAD,&av);if(!av){l=0;break;}  /* lone ESC = cancel */
             (void)!read(0,s,1);if(s[0]!='['&&s[0]!='O')continue;
             size_t si=0;while(si<7){if(read(0,s+1+si,1)!=1)break;char e=s[1+si];si++;if((e>='A'&&e<='Z')||(e>='a'&&e<='z')||e=='~')break;}
@@ -134,8 +133,8 @@ static size_t m_input(char **out,const char *sfn,int menu){
     m[l]=0;*out=m;
     #undef MFIT
     printf("\033[%d;1H\033[J",ctop);  /* wipe box; caller prints from here */
-    fputs("\033[?2004l",stdout);fflush(stdout);tcsetattr(0,TCSANOW,&o);
-    return q?(size_t)-1:l;
+    fputs("\033[?2004l",stdout);fflush(stdout);tcsetattr(0,TCSANOW,&o);sigaction(SIGWINCH,&osa,0);
+    return q?(size_t)-q:l;
 }
 static int cmd_m(int c,char**v){
     if(c>2&&!strcmp(v[2],"cmd")){load_cfg();if(c>3){char val[B]="";ajoin(val,B,c,v,3);cfset("m_cmd",strcmp(val,"clear")?val:"");}printf("m_cmd=%s\n",cfget("m_cmd"));return 0;}
@@ -157,6 +156,7 @@ static int cmd_m(int c,char**v){
             g_halt=0;
             char*m;size_t l=m_input(&m,fn,1);
             if(l==(size_t)-1)return 0;
+            if(l==(size_t)-2)break;
             if(!l)continue;
             if(l>2048){size_t eo=l-2000;while(eo<l&&(m[eo]&0xC0)==0x80)eo++;  /* huge paste: echo count+tail, transcript file keeps it whole */
                 printf("\033[36m> %zuc…%s\033[0m\n",l,m+eo);}
