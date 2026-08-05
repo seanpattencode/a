@@ -28,9 +28,9 @@ FWTL("\"$j\"") FSTAT("\"$j\"") FEMIT
 FRQG FRQC;
 static const char *FRQL = FLIVE FRQG FRQC;                               /* statx local: claude via f_lemit, grok/codex via shell */
 
-typedef struct { char host[40], cwd[256], sid[48], mdl[40], desc[160], tail[64]; int live, seen; long mt; } FI;
+typedef struct { char host[40], cwd[256], sid[48], mdl[40], desc[160], tail[64], lbl[24]; int live, seen; long mt; } FI;
 static FI FL[512]; static int FNN, f_live_scan = 1, f_top, f_tty;
-typedef struct { int fd; char host[40], buf[8192]; int blen; } FCh;
+typedef struct { int fd; char host[40], buf[8192]; int blen, got, ph; char via[28]; } FCh;   /* got: box answered (@ sentinel) — silent box = not accessible; ph+via: adb-attached phone (serial/addr) */
 static FCh fch[64]; static int fnch;
 static struct termios f_saved;
 static volatile sig_atomic_t f_winch;
@@ -45,6 +45,11 @@ static int f_sane(char *dst, const char *src, int cap) {                 /* prin
         if (ch == ' ' && (o == 0 || dst[o - 1] == ' ')) continue; dst[o++] = (char)ch; }
     while (o && dst[o - 1] == ' ') o--; dst[o] = 0; return o;
 }
+static char f_lbls[32768];                                               /* sid|label lines (feed_lbl.txt, append-only, LAST wins; ''=cleared) — project labels survive agent swaps */
+static const char *f_lblof(const char *sid) { static char o[24]; o[0] = 0;
+    for (const char *q = f_lbls; (q = strstr(q, sid)); q++) { const char *b = strchr(q, '|');
+        if (!b) break; int n = (int)strcspn(++b, "\n"); if (n > 23) n = 23; memcpy(o, b, (size_t)n); o[n] = 0; }
+    return o; }
 static void f_add(const char *host, int live, const char *cwd, const char *sid, long mt, const char *mdl, const char *desc, const char *tail) {
     if (f_arc[0] && strstr(f_arc, sid)) return;
     for (int i = 0; i < FNN; i++) if (!strcmp(FL[i].sid, sid)) {          /* dedup by session: patch in place (no rebuild → no reflash) */
@@ -55,7 +60,7 @@ static void f_add(const char *host, int live, const char *cwd, const char *sid, 
     if (FNN >= 512) return;
     FI *x = &FL[FNN++]; x->live = live; x->mt = mt; x->seen = f_live_scan;
     snprintf(x->host, 40, "%s", host); snprintf(x->cwd, 256, "%s", cwd); snprintf(x->sid, 48, "%s", sid);
-    snprintf(x->mdl, 40, "%s", mdl);
+    snprintf(x->mdl, 40, "%s", mdl); snprintf(x->lbl, 24, "%s", f_lblof(sid));
     f_sane(x->desc, desc, 159); f_sane(x->tail, tail ? tail : "", 63);
 }
 
@@ -115,6 +120,12 @@ static void f_archive(int sel) {                                         /* emai
     if (f_arcn + 40 < (int)sizeof f_arc) f_arcn += snprintf(f_arc + f_arcn, 40, "%s\n", x->sid);
     int i = (int)(x - FL); memmove(&FL[i], &FL[i + 1], (size_t)(FNN - 1 - i) * sizeof(FI)); FNN--;
 }
+static int f_dismiss(void) {                                             /* archive every parked row (sid → feed_arc.txt), drop in place; live rows stay */
+    char ap[P]; snprintf(ap, P, "%s/feed_arc.txt", DDIR); FILE *af = fopen(ap, "a"); int nd = 0;
+    for (int i = FNN - 1; i >= 0; i--) if (!FL[i].live) { if (af) fprintf(af, "%s\n", FL[i].sid);
+        memmove(&FL[i], &FL[i + 1], (size_t)(FNN - 1 - i) * sizeof(FI)); FNN--; nd++; }
+    if (af) fclose(af); return nd;
+}
 static int f_rows(void) { struct winsize w; ioctl(1, TIOCGWINSZ, &w); return w.ws_row ? w.ws_row : 24; }
 static int f_rem(void) { int r = 0; for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) r++; return r; }   /* scan channels still open */
 static void f_rst(void) { tcsetattr(f_tty, TCSANOW, &f_saved); printf("\033[?7h\033[H\033[2J"); fflush(stdout); }
@@ -129,7 +140,7 @@ static void f_bar(void) {                                                /* bott
     char b[768]; int o = snprintf(b, 768, "\033[%d;1H\033[K\033[93m/%s\xe2\x96\x8f\033[0m\033[90m%s\033[0m\r\n\033[K%s\033[0m",
         f_rows() - 1, f_filt, f_filt[0] ? "" : (f_mode ? " type to filter" : " press / to filter"),
         f_mode ? MI(" \xe2\x86\xb5", " open  ") MI("Tab", " window  ") MI("\xe2\x86\x91\xe2\x86\x93", " move  ") MI("\xe2\x86\x90\xe2\x86\x92", " page  ") MI("\xe2\x8c\xab", " back  ") MI("esc", " quit")
-               : MI(" \xe2\x86\xb5", " open  ") MI("j/k", " move  ") MI("p", " park  ") MI("m", " model  ") MI("e", " arc  ") MI("E", " arc all  ") MI("/", " find  ") MI("Tab", " list  ") MI("q", " quit"));
+               : MI(" \xe2\x86\xb5", " open  ") MI("j/k", " move  ") MI("p", " park  ") MI("D", " sweep \xe2\x8f\xb8  ") MI("m", " model  ") MI("e", " arc  ") MI("E", " arc all  ") MI("/", " find  ") MI("Tab", " list  ") MI("q", " quit"));
     (void)!write(1, b, (size_t)o);
     #undef MI
 }
@@ -149,9 +160,10 @@ static void f_vpaint(int sel) {                                          /* gmai
     int o = snprintf(h, 2048, FHDR " %s\033[97m%s\033[0m:%.8s \033[90m%s\033[0m \033[35m%.12s\033[0m\033[K\r\n",
         f_tms, f_n ? sel + 1 : 0, f_n, rem ? " \xe2\x80\xa6" : "", x && x->live ? "\033[32m\xe2\x97\x8f\033[0m " : "\xe2\x8f\xb8 ", x ? x->host : "?", x ? bname(x->cwd) : "", ag[0] ? ag : "?", x ? x->mdl : "");
     int ls = sel - 2; if (ls > f_n - 5) ls = f_n - 5; if (ls < 0) ls = 0; int shown = 0;
-    for (int r = ls; r < ls + 5 && r < f_n; r++, shown++) { FI *y = &FL[f_idx[r]]; char ya[8]; f_when(y->mt, ya);
-        o += snprintf(h + o, (size_t)(2048 - o), "%s%s %-6.6s%-12.12s %-8.8s %.24s\033[90m%s%.30s\033[0m\033[K\r\n",
-            r == sel ? "\033[7m" : "", y->live ? "\033[32m\xe2\x97\x8f\033[39m" : "\xe2\x8f\xb8", ya, y->host, bname(y->cwd), y->desc, y->tail[0] ? " \xc2\xb7 " : "", y->tail); }
+    for (int r = ls; r < ls + 5 && r < f_n; r++, shown++) { FI *y = &FL[f_idx[r]]; char ya[8], yl[36]; f_when(y->mt, ya);
+        yl[0] = 0; if (y->lbl[0]) snprintf(yl, 36, "\033[36m%.10s\033[39m ", y->lbl);
+        o += snprintf(h + o, (size_t)(2048 - o), "%s%s %-6.6s%-12.12s %-8.8s %s%.24s\033[90m%s%.30s\033[0m\033[K\r\n",
+            r == sel ? "\033[7m" : "", y->live ? "\033[32m\xe2\x97\x8f\033[39m" : "\xe2\x8f\xb8", ya, y->host, bname(y->cwd), yl, y->desc, y->tail[0] ? " \xc2\xb7 " : "", y->tail); }
     if (!f_vn && f_cfd >= 0 && x) o += snprintf(h + o, (size_t)(2048 - o), "\033[90m---------- \xe2\x9f\xb3 fetching %s\xe2\x80\xa6 ----------\033[0m\033[K\r\n", x->host);
     else o += snprintf(h + o, (size_t)(2048 - o), "\033[90m---------- content fetch %.1fms ----------\033[0m\033[K\r\n", f_vms);   /* the number describes the pane below it */
     (void)!write(1, h, (size_t)o);
@@ -239,14 +251,32 @@ static void f_spawn_local(void) {                                        /* loca
     if (fnch >= 64) return; int pf[2]; if (pipe(pf)) return;
     pid_t pid = fork(); if (pid < 0) { close(pf[0]); close(pf[1]); return; }
     if (!pid) { dup2(pf[1], 1); close(pf[0]); close(pf[1]); f_lemit(); _exit(0); }
-    close(pf[1]); FCh *ch = &fch[fnch++]; ch->fd = pf[0]; ch->blen = 0; ch->buf[0] = 0;
+    close(pf[1]); FCh *ch = &fch[fnch++]; ch->fd = pf[0]; ch->blen = 0; ch->buf[0] = 0; ch->got = 1; ch->ph = 0; ch->via[0] = 0;
     snprintf(ch->host, 40, "%s", DEV);
 }
 #endif
-static void f_spawn(const char *host, const char *sc) {                  /* host=NULL → local box */
-    if (fnch >= 64) return; int fd = f_sh(host ? host : DEV, sc); if (fd < 0) return;
-    FCh *ch = &fch[fnch++]; ch->fd = fd; ch->blen = 0; ch->buf[0] = 0;
+static void f_spawn(const char *host, const char *sc) {                  /* host=NULL → local box; remote gets an @ sentinel so silence = not accessible */
+    if (fnch >= 64) return; char wr[3000]; if (host) { snprintf(wr, 3000, "echo @\n%s", sc); sc = wr; }
+    int fd = f_sh(host ? host : DEV, sc); if (fd < 0) return;
+    FCh *ch = &fch[fnch++]; ch->fd = fd; ch->blen = 0; ch->buf[0] = 0; ch->got = !host; ch->ph = 0; ch->via[0] = 0;
     snprintf(ch->host, 40, "%s", host ? host : DEV);
+}
+static void f_phones(void) {                                             /* adb-attached phones (adata/git/adb/*.txt): match serial/wireless on THIS box, then scan termux over adb-forwarded ssh (sshd must be up; android sshd-over-wifi is the unreliable one — ssh.c) */
+    char ad[P]; snprintf(ad, P, "%s/adb", SROOT); char pfs[16][P]; int na = listdir(ad, pfs, 16);
+    for (int i = 0; i < na && fnch < 64; i++) { kvs_t kv = kvfile(pfs[i]);
+        const char *nm = kvget(&kv, "Name"), *se = kvget(&kv, "Serial"), *wi = kvget(&kv, "Wireless");
+        if (!nm || !se) continue;
+        char b6[3400]; f_b64(FRQ, b6); char sc[4600]; int pt = 18100 + i;
+        snprintf(sc, 4600, "d=$(adb devices 2>/dev/null|awk '/\\tdevice$/{print $1}'|grep -m1 -x -e '%s' -e '%s');[ -n \"$d\" ]||exit 0;echo @;echo \"@adb|$d\";"
+            "u=$(adb -s \"$d\" shell cmd package list packages -U 2>/dev/null|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');[ -n \"$u\" ]||exit 0;"
+            "adb -s \"$d\" forward tcp:%d tcp:8022 >/dev/null 2>&1;ssh-keygen -R '[localhost]:%d' >/dev/null 2>&1;"
+            "ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p %d u0_a$((u-10000))@localhost 'echo %s|base64 -d|bash' 2>/dev/null;"
+            "adb -s \"$d\" forward --remove tcp:%d >/dev/null 2>&1",
+            se, (wi && wi[0]) ? wi : se, pt, pt, pt, b6, pt);
+        if (getenv("A_FDBG")) { puts(sc); continue; }
+        int fd = f_sh(DEV, sc); if (fd < 0) continue;                    /* runs LOCALLY, rows labeled as the phone */
+        FCh *ch = &fch[fnch++]; ch->fd = fd; ch->blen = 0; ch->buf[0] = 0; ch->got = 0; ch->ph = 0; ch->via[0] = 0;
+        snprintf(ch->host, 40, "%s", nm); }
 }
 
 static void f_hosts(void) {                                              /* local + every registry box (lan/wan/usb variants deduped) */
@@ -259,22 +289,33 @@ static void f_hosts(void) {                                              /* loca
     FILE *p = popen(cmd, "r"); char ln[128];
     while (p && fgets(ln, 128, p)) { ln[strcspn(ln, "\n")] = 0; if (ln[0]) f_spawn(ln, FRQ); }
     if (p) pclose(p);
+    f_phones();
 }
 
 static int f_recv(FCh *ch) {
     int rd = (int)read(ch->fd, ch->buf + ch->blen, (int)sizeof(ch->buf) - 1 - ch->blen);
     if (rd <= 0) { close(ch->fd); ch->fd = -1; return 0; }
     ch->blen += rd; ch->buf[ch->blen] = 0; char *nl;
-    while ((nl = strchr(ch->buf, '\n'))) { *nl = 0; f_line(ch->host, ch->buf);
+    while ((nl = strchr(ch->buf, '\n'))) { *nl = 0;
+        if (ch->buf[0] == '@') { ch->got = 1; if (!strncmp(ch->buf, "@adb|", 5)) { ch->ph = 1; snprintf(ch->via, 28, "%s", ch->buf + 5); } }
+        else f_line(ch->host, ch->buf);
         int rem = ch->blen - (int)(nl + 1 - ch->buf); memmove(ch->buf, nl + 1, (size_t)rem + 1); ch->blen = rem; }
     return 1;
+}
+static int f_offs(char *o, int cap) {                                    /* boxes that never answered (per host, closed channels only, DEV excluded) */
+    int n = 0, ol = 0; o[0] = 0;
+    for (int i = 0; i < fnch; i++) { FCh *c = &fch[i];
+        if (c->fd >= 0 || c->got || !strcmp(c->host, DEV)) continue;
+        int skip = 0; for (int j = 0; j < fnch && !skip; j++) if (j != i && !strcmp(fch[j].host, c->host) && (fch[j].got || j < i)) skip = 1;
+        if (skip) continue; n++; ol += snprintf(o + ol, (size_t)(cap - ol), "%s%s", ol ? " " : "", c->host); }
+    return n;
 }
 
 static int f_vh(void) { int rows = f_rows(); int vh = rows >= 14 ? rows - 5 : rows - 3; return vh < 1 ? 1 : vh; }
 static void f_filter(void) {
     f_n = 0;
     for (int i = 0; i < FNN; i++) {
-        if (f_filt[0]) { char hay[560]; snprintf(hay, sizeof hay, "%s %s %s %s", FL[i].host, FL[i].cwd, FL[i].desc, FL[i].tail); if (!strcasestr(hay, f_filt)) continue; }
+        if (f_filt[0]) { char hay[584]; snprintf(hay, sizeof hay, "%s %s %s %s %s", FL[i].lbl, FL[i].host, FL[i].cwd, FL[i].desc, FL[i].tail); if (!strcasestr(hay, f_filt)) continue; }
         f_idx[f_n++] = i;
     }
     for (int i = 1; i < f_n; i++) { int t = f_idx[i], j = i - 1;         /* newest started first (Sean 7/10) */
@@ -295,6 +336,18 @@ static void f_save(void) {
     for (int i = 0; i < FNN; i++) { FI *x = &FL[i]; if (x->seen) fprintf(f, "%s|%d|%s|%s|%ld|%s|%s|%s\n", x->host, x->live, x->sid, x->cwd, x->mt, x->mdl, x->tail, x->desc); }
     fclose(f);
 }
+static int f_label(const char *m, const char *lb) {                      /* a feed label <match> <label|-> — tag every cached row matching m (sid/host/dir/desc) */
+    f_live_scan = 0; f_load(); f_live_scan = 1;
+    char ap[P]; snprintf(ap, P, "%s/feed_lbl.txt", DDIR); FILE *af = fopen(ap, "a"); int nm = 0;
+    for (int i = 0; i < FNN; i++) { char hay[560]; snprintf(hay, 560, "%s %s %s %s", FL[i].host, FL[i].cwd, FL[i].desc, FL[i].sid);
+        if (!strcasestr(hay, m)) continue; nm++;
+        if (af) fprintf(af, "%s|%s\n", FL[i].sid, strcmp(lb, "-") ? lb : "");
+        printf("%-12.12s %-10.10s %-10.10s %.40s\n", strcmp(lb, "-") ? lb : "(cleared)", FL[i].host, bname(FL[i].cwd), FL[i].desc); }
+    if (af) fclose(af);
+    if (nm) printf("\xe2\x9c\x93 %d row(s) \xe2\x86\x92 '%s' \xc2\xb7 %s/feed_lbl.txt\n", nm, lb, DDIR);
+    else printf("x no cached row matches '%s' (run a feed once first)\n", m);
+    return !nm;
+}
 
 static void f_paint(int sel, long rus, int refreshing) {
     int rows = f_rows(), vh = f_vh(), n = f_n, extra = rows >= 14;
@@ -308,13 +361,18 @@ static void f_paint(int sel, long rus, int refreshing) {
     AP(FHDR, f_tms, n ? sel + 1 : 0, n, refreshing ? " \xe2\x80\xa6" : "");
     if (n) AP(" \033[35m%.14s\033[0m", FL[f_idx[sel]].mdl); AP(EOL);
     if (extra) {
-        AP("\033[32m\xe2\x97\x8f\033[0m\033[90m live \033[0m\xe2\x8f\xb8\033[90m parked \xc2\xb7 newest first\033[0m" EOL);
+        char ob[256]; int noff = f_offs(ob, 256);
+        AP("\033[32m\xe2\x97\x8f\033[0m\033[90m live \033[0m\xe2\x8f\xb8\033[90m parked \xc2\xb7 newest first\033[0m");
+        for (int i = 0; i < fnch; i++) if (fch[i].ph) AP("\033[90m \xc2\xb7 \xf0\x9f\x93\xb1%s adb\033[0m", fch[i].host);
+        if (noff) AP("\033[31m \xe2\x9c\x97%d off: %.48s\033[0m", noff, ob);
+        AP(EOL);
         AP("\033[90m    %-6s%-10s %-8s %s\033[0m" EOL, "START", "BOX", "DIR", "PROMPT \xc2\xb7 LATEST"); }
     for (int r = 0; r < vh; r++) { int li = f_top + r;
         if (li >= n) { AP(EOL); continue; }
-        FI *x = &FL[f_idx[li]]; const char *b = strrchr(x->cwd, '/'); b = (b && b[1]) ? b + 1 : x->cwd;
-        char ag[8]; f_when(x->mt, ag);
-        char line[320]; snprintf(line, 320, "%s %-6.6s%-10.10s %-8.8s %.28s\033[90m%s%.56s\033[39m", x->live ? "\033[32m\xe2\x97\x8f\033[39m" : "\xe2\x8f\xb8", ag, x->host, b, x->desc, x->tail[0] ? " \xc2\xb7 " : "", x->tail);
+        FI *x = &FL[f_idx[li]]; const char *b = bname(x->cwd);
+        char ag[8], lb[40]; lb[0] = 0; if (x->lbl[0]) snprintf(lb, 40, "\033[36m%.14s\033[39m ", x->lbl);
+        f_when(x->mt, ag);
+        char line[360]; snprintf(line, 360, "%s %-6.6s%-10.10s %-8.8s %s%.28s\033[90m%s%.56s\033[39m", x->live ? "\033[32m\xe2\x97\x8f\033[39m" : "\xe2\x8f\xb8", ag, x->host, b, lb, x->desc, x->tail[0] ? " \xc2\xb7 " : "", x->tail);
         if (li == sel) AP("\033[7m  %s\033[0m" EOL, line); else AP("  %s" EOL, line); }
     if (o >= 2 && fb[o - 1] == '\n') o -= 2;                            /* drop trailing CRLF: a newline on the last row scrolls the title off the top */
     AP("\033[J");
@@ -324,7 +382,7 @@ static void f_paint(int sel, long rus, int refreshing) {
     f_bar();
 }
 
-static void f_attach(FI *x) {                                            /* parked → resume window; live → THE sid's window. local jumps via switch-client (grouped sessions don't follow select-window); remote selects on the box then attaches */
+__attribute__((noreturn)) static void f_attach(FI *x) {                  /* parked → resume window; live → THE sid's window. local jumps via switch-client (grouped sessions don't follow select-window); remote selects on the box then attaches */
     f_rst();
     int lo = !strcmp(x->host, DEV);
     if (!x->live) { char wn[20]; snprintf(wn, 20, "r-%.8s", x->sid);
@@ -345,25 +403,35 @@ static void f_attach(FI *x) {                                            /* park
     execlp("a", "a", "ssh", x->host, (char *)0); _exit(127);
 }
 
-static int cmd_feed(int c, char **v) { (void)c; (void)v; perf_disarm();
+static int cmd_feed(int c, char **v) { perf_disarm();
     init_db(); load_cfg();                                               /* m_model = resume fallback when a session has no model yet */
     FNN = fnch = 0; f_top = 0;
     { char ap[P]; snprintf(ap, P, "%s/feed_arc.txt", DDIR); FILE *af = fopen(ap, "r"); if (af) { f_arcn = (int)fread(f_arc, 1, sizeof f_arc - 1, af); f_arc[f_arcn] = 0; fclose(af); } }
+    { char lp[P]; snprintf(lp, P, "%s/feed_lbl.txt", DDIR); FILE *lf = fopen(lp, "r"); if (lf) { f_lbls[fread(f_lbls, 1, sizeof f_lbls - 1, lf)] = 0; fclose(lf); } }
+    if (c > 2 && !strcmp(v[2], "label")) { if (c < 5) { puts("a feed label <match> <label|->"); return 1; } return f_label(v[3], v[4]); }
+    int dsm = c > 2 && !strcmp(v[2], "dismiss");                          /* dismiss = scan for live truth, then archive all parked (web/CLI form of TUI 'D') */
     f_live_scan = 0; f_load(); f_live_scan = 1;                           /* seed from last run (parked until a live scan confirms) */
     struct timespec tp; clock_gettime(CLOCK_MONOTONIC, &tp);
     long rus = (tp.tv_sec - _t0.tv_sec) * 1000000L + (tp.tv_nsec - _t0.tv_nsec) / 1000;
     f_hosts();
-    if (!isatty(0) || !isatty(1)) {                                      /* non-tty: drain all, dump */
-        int alive = 1; while (alive) { struct pollfd pf[64]; int np = 0, a = 0;
-            for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) { pf[np].fd = fch[i].fd; pf[np++].events = POLLIN; a++; }
-            if (!a) break; poll(pf, np, 200);
+    if (dsm || !isatty(0) || !isatty(1)) {  /* non-tty: dump when local drains; late boxes append */
+        static char pr[512];
+        printf("\xe2\x97\x8f live \xc2\xb7 \xe2\x8f\xb8 parked \xc2\xb7 late boxes append\n  DEVICE        DIR        START  PROMPT \xc2\xb7 LATEST\n");
+        for (;;) { struct pollfd pf[64]; int np = 0;
+            for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) { pf[np].fd = fch[i].fd; pf[np++].events = POLLIN; }
+            if (fch[0].fd < 0 || !np) { f_filter();   /* ch0(statx) drained -> ms dump; rest append */
+                for (int i = 0; i < f_n; i++) { FI *x = &FL[f_idx[i]]; if (pr[x-FL]) continue; pr[x-FL] = 1;
+                    char lb[28]; lb[0] = 0; if (x->lbl[0]) snprintf(lb, 28, "[%.14s] ", x->lbl);
+                    char ag[8]; f_when(x->mt, ag);
+                    printf("%s %-14.14s%-10.10s %-7.6s%s%.36s%s%.56s\n", x->live ? "\xe2\x97\x8f" : "\xe2\x8f\xb8", x->host, bname(x->cwd), ag, lb, x->desc, x->tail[0] ? " \xc2\xb7 " : "", x->tail); }
+                fflush(stdout); }
+            if (!np) break; poll(pf, np, -1);
             for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) for (int j = 0; j < np; j++)
                 if (pf[j].fd == fch[i].fd && (pf[j].revents & (POLLIN | POLLHUP | POLLERR))) f_recv(&fch[i]); }
-        printf("\xe2\x97\x8f live now \xc2\xb7 \xe2\x8f\xb8 parked, resumable \xc2\xb7 newest started first (a feed in a terminal: \xe2\x86\xb5 attaches)\n  %-14s%-10s %-7s%s\n", "DEVICE", "DIR", "START", "PROMPT \xc2\xb7 LATEST");
-        f_filter();
-        for (int i = 0; i < f_n; i++) { FI *x = &FL[f_idx[i]]; const char *b = strrchr(x->cwd, '/'); b = (b && b[1]) ? b + 1 : x->cwd;
-            char ag[8]; f_when(x->mt, ag);
-            printf("%s %-14.14s%-10.10s %-7.6s%.36s%s%.56s\n", x->live ? "\xe2\x97\x8f" : "\xe2\x8f\xb8", x->host, b, ag, x->desc, x->tail[0] ? " \xc2\xb7 " : "", x->tail); }
+        { char ob[512]; int n;                                            /* trailer: adb phones + silent boxes (web folds the ✗ line into a collapsed <details>) */
+          for (int i = 0; i < fnch; i++) if (fch[i].ph) printf("\xf0\x9f\x93\xb1 %s \xc2\xb7 adb via %s (%s)\n", fch[i].host, DEV, fch[i].via);
+          if ((n = f_offs(ob, 512))) printf("\xe2\x9c\x97 not accessible (%d): %s\n", n, ob); }
+        if (dsm) { int nd = f_dismiss(); printf("\xe2\x9c\x93 dismissed %d parked \xc2\xb7 %d live kept\n", nd, FNN); }
         f_save(); return 0; }
     f_tty = open("/dev/tty", O_RDWR); if (f_tty < 0) f_tty = 0;         /* keyboard from /dev/tty, not the clobbered fd0 */
     tcgetattr(f_tty, &f_saved); struct termios r = f_saved; cfmakeraw(&r); tcsetattr(f_tty, TCSANOW, &r);
@@ -393,7 +461,7 @@ static int cmd_feed(int c, char **v) { (void)c; (void)v; perf_disarm();
                 f_vms = (double)(ce.tv_sec - f_ct0.tv_sec) * 1e3 + (double)(ce.tv_nsec - f_ct0.tv_nsec) / 1e6;
                 if (!f_mode && f_n && !strcmp(FL[f_idx[sel]].sid, f_csid)) { memcpy(f_vb, f_cb, (size_t)f_cbn); f_vn = f_cbn; f_vb[f_vn] = 0; f_vpaint(sel); } } }
         int dirty = 0, refetch = 0; struct timespec ka; ka.tv_sec = 0; ka.tv_nsec = 0;
-        if (pf[0].revents & (POLLIN | POLLHUP)) { unsigned char k; int rr = read(f_tty, &k, 1);
+        if (pf[0].revents & (POLLIN | POLLHUP)) { unsigned char k; int rr = (int)read(f_tty, &k, 1);
             clock_gettime(CLOCK_MONOTONIC, &ka);
             if (rr <= 0 || k == 3) break;
             else if (k == 27) {                                       /* Esc alone = clear filter / quit; else arrow/page */
@@ -430,6 +498,13 @@ static int cmd_feed(int c, char **v) { (void)c; (void)v; perf_disarm();
                     if (x->live) { char sc[900]; FPAT(pat, x);
                         snprintf(sc, sizeof sc, FSID "[ -n \"$i\" ]&&tmux kill-window -t \"$i\"", pat, pat);
                         f_drain(f_sh(x->host, sc)); x->live = 0; }
+                    f_vpaint(sel); }
+                else if (k == 'D') {                                     /* dismiss ALL parked rows (live kept) — y/n confirm; CLI/web twin: a feed dismiss */
+                    int nP = 0; for (int i = 0; i < FNN; i++) if (!FL[i].live) nP++;
+                    dprintf(1, "\033[%d;1H\033[K\033[93mdismiss all %d parked? y/n\033[0m ", f_rows() - 1, nP);
+                    unsigned char ck; int cy = read(f_tty, &ck, 1) == 1 && (ck == 'y' || ck == 'Y');
+                    clock_gettime(CLOCK_MONOTONIC, &ka);                 /* confirm wait is human time — measure from the y */
+                    if (cy && nP) { f_dismiss(); sel = 0; f_vn = 0; sel = f_csel(sel); if (f_n) refetch = 1; }
                     f_vpaint(sel); }
                 else if (k == '/') { f_mode = 1; dirty = 1; }            /* omnibox: filter typing lives in list mode */
                 else if (k == 'q') break; }

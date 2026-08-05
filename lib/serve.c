@@ -78,7 +78,7 @@ static int _tasks_build(char*h,int cap,const char*sort){
         nr++;}
     closedir(d);
     int md=sort&&!strcmp(sort,"new")?1:sort&&!strcmp(sort,"due")?2:0;  /* 0=pri 1=created 2=deadline */
-    for(int i=1;i<nr;i++){typeof(rows[0]) k=rows[i];int j=i-1;const char*kk=k.dl[0]?k.dl:"~";
+    for(int i=1;i<nr;i++){__typeof__(rows[0]) k=rows[i];int j=i-1;const char*kk=k.dl[0]?k.dl:"~";
         while(j>=0){int bf=md==1?strcmp(k.name,rows[j].name)>0:md==2?strcmp(kk,rows[j].dl[0]?rows[j].dl:"~")<0:strcmp(rows[j].pri,k.pri)>0;
             if(!bf)break;rows[j+1]=rows[j];j--;}rows[j+1]=k;}
     int hl=snprintf(h,(size_t)cap,SYNC_HTML "<div class=ni style=\"color:#888;border-bottom:1px solid #444;margin-top:10px\"><span class=nx style=\"visibility:hidden\">x</span><span style=\"display:inline-block;width:124px\">WHEN</span><span style=\"display:inline-block;width:54px\">PRI</span>TASK <span style=\"color:#555\">— ⚑=deadline else created · red P≤1000</span></div>",sync_age());
@@ -125,9 +125,18 @@ static void _html_gen(void){
                 if(!strcmp(tag,"CMDS")){EMIT(cmds,(int)strlen(cmds));}
                 else if(!strcmp(tag,"PO")){EMIT("<option value=\"\">~ (home)</option>",(int)strlen("<option value=\"\">~ (home)</option>"));}
                 else if(!strcmp(tag,"DO")){char h[64]="";gethostname(h,64);char o[128];int ll=snprintf(o,128,"<option value=\"\">local: %s</option>",h);EMIT(o,ll);
+                    char hbr[300]="";/* homebox is a role pointer (ssh.c hb): label it with the real entry sharing its Host so the picker says which box it is */
+                    {char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int m=listdir(ddir,paths,64);char hbh[512]="";
+                        for(int i=0;i<m&&!hbh[0];i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
+                            if(nm&&ho&&!strcasecmp(nm,"homebox"))snprintf(hbh,512,"%s",ho);}
+                        if(hbh[0]){snprintf(hbr,300,"%s",hbh); /* no named sibling -> show the raw user@host */
+                            for(int i=0;i<m;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
+                                if(nm&&ho&&strcasecmp(nm,"homebox")&&!strcmp(ho,hbh)){snprintf(hbr,300,"%s",nm);break;}}}}
                     char gc[B];snprintf(gc,B,"grep -h '^Name:' '%s/ssh/'*.txt 2>/dev/null|sed 's/Name: //'|sort -u",SROOT);
                     FILE*df=popen(gc,"r");char dln[256];while(df&&fgets(dln,256,df)){dln[strcspn(dln,"\n")]=0;if(!dln[0])continue;
-                        char o[300];int ol=snprintf(o,300,"<option>%s</option>",dln);EMIT(o,ol);}if(df)pclose(df);}
+                        char o[640];int ol=!strcasecmp(dln,"homebox")&&hbr[0]
+                            ?snprintf(o,640,"<option value=\"%s\">%s → %s</option>",dln,dln,hbr)
+                            :snprintf(o,640,"<option>%s</option>",dln);EMIT(o,ol);}if(df)pclose(df);}
                 else if(!strcmp(tag,"NO")){char*nb=malloc(131072);int nl2=_notes_build(nb,131072,"notes");EMIT(nb,nl2);free(nb);}
                 else if(!strcmp(tag,"TO")){char*tb=malloc(131072);int tl2=_tasks_build(tb,131072,"pri");EMIT(tb,tl2);free(tb);}
                 else if(!strcmp(tag,"JO")||!strcmp(tag,"MY")||!strcmp(tag,"MV")){/* empty */}
@@ -250,6 +259,7 @@ static void _ws_term(int c,const char*target){
     pid_t p=fork();
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",0);
+        unsetenv("TMUX");unsetenv("TMUX_PANE");  /* serve may live in a pane; inherited TMUX would make `a tmux` switch the real client instead of grouped-attaching this pty */
         if(target&&!strcmp(target,"cloudadd"))execlp("a","a","cloud",(char*)0);
         if(target&&!strncmp(target,"ssh:",4)){char d2[160];snprintf(d2,160,"%s",target+4);char*cl=strchr(d2,':');
             if(cl){*cl=0;char ses[192];snprintf(ses,192,"a:%s",cl+1);setenv("A_TMUX_SESSION",ses,1);}
@@ -485,8 +495,7 @@ static void _handle(int c){
          if(ps){pid_t op=(pid_t)atol(ps);free(ps);
             if(op>1){char cl[64],cb[256];snprintf(cl,64,"/proc/%d/cmdline",op);   /* direct read: procfs st_size=0 so readf returns empty */
                 int cf=open(cl,O_RDONLY);ssize_t cn=cf<0?-1:read(cf,cb,255);if(cf>=0)close(cf);
-                if(cn>3&&memmem(cb,(size_t)cn,"say",3))kill(-op,SIGTERM);   /* leader = exec-chained bash lib/say.sh — substring match, reuse-guarded */
-                else if(cn<0&&!kill(-op,0))kill(-op,SIGTERM);}   /* leader gone, group (uvx/ffplay) lives — ours by construction, reap */
+                if((cn>3&&memmem(cb,(size_t)cn,"say",3))||(cn<0&&!kill(-op,0)))kill(-op,SIGTERM);}   /* leader = exec-chained bash lib/say.sh (substring, reuse-guarded), or leader gone but group (uvx/ffplay) lives — ours by construction, reap */
             unlink(sf2);}}
         char*pq=strstr(req,"pos=");
         if(!pq||strstr(req,"stop=")){_sresp(c,200,"text/plain","off",3);return;}
@@ -801,11 +810,17 @@ static void _handle(int c){
         snprintf(src,P,"%s/git/%s/%s",AROOT,kind,name);
         snprintf(dst,P,"%s/%s",ad,name);rename(src,dst);
         _sresp(c,200,"text/plain","ok",2);return;}
+    if(!strncmp(req,"GET /feeddismiss",16)){   /* web confirm → a feed dismiss (scan for live truth, archive all parked); gate on output not rc (SIGCHLD) */
+        FILE*fp=popen("a feed dismiss 2>/dev/null|tail -1","r");char b[192];size_t n=fp?fread(b,1,191,fp):0;if(fp)pclose(fp);b[n]=0;
+        _sresp(c,200,"text/plain",n?b:"x no output",n?(int)n:11);return;}
     if(!strncmp(req,"GET /feed",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* terminal as API: page = live `a feed` output, streamed (shell paints instantly, content lands on fleet-scan drain) */
         static const char FH[]="HTTP/1.1 200 OK\r\nContent-Type:text/html; charset=utf-8\r\nCache-Control:no-store\r\nConnection:close\r\n\r\n"
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>feed</title>"
             "<style>body{margin:0;background:#0b0b0b;color:#ddd;font:14px/1.7 ui-monospace,monospace}h3{color:#fff;margin:0;padding:12px 14px 4px}#ms{color:#bbb;font-size:12px}pre{margin:0;padding:2px 14px 14px;white-space:pre-wrap}</style>"
-            "<h3>a feed <span id=ms>⟳ scanning fleet…</span> <span style=\"color:#555;font-size:12px\">j/k \xe2\x86\x91\xe2\x86\x93 move · \xe2\x86\xb5 open box</span></h3><pre>";
+            "<h3>a feed <span id=ms>⟳ scanning fleet…</span> <span style=\"color:#555;font-size:12px\">j/k \xe2\x86\x91\xe2\x86\x93 move · \xe2\x86\xb5 open box</span>"
+            "<span id=dsm style=\"float:right;color:#e66;font-size:12px;cursor:pointer;border:1px solid #444;border-radius:6px;padding:2px 8px\">\xe2\x9c\x95 dismiss parked</span></h3>"
+            "<script>dsm.onclick=function(){if(confirm('dismiss ALL parked sessions from feed?')){ms.textContent='dismissing...';"   /* handler in the HEADER: armed from first paint — footer JS only lands after the fleet scan drains (dead-button window, Sean hit it 8/4) */
+            "fetch('/feeddismiss').then(function(r){return r.text()}).then(function(t){ms.textContent=t;setTimeout(function(){location.reload()},900)})}}</script><pre>";
         (void)!write(c,FH,sizeof FH-1);
         struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
         int pp[2];if(pipe(pp))return;pid_t ch=fork();
@@ -815,9 +830,11 @@ static void _handle(int c){
             for(int i=0;i<r;i++){char k=b[i];if(k=='<'){memcpy(eb+o,"&lt;",4);o+=4;}else if(k=='&'){memcpy(eb+o,"&amp;",5);o+=5;}else eb[o++]=k;}
             if(write(c,eb,(size_t)o)<0)break;}
         close(pp[0]);clock_gettime(CLOCK_MONOTONIC,&t1);
-        char ft[1400];int fl=snprintf(ft,1400,"</pre><script>ms.textContent='%.4fms';"   /* rows -> divs; j/k/arrows move, Enter opens the box's tmux via /op (DEVICE col = chars 2..14) */
+        char ft[1700];int fl=snprintf(ft,1700,"</pre><script>ms.textContent='%.4fms';"   /* rows -> divs; j/k/arrows move, Enter opens the box's tmux via /op (DEVICE col = chars 2..14) */
             "var Pr=document.querySelector('pre'),ls=Pr.textContent.split('\\n');"
-            "Pr.innerHTML=ls.map(function(l){return '<div>'+l.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'}).join('');"
+            "Pr.innerHTML=ls.map(function(l){var e=l.replace(/&/g,'&amp;').replace(/</g,'&lt;');"
+            "if(l.lastIndexOf('\xe2\x9c\x97 not accessible',0)==0){var p=e.split(': ');return '<details style=color:#e66><summary>'+p[0]+'</summary><div style=color:#999>'+(p[1]||'')+'</div></details>'}"
+            "return '<div>'+e+'</div>'}).join('');"
             "var rs=[].slice.call(Pr.children).filter(function(d,i){return i>1&&(d.textContent[0]=='\xe2\x97\x8f'||d.textContent[0]=='\xe2\x8f\xb8')}),s=0;"
             "function H(){rs.forEach(function(d,i){d.style.background=i==s?'#333':''});rs[s]&&rs[s].scrollIntoView({block:'nearest'})}"
             "onkeydown=function(e){var k=e.key;if(k=='j'||k=='ArrowDown')s=Math.min(s+1,rs.length-1);else if(k=='k'||k=='ArrowUp')s=Math.max(s-1,0);"
@@ -1080,13 +1097,13 @@ static void _handle(int c){
         if(p){(void)!fgets(pid,32,p);pclose(p);pid[strcspn(pid,"\n")]=0;}
         const char*bn=strrchr(SDIR,'/');bn=bn?bn+1:SDIR;
         char nm[64];int nl=snprintf(nm,64,"op-%s-%s",bn,pid);
-        _sresp(c,200,"text/plain",nm,(size_t)nl);return;}
+        _sresp(c,200,"text/plain",nm,nl);return;}
     _sresp(c,404,"text/plain","not found",9);
 }
 static int cmd_cam(int c,char**v){(void)c;(void)v;AB;perf_disarm();
     (void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/cam");puts("✓ localhost:1111/cam");return 0;}
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
-    {const char*op=getenv("PATH")?:"";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
+    {const char*op=getenv("PATH");if(!op)op="";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
     if(argc>3){if(!realpath(argv[3],_sdir)||!dexists(_sdir)){printf("x no dir %s\n",argv[3]);return 1;}
         printf("+ site %s\n",_sdir);}

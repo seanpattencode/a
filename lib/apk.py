@@ -1,4 +1,4 @@
-"""a apk [path] [serial] [noauth]   |   a apk auth [serial]
+"""a apk [path] [serial] [noauth]   |   a apk build|self [abi]   |   a apk auth [serial]
 
 WHY THE APK EXISTS OVER TERMUX (keep this division — termux owns ALL logic + HTML + as much GUI as possible, to cut duplication + tokens):
 The apk is the thin shell for the only three things a termux terminal script can't do itself on Android OS:
@@ -27,7 +27,8 @@ Assistant: Cap handles ACTION_ASSIST — register via Settings → Default apps 
 ui_full.html is re-copied from assets on every launch, so a fresh `a apk` reinstall always updates the UI.
 """
 import os,subprocess as S,shutil,glob,sys
-P="com.aios.a"
+SELF="self" in sys.argv[2:]   # a apk self: parallel-installable variant — self-built signature can't UPDATE the installed app, so coexist under own id+label
+P="com.aios.a.self" if SELF else "com.aios.a"
 KT=r'''@file:Suppress("DEPRECATION","OVERRIDE_DEPRECATION")
 package com.aios.a
 import android.app.Activity;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*
@@ -90,6 +91,7 @@ WebView.setWebContentsDebuggingEnabled(true)
 w=WebView(this).apply{settings.javaScriptEnabled=true;addJavascriptInterface(this@M,"A");setBackgroundColor(Color.BLACK)
 webChromeClient=object:WebChromeClient(){override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){v.evaluateJavascript(SHIM,null);if(url.startsWith("http")){loaded=true;android.util.Log.i("aPerf","cold: home painted "+(android.os.SystemClock.elapsedRealtime()-android.os.Process.getStartElapsedRealtime())+"ms after proc start")}}
+override fun doUpdateVisitedHistory(v:WebView,url:String?,re:Boolean){if(url!=null&&url.startsWith("http")){cur=url;getSharedPreferences("nav",0).edit().putString("cur",url).apply()}}  // persist real URL (SPA pushState included) so relaunch restores the subpage, not home
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE}
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
@@ -99,7 +101,7 @@ val spaR=listOf("/","/note","/tasks","/term","/jobs")
 val items=listOf<Pair<String,()->Unit>>("Native" to {show(0)})+web.map{(l,r)->"a $l" to {show(1);if(loaded&&onSpa&&r in spaR)w.evaluateJavascript("navpage('$r')",null) else {cur="$BASE$r";n=0;w.loadUrl(cur);onSpa=r in spaR}}}+listOf<Pair<String,()->Unit>>("Setup" to {show(2)},"Read" to {show(3)},"Rec" to {show(4)},"Termux" to {startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},"homebox" to {startActivity(Intent(this,Cap::class.java))},"Bubble" to {if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})
 val mb=S(this,items,{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
-root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.navTo("home");nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->mb.navTo(nm)};backB={if(mb.o)moveTaskToBack(true) else mb.open()};if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(0,{goMenu()});applyNav(intent)}}   // Android 15+/17 predictive dispatch skips onBackPressed for gesture back — both paths -> goMenu
+root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.navTo("home");getSharedPreferences("nav",0).getString("cur",null)?.let{cur=it;onSpa=false;n=0;w.loadUrl(cur)};nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->mb.navTo(nm)};backB={if(mb.o)moveTaskToBack(true) else mb.open()};if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(0,{goMenu()});applyNav(intent)}}   // Android 15+/17 predictive dispatch skips onBackPressed for gesture back — both paths -> goMenu
 // nav selector = the launcher keyboard (launcher.c), translated: bare white letters on pure black, 5-row layout (num row + qwerty + fn keys), keyboard = bottom 52%. Results render BOTTOM-UP so the most-used (navfreq prefs) sits right above the keys; tap a row or type to filter, '>' picks the top match. Closed = a ≡ bar; tap to reopen.
 class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){
 var i=0;var o=false;var q="";var onLeave:(()->Unit)?=null;var so=0f;var dy=0f;var mv=false;private val slop=android.view.ViewConfiguration.get(a).scaledTouchSlop
@@ -153,17 +155,36 @@ override fun onMeasure(ws:Int,hs:Int){val sz=MeasureSpec.getSize(hs);val h=if(o&
 // homebox = the user's primary ssh device — the main box they work on. Generic alias, not a specific host: each user points "homebox" at their default machine via an ssh entry named homebox. Cap fires captured thoughts to it (a sw homebox) and the button attaches (a ssh homebox).
 class Cap:Activity(){
 private val ACT="com.aios.a.CAP_RESULT"
-private var status:TextView?=null;private var boxhdr:TextView?=null;private var hosts=listOf<String>();private var sr:android.speech.SpeechRecognizer?=null;private var listening=false;private var dbase="";private var micBtn:Button?=null
+private var status:TextView?=null;private var tailv:TextView?=null;private var boxhdr:TextView?=null;private var hosts=listOf<String>()
+private var sr:android.speech.SpeechRecognizer?=null;private var listening=false;private var dbase="";private var lastp=""
+private var agent=0;private val AGS=listOf("claude","codex","gemini")
+private val hh=Handler(Looper.getMainLooper());private var tw="";private var tn=0
+private lateinit var e:EditText;private var row:BtnRow?=null
+// keep-text invariant: finals commit to dbase; onErr must commit the pending partial instead of dropping it.
+// Android kills long dictation sessions via onError — losing the partial there wiped everything not yet finalized.
+private fun put(s:String){lastp=s;e.setText(dbase+s);e.setSelection(e.text.length)}
+private fun onPart(s:String){put(s)}
+private fun onFinal(s:String){if(s.isNotBlank())dbase=(dbase+s).trimEnd()+" ";put("")}
+private fun onErr(){if(lastp.isNotBlank()){dbase=(dbase+lastp).trimEnd()+" ";put("")}}
+private fun clr(){dbase="";lastp="";e.setText("")}
 private val rcv=object:android.content.BroadcastReceiver(){override fun onReceive(c:Context,i:Intent){
 val ex=i.extras
 var b=ex?.getBundle("com.termux.execute.PLUGIN_RESULT_BUNDLE")?:ex?.getBundle("result")
 if(b==null)for(k in ex?.keySet()?:emptySet<String>()){val v=ex?.get(k);if(v is Bundle){b=v;break}}
-val o=(b?.getString("stdout")?:"")+(b?.getString("stderr")?:"")
+val o=((b?.getString("stdout")?:"")+(b?.getString("stderr")?:"")).replace(Regex("\u001B\\[[0-9;]*[mK]"),"").lines().filter{!it.matches(Regex("\\d+us"))}.joinToString("\n")
+if(o.startsWith("@T@")){val t=o.removePrefix("@T@").trim();runOnUiThread{tailv?.text=t.ifEmpty{"(window empty)"}};return}
 val hi=o.lines().indexOfFirst{it.contains("homebox ->")}
-val w=Regex("window (\\S+)").find(o)?.groupValues?.get(1)
-val sline=o.lines().lastOrNull{it.trimStart().startsWith("saved")}?.trim()
+val w=Regex("j-[\\w.-]+").findAll(o).lastOrNull()?.value
+val sline=o.lines().lastOrNull{it.contains("saved")}?.trim()
 runOnUiThread{if(hi>=0){boxhdr?.text=o.lines()[hi].replace("->","→")+"  ·tap to switch";hosts=o.lines().drop(hi+1).filter{it.isNotBlank()}}
-else status?.text=if(sline!=null)sline else if(w!=null)"✓ window $w" else if(o.isNotBlank())o.trim().takeLast(80) else if(b==null)"keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]" else "bkeys=["+(b?.keySet()?.joinToString(",")?:"")+"]"}}}
+else if(sline!=null)status?.text=sline
+else if(w!=null){status?.text="✓ "+AGS[agent]+" "+w+" · live:";tw=w;tn=0;hh.removeCallbacks(tailR);hh.post(tailR)}
+else status?.text=if(o.isNotBlank())o.trim().takeLast(120) else "keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]"}}}
+// live status of the created window: the same capture-pane tail the a TUIs use, callable from anywhere:
+//   a ssh homebox "tmux capture-pane -pt a:<win> -S -60 2>/dev/null|awk NF|tail -12"
+private val tailR=object:Runnable{override fun run(){if(tw.isEmpty())return
+txr("echo -n @T@;a ssh homebox \"tmux capture-pane -pt a:\$1 -S -60 2>/dev/null|awk NF|tail -12\" 2>&1","a",tw)
+if(++tn<40)hh.postDelayed(this,3000) else status?.text="⏸ live view paused — reopen to resume"}}
 private fun txr(vararg a:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND")
 i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash")
 i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-c",*a))
@@ -171,42 +192,69 @@ i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true)
 i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",android.app.PendingIntent.getBroadcast(this,0,Intent(ACT).setPackage(packageName),android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE))
 try{startForegroundService(i)}catch(e:Exception){try{startService(i)}catch(e2:Exception){}}}
 private fun hb(arg:String){if(arg.isEmpty())txr("a ssh hb 2>&1") else txr("a ssh hb \"\$1\" 2>&1","a",arg)}
-private fun fire(t:String){if(t.isBlank())return
-status?.text="sending…";txr("a sw homebox \"\$1\" 2>&1","a",t)}
+private fun fire(t:String){if(t.isBlank())return   // remote a j with per-send A_AGENT, report newest j- window; strip quote metachars (remote hop reparses)
+val p=t.replace('"',' ').replace('\'',' ').replace('$',' ').replace('`',' ')
+status?.text="→ "+AGS[agent]+" @ homebox…";tailv?.text="";tw="";tn=0;hh.removeCallbacks(tailR)
+txr("w=\$(a ssh homebox \"A_AGENT=\$2 a j \\\"\$1\\\" >/dev/null 2>&1;tmux lsw -t a -F \\\"#{window_id} #{window_name}\\\" 2>/dev/null|grep \\\" j-\\\"|sort -t@ -k2 -n|tail -1|cut -d\\\" \\\" -f2\" 2>&1);echo window \$w","a",p,AGS[agent])}
+private fun act(i:Int){when(i){
+0->micTap()
+1,2->{val t=e.text.toString();val c=if(i==1)"note" else "task";if(t.isNotBlank()){status?.text="→ $c…";txr("a $c \"\$1\" 2>&1","a",t);clr()}}
+3->{agent=(agent+1)%AGS.size;status?.text="send → "+AGS[agent];row?.invalidate()}
+4->{fire(e.text.toString());clr()}}}
+private val ri=Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true).putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,6000)
+// continuous dictation: partials stream into the box, finals commit, re-listen until stop; on-device recognizer first (same call the kb IME uses)
+private fun reco(){sr=if(Build.VERSION.SDK_INT>=31&&android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(this))android.speech.SpeechRecognizer.createOnDeviceSpeechRecognizer(this) else android.speech.SpeechRecognizer.createSpeechRecognizer(this)
+sr!!.setRecognitionListener(object:android.speech.RecognitionListener{
+override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{onPart(it)}}
+override fun onResults(b:Bundle?){onFinal(b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?:"");if(listening)sr?.startListening(ri)}
+override fun onError(x:Int){onErr();if(listening)e.postDelayed({if(listening)sr?.startListening(ri)},150)}
+override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(by:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}});sr!!.startListening(ri)}
+private fun micTap(){
+if(listening){listening=false;status?.text="";sr?.destroy();sr=null}
+else if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),7);return}
+else{listening=true;status?.text="listening… tap stop to end";dbase=e.text.toString().let{if(it.isEmpty()||it.endsWith(" "))it else "$it "};lastp="";reco()}
+row?.invalidate()}
+// row like the kb: black, white mono glyphs, send = the white section; fires on ACTION_DOWN, invert = press feedback
+inner class BtnRow(c:Context):android.view.View(c){
+private val pf=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=46f;textAlign=Paint.Align.CENTER}
+private var pr=-1
+private fun labs()=listOf(if(listening)"stop" else "mic","note","task",AGS[agent],"send")
+override fun onMeasure(ws:Int,hs:Int){setMeasuredDimension(MeasureSpec.getSize(ws),(56f*resources.displayMetrics.density).toInt())}
+override fun onDraw(cv:Canvas){cv.drawColor(0xFF000000.toInt());val L=labs();val bw=width/L.size.toFloat()
+for(i in L.indices){val x0=i*bw;val inv=(i==pr)!=(i==L.size-1)
+if(inv){pf.style=Paint.Style.FILL;pf.color=-1;cv.drawRect(x0+4f,8f,x0+bw-4f,height-8f,pf)}
+else{pf.style=Paint.Style.STROKE;pf.strokeWidth=2f;pf.color=0xFF555555.toInt();cv.drawRect(x0+4f,8f,x0+bw-4f,height-8f,pf);pf.style=Paint.Style.FILL}
+pf.color=if(inv)0xFF000000.toInt() else -1
+cv.drawText(L[i],x0+bw/2f,height/2f-(pf.ascent()+pf.descent())/2f,pf)}}
+override fun onTouchEvent(ev:MotionEvent):Boolean{
+if(ev.action==MotionEvent.ACTION_DOWN){val i=(ev.x/(width/labs().size.toFloat())).toInt().coerceIn(0,labs().size-1);pr=i;invalidate();act(i)}
+else if(ev.action==MotionEvent.ACTION_UP||ev.action==MotionEvent.ACTION_CANCEL)postDelayed({pr=-1;invalidate()},70)
+return true}}
+// headless debug feed (`a captest`): am start .Cap --es feed 'r|p hello|e|p world|f world' replays recognizer events through the SAME handlers; text → files/cap_out.txt + logcat aCapTest
+private fun feed(i:Intent?){val f=i?.getStringExtra("feed")?:return
+for(ev in f.split("|")){val t=ev.trim();when{t=="r"->clr();t.startsWith("p ")->onPart(t.drop(2));t.startsWith("f ")->onFinal(t.drop(2));t.startsWith("e")->onErr()}}
+val out=e.text.toString();java.io.File(filesDir,"cap_out.txt").writeText(out)
+android.util.Log.i("aCapTest","OUT["+out.length+"] "+out)
+status?.text="feed done ("+out.length+"c) → files/cap_out.txt"}
 override fun onCreate(b:Bundle?){super.onCreate(b)
 if(Build.VERSION.SDK_INT>=33)registerReceiver(rcv,android.content.IntentFilter(ACT),Context.RECEIVER_NOT_EXPORTED) else registerReceiver(rcv,android.content.IntentFilter(ACT))
 val ll=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.TOP;setBackgroundColor(0xFF000000.toInt())}
-val e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF888888.toInt());hint="capture → homebox";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;gravity=Gravity.TOP or Gravity.START;minLines=4;maxLines=12;isVerticalScrollBarEnabled=true}
-status=TextView(this).apply{setTextColor(0xFF33FF66.toInt());textSize=16f;setPadding(48,8,48,16);autoLinkMask=android.text.util.Linkify.WEB_URLS;movementMethod=android.text.method.LinkMovementMethod.getInstance()}
-boxhdr=TextView(this).apply{setTextColor(0xFF66CCFF.toInt());textSize=15f;setPadding(48,18,48,2);text="homebox → …";setOnClickListener{if(hosts.isEmpty())hb("") else android.app.AlertDialog.Builder(this@Cap).setTitle("homebox = which computer?").setItems(hosts.toTypedArray()){_,wi->hb(hosts[wi])}.show()}}
-val btn=Button(this).apply{text="windows";setOnClickListener{status?.text="checking…";txr("a ssh homebox tmux list-windows -t a 2>&1|grep j-|sort -t@ -k2 -n|tail -1|cut -d' ' -f2|grep .||echo NONE")}}
-// continuous dictation: partials stream live into the box, each finalized phrase is committed to dbase, and we re-listen on every result/silence so it only stops when you tap ⏹
-val mic=Button(this).apply{text="🎤"}
-val ri=Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true).putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,6000)
-fun put(s:String){e.setText(dbase+s);e.setSelection(e.text.length)}
-fun reco(){sr=android.speech.SpeechRecognizer.createSpeechRecognizer(this@Cap);sr!!.setRecognitionListener(object:android.speech.RecognitionListener{
-override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{put(it)}}
-override fun onResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf{it.isNotBlank()}?.let{dbase=(dbase+it).trimEnd()+" ";put("")};if(listening)sr?.startListening(ri)}
-override fun onError(x:Int){if(listening)e.postDelayed({if(listening)sr?.startListening(ri)},150)}
-override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(r:Float){};override fun onBufferReceived(by:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}});sr!!.startListening(ri)}
-mic.setOnClickListener{
-if(listening){listening=false;mic.text="🎤";status?.text="";sr?.destroy();sr=null}
-else if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED)requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),7)
-else{listening=true;mic.text="⏹";status?.text="🎤 listening… tap ⏹ to stop";dbase=e.text.toString().let{if(it.isEmpty()||it.endsWith(" "))it else "$it "};reco()}}
-val save=Button(this).apply{text="send"}
-val press=View.OnTouchListener{v,ev->if(ev.action==MotionEvent.ACTION_DOWN)v.alpha=0.45f else if(ev.action==MotionEvent.ACTION_UP||ev.action==MotionEvent.ACTION_CANCEL)v.alpha=1f;false}
-listOf(mic,save,btn).forEach{it.setOnTouchListener(press)}
-val row=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;gravity=Gravity.CENTER_VERTICAL};row.addView(mic,LinearLayout.LayoutParams(-2,-2));row.addView(save,LinearLayout.LayoutParams(0,-2,1f));row.addView(btn,LinearLayout.LayoutParams(-2,-2))
-ll.addView(boxhdr,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
+e=EditText(this).apply{setTextColor(-1);setHintTextColor(0xFF777777.toInt());hint="capture → note · task · agent";textSize=22f;setPadding(32,20,24,20);inputType=android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;gravity=Gravity.TOP or Gravity.START;minLines=4;isVerticalScrollBarEnabled=true;setBackgroundColor(0xFF000000.toInt())}
+tailv=TextView(this).apply{setTextColor(0xFFBBBBBB.toInt());typeface=Typeface.MONOSPACE;textSize=12f;setPadding(32,4,32,4)}
+status=TextView(this).apply{setTextColor(-1);textSize=15f;setPadding(48,6,48,10);autoLinkMask=android.text.util.Linkify.WEB_URLS;movementMethod=android.text.method.LinkMovementMethod.getInstance()}
+boxhdr=TextView(this).apply{setTextColor(-1);textSize=15f;setPadding(48,18,48,2);text="homebox → …";setOnClickListener{if(hosts.isEmpty())hb("") else android.app.AlertDialog.Builder(this@Cap).setTitle("homebox = which computer?").setItems(hosts.toTypedArray()){_,wi->hb(hosts[wi])}.show()}}
+row=BtnRow(this)
+ll.addView(boxhdr,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f));ll.addView(tailv,LinearLayout.LayoutParams(-1,-2));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
 setContentView(ll);e.requestFocus();hb("")
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-val go={fire(e.text.toString());e.setText("")}
-save.setOnClickListener{go()}
 // assistant role (Settings → Default apps → Digital assistant, or adb: cmd role add-role-holder --user 0 android.app.role.ASSISTANT com.aios.a): the gesture fires ACTION_ASSIST here with the mic already hot — gesture → speak → send, zero taps
-micBtn=mic;if(intent?.action==Intent.ACTION_ASSIST)mic.post{if(!listening)mic.performClick()}}
-override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);if(i.action==Intent.ACTION_ASSIST&&!listening)micBtn?.performClick()}
-override fun onRequestPermissionsResult(rc:Int,pm:Array<out String>,r:IntArray){super.onRequestPermissionsResult(rc,pm,r);if(rc==7&&r.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED&&!listening)micBtn?.performClick()}
-override fun onDestroy(){listening=false;try{sr?.destroy()}catch(e:Exception){};try{unregisterReceiver(rcv)}catch(e:Exception){};super.onDestroy()}}
+if(intent?.action==Intent.ACTION_ASSIST)hh.post{if(!listening)micTap()}
+feed(intent)}
+override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);if(i.action==Intent.ACTION_ASSIST&&!listening)micTap();feed(i)}
+override fun onRequestPermissionsResult(rc:Int,pm:Array<out String>,r:IntArray){super.onRequestPermissionsResult(rc,pm,r);if(rc==7&&r.firstOrNull()==android.content.pm.PackageManager.PERMISSION_GRANTED&&!listening)micTap()}
+override fun onPause(){hh.removeCallbacks(tailR);super.onPause()}
+override fun onResume(){super.onResume();if(tw.isNotEmpty()){tn=0;hh.removeCallbacks(tailR);hh.post(tailR)}}
+override fun onDestroy(){listening=false;hh.removeCallbacksAndMessages(null);try{sr?.destroy()}catch(e:Exception){};try{unregisterReceiver(rcv)}catch(e:Exception){};super.onDestroy()}}
 class T(c:android.content.Context):android.view.View(c){
 private val h=Handler(Looper.getMainLooper())
 private var px:IntArray?=null
@@ -1507,11 +1555,11 @@ _ND=SDK+"/ndk";_NV=sorted(os.listdir(_ND))[-1] if os.path.isdir(_ND) else None
 _NH=os.listdir(f"{_ND}/{_NV}/toolchains/llvm/prebuilt")[0] if _NV else None
 _CMK='externalNativeBuild{cmake{path=file("src/main/cpp/CMakeLists.txt")}}\n'
 _DF='defaultConfig{applicationId="'+P+'";minSdk=24;targetSdk=34;versionCode=202;ndk{abiFilters+="arm64-v8a"}'+((';externalNativeBuild{cmake{arguments+="-DANDROID_STL=none"}}') if not IT else '')+'}\n'
-GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="'+P+'";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'signingConfigs{getByName("debug"){storeFile=file("debug.keystore")}}\ncompileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\ndependencies{implementation("dev.rikka.shizuku:api:13.1.5");implementation("dev.rikka.shizuku:provider:13.1.5")}\n'
+GB='plugins{id("com.android.application");id("org.jetbrains.kotlin.android")}\nandroid{namespace="com.aios.a";compileSdk=34;'+(f'ndkVersion="{_NV}";' if _NV else '')+_DF+('' if IT else _CMK)+'signingConfigs{getByName("debug"){storeFile=file("debug.keystore")}}\ncompileOptions{sourceCompatibility=JavaVersion.VERSION_11;targetCompatibility=JavaVersion.VERSION_11}\nkotlinOptions{jvmTarget="11"}}\ndependencies{implementation("dev.rikka.shizuku:api:13.1.5");implementation("dev.rikka.shizuku:provider:13.1.5")}\n'
 R=os.path.dirname(os.path.dirname(os.path.abspath(__file__)));D=R+"/adata/_apk_build"
 if not IT:
-    for p in[f"/opt/homebrew/opt/openjdk@{v}/libexec/openjdk.jdk/Contents/Home" for v in[21,17]]+[f"/usr/lib/jvm/java-{v}-openjdk-amd64" for v in[21,17]]:
-        if os.path.exists(p):os.environ["JAVA_HOME"]=p;break
+    for p in[f"/opt/homebrew/opt/openjdk@{v}/libexec/openjdk.jdk/Contents/Home" for v in[21,17]]+[f"/usr/lib/jvm/java-{v}-openjdk-amd64" for v in[21,17]]+["/opt/android-studio/jbr"]:
+        if os.path.exists(p+"/bin/javac"):os.environ["JAVA_HOME"]=p;break   # javac required: a JRE-only java-21 dir passes bare exists() and breaks fresh builds
 def w(p,s):os.makedirs(os.path.dirname(p),exist_ok=True);open(p,"w").write(s)
 def adb(*a,serial=None):return S.run(["adb"]+(["-s",serial] if serial else[])+list(a),capture_output=True,text=True)
 def devlist():return[l.split('\t')[0] for l in adb("devices").stdout.strip().split('\n')[1:] if '\tdevice' in l]
@@ -1640,16 +1688,17 @@ def run():
     if "auth" in sys.argv[1:]:return _apk_auth(next((a for a in sys.argv[2:] if a!="auth"),None))
     auth_on="noauth" not in sys.argv[2:]
     up_on="noup" not in sys.argv[2:]   # default: bring termux a to latest + restart its serve after install
+    bo=SELF or "build" in sys.argv[2:]   # build-only: skip every adb/install/auth step (deploy path when adb is absent/flaky)
     AMAP={"arm":"armeabi-v7a","v7a":"armeabi-v7a","armeabi-v7a":"armeabi-v7a","arm64":"arm64-v8a","v8a":"arm64-v8a","arm64-v8a":"arm64-v8a"}
     proj=serial=ABI=None
     for a in sys.argv[2:]:
-        if a in("noauth","noup"):continue
+        if a in("noauth","noup","build","self"):continue
         if a in AMAP:ABI=AMAP[a];continue
         for p in [a,H+"/"+a,R+"/adata/git/my/"+a]:
             if os.path.isdir(p) and glob.glob(p+"/build.gradle*"):proj=os.path.abspath(p);break
         if proj:break
         elif not serial:serial=a
-    if not serial:
+    if not serial and not bo:
         ds=devlist()
         if ds:serial=ds[0] if len(ds)==1 else pick(ds)
     if not ABI:
@@ -1723,6 +1772,12 @@ def run():
             else:sys.exit("x No gradlew")
         os.chdir(D);S.run(["./gradlew","--no-configuration-cache","assembleDebug"],check=True)
         apk=D+"/app/build/outputs/apk/debug/app-debug.apk";pkg=P
+    if bo:
+        if SELF:apk=shutil.copy(apk,os.path.dirname(apk)+"/a-self.apk")   # coexists with the default's app-debug.apk
+        ip=S.run(["sh","-c","ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"],capture_output=True,text=True).stdout.strip() or "<this-box-ip>"
+        fn="a-self.apk" if SELF else "a.apk"
+        print(f"✓ built: {apk}\n  serve it:      python3 -m http.server 8999 -d {os.path.dirname(apk)}\n  phone termux:  curl -o {fn} http://{ip}:8999/{os.path.basename(apk)} && termux-open {fn}   # Termux needs 'Install unknown apps' once")
+        return
     if IT:
         if _rish_install(apk,pkg):print("✓ "+(pkg or os.path.basename(apk))+" (rish)");return
         sa=_self_adb()
