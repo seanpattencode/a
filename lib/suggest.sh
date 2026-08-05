@@ -21,7 +21,7 @@ Output format - STRICT: exactly 11 lines. Each line begins with the literal char
 DEF
 echo "seeded default lens: $LENS"; }
 cat "$LENS" > "$OUT"
-{ docs /a $SR/mem/index.txt $SR/mem/*.md $SR/mem/i.txt; docs /i $HOME/i/*.md; docs /u $HOME/u/*.md; } >> "$OUT"
+{ docs /a $SR/mem/index.txt $SR/mem/*.md $SR/mem/i.txt; docs /i $HOME/i/*.md; docs /u $HOME/i/u/*.md; } >> "$OUT"
 if [ "$BOOK" != "-" ] && ls $HOME/a/adata/books/"$BOOK"/transcriptions/*.txt >/dev/null 2>&1; then
     sec "BOOK: $BOOK (full transcription)" >> "$OUT"
     for f in $(ls $HOME/a/adata/books/"$BOOK"/transcriptions/*.txt | sort); do cat "$f"; echo; done >> "$OUT"
@@ -38,7 +38,7 @@ ls $SR/notes/*.txt | awk -F_ '{print $NF" "$0}' | sort | cut -d' ' -f2- | xargs 
 # automatically as notes/suggestions grow. Last position = newest typed messages nearest the instruction.
 GATE=2700000   # measured: 2,647,201 ran (963k real tokens), 2,747,201 bounced — true CLI limit ~2.72MB
 ME=$((GATE - $(wc -c < "$OUT") - 1000)); [ "$ME" -gt 100000 ] && ME=100000
-if [ "$ME" -gt 5000 ] && [ -f $HOME/u/me.txt ]; then sec "/u DOC: me.txt (Sean's typed messages - NEWEST $ME BYTES)" >> "$OUT"; tail -c "$ME" $HOME/u/me.txt >> "$OUT"
+if [ "$ME" -gt 5000 ] && [ -f $HOME/i/idata/me.txt ]; then sec "/u DOC: me.txt (Sean's typed messages - NEWEST $ME BYTES)" >> "$OUT"; tail -c "$ME" $HOME/i/idata/me.txt >> "$OUT"
 else echo "! me.txt skipped (missing, or corpus grew past its room) - run continues without it"; fi
 sec "END OF CORPUS" >> "$OUT"
 echo "Now produce the 11 suggestions exactly as specified at the top: 11 lines, literal TASK: / PROMPT: / NOTE: prefixes, each ending [grounded in: ...]. Do not repeat previous suggestions." >> "$OUT"
