@@ -3,15 +3,22 @@
 static volatile sig_atomic_t g_halt;
 static void m_sint(int s){(void)s;g_halt=1;}
 static void m_ap(const char*sf,const char*h,const char*t){FILE*f=fopen(sf,"a");if(f){fprintf(f,"## %s\n%s\n",h,t);fclose(f);}}
+static void m_fresh(char*fn){strftime(fn,128,"%y%m%d-%H%M%S",localtime(&(time_t){time(0)}));}
+#define MCF "claude -p --tools '' --model '%s' --effort '%s'"
 static void m_cmdstr(char*o,size_t n){const char*mc=cfget("m_cmd");if(*mc){snprintf(o,n,"%s",mc);return;}
     const char*md=cfget("m_model"),*ef=cfget("m_effort");
-    snprintf(o,n,"claude -p --tools '' --model '%s' --effort '%s'",*md?md:"opus",*ef?ef:"max");}
+    snprintf(o,n,MCF,*md?md:"opus",*ef?ef:"max");}
+static int m_splice(char*o,size_t n,const char*fl,const char*v){  /* swap --<fl> '<v>' in the live cmd, keep the rest; 0 = no such flag */
+    char c[B];m_cmdstr(c,B);char f[24];int fn=snprintf(f,24,"--%s '",fl);
+    char*p=strstr(c,f),*q=p?strchr(p+fn,'\''):0;if(!q)return 0;
+    snprintf(o,n,"%.*s%s%s",(int)(p+fn-c),c,v,q);return 1;}
 static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last CMD: → run in wd → feed back */
-    static char b[1<<16],x[B*4],mc[B];char last[B]="";int rep=0;
+    static char b[1<<16],x[B*4],mc[B];char last[B]="",sp[P];int rep=0;
     load_cfg();m_cmdstr(mc,B);
+    snprintf(sp,P,"%s/m_sent_%s",DDIR,bname(sf));  /* exact model stdin, written pre-run (tee SIGPIPEs on fast models) */
     for(int i=0;i<25&&!g_halt;i++){  /* multiple commands until the model stops (no CMD) */
         struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
-        snprintf(x,sizeof x,"{ echo 'Shell agent: any reply line CMD:<shell cmd> runs on this computer (cwd %s), output fed back. No CMD = final answer. Examples:\n## user\ntime?\n## assistant\nCMD:date\n## user\nshow wikipedia\n## assistant\nCMD:xdg-open https://wikipedia.org\n## tool\n(no output)\n## assistant\nOpen.\nNow:';cat '%s';}|%s",wd,sf,mc);
+        snprintf(x,sizeof x,"{ cat '%s/common/prompts/%s.txt' 2>/dev/null;echo 'Shell agent: any reply line CMD:<shell cmd> runs on this computer (cwd %s), output fed back. No CMD = final answer. Examples:\n## user\ntime?\n## assistant\nCMD:date\n## user\nshow wikipedia\n## assistant\nCMD:xdg-open https://wikipedia.org\n## tool\n(no output)\n## assistant\nOpen.\nNow:';cat '%s';}>'%s';<'%s' %s",SROOT,*cfget("prompt")?cfget("prompt"):"default",wd,sf,sp,sp,mc);
         FILE*p=popen(x,"r");if(!p)return;
         int fd=fileno(p),tty=isatty(1),fr=0;size_t al=0;ssize_t n;char ch[4096];
         if(tty){fputs("\033[2m⠋ 0.0s\033[0m",stdout);fflush(stdout);}  /* thinking indicator, instant */
@@ -25,11 +32,11 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
             fwrite(ch,1,(size_t)n,stdout);fflush(stdout);
             if(al+(size_t)n<sizeof b-1){memcpy(b+al,ch,(size_t)n);al+=(size_t)n;}}
         pclose(p);b[al]=0;
-        if(!al){snprintf(b,64,"(empty model reply — check: a m cmd)");fputs(b,stdout);}
+        if(!al)fputs(strcpy(b,"(empty model reply — check: a m cmd)"),stdout);
         clock_gettime(CLOCK_MONOTONIC,&t1);
-        fprintf(stderr,"\n\033[2m[%.1fs]\033[0m\n",(double)(t1.tv_sec-t0.tv_sec)+(double)(t1.tv_nsec-t0.tv_nsec)/1e9);
+        fprintf(stderr,"\n\033[2m[%.1fs · %s]\033[0m\n",(double)(t1.tv_sec-t0.tv_sec)+(double)(t1.tv_nsec-t0.tv_nsec)/1e9,sp);
         m_ap(sf,"assistant",b);
-        char*t=0;for(char*s=b;(s=strstr(s,"CMD:"));s+=4)t=s;  /* LAST match: thinking models narrate CMD: before deciding */
+        char*t=0;for(char*s=b;(s=strstr(s,"CMD:"));s+=4)if(s==b||s[-1]=='\n')t=s;  /* LAST line-start match: narration/prose mentions of CMD: must never run (2026-08-05 loop) */
         if(!t||g_halt)break;
         char*cm=t+4;while(*cm==' '||*cm=='`')cm++;
         char*e=strchr(cm,'\n');if(e)*e=0;
@@ -52,32 +59,30 @@ static int m_resume(char*m,size_t sz){  /* saved convos (adata/git/m/agents/*.tx
     for(char*q=ls;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
     if(!n||m_pick("resume",it,n,sel,sizeof sel)<=0)return 0;
     sel[strcspn(sel,"\t")]=0;snprintf(m,sz,"/%s",sel);return 1;}
-/* '/' on empty box → m_pick live-filter menu (type-to-complete, a i style). Model picks set m_cmd ONLY —
- * fleet keys m_agent/m_model stay untouched (a c/a j spawns unaffected). Returns 1=submit m, 2=keep editing m, 0=handled. */
+/* '/' on empty box → ONE m_pick menu, everything shown: ops+models+efforts+servers+locals (type-to-filter).
+ * Model/effort picks set m_cmd ONLY — fleet keys m_agent/m_model/m_effort untouched (a c/a j spawns unaffected). Returns 1=submit m, 2=keep editing m, 0=handled. */
 static int m_slash(char *m,size_t sz){
-    static const char *ops[]={"model\tpick model from list","resume\topen saved conversation","new\tfresh agent","cmd\ttype raw model cmd","q\tquit"};
+    static char ib[32][96];const char*it[32];int n=0;
+    static const char*cl[]={"resume\topen saved conversation","new\tfresh agent","cmd\ttype raw model cmd","q\tquit",  /* every word you'd filter by is IN the row: 'claude' must reach efforts too (m_pick greps whole row) */
+        "fable\tclaude model","opus\tclaude model","sonnet\tclaude model","haiku\tclaude model",
+        "max\tclaude effort","xhigh\tclaude effort","high\tclaude effort","medium\tclaude effort","low\tclaude effort",0};
+    for(int k=0;cl[k];k++)it[n++]=cl[k];
+    char ol[4096];{char gc[B];snprintf(gc,B,"awk -F'\t' '!/^#/&&NF>1{print $1\"\tserver\"}' '%s/m/models.txt' 2>/dev/null;ollama list 2>/dev/null|awk 'NR>1{print $1\"\tollama local\"}'",SROOT);pcmd(gc,ol,sizeof ol);}  /* models.txt label\tcmd rows; servers first — locals flood the cap */
+    for(char*q=ol;*q&&n<32;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
     char sel[96];
-    int r=m_pick("cmd",ops,5,sel,sizeof sel);
-    if(r<=0)return 0;
-    sel[strcspn(sel,"\t")]=0;
+    if(m_pick("cmd",it,n,sel,sizeof sel)<=0)return 0;
+    char *tb=strchr(sel,'\t');int oll=tb&&strstr(tb+1,"ollama"),srv=tb&&strstr(tb+1,"server"),eff=tb&&strstr(tb+1,"effort");if(tb)*tb=0;
     if(!strcmp(sel,"q")||!strcmp(sel,"new")){snprintf(m,sz,"/%s",sel);return 1;}
     if(!strcmp(sel,"resume"))return m_resume(m,sz);
     if(!strcmp(sel,"cmd")){snprintf(m,sz,"/cmd ");return 2;}
-    static char ib[24][96];const char*it[24];int n=0;
-    static const char*cl[]={"fable","opus","sonnet","haiku",0};
-    for(int k=0;cl[k]&&n<24;k++){snprintf(ib[n],96,"%s\tclaude",cl[k]);it[n]=ib[n];n++;}
-    char ol[4096];{char gc[B];snprintf(gc,B,"awk -F'\t' '!/^#/&&NF>1{print $1\"\tserver\"}' '%s/m/models.txt' 2>/dev/null;ollama list 2>/dev/null|awk 'NR>1{print $1\"\tollama local\"}'",SROOT);pcmd(gc,ol,sizeof ol);}  /* models.txt label\tcmd rows; servers first — locals flood the 24 cap */
-    for(char*q=ol;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
-    r=m_pick("model",it,n,sel,sizeof sel);
-    if(r<=0)return 0;
-    char *tb=strchr(sel,'\t');int oll=tb&&strstr(tb+1,"ollama"),srv=tb&&strstr(tb+1,"server");if(tb)*tb=0;
     load_cfg();char nc[B];
-    if(srv){char gc[B];snprintf(gc,B,"grep -m1 '^%s\t' '%s/m/models.txt'|cut -f2-",sel,SROOT);pcmd(gc,nc,B);nc[strcspn(nc,"\n")]=0;if(!nc[0])return 0;}
+    if(eff){if(!m_splice(nc,B,"effort",sel)){puts("x cmd takes no --effort");return 0;}}
+    else if(srv){char gc[B];snprintf(gc,B,"grep -m1 '^%s\t' '%s/m/models.txt'|cut -f2-",sel,SROOT);pcmd(gc,nc,B);nc[strcspn(nc,"\n")]=0;if(!nc[0])return 0;}
     else if(oll)snprintf(nc,B,"jq -Rs '{model:\"%s\",prompt:.,stream:false,think:true}'|curl -sS -d @- localhost:11434/api/generate|jq -r .response",sel);
-    else{const char*ef=cfget("m_effort");snprintf(nc,B,"claude -p --tools '' --model '%s' --effort '%s'",sel,*ef?ef:"max");}
+    else if(!m_splice(nc,B,"model",sel)){const char*ef=cfget("m_effort");snprintf(nc,B,MCF,sel,*ef?ef:"max");}  /* no --model = leaving a server/ollama cmd -> fresh */
     cfset("m_cmd",nc);snprintf(m,sz,"/new");return 1;  /* pick = fresh agent: old convo pollutes the new model */
 }
-#define M_ST(st,fn) {load_cfg();char _mc[B];m_cmdstr(_mc,B);snprintf(st,B,"%s · %.60s · /=menu",fn,_mc);}
+#define M_ST(st,fn) {load_cfg();char _mc[B];m_cmdstr(_mc,B);snprintf(st,B,"%s · %s · /=menu",fn,_mc);}
 /* menu=1: chat (sfn=agent name, '/' opens m_slash). menu=0: generic box (sfn=literal status), for a i etc.
  * Buffer is heap-grown (any length); *out = the text (static, valid until next call). */
 static size_t m_input(char **out,const char *sfn,int menu){
@@ -137,12 +142,14 @@ static size_t m_input(char **out,const char *sfn,int menu){
     return q?(size_t)-q:l;
 }
 static int cmd_m(int c,char**v){
-    if(c>2&&!strcmp(v[2],"cmd")){load_cfg();if(c>3){char val[B]="";ajoin(val,B,c,v,3);cfset("m_cmd",strcmp(val,"clear")?val:"");}printf("m_cmd=%s\n",cfget("m_cmd"));return 0;}
-    if(c>2&&(!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort"))){char val[256]="";if(c>3)ajoin(val,256,c,v,3);load_cfg();char k[32];snprintf(k,32,"m_%s",v[2]);cfset(k,val);return 0;}
-    if(c>2&&!strcmp(v[2],"use")){if(c>4){load_cfg();cfset("m_agent",v[3]);cfset("m_model",v[4]);if(c>5)cfset("m_effort",v[5]);}else puts("a m use <agent> <model> [effort]");return 0;}
+    if(c>2&&(!strcmp(v[2],"cmd")||!strcmp(v[2],"model")||!strcmp(v[2],"agent")||!strcmp(v[2],"effort"))){load_cfg();char k[32];snprintf(k,32,"m_%s",v[2]);
+        if(c>3){char val[B]="";ajoin(val,B,c,v,3);cfset(k,strcmp(val,"clear")?val:"");}
+        printf("%s=%s\n",k,cfget(k));return 0;}
+    if(c>2&&!strcmp(v[2],"use")){load_cfg();if(c>4){cfset("m_agent",v[3]);cfset("m_model",v[4]);if(c>5)cfset("m_effort",v[5]);}
+        printf("m_agent=%s m_model=%s m_effort=%s m_cmd=%s\n",cfget("m_agent"),cfget("m_model"),cfget("m_effort"),cfget("m_cmd"));return 0;}
     perf_disarm();init_db();load_cfg();
     char fn[128],sf[P];int ai=2;CWD(wd);
-    {time_t t=time(NULL);strftime(fn,128,"%y%m%d-%H%M%S",localtime(&t));}  /* fresh by default; no implicit main */
+    m_fresh(fn);  /* fresh by default; no implicit main */
     if(c>2){ai=3;if(strcmp(v[2],"new"))snprintf(fn,128,"%s",v[2]);}
     {char ad[P];snprintf(ad,P,"%s/m/agents",SROOT);mkdirp(ad);}
     snprintf(sf,P,"%s/m/agents/%s.txt",SROOT,fn);
@@ -159,13 +166,13 @@ static int cmd_m(int c,char**v){
             if(l==(size_t)-2)break;
             if(!l)continue;
             if(l>2048){size_t eo=l-2000;while(eo<l&&(m[eo]&0xC0)==0x80)eo++;  /* huge paste: echo count+tail, transcript file keeps it whole */
-                printf("\033[36m> %zuc…%s\033[0m\n",l,m+eo);}
-            else printf("\033[36m> %s\033[0m\n",m);
+                printf("\033[100;97m> %zuc…%s\033[0m\n",l,m+eo);}
+            else printf("\033[100;97m> %s\033[0m\n",m);
             if(m[0]=='/'){m[strcspn(m,"\n")]=0;
                 if(!strcmp(m,"/q"))return 0;
                 if(!strcmp(m,"/resume")&&!m_resume(m,128))continue;
                 if(!strncmp(m,"/use ",5)||!strncmp(m,"/cmd",4)){char sc[B];snprintf(sc,B,"a m %s",m+1);(void)!system(sc);continue;}
-                if(!strcmp(m,"/new")){time_t t=time(NULL);strftime(fn,128,"%y%m%d-%H%M%S",localtime(&t));}
+                if(!strcmp(m,"/new"))m_fresh(fn);
                 else snprintf(fn,128,"%s",m+1);
                 snprintf(sf,P,"%s/m/agents/%s.txt",SROOT,fn);break;}
             m_ap(sf,"user",m);
