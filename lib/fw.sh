@@ -8,6 +8,7 @@
 S=fleet; R="$HOME/a/adata/git/ssh"; ME=$(hostname)
 tmux kill-session -t $S 2>/dev/null
 tmux new-session -d -s $S -n "$ME" "TMUX= tmux attach -t a || sh"
+tmux set -t $S automatic-rename off; tmux set -t $S allow-rename off   # window name = DEVICE, never the remote's guess
 for d in $(grep -h '^Name:' "$R"/*.txt 2>/dev/null | tr -d '\r' | sed 's/Name: *//;s/[[:space:]]*$//;s/-\(lan\|wan\|usb\|hot\|relay\)$//' | sort -u); do
   [ "$d" = "$ME" ] && continue
   ( timeout 4 a ssh "$d" true >/dev/null 2>&1 &&
