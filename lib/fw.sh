@@ -14,6 +14,10 @@ for d in $(grep -h '^Name:' "$R"/*.txt 2>/dev/null | tr -d '\r' | sed 's/Name: *
   ( timeout 4 a ssh "$d" true >/dev/null 2>&1 &&
     tmux new-window -d -t $S -n "$d" "while :; do a ssh $d; echo '[fw] $d dropped - retry 3s (q=shell)'; sleep 3; done" ) &
 done; wait
+sleep 2   # a ssh renames each window to its RESOLVED route (feature: route visible); settle, then prune
+tmux list-windows -t $S -F '#{window_index} #{window_name}' | awk -v me="$(echo "$ME"|tr A-Z a-z)" \
+  'NR>1{n=tolower($2); if(index(n,me)==1 || seen[n]++) print $1}' | sort -rn | \
+  while read -r i; do tmux kill-window -t "$S:$i"; done   # drop self-routes + case/route dupes (keep first)
 tmux bind -n F8 switch-client -t $S \; next-window -t $S
 tmux bind -n F7 switch-client -t $S \; previous-window -t $S
 tmux bind -n F9 switch-client -l
