@@ -511,11 +511,10 @@ static int cmd_cat(int c,char**v){perf_disarm();
         while(fgets(b,512,uf)){if(!h++){GA(kh,strlen(kh));}GA(b,strlen(b));}pclose(uf);}}}
     CWD(cd);const char*actx=getenv("A_CTX");char ctd[P];
     if(actx&&actx[0]=='/')snprintf(ctd,P,"%s",actx);else snprintf(ctd,P,"%s/context/%s",AROOT,actx&&actx[0]?actx:bname(cd));
-    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){char s[512];size_t sr=fread(s,1,512,cf);int bin=0;\
-        for(size_t i=0;i<sr;i++)if(!s[i]||(s[i]>0&&s[i]<9)||s[i]==11||s[i]==12||(s[i]>13&&s[i]<32)){bin=1;break;}\
-        if(bin){fclose(cf);char ref[P];size_t rl=(size_t)snprintf(ref,P,"\n==> context doc: %s <==\n",FP);GA(ref,rl);}\
-        else{rewind(cf);char hdr[300];size_t hl=(size_t)snprintf(hdr,300,"\n==> context: %s <==\n",HDR);\
-             GA(hdr,hl);char ln2[512];while(fgets(ln2,512,cf)){size_t sl=strlen(ln2);GA(ln2,sl);}fclose(cf);}nf++;}}
+    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=m=='3'&&l>bud;  /* bud gates context too — 2.4MB embed blew the 1M window */\
+        for(size_t i=0;i<sr&&!bin;i++)if((unsigned char)b[i]<32&&b[i]!=9&&b[i]!=10&&b[i]!=13)bin=1;\
+        {size_t hl=(size_t)snprintf(b,8192,"\n==> context%s: %s <==\n",bin?" doc":"",bin?FP:HDR);GA(b,hl);}\
+        if(bin)fclose(cf);else{rewind(cf);while(fgets(b,512,cf)){size_t sl=strlen(b);GA(b,sl);}fclose(cf);}nf++;}}
     struct stat _cs;
     if(!stat(ctd,&_cs)&&S_ISREG(_cs.st_mode))CTX_EMIT(ctd,bname(ctd))
     else {DIR*dd=opendir(ctd);if(dd){struct dirent*de;while((de=readdir(dd))){if(de->d_name[0]=='.')continue;
