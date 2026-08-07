@@ -692,7 +692,7 @@ static int cmd_ref(int c,char**v){
         if(!isatty(0))return 0;
         printf("select #: ");fflush(stdout);char ln[16];
         if(!fgets(ln,16,stdin)||!isdigit((unsigned char)ln[0]))return 0;
-        static char sb[128];int x=atoi(ln);if(x<0||x>=n)return 0;snprintf(sb,128,"%s",nm[x]);sel=sb;}
+        int x=atoi(ln);if(x<0||x>=n)return 0;sel=nm[x];}
     int si=-1;char rp[P];
     if(strchr(sel,'/')&&realpath(sel,rp)){struct stat st;if(!stat(rp,&st)&&!S_ISDIR(st.st_mode)){char*s=strrchr(rp,'/');if(s)*s=0;}
         setenv("A_CTX",rp,1);printf("+ %s\n",rp);
@@ -703,7 +703,7 @@ static int cmd_ref(int c,char**v){
     char cf[P];snprintf(cf,P,"%s/explained.txt",pa[si]);
     if(!fexists(cf))snprintf(cf,P,"%s/transcript.txt",pa[si]);
     const char*ctx=fexists(cf)?cf:pa[si];setenv("A_CTX",ctx,1);printf("+ %s%s\n",nm[si],pmode==2?" (-n next step)":pmode?" (-p)":"");
-    if(pmode){perf_disarm();char pp[P];
+    if(pmode){char pp[P];
         if(pmode==2)snprintf(pp,P,"echo; cat '%s/common/prompts/next.txt'",SROOT);
         else{setenv("A_REFQ",q[0]?q:"In one paragraph, summarize the central idea.",1);snprintf(pp,P,"printf '\\n%%s\\n' \"$A_REFQ\"");}
         char cmd[B*2];snprintf(cmd,B*2,"{ A_CTX='%s' a cat 2>/dev/null; %s; } | claude -p --dangerously-skip-permissions --model opus --effort max --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)';echo",ctx,pp);
@@ -756,7 +756,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|clone|add|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|ref|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|clone|add|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);
