@@ -1205,6 +1205,13 @@ async function run(cmd) {
     try { return post({id, src:'background', ok:true, value: await browser.tabs.captureVisibleTab(null, {format: cmd.format||'png'})}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
+  if (cmd.action === 'navigate') {   // ACTIVE tab only (or the cmd.match tab). Must live here: the content-script path runs in EVERY frame of EVERY tab, so a bare `a bri <url>` BROADCAST-navigated every open tab — one command converted 4 live tabs, and for a query-by-URL site each hijacked tab started its own search (2026-08-08 perplexity storm; it also ate sibling providers' tabs mid-answer). Chrome's SW already scopes to active tabs; Firefox did not.
+    try { const ts = await browser.tabs.query(cmd.match ? {} : {active:true, currentWindow:true});
+      const t = cmd.match ? ts.find(x => (x.url||'').includes(cmd.match)) : ts[0];
+      if (t) await browser.tabs.update(t.id, {url: cmd.url});
+      return post({id, src:'background', ok:true, value:{navigated: t ? t.id : null}}); }
+    catch (e) { return post({id, src:'background', error:String(e)}); }
+  }
   if (cmd.action === 'close') {   // close the tab matching cmd.url (deck flip) or the active tab; privileged → must live here
     try { const ts = await browser.tabs.query(cmd.url ? {} : {active:true, currentWindow:true});
       const t = cmd.url ? ts.find(x => x.url && _norm(x.url) === _norm(cmd.url)) : ts[0];
