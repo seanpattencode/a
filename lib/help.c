@@ -169,7 +169,7 @@ static int cmd_done(int argc,char**argv){AB;
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
         FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}}
     if(getenv("TMUX")){char ts[B]="",dl[B]="",cu[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
-        char*ck[16],*cc[16],*cx[16];int ncu=0;char*me=msg;
+        char ck[16];char*cc[16],*cx[16];int ncu=0;char*me=msg;
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);if(b+sizeof(t)+2>me)me=b+sizeof(t)+2;}}
         TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");
@@ -178,8 +178,12 @@ static int cmd_done(int argc,char**argv){AB;
         /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */
         for(char*ent=cu;*ent&&ncu<16;){char*nx=strstr(ent,"||");if(nx)*nx=0;
             char*p1=strstr(ent,"::"),*p2=p1?strstr(p1+2,"::"):0;
-            if(p2){*p1=*p2=0;while(*ent==' ')ent++;ck[ncu]=ent;cc[ncu]=p1+2;cx[ncu++]=p2+2;}
+            if(p2){*p1=*p2=0;while(*ent==' ')ent++;ck[ncu]=*ent;cc[ncu]=p1+2;cx[ncu++]=p2+2;}
             if(!nx)break;ent=nx+2;}
+        {char used[32]="pcseoyrnb";   /* key colliding with built-ins/each other = both handlers fire on one press -> remap to first free */
+            for(int i=0;i<ncu;i++){
+                if(strchr(used,ck[i]))for(const char*q="123456789adfghijklmqtuvwxz";*q;q++)if(!strchr(used,*q)){ck[i]=*q;break;}
+                used[strlen(used)]=ck[i];}}
         if(dl[0]){char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(me,"\n"),me,dl);fclose(cf);}}
         char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
@@ -201,7 +205,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(tp)fputs("printf '\\033[1;33m[c]\\033[0m crunch the code\\n'\n",sf);
             fputs("printf '\\033[1;36m[s]\\033[0m bash shell here (your own testing)\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;35m[e]\\033[0m talk to agent\\n'\n",sf);
-            for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;33m[%s]\\033[0m %%s: \\033[32m%%s\\033[0m\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
+            for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;33m[%c]\\033[0m %%s: \\033[32m%%s\\033[0m\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
             fputs("printf '\\033[1;33m[o]\\033[0m more\\n'\nelse printf '\\033[1;35m=== more (key) ===\\033[0m\\n'\n",sf);
             if(dl[0])fprintf(sf,"printf '\\033[1;32m[y]\\033[0m push: \\033[32mgit add+commit -- %s && git push\\033[0m\\n'\n",dl);
             if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run test\\n'\n",sf);
@@ -215,7 +219,7 @@ static int cmd_done(int argc,char**argv){AB;
             fprintf(sf,"[ \"$k\" = b ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s -i'\n",np);
             fputs("[ \"$k\" = s ]&&exec ${SHELL:-bash}\n",sf);
             if(tp)fprintf(sf,"[ \"$k\" = e ]&&tmux select-pane -t '%s'\n",tp);
-            for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %s ]&&{ %s;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",ck[i],cx[i]);
+            for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %c ]&&{ %s;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",ck[i],cx[i]);
             fputs("case \"$k\" in o) M=1;; r|n|b) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
             char c[P*2];
