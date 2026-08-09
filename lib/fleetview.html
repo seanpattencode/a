@@ -48,7 +48,7 @@ function hdr(){MS.textContent=(wn2?wn2+' win':'')+(swms?' · sw '+swms:'')+(inms
 function readr(){try{var m=V.contentDocument.getElementById('sb').textContent.match(/r([\d.]+)/);if(m){rtms=m[1];hdr();}}catch(e){}}
 function open_(tg){if(!tg)return;var t0=performance.now();
   if(tg!==cur){cur=tg;if(V)V.classList.remove('on');V=frameFor(tg);V.classList.add('on');foc();
-    swms=(performance.now()-t0).toFixed(1);hdr();}
+    swms=(performance.now()-t0).toFixed(2);hdr();}
   setsel(tg);ensure();}
 function setsel(tg){if(!tg)return;sel=tg;localStorage.fwsel=tg;hl();}
 function hl(){rows.forEach(function(r,i){var s=r.dataset.t===sel;r.classList.toggle('sel',s);
@@ -97,7 +97,7 @@ function tap(e){var c=e.code;
     if(c==='ControlLeft'||c==='ControlRight'){if(!armed){armed=c;dirty=0;}}
     else{if(armed)dirty=1;
       /* per-keypress meters (e.view's clock — iframe events carry their own time origin) */
-      try{inms=Math.max(0,e.view.performance.now()-e.timeStamp).toFixed(1);clearTimeout(krt);krt=setTimeout(readr,130);hdr();}catch(x){}}
+      try{inms=Math.max(0,e.view.performance.now()-e.timeStamp).toFixed(2);clearTimeout(krt);krt=setTimeout(readr,130);hdr();}catch(x){}}
   }else if(c===armed){var a=armed;armed=0;
     if(!dirty){e.preventDefault();e.stopImmediatePropagation();move(a==='ControlLeft'?-1:1);}}}
 function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('keyup',tap,true);}catch(e){}}

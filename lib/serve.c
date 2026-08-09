@@ -153,6 +153,13 @@ static void _sresph(int c,int code,const char*ct,const char*body,int bl,const ch
 }
 /* static doc pages: NOT no-store, so the browser back/forward cache restores them instantly (0ms, no refetch) */
 static void _sresp(int c,int code,const char*ct,const char*body,int bl){_sresph(c,code,ct,body,bl,"no-store");}
+/* latency surfaces (/op /fw): COOP+COEP => crossOriginIsolated => performance.now() at 5us instead of 100us —
+   without this the sub-ms meters quantize to .x0. Scoped here, NOT global: COEP would break pages that load
+   cross-origin subresources. Both pages are fully self-contained; /op iframes stay same-origin. */
+static void _siso(int c,const char*body,int bl){
+    char h[320];int hl=snprintf(h,320,"HTTP/1.1 200 OK\r\nContent-Type:text/html\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-store\r\nCross-Origin-Opener-Policy:same-origin\r\nCross-Origin-Embedder-Policy:require-corp\r\n\r\n",bl);
+    (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
+}
 static void _sdoc(int c,const char*body,int bl){_sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
 /* proxy the u server (127.0.0.1:9999) — net worth (+ any u stat) has ONE source there; we forward, never recompute (no drift). No shell → the update body can't inject. */
 static char* _ufwd(const char*path,const char*body,char*buf,int cap){
@@ -777,7 +784,7 @@ static void _handle(int c){
         _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
     if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* unified fleet tmux view: all devices' windows in one list, one inline terminal that re-points */
         char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
-        if(th){_sresp(c,200,"text/html",th,(int)tl);free(th);}else _sresp(c,404,"text/plain","no fleetview.html",16);return;}
+        if(th){_siso(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","no fleetview.html",16);return;}
     if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
         int busy=fd>=0&&flock(fd,LOCK_EX|LOCK_NB)<0;if(fd>=0){if(!busy)flock(fd,LOCK_UN);close(fd);}
         const char*r=busy?"syncing":sync_age();_sresp(c,200,"text/plain",r,(int)strlen(r));return;}
@@ -1083,7 +1090,7 @@ static void _handle(int c){
                 static const char NO[]="<!doctype html><style>body{background:#000;color:#fff;font:16px system-ui;text-align:center;padding-top:40vh}a{color:#fff}</style>no agent<br><br><a href=/dash>← dash</a>";
                 _sresp(c,200,"text/html",NO,sizeof NO-1);return;}}
         char tf[P];snprintf(tf,P,"%s/lib/term.html",SDIR);size_t tl=0;char*th=readf(tf,&tl); /* direct-DOM terminal page (replaced xterm.js CDN 7/10) */
-        if(th){_sresp(c,200,"text/html",th,(int)tl);free(th);}
+        if(th){_siso(c,th,(int)tl);free(th);}
         else _sresp(c,404,"text/plain","no term.html",12);
         return;}
     if(!strncmp(req,"GET /cloud",10)){
