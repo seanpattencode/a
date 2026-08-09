@@ -28,6 +28,8 @@ static int cmd_ls(int argc, char **argv) {
 static int cmd_kill(int argc, char **argv) {
     const char *sel = argc > 2 ? argv[2] : NULL;
     if ((sel && !strcmp(sel, "all")) || (argc > 1 && !strcmp(argv[1], "killall"))) {
+        int now = (argc > 2 && !strcmp(argv[argc-1], "now"));
+        if (!tmux_kill_gate("kill all", isatty(0) || now)) return 1;
         (void)!system("pkill -9 tmux 2>/dev/null; sleep 1");
         (void)!system("clear"); puts("✓"); return 0;
     }

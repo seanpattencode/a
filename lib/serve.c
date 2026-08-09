@@ -767,6 +767,17 @@ static void _handle(int c){
         (void)!system("setsid a fleet >/dev/null 2>&1 &");
         char h[8192];int hl=snprintf(h,8192,"<title>a fleet</title><body style=\"background:#000;color:#eee;margin:12px\"><pre style=\"font:14px monospace;overflow-x:auto\">%s</pre>",fb&&fn?fb:"no data yet - refreshing, reload in a few seconds");
         free(fb);_sresp(c,200,"text/html",h,hl);return;}
+    if(!strncmp(req,"GET /fwins",10)){   /* fleet-wide tmux window list: serve cache instantly, refresh via lib/fwins.sh in bg (mirrors /fleet) */
+        char fp[P];snprintf(fp,P,"%s/fleetwins.txt",DDIR);size_t fn=0;char*fb=readf(fp,&fn);struct stat ws;
+        /* RATE LIMIT: a scan is an ssh fanout to the whole fleet + a tmux client per box. The page polls every 4s;
+           refiring the scan on every poll ran 175 scans in 11min and kept N boxes + this tmux server under constant
+           load. Cache age gates it — polls stay a 0.2ms file read and cost the fleet nothing. */
+        if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
+            if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
+        _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
+    if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* unified fleet tmux view: all devices' windows in one list, one inline terminal that re-points */
+        char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
+        if(th){_sresp(c,200,"text/html",th,(int)tl);free(th);}else _sresp(c,404,"text/plain","no fleetview.html",16);return;}
     if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
         int busy=fd>=0&&flock(fd,LOCK_EX|LOCK_NB)<0;if(fd>=0){if(!busy)flock(fd,LOCK_UN);close(fd);}
         const char*r=busy?"syncing":sync_age();_sresp(c,200,"text/plain",r,(int)strlen(r));return;}
@@ -1063,7 +1074,7 @@ static void _handle(int c){
         char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#fff;text-decoration:none;padding:7px 9px;border:1px solid #333;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}#b a.on{background:#222;color:#fff;border-color:#555}#b a.sub{margin-left:14px;font-size:11px;border-left:3px solid #555;border-radius:0 5px 5px 0;color:#ccc}#st{position:fixed;bottom:10px;right:14px;display:none;color:#bbb;font:12px ui-monospace,monospace;background:#000a;padding:4px 10px;border-radius:6px;z-index:6}#st.ld{color:#fff;animation:pl 1s infinite}@keyframes pl{50%%{opacity:.4}}#w{position:fixed;inset:0 0 0 160px;display:flex;flex-direction:column}#w img{flex:1;min-height:0;object-fit:contain}#w p{margin:auto;color:#888}</style><div id=b>%s</div><div id=w><p>\xe2\x86\x90 pick a device</p></div><div id=st></div><script>var w=document.getElementById('w'),st=document.getElementById('st'),cur='',n=0;function P(){document.querySelectorAll('#b a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-d')===cur)})}function sel(d){w.innerHTML='';if(cur===d){cur='';st.style.display='none';P();return}cur=d;n=0;st.style.display='block';st.className='ld';st.textContent='\xe2\x9f\xb3 starting '+d+'\xe2\x80\xa6';var s=[].slice.call(document.querySelectorAll('#b a.sub')).map(function(a){return a.getAttribute('data-d')}).filter(function(x){return x.indexOf(d+':')==0});(s.length>1?s:[d]).forEach(function(m){var i=new Image();i.onload=function(){st.className='';st.textContent='\xe2\x97\x8f '+d+' \xc2\xb7 '+(++n)+' frames'};i.onerror=function(){st.className='';st.textContent='\xe2\x9c\x97 failed \xc2\xb7 '+d};var q=m.split(':');i.src='/stream/s?dev='+encodeURIComponent(q[0])+(q[1]?'&o='+encodeURIComponent(q[1]):'');w.appendChild(i)});P()}</script>",nav);
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
-        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3]))?atoi(qw+3):-1;
+        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3])&&!strstr(req,"&all"))?atoi(qw+3):-1;   /* &all = fleet view: skip agent-only gate, show any window */
         if(idx>=0){char tc[256];
             snprintf(tc,256,"p=$(tmux display-message -t a:%d -p '#{pane_pid}' 2>/dev/null);c=$(cat /proc/$p/task/$p/children 2>/dev/null|cut -d' ' -f1);[ -n \"$c\" ]&&cat /proc/$c/comm 2>/dev/null",idx);
             FILE*pp=popen(tc,"r");char nm[64]={0};

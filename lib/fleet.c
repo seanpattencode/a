@@ -29,6 +29,7 @@ static void fl_off(FLCH *x, int adbtried) {
 }
 
 static int cmd_fleet(int argc, char **argv) { (void)argc; (void)argv; perf_disarm();
+    if(argc>2&&!strcmp(argv[2],"web")){(void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/fw");puts("\xe2\x9c\x93 localhost:1111/fw \xe2\x80\x94 every device's tmux, one page");return 0;}
     init_db(); load_cfg();                                               /* SROOT/DDIR live behind init */
     fln = 0; char cmd[B], ln[128];
     int fdl = f_sh(DEV, FLQ); if (fdl >= 0) { fchn[fln].fd = fdl; fchn[fln].typ = 0; fchn[fln].st = 0; snprintf(fchn[fln].h, 40, "%s", DEV); fln++; }

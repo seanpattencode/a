@@ -230,7 +230,9 @@ static int cmd_done(int argc,char**argv){AB;
     puts("✓ done");return 0;}
 
 static int cmd_dir(int c,char**v){(void)c;(void)v;char w[P];if(getcwd(w,P))puts(w);execlp("ls","ls",(char*)0);return 1;}
-static int cmd_x(int c,char**v){(void)c;(void)v;(void)!system("tmux kill-server 2>/dev/null");puts("✓ All sessions killed");return 0;}
+static int cmd_x(int c,char**v){
+    if(!tmux_kill_gate("x",isatty(0)||(c>2&&!strcmp(v[2],"now"))))return 1;
+    (void)!system("tmux kill-server 2>/dev/null");puts("✓ All sessions killed");return 0;}
 static int cmd_search(int c,char**v){AB;char u[B]="https://google.com";
     if(c>2){int l=snprintf(u,B,"https://google.com/search?q=");for(int i=2;i<c&&l<B-1;i++)l+=snprintf(u+l,(size_t)(B-l),"%s%s",i>2?"+":"",v[i]);}
     bg_exec(OPENER,u);return 0;}

@@ -107,3 +107,14 @@ static const char*clip_cmd(void){static char c[64];if(!getenv("TMUX"))return NUL
 static int to_clip(const char*d){const char*c=clip_cmd();if(!c)return 1;
     char cm[80];snprintf(cm,80,"%s 2>/dev/null",c);signal(SIGPIPE,SIG_IGN);
     FILE*f=popen(cm,"w");if(!f)return 1;fputs(d,f);return pclose(f);}
+/* tmux-server kill gate: the shared server hosts every agent on the box and its deaths were untraceable
+   (2026-08-08 death storm). EVERY kill attempt logs one line w/ caller ancestry to adata/local/tmuxdeaths.log;
+   headless callers (agents, pipes) are refused unless they append 'now' — a tty (Sean at a keyboard) passes. */
+static int tmux_kill_gate(const char*cmd,int ok){
+    char b[B];snprintf(b,B,"{ printf '%%s a %s tty=%%s ok=%d by: ' \"$(date '+%%F %%T')\" \"$([ -t 0 ]&&echo 1||echo 0)\";"
+        "ps -o args= -p %d 2>/dev/null|head -c100|tr '\\n' ' ';printf ' <- ';"
+        "ps -o args= -p $(ps -o ppid= -p %d 2>/dev/null) 2>/dev/null|head -c100;echo;} >>\"$HOME/a/adata/local/tmuxdeaths.log\" 2>/dev/null",
+        cmd,ok,(int)getppid(),(int)getppid());
+    (void)!system(b);
+    if(!ok)printf("x refused: headless tmux-server kill takes down every agent on this box\n  intended? append now: a %s now\n",cmd);
+    return ok;}
