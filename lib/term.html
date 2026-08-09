@@ -38,7 +38,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -83,6 +83,7 @@ let st=0,pb='',ob='',cstgt=0;
 const DEC=new TextDecoder();
 function feed(d){
   const t0=performance.now();
+  if(kt){kr=t0-kt;kt=0;}   /* r-meter: keystroke->first-echo RTT (web-vs-foot feel lives here + rAF) */
   if(typeof d!=='string')d=DEC.decode(d,{stream:true});
   for(const ch of d){
     const c=ch.codePointAt(0);
@@ -273,7 +274,7 @@ function paint(){
   stat();
 }
 function stat(){ /* 1ms mandate: p=parse d=draw */
-  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+'ms'+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
+  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(kr?' r'+kr.toFixed(1):'')+'ms'+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
   while(g.length<rows)g.push(newRow());
@@ -354,6 +355,7 @@ function key(e){
   }
   else return;
   e.preventDefault();
+  if(s.length===1)kt=performance.now();
   tx(s);
 }
 addEventListener('keydown',key);

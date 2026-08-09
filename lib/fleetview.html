@@ -36,16 +36,19 @@ var FR={},V=null;
 function frameFor(tg){if(FR[tg])return FR[tg];
   var f=document.createElement('iframe');f.className='tf';f.dataset.t=tg;
   f.src='/op?w='+encodeURIComponent(tg)+'&all';
-  f.addEventListener('load',function(){hook(f.contentWindow);if(f===V)foc();});
+  f.addEventListener('load',function(){hook(f.contentWindow);if(f===V||document.activeElement===f)foc();});
   TW.appendChild(f);FR[tg]=f;return f;}
 function foc(){try{V.contentWindow.focus();V.contentDocument.getElementById('kb').focus({preventScroll:true});}catch(e){}}
 function ensure(){if(!rows.length)return;var want={},n=rows.length;
   for(var d=-1;d<=4;d++)want[rows[((ci+d)%n+n)%n].dataset.t]=1;
   Object.keys(FR).forEach(function(k){if(!want[k]&&k!==cur){FR[k].remove();delete FR[k];}});
   var i=0;Object.keys(want).forEach(function(k){if(!FR[k]){var mk=function(){frameFor(k);};k===cur?mk():setTimeout(mk,200+180*i++);}});}
+var swms='',inms='',rtms='',wn2=0,krt=0;   /* header meters: sw=switch · in=keypress delivery lag · rtt=key echo round-trip */
+function hdr(){MS.textContent=(wn2?wn2+' win':'')+(swms?' · sw '+swms:'')+(inms?' · in '+inms:'')+(rtms?' · rtt '+rtms:'')+'ms';}
+function readr(){try{var m=V.contentDocument.getElementById('sb').textContent.match(/r([\d.]+)/);if(m){rtms=m[1];hdr();}}catch(e){}}
 function open_(tg){if(!tg)return;var t0=performance.now();
   if(tg!==cur){cur=tg;if(V)V.classList.remove('on');V=frameFor(tg);V.classList.add('on');foc();
-    MS.textContent=(performance.now()-t0).toFixed(1)+'ms switch';}
+    swms=(performance.now()-t0).toFixed(1);hdr();}
   setsel(tg);ensure();}
 function setsel(tg){if(!tg)return;sel=tg;localStorage.fwsel=tg;hl();}
 function hl(){rows.forEach(function(r,i){var s=r.dataset.t===sel;r.classList.toggle('sel',s);
@@ -54,7 +57,9 @@ function hl(){rows.forEach(function(r,i){var s=r.dataset.t===sel;r.classList.tog
 /* window switched from INSIDE the terminal (C-j/C-k, M-←/→, C-PgUp/PgDn): follow it, never re-attach.
    the attached tmux paints its window list in the last status row; the active entry is the highlighted
    "3:name" cell — same marker `a fl` greps server-side (48;2;255;255;255). Works local + remote, no config. */
-function sync(){try{var d=V&&V.contentDocument;if(!d)return;var rs=d.querySelectorAll('#scr>div');
+function sync(){var ae=document.activeElement;
+  if(ae&&ae.classList&&ae.classList.contains('tf')&&ae!==V)foc();   /* focus drifted to a hidden frame: reclaim */
+  try{var d=V&&V.contentDocument;if(!d)return;var rs=d.querySelectorAll('#scr>div');
   for(var i=rs.length-1;i>=0&&i>=rs.length-2;i--){var sp=rs[i].children;
     for(var j=0;j<sp.length;j++){var bg=sp[j].style.background,m=sp[j].textContent.match(/^\s*(\d+):/);
       if(m&&bg&&bg!=='rgb(0, 0, 0)'){var p=cur.match(/^(ssh:[^:]+:)/),tg=(p?p[1]:'')+m[1];
@@ -70,7 +75,7 @@ function render(txt){if(txt===last&&rows.length)return;last=txt;   /* identical 
   rows=[].slice.call(S.querySelectorAll('.w'));
   rows.forEach(function(r){r.onclick=function(){open_(r.dataset.t);};});
   if(rows.length&&!rows.some(function(r){return r.dataset.t===sel;}))open_(rows[0].dataset.t);else hl();
-  MS.textContent=n+' win · '+(performance.now()-t0).toFixed(3)+'ms';}
+  wn2=n;hdr();}
 function esc(s){return s.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function poll(){fetch('/fwins').then(function(r){return r.text();}).then(render).catch(function(){});}
 poll();setInterval(poll,4000);
@@ -86,9 +91,13 @@ document.addEventListener('keydown',function(e){if(!rows.length)return;var k=e.k
 function move(d){if(!rows.length)return;ci=(ci+d+rows.length)%rows.length;open_(rows[ci].dataset.t);rows[ci].scrollIntoView({block:'nearest'});}
 var armed=0,dirty=0;
 function tap(e){var c=e.code;
+  /* keystrokes must NEVER reach a HIDDEN pool frame (focus can drift there on load): swallow + refocus visible */
+  try{var fe=e.view.frameElement;if(fe&&!fe.classList.contains('on')){e.stopImmediatePropagation();e.preventDefault();foc();return;}}catch(x){}
   if(e.type==='keydown'){
     if(c==='ControlLeft'||c==='ControlRight'){if(!armed){armed=c;dirty=0;}}
-    else if(armed)dirty=1;
+    else{if(armed)dirty=1;
+      /* per-keypress meters (e.view's clock — iframe events carry their own time origin) */
+      try{inms=Math.max(0,e.view.performance.now()-e.timeStamp).toFixed(1);clearTimeout(krt);krt=setTimeout(readr,130);hdr();}catch(x){}}
   }else if(c===armed){var a=armed;armed=0;
     if(!dirty){e.preventDefault();e.stopImmediatePropagation();move(a==='ControlLeft'?-1:1);}}}
 function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('keyup',tap,true);}catch(e){}}
