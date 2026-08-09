@@ -16,15 +16,22 @@ body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:
 .w{display:block;color:#ccc;text-decoration:none;padding:5px 10px;font-size:13px;cursor:pointer;border-left:2px solid #0000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .w:hover{background:#161616}.w.sel{background:#fff;color:#000;border-left-color:#6cf}
 @media(max-width:640px){#main{flex-direction:column}#s{width:auto;height:36vh;border-right:0;border-bottom:1px solid #222}}
+#nav{display:flex;align-items:stretch;border-top:1px solid #222;background:#0a0a0a}
+.nb{flex:1;border:0;background:none;color:#fff;font-size:44px;padding:14px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.nb:active{background:#fff;color:#000}
+#cur{align-self:center;color:#888;font-size:13px;padding:0 14px;white-space:nowrap;max-width:44%;overflow:hidden;text-overflow:ellipsis}
 </style>
-<div id=top><b>a fleet</b><span id=ms>scanning fleet…</span><span style=color:#555>click / j k move · ↵ open · switches like one tmux</span></div>
+<div id=top><b>a fleet</b><span id=ms>scanning fleet…</span><span style=color:#555>tap LCtrl ◀ · RCtrl ▶ — type anytime, taps never reach the shell</span></div>
 <div id=main><div id=s>…</div><iframe id=t name=t></iframe></div>
+<div id=nav><button class=nb id=pv>◀</button><div id=cur></div><button class=nb id=nx>▶</button></div>
 <script>
 var S=document.getElementById('s'),T=document.getElementById('t'),MS=document.getElementById('ms');
 var cur=localStorage.fwsel||'',sel=cur,rows=[],ci=0;   /* cur = what the iframe is ATTACHED to · sel = what's VISIBLE (tmux may switch under us) */
 function open_(tg){if(tg&&tg!==cur){cur=tg;T.src='/op?w='+encodeURIComponent(tg)+'&all';}setsel(tg);}
 function setsel(tg){if(!tg)return;sel=tg;localStorage.fwsel=tg;hl();}
-function hl(){rows.forEach(function(r,i){var s=r.dataset.t===sel;r.classList.toggle('sel',s);if(s)ci=i;});}
+function hl(){rows.forEach(function(r,i){var s=r.dataset.t===sel;r.classList.toggle('sel',s);
+  if(s){ci=i;var g=r.previousElementSibling;while(g&&!g.classList.contains('g'))g=g.previousElementSibling;
+    document.getElementById('cur').textContent=(g?g.textContent+' · ':'')+r.textContent;}});}
 /* window switched from INSIDE the terminal (C-j/C-k, M-←/→, C-PgUp/PgDn): follow it, never re-attach.
    the attached tmux paints its window list in the last status row; the active entry is the highlighted
    "3:name" cell — same marker `a fl` greps server-side (48;2;255;255;255). Works local + remote, no config. */
@@ -53,4 +60,23 @@ document.addEventListener('keydown',function(e){if(!rows.length)return;var k=e.k
   else if(k==='k'||k==='ArrowUp'){ci=Math.max(ci-1,0);}
   else if(k==='Enter'){open_(rows[ci].dataset.t);return;}
   else return;e.preventDefault();rows.forEach(function(r,i){r.classList.toggle('sel',i===ci);});rows[ci].scrollIntoView({block:'nearest'});});
+/* one-keypress fleet shifting for the rapid switch→type→switch loop: bare LCtrl tap = ◀ prev, bare RCtrl tap = ▶ next,
+   fleet-wide with wrap. A lone modifier can never reach the shell (terminals don't receive bare modifiers) and held
+   combos (Ctrl+C…) stay untouched — any other key between down and up disarms the tap. Hooked into the /op iframe too
+   (same-origin), so it works mid-typing; every switch re-focuses the terminal so typing needs no click. */
+function move(d){if(!rows.length)return;ci=(ci+d+rows.length)%rows.length;open_(rows[ci].dataset.t);rows[ci].scrollIntoView({block:'nearest'});}
+var armed=0,dirty=0;
+function tap(e){var c=e.code;
+  if(e.type==='keydown'){
+    if(c==='ControlLeft'||c==='ControlRight'){if(!armed){armed=c;dirty=0;}}
+    else if(armed)dirty=1;
+  }else if(c===armed){var a=armed;armed=0;
+    if(!dirty){e.preventDefault();e.stopImmediatePropagation();move(a==='ControlLeft'?-1:1);}}}
+function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('keyup',tap,true);}catch(e){}}
+hook(window);
+T.addEventListener('load',function(){hook(T.contentWindow);
+  setTimeout(function(){try{T.contentWindow.focus();T.contentDocument.getElementById('kb').focus({preventScroll:true});}catch(e){}},60);});
+var pv=document.getElementById('pv'),nx=document.getElementById('nx');
+pv.onpointerdown=function(e){e.preventDefault();move(-1);};   /* act on press, and don't steal focus */
+nx.onpointerdown=function(e){e.preventDefault();move(1);};
 </script>
