@@ -167,6 +167,9 @@ static void tm_ensure_conf(void) {
     if (access("/data/data/com.termux",F_OK)==0)
         fprintf(f,"set-environment -g CLAUDE_CODE_TMPDIR \"%s/.tmp\"\n",HOME);
     if (cc) fprintf(f, "set -s copy-command \"%s\"\n", cc);
+    /* prewarm (lib/prewarm.sh): pre-fit hidden windows so arriving never resizes */
+    {const char*hk[]={"session-window-changed","client-attached","client-resized",0};
+     for(int i=0;hk[i];i++)fprintf(f,"set-hook -g %s 'run -b \"sh %s/lib/prewarm.sh #{socket_path} #{session_name} #{window_id}\"'\n",hk[i],SDIR);}
     {const char*cm[]={"copy-mode","copy-mode-vi",NULL};const char*wn="#{?#{e|>:#{client_width},100},#{pane_height},3}";
     for(int i=0;cm[i];i++){ cc?fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel \"%s\"\n",cm[i],cc)
         :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);
