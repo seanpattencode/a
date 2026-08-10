@@ -143,7 +143,11 @@ static void tm_ensure_conf(void) {
         /* C-, not C-f: C-f is find inside apps (e's i-search, less, …) — the root bind swallowed it.
            Every common C-letter is taken (readline motion/history, e's C-g abort + C-y stop-speak);
            C-, pairs with the C-. menu and rides the same extkeys path that already delivers C-. */
-        "bind -n C-, " SSHIF "'send C-,' {run \"tmux selectw -t :feed 2>/dev/null||tmux neww -n feed 'a feed'\"}\n"
+        /* dropdown, not a window: the point is to GLANCE at what every agent is doing without leaving the pane
+           you are in. -E closes on exit, so ↵ (f_attach execs switch-client) lands you on that agent and the
+           overlay is gone. C-M-, keeps the old full window for long sessions in the feed. */
+        "bind -n C-, " SSHIF "'send C-,' {display-popup -E -w 90% -h 85% -T ' agents ' 'a feed'}\n"
+        "bind -n C-M-, " SSHIF "'send C-M-,' {run \"tmux selectw -t :feed 2>/dev/null||tmux neww -n feed 'a feed'\"}\n"
 /* the panel's ... menu; shared by the C-. key and the click case below */
 #define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills"
         "bind -n C-. " SSHIF "'send C-.' {" AMENU "}\n"

@@ -2,15 +2,23 @@
 #include <poll.h>
 
 /* per-box scanner (runs locally; single-quoted = ssh-safe): emits  live|sid|cwd|started|model|tail|desc */
-#define FLIVE "LIVE=$(ps -eo args 2>/dev/null|grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')\n"
+/* EVERY BYTE HERE IS RATIONED: the whole scanner ships as base64 inside `a ssh <cmd>`, whose buffer is
+   char cmd[B], B=4096 (a.c, ssh.c). Over that it is cut with no error — and the @ sentinel leads the
+   stream, so the box still reports ANSWERED: no rows, no warning, on every remote box at once. f_sh
+   now refuses rather than half-ship, so an overrun shows as "not accessible". Check the margin with
+   A_SZDBG=1 a feed before growing this. */
+#define FLIVE "LIVE=$(ps -eo args 2>/dev/null|grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')\nC=$(date +%s 2>/dev/null||echo 0);C=$((C>0?C-120:9999999999))\n"
 #define FWTL(f) "w=$(tail -c 80000 " f " 2>/dev/null|grep -o '\"text\":\"[^\"]\\{1,300\\}'|tail -1|sed 's/^\"text\":\"//;s/\\\\[nt]/ /g;s/|/\\//g'|tail -c 60)\n"   /* end of the last model text = what the convo just said */
-#define FSTAT(f) "t=$(stat -c %W " f " 2>/dev/null);[ \"${t:-0}\" -gt 0 ] 2>/dev/null||t=$(stat -c %Y " f " 2>/dev/null||stat -f %B " f " 2>/dev/null||echo 0)\n"   /* started = birth; fs/GNU without it -> mtime; mac BSD stat -f %B */
-#define FEMIT "printf '%s|%s|%s|%s|%s|%s|%s\\n' \"$(echo \"$LIVE\"|grep -q \"$s\"&&echo 1||echo 0)\" \"$s\" \"${c:-?}\" \"$t\" \"${m:-?}\" \"$w\" \"${p:-?}\";done\n"
+/* one stat, both clocks: t=birth (started; 0 where the fs lacks it -> mtime), n=mtime (feeds liveness) */
+#define FSTAT(f) "set -- $(stat -c '%W %Y' " f " 2>/dev/null||stat -f '%B %m' " f " 2>/dev/null||echo 0 0);t=$1;n=$2;[ \"${t:-0}\" -gt 0 ]||t=$n\n"
+/* live = sid in some argv, OR the transcript was written seconds ago: headless runs (claude -p, the shape every batch job uses) put no sid in argv and hold no fd, so argv alone calls a working agent "parked" and ↵ on it spawns a SECOND agent against the live session */
+/* C is a real epoch or 9999999999 when date failed — never a small number, or n>C would call every row live */
+#define FEMIT "printf '%s|%s|%s|%s|%s|%s|%s\\n' \"$(echo \"$LIVE\"|grep -q \"$s\"&&echo 1||{ [ \"${n:-0}\" -gt \"$C\" ]&&echo 1||echo 0;})\" \"$s\" \"${c:-?}\" \"$t\" \"${m:-?}\" \"$w\" \"${p:-?}\";done\n"
 #define FRQG /* grok: session dir per sid, summary.json = meta; live = sid in argv (a grok launches --session-id) */ \
 "e(){ grep -o \"\\\"$1\\\": \\\"[^\\\"]*\" \"$j\" 2>/dev/null|head -1|cut -d'\"' -f4;}\n" \
 "for d in $(ls -td ~/.grok/sessions/*/*/ 2>/dev/null|head -15);do s=$(basename \"$d\");j=\"$d/summary.json\"\n" \
 "c=$(e cwd);m=$(e current_model_id);p=$(e generated_title)\n" \
-FWTL("\"$d/chat_history.jsonl\"") FSTAT("\"$d\"") FEMIT
+FWTL("\"$d/chat_history.jsonl\"") FSTAT("\"$d/chat_history.jsonl\"") FEMIT   /* the transcript, not the dir: a dir mtime does not move when a message is appended, so liveness would never fire */
 #define FRQC /* codex: rollout-<ts>-<sid>.jsonl, line-1 source cli = interactive (exec = headless noise); live = argv sid (resume) or rollout held open by a codex pid — no launch sid flag */ \
 "LIVE=\"$LIVE $(for q in $(pgrep -x codex 2>/dev/null);do ls -l /proc/$q/fd 2>/dev/null;done|grep -oE '[0-9a-f-]{36}\\.jsonl')\"\n" \
 "for j in $(ls -t ~/.codex/sessions/*/*/*/rollout-*.jsonl 2>/dev/null|xargs awk 'FNR==1{if(/\"source\":\"cli\"/)print FILENAME;nextfile}' /dev/null 2>/dev/null|head -15);do s=$(basename \"$j\" .jsonl|tail -c 37)\n" \
@@ -45,10 +53,19 @@ static int f_sane(char *dst, const char *src, int cap) {                 /* prin
         if (ch == ' ' && (o == 0 || dst[o - 1] == ' ')) continue; dst[o++] = (char)ch; }
     while (o && dst[o - 1] == ' ') o--; dst[o] = 0; return o;
 }
-static char f_lbls[32768];                                               /* sid|label lines (feed_lbl.txt, append-only, LAST wins; ''=cleared) — project labels survive agent swaps */
-static const char *f_lblof(const char *sid) { static char o[24]; o[0] = 0;
-    for (const char *q = f_lbls; (q = strstr(q, sid)); q++) { const char *b = strchr(q, '|');
-        if (!b) break; int n = (int)strcspn(++b, "\n"); if (n > 23) n = 23; memcpy(o, b, (size_t)n); o[n] = 0; }
+static char f_lbls[32768];                                               /* feed_lbl.txt, append-only, LAST wins, ''=cleared. Two line shapes:
+    sid|label    — this one session
+    ~match|label — sticky rule: any row whose host/dir/prompt matches. A batch job mints a NEW sid per call
+                   (13 sids for one vn folder), so sid-keyed labels alone can never name the JOB — the rule does,
+                   and it catches sessions that do not exist yet without restarting anything. */
+static const char *f_lblof(const char *sid, const char *hay) { static char o[24]; o[0] = 0;
+    for (const char *q = f_lbls; *q; ) { const char *e = strchr(q, '\n'); size_t L = e ? (size_t)(e - q) : strlen(q);
+        const char *b = memchr(q, '|', L);
+        if (b) { char k[128]; size_t kn = (size_t)(b - q);
+            if (kn && kn < sizeof k) { memcpy(k, q, kn); k[kn] = 0;
+                if (k[0] == '~' ? (hay && k[1] && strcasestr(hay, k + 1)) : !strcmp(k, sid)) {   /* exact sid, not substring: a bare strstr also fires inside another row's label text */
+                    size_t n = L - kn - 1; if (n > 23) n = 23; memcpy(o, b + 1, n); o[n] = 0; } } }
+        if (!e) break; q = e + 1; }
     return o; }
 static void f_add(const char *host, int live, const char *cwd, const char *sid, long mt, const char *mdl, const char *desc, const char *tail) {
     if (f_arc[0] && strstr(f_arc, sid)) return;
@@ -60,8 +77,10 @@ static void f_add(const char *host, int live, const char *cwd, const char *sid, 
     if (FNN >= 512) return;
     FI *x = &FL[FNN++]; x->live = live; x->mt = mt; x->seen = f_live_scan;
     snprintf(x->host, 40, "%s", host); snprintf(x->cwd, 256, "%s", cwd); snprintf(x->sid, 48, "%s", sid);
-    snprintf(x->mdl, 40, "%s", mdl); snprintf(x->lbl, 24, "%s", f_lblof(sid));
+    snprintf(x->mdl, 40, "%s", mdl);
     f_sane(x->desc, desc, 159); f_sane(x->tail, tail ? tail : "", 63);
+    { char hay[600]; snprintf(hay, sizeof hay, "%s %s %s", host, cwd, x->desc);   /* label after desc: ~rules match on it */
+      snprintf(x->lbl, 24, "%s", f_lblof(sid, hay)); }
 }
 
 static void f_line(const char *host, char *l) {                          /* wire: live|sid|cwd|started|model|tail|desc (tail before desc: desc may hold anything) */
@@ -69,9 +88,16 @@ static void f_line(const char *host, char *l) {                          /* wire
     if (strlen(p[1]) >= 8) f_add(host, atoi(p[0]), p[2], p[1], atol(p[3]), p[4], s, p[5]);
 }
 
-static void f_b64(const char *in, char *out) {                           /* ship the scanner inline (no quotes) → any reachable box works, no deploy */
+#define FWIRE 4096                                                       /* a ssh's remote-command buffer (a.c: B) — the hard ceiling on a shipped scanner */
+/* ship the scanner inline (no quotes) → any reachable box works, no deploy.
+   cap is NOT optional: the wire is "echo @\n<scanner>", so a payload cut short still decodes its
+   prefix, the @ sentinel lands, and the box counts as ANSWERED while the scanner it needed was
+   silently truncated — zero rows AND no "not accessible" warning. Returns 0 rather than send that. */
+#define FWIRE 4096                                                       /* a ssh's remote-command buffer (a.c: B) — the hard ceiling on a shipped scanner */
+static int f_b64(const char *in, char *out, size_t cap) {
     static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     int n = (int)strlen(in), o = 0;
+    out[0] = 0; if ((size_t)(n + 2) / 3 * 4 + 1 > cap) return 0;
     for (int i = 0; i < n; i += 3) {
         unsigned v = (unsigned)(unsigned char)in[i] << 16;
         if (i + 1 < n) v |= (unsigned)(unsigned char)in[i + 1] << 8;
@@ -79,7 +105,7 @@ static void f_b64(const char *in, char *out) {                           /* ship
         out[o++] = T[(v >> 18) & 63]; out[o++] = T[(v >> 12) & 63];
         out[o++] = (i + 1 < n) ? T[(v >> 6) & 63] : '='; out[o++] = (i + 2 < n) ? T[v & 63] : '=';
     }
-    out[o] = 0;
+    out[o] = 0; return 1;
 }
 
 /* resolve THE session's pane: sid-bearing procs (grep '[a]bc' form never matches its own argv) + codex fd-holders (no argv sid) → climb ppids to a pane; every candidate tried (transient ghosts die mid-climb). $s = raw sid for scripts, $i = pane or empty */
@@ -92,7 +118,11 @@ static void f_b64(const char *in, char *out) {                           /* ship
 static int f_sh(const char *host, const char *sc) {                     /* run sc on a box (local or ssh); returns stdout fd, caller reads to EOF then reaps. setsid: detach from tty — ssh else reads /dev/tty and steals keystrokes */
     int pf[2]; if (pipe(pf)) return -1; pid_t pid = fork(); if (pid < 0) { close(pf[0]); close(pf[1]); return -1; }
     if (!pid) { setsid(); dup2(pf[1], 1); close(pf[0]); close(pf[1]); int dn = open("/dev/null", O_RDWR); if (dn >= 0) { dup2(dn, 0); dup2(dn, 2); if (dn > 2) close(dn); }
-        if (strcmp(host, DEV)) { char b6[3400], cm[3500]; f_b64(sc, b6); snprintf(cm, 3500, "echo %s|base64 -d|bash", b6); execlp("a", "a", "ssh", host, cm, (char *)0); }
+        if (strcmp(host, DEV)) { static char b6[FWIRE], cm[FWIRE + 64];
+            if (!f_b64(sc, b6, FWIRE - 64)) _exit(127);
+            snprintf(cm, sizeof cm, "echo %s|base64 -d|bash", b6);
+            if (strlen(cm) >= FWIRE) _exit(127);   /* die silent-but-visible: the box lands in "✗ not accessible" instead of answering with a truncated scanner */
+            execlp("a", "a", "ssh", host, cm, (char *)0); }
         FBASH(sc) }
     close(pf[1]); return pf[0];
 }
@@ -238,6 +268,8 @@ static void f_lemit(void) {                                              /* chil
         for (int i = 0; i < r; i++) if (!cb[i]) cb[i] = ' '; cb[r] = 0;
         for (int i = 0; i < nn; i++) if (!lv[i] && strstr(cb, sid[i])) lv[i] = 1; }
     if (pd) closedir(pd);
+    { long now = (long)time(0);                                          /* FEMIT parity: a transcript written seconds ago is a live agent, whatever argv says */
+      for (int i = 0; i < nn; i++) if (!lv[i] && now - nj[i].mt <= 120) lv[i] = 1; }
     for (int i = 0; i < nn; i++) {
         int knw = 0; for (int j = 0; j < FNN; j++) if (!strcmp(FL[j].sid, sid[i])) { knw = 1; break; }
         char cwd[256], mdl[40], desc[160], tl[64];
@@ -256,7 +288,7 @@ static void f_spawn_local(void) {                                        /* loca
 }
 #endif
 static void f_spawn(const char *host, const char *sc) {                  /* host=NULL → local box; remote gets an @ sentinel so silence = not accessible */
-    if (fnch >= 64) return; char wr[3000]; if (host) { snprintf(wr, 3000, "echo @\n%s", sc); sc = wr; }
+    if (fnch >= 64) return; static char wr[24576]; if (host) { snprintf(wr, sizeof wr, "echo @\n%s", sc); sc = wr; }
     int fd = f_sh(host ? host : DEV, sc); if (fd < 0) return;
     FCh *ch = &fch[fnch++]; ch->fd = fd; ch->blen = 0; ch->buf[0] = 0; ch->got = !host; ch->ph = 0; ch->via[0] = 0;
     snprintf(ch->host, 40, "%s", host ? host : DEV);
@@ -266,8 +298,8 @@ static void f_phones(void) {                                             /* adb-
     for (int i = 0; i < na && fnch < 64; i++) { kvs_t kv = kvfile(pfs[i]);
         const char *nm = kvget(&kv, "Name"), *se = kvget(&kv, "Serial"), *wi = kvget(&kv, "Wireless");
         if (!nm || !se) continue;
-        char b6[3400]; f_b64(FRQ, b6); char sc[4600]; int pt = 18100 + i;
-        snprintf(sc, 4600, "d=$(adb devices 2>/dev/null|awk '/\\tdevice$/{print $1}'|grep -m1 -x -e '%s' -e '%s');[ -n \"$d\" ]||exit 0;echo @;echo \"@adb|$d\";"
+        static char b6[24576]; if (!f_b64(FRQ, b6, sizeof b6)) continue; char sc[26000]; int pt = 18100 + i;
+        snprintf(sc, sizeof sc, "d=$(adb devices 2>/dev/null|awk '/\\tdevice$/{print $1}'|grep -m1 -x -e '%s' -e '%s');[ -n \"$d\" ]||exit 0;echo @;echo \"@adb|$d\";"
             "u=$(adb -s \"$d\" shell cmd package list packages -U 2>/dev/null|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');[ -n \"$u\" ]||exit 0;"
             "adb -s \"$d\" forward tcp:%d tcp:8022 >/dev/null 2>&1;ssh-keygen -R '[localhost]:%d' >/dev/null 2>&1;"
             "ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p %d u0_a$((u-10000))@localhost 'echo %s|base64 -d|bash' 2>/dev/null;"
@@ -285,7 +317,7 @@ static void f_hosts(void) {                                              /* loca
 #else
     f_spawn(NULL, FRQ);                                                  /* no /proc|statx → local via FRQ */
 #endif
-    char cmd[B]; snprintf(cmd, B, "grep -h '^Name:' %s/ssh/*.txt 2>/dev/null|sed 's/Name: //'|sed -E 's/-(lan|wan|usb|hot|relay)$//'|sort -u|grep -vx %s", SROOT, DEV);
+    char cmd[B]; snprintf(cmd, B, "grep -h '^Name:' %s/ssh/*.txt 2>/dev/null|sed 's/Name: //'|sed -E 's/-(lan|wan|usb|hot|relay)$//'|sort -uf|grep -ivx %s", SROOT, DEV);   /* -uf/-ivx: HSU-lan + hsu-wan are ONE box; case-split scanned it twice and split its rows across two host names */
     FILE *p = popen(cmd, "r"); char ln[128];
     while (p && fgets(ln, 128, p)) { ln[strcspn(ln, "\n")] = 0; if (ln[0]) f_spawn(ln, FRQ); }
     if (p) pclose(p);
@@ -336,16 +368,37 @@ static void f_save(void) {
     for (int i = 0; i < FNN; i++) { FI *x = &FL[i]; if (x->seen) fprintf(f, "%s|%d|%s|%s|%ld|%s|%s|%s\n", x->host, x->live, x->sid, x->cwd, x->mt, x->mdl, x->tail, x->desc); }
     fclose(f);
 }
-static int f_label(const char *m, const char *lb) {                      /* a feed label <match> <label|-> — tag every cached row matching m (sid/host/dir/desc) */
-    f_live_scan = 0; f_load(); f_live_scan = 1;
-    char ap[P]; snprintf(ap, P, "%s/feed_lbl.txt", DDIR); FILE *af = fopen(ap, "a"); int nm = 0;
-    for (int i = 0; i < FNN; i++) { char hay[560]; snprintf(hay, 560, "%s %s %s %s", FL[i].host, FL[i].cwd, FL[i].desc, FL[i].sid);
-        if (!strcasestr(hay, m)) continue; nm++;
-        if (af) fprintf(af, "%s|%s\n", FL[i].sid, strcmp(lb, "-") ? lb : "");
-        printf("%-12.12s %-10.10s %-10.10s %.40s\n", strcmp(lb, "-") ? lb : "(cleared)", FL[i].host, bname(FL[i].cwd), FL[i].desc); }
+static void f_scan_wait(int ms) {                                        /* fleet scan, drained with a deadline — CLI paths need what is running NOW, not the last run's cache */
+    f_hosts();
+    struct timespec d0; clock_gettime(CLOCK_MONOTONIC, &d0);
+    for (;;) { struct pollfd pf[64]; int np = 0;
+        for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) { pf[np].fd = fch[i].fd; pf[np++].events = POLLIN; }
+        if (!np) break;
+        struct timespec nw; clock_gettime(CLOCK_MONOTONIC, &nw);
+        int el = (int)((nw.tv_sec - d0.tv_sec) * 1000 + (nw.tv_nsec - d0.tv_nsec) / 1000000);
+        if (el >= ms || poll(pf, np, ms - el) <= 0) break;
+        for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) for (int j = 0; j < np; j++)
+            if (pf[j].fd == fch[i].fd && (pf[j].revents & (POLLIN | POLLHUP | POLLERR))) f_recv(&fch[i]); }
+    for (int i = 0; i < fnch; i++) if (fch[i].fd >= 0) { close(fch[i].fd); fch[i].fd = -1; }
+    FREAP
+}
+static int f_label(const char *m, const char *lb, int rule) {            /* a feed label [-p] <match> <label|-> */
+    char ap[P]; snprintf(ap, P, "%s/feed_lbl.txt", DDIR);
+    const char *sh = strcmp(lb, "-") ? lb : "";
+    if (rule) { FILE *rf = fopen(ap, "a"); if (rf) { fprintf(rf, "~%s|%s\n", m, sh); fclose(rf); }
+        printf("\xe2\x9c\x93 rule ~%s \xe2\x86\x92 '%s' \xc2\xb7 every row matching it, including sessions that do not exist yet\n", m, sh); return 0; }
+    f_live_scan = 0; f_load(); f_live_scan = 1;                          /* cache = parked history stays labelable ... */
+    f_scan_wait(6000);                                                   /* ... scan = an agent started since the last feed run is labelable WITHOUT restarting it */
+    f_filter();
+    FILE *af = fopen(ap, "a"); int nm = 0, nl = 0;
+    for (int i = 0; i < FNN; i++) { char hay[600]; snprintf(hay, sizeof hay, "%s %s %s %s", FL[i].host, FL[i].cwd, FL[i].desc, FL[i].sid);
+        if (!strcasestr(hay, m)) continue; nm++; nl += FL[i].live;
+        if (af) fprintf(af, "%s|%s\n", FL[i].sid, sh);
+        printf("%s %-12.12s %-10.10s %-10.10s %.40s\n", FL[i].live ? "\033[32m\xe2\x97\x8f\033[0m" : "\xe2\x8f\xb8",
+            sh[0] ? sh : "(cleared)", FL[i].host, bname(FL[i].cwd), FL[i].desc); }
     if (af) fclose(af);
-    if (nm) printf("\xe2\x9c\x93 %d row(s) \xe2\x86\x92 '%s' \xc2\xb7 %s/feed_lbl.txt\n", nm, lb, DDIR);
-    else printf("x no cached row matches '%s' (run a feed once first)\n", m);
+    if (nm) printf("\xe2\x9c\x93 %d row(s) (%d live) \xe2\x86\x92 '%s' \xc2\xb7 %s/feed_lbl.txt\n", nm, nl, sh, DDIR);
+    else printf("x nothing running or cached matches '%s' \xc2\xb7 -p makes it a standing rule instead\n", m);
     return !nm;
 }
 
@@ -408,7 +461,9 @@ static int cmd_feed(int c, char **v) { perf_disarm();
     FNN = fnch = 0; f_top = 0;
     { char ap[P]; snprintf(ap, P, "%s/feed_arc.txt", DDIR); FILE *af = fopen(ap, "r"); if (af) { f_arcn = (int)fread(f_arc, 1, sizeof f_arc - 1, af); f_arc[f_arcn] = 0; fclose(af); } }
     { char lp[P]; snprintf(lp, P, "%s/feed_lbl.txt", DDIR); FILE *lf = fopen(lp, "r"); if (lf) { f_lbls[fread(f_lbls, 1, sizeof f_lbls - 1, lf)] = 0; fclose(lf); } }
-    if (c > 2 && !strcmp(v[2], "label")) { if (c < 5) { puts("a feed label <match> <label|->"); return 1; } return f_label(v[3], v[4]); }
+    if (c > 2 && !strcmp(v[2], "label")) { int pg = c > 3 && !strcmp(v[3], "-p");
+        if (c < 5 + pg) { puts("a feed label [-p] <match> <label|->\n  bare: scans the fleet live, tags every session matching now (running ones included)\n  -p:   standing rule — also tags matching sessions that start later"); return 1; }
+        return f_label(v[3 + pg], v[4 + pg], pg); }
     int dsm = c > 2 && !strcmp(v[2], "dismiss");                          /* dismiss = scan for live truth, then archive all parked (web/CLI form of TUI 'D') */
     f_live_scan = 0; f_load(); f_live_scan = 1;                           /* seed from last run (parked until a live scan confirms) */
     struct timespec tp; clock_gettime(CLOCK_MONOTONIC, &tp);
