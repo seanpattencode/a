@@ -336,12 +336,13 @@ static int cmd_ssh(int argc,char**argv){
         const char*tf=isatty(0)?"-tt":"-T";
         if(H[idx].jump[0]){char jhp[256],jport[8];ssh_parse(H[idx].jump,jhp,jport);
             snprintf(opts,B,"%s -oConnectTimeout=8 -oStrictHostKeyChecking=accept-new -oProxyCommand=\"sshpass -p '%s' ssh -W %%h:%%p -p %s -oStrictHostKeyChecking=accept-new '%s'\"",tf,H[idx].jpw,jport,jhp);
-        }else snprintf(opts,B,"%s -oConnectTimeout=2 -oStrictHostKeyChecking=accept-new",tf);
+        }else snprintf(opts,B,"%s -oConnectTimeout=2 -oStrictHostKeyChecking=accept-new%s",tf,cmd[0]?"":" -oServerAliveInterval=10 -oServerAliveCountMax=3");
         int n=ssh_pre(c,(int)sizeof(c),H[idx].pw,opts,port,hp);
         n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),"%s",cs);
-        if(!cs[0])printf("Connecting to %s...\n",H[idx].name);
         if(getenv("TMUX")&&!cmd[0])tm_rename(H[idx].name);
         if(cmd[0])alarm(30);
+        /* interactive: rc 255 = conn lost/refused (never user exit) → fresh `a ssh <name>` re-resolves host+fallbacks; exec loop, no growth */
+        else snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),";rc=$?;[ $rc -eq 255 ]||exit $rc;printf '\\n\\033[33m! %s dropped - reconnecting\\033[0m\\n';sleep 2;exec a ssh '%s'",H[idx].name,H[idx].name);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 }
 /* sw <device> <prompt>: ssh-launch a claude job on a remote, report its window + reattach cmd.

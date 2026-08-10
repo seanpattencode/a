@@ -133,7 +133,8 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         echo "Couldn't auto-fix. github:seanpattencode"
     }
     if command -v tcc &>/dev/null && [[ ! -d /data/data/com.termux ]]; then
-        TCT=${EPOCHREALTIME/./};tcc $_Q -w -o "$ABIN/a" "$D/a.c" -lutil 2>/dev/null||{ _build_fix "$(tcc $_Q -w -o /dev/null "$D/a.c" -lutil 2>&1)"; exit 1; };TCT=$(( ${EPOCHREALTIME/./} - TCT ))000
+        # old tcc (0.9.27) dies on odd ' counts inside #if 0 (book.c py half) — fall back to $CC before calling the fix agent
+        TCT=${EPOCHREALTIME/./};tcc $_Q -w -o "$ABIN/a" "$D/a.c" -lutil 2>/dev/null&&TCT=$(( ${EPOCHREALTIME/./} - TCT ))000||{ TCT="";_ensure_cc;E=$($CC $_Q -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1)||{ _build_fix "$E"; exit 1; }; }
     else
         _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
