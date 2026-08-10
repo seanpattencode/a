@@ -16,7 +16,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden}
 #kb{position:fixed;bottom:0;left:0;width:40%;height:1px;opacity:0;border:0;padding:0;resize:none;background:none}
 </style>
 <body>
-<div id=scr></div><div id=cur></div>
+<div id=scr></div><div id=po></div><div id=cur></div>
 <textarea id=kb autocomplete=off autocapitalize=off spellcheck=false></textarea><div id=sb>boot</div>
 <script>
 'use strict';
@@ -38,7 +38,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,PD=[],pconf=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -69,6 +69,7 @@ function put(ch,w){
   if(S.pw&&S.wrap){S.pw=false;S.x=0;lf();}
   S.pw=false;
   if(S.x+w>cols)S.x=Math.max(0,cols-w);
+  if(PD.length){const q=PD[0];if(q.y===S.y&&q.x===S.x){if(q.ch===ch){PD.shift();if(pconf<4)pconf++;}else{PD=[];pconf=0;}}} /* echo at predicted cell: confirm (or miss = predictor off) */
   const r=G[S.y];
   if(r.l[S.x]&512&&S.x>0){r.t[S.x-1]=' ';r.l[S.x-1]&=~128;} /* overwrote right half: unghost the wide base */
   r.t[S.x]=ch;r.f[S.x]=S.fg;r.b[S.x]=S.bg;r.l[S.x]=S.fl|(w===2?128:0);
@@ -83,6 +84,7 @@ let st=0,pb='',ob='',cstgt=0;
 const DEC=new TextDecoder();
 function feed(d){
   const t0=performance.now();
+  if(kt){kr=t0-kt;kt=0;}   /* r-meter: keystroke->first-echo RTT (web-vs-foot feel lives here + rAF) */
   if(typeof d!=='string')d=DEC.decode(d,{stream:true});
   for(const ch of d){
     const c=ch.codePointAt(0);
@@ -267,13 +269,14 @@ function paint(){
   const t0=performance.now();
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
-  const r=G[S.y],w=r&&r.l[S.x]&128?2:1;
-  cur.style.cssText='left:'+(S.x*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
+  const r=G[S.y],w=r&&r.l[S.x]&128?2:1,px=Math.min(cols-1,S.x+(pconf>=2?PD.length:0));
+  po.innerHTML=(pconf>=2&&PD.length)?PD.map(q=>'<span style="position:absolute;left:'+(q.x*cw).toFixed(2)+'px;top:'+q.y*chh+'px;opacity:.55">'+(q.ch==='<'?'&lt;':q.ch==='&'?'&amp;':q.ch)+'</span>').join(''):'';
+  cur.style.cssText='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
   dt=performance.now()-t0;
   stat();
 }
 function stat(){ /* 1ms mandate: p=parse d=draw */
-  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+'ms'+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
+  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(kr?' r'+kr.toFixed(2):'')+'ms'+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
   while(g.length<rows)g.push(newRow());
@@ -285,6 +288,7 @@ function fit(){
   e.style.cssText='position:absolute;visibility:hidden;white-space:pre';
   e.textContent='0'.repeat(100);
   scr.style.font=FS+'px/'+LH+'px '+FONT;
+  po.style.cssText='position:absolute;left:0;top:0;color:#ccc;pointer-events:none;font:'+FS+'px/'+LH+'px '+FONT;
   scr.appendChild(e);
   cw=e.getBoundingClientRect().width/100; /* measure == render font */
   e.remove();
@@ -354,8 +358,17 @@ function key(e){
   }
   else return;
   e.preventDefault();
+  if(s.length===1)kt=performance.now();
   tx(s);
+  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);
 }
+/* local prediction — typed-char feedback ONLY (Sean 2026-08-08): overlay at the cursor, grid stays authoritative,
+   so wrong guesses can't corrupt. Gated mosh-style: renders only after 2 confirmed echoes; any miss or 250ms
+   silence (echo-off contexts like passwords) disarms + erases. No Enter/BS/cursor prediction, no tmux tricks. */
+function pred(k){const px=S.x+PD.length;if(px>=cols)return;
+  PD.push({x:px,y:S.y,ch:k,t:performance.now()});
+  if(pconf>=2&&!raf)raf=requestAnimationFrame(paint);}
+setInterval(function(){if(PD.length&&performance.now()-PD[0].t>250){PD=[];pconf=0;if(!raf)raf=requestAnimationFrame(paint);}},120);
 addEventListener('keydown',key);
 kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); /* IME/swipe path; keydown covers the rest */
 kb.addEventListener('paste',e=>{

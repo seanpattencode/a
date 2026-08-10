@@ -153,6 +153,13 @@ static void _sresph(int c,int code,const char*ct,const char*body,int bl,const ch
 }
 /* static doc pages: NOT no-store, so the browser back/forward cache restores them instantly (0ms, no refetch) */
 static void _sresp(int c,int code,const char*ct,const char*body,int bl){_sresph(c,code,ct,body,bl,"no-store");}
+/* latency surfaces (/op /fw): COOP+COEP => crossOriginIsolated => performance.now() at 5us instead of 100us —
+   without this the sub-ms meters quantize to .x0. Scoped here, NOT global: COEP would break pages that load
+   cross-origin subresources. Both pages are fully self-contained; /op iframes stay same-origin. */
+static void _siso(int c,const char*body,int bl){
+    char h[320];int hl=snprintf(h,320,"HTTP/1.1 200 OK\r\nContent-Type:text/html\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-store\r\nCross-Origin-Opener-Policy:same-origin\r\nCross-Origin-Embedder-Policy:require-corp\r\n\r\n",bl);
+    (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
+}
 static void _sdoc(int c,const char*body,int bl){_sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
 /* proxy the u server (127.0.0.1:9999) — net worth (+ any u stat) has ONE source there; we forward, never recompute (no drift). No shell → the update body can't inject. */
 static char* _ufwd(const char*path,const char*body,char*buf,int cap){
@@ -516,6 +523,9 @@ static void _handle(int c){
         if(!nm[0]||nm[0]=='.'||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
         char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
         if(rename(fr,to)){_sresp(c,404,"text/plain","x",1);return;}_sresp(c,200,"text/plain","ok",2);return;}
+    if(!strncmp(req,"POST /up?",9)){char nm[96];_qp(req,"&n=",nm,96);char*bp=strstr(req,"\r\n\r\n");char f2[P];snprintf(f2,P,"%s/%s",TMP,nm);  /* <=200KB slices; _qp bars / */
+        int fd=*nm&&bp?open(f2,O_WRONLY|O_CREAT|(req[11]=='1'?O_TRUNC:O_APPEND),0644):-1;
+        _sresp(c,fd<0||write(fd,bp+4,(size_t)(n-(bp+4-req)))<0?400:200,"text/plain","",0);return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];_qn(req,nm);
         if(!nm[0]){
             int au=!!strstr(req,"sort=author"),alp=!!strstr(req,"sort=name");   /* default = most-opened first; ?sort=name | ?sort=author */
@@ -547,7 +557,7 @@ static void _handle(int c){
                 ".c{flex:none;color:#999;text-decoration:none;font-size:18px}.s{flex:none;min-width:48px;text-align:right;color:#666;font:13px ui-monospace,monospace;text-transform:uppercase}.s a{color:#666;text-decoration:none}.s a:hover{color:#fff}"
                 ".h{position:sticky;top:0;background:#0b0b0b;color:#fff;font-weight:700;font-size:15px;letter-spacing:.09em;text-transform:uppercase;padding:16px 16px 5px;border-bottom:1px solid #1a1a1a}"
                 ".r.in{padding-left:30px}.nav{padding:4px 16px 10px;font-size:17px}.nav a{color:#888;text-decoration:none;margin-right:14px}.nav a.on{color:#fff;font-weight:600}"
-                "#q{display:block;box-sizing:border-box;width:calc(100%% - 32px);margin:2px 16px 8px;padding:9px 12px;background:#161616;color:#fff;border:1px solid #2a2a2a;border-radius:8px;font:18px system-ui;outline:none}#qms{float:right;color:#555;font:11px ui-monospace,monospace}</style>"
+                "#q,#ab{display:block;box-sizing:border-box;width:calc(100%% - 32px);margin:2px 16px 8px;padding:9px 12px;background:#161616;color:#fff;border:1px solid #2a2a2a;border-radius:8px;font:18px system-ui;outline:none}#qms{float:right;color:#555;font:11px ui-monospace,monospace}</style>"
                 "<script>function _ax(e){var a=e.target.closest('a.x');if(!a)return;e.preventDefault();e.stopImmediatePropagation();"
                 "if(e.type!='pointerdown')return;fetch(a.href).then(function(r){if(r.ok){a.closest('.r').style.opacity=.35;a.outerHTML='<span class=c>\xe2\x9c\x93 archived</span>'}else a.textContent='\xe2\x9c\x97'},function(){a.textContent='\xe2\x9c\x97'})}"
                 "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true)</script>" TAPJS
@@ -558,7 +568,8 @@ static void _handle(int c){
                 "else{var m=(e.textContent+' '+ht).toLowerCase().indexOf(v)>=0;e.style.display=m?'':'none';vn+=m}});"
                 "if(hd)hd.style.display=vn?'':'none';qms.textContent=(performance.now()-t0).toFixed(2)+'ms'};"
                 "q.onkeydown=function(e){if(e.key=='Enter'){var r=document.querySelector('.r:not([style*=none]) a.t');if(r)location=r.href}};"
-                "onkeydown=function(e){if(document.activeElement!=q&&!e.ctrlKey&&!e.metaKey&&(e.key.length==1||e.key=='Backspace'))q.focus()}</script>",
+                "onkeydown=function(e){if(document.activeElement!=q&&!e.ctrlKey&&!e.metaKey&&(e.key.length==1||e.key=='Backspace'))q.focus()}</script>"
+                "<button id=ab onpointerdown=af.click()>+ add book</button><input id=af type=file hidden><script>af.onchange=async()=>{var f=af.files[0],m=f.name.replace(/[^\\w.]+/g,'-');for(var o=0;o<f.size;o+=2e5)await fetch('/up?s='+ +!o+'&n='+m,{method:'POST',body:f.slice(o,o+2e5)}),ab.textContent=o;navigator.sendBeacon('/api/omni','q=cmd+a+book+add+${TMPDIR:-/tmp}/'+m);setTimeout(\"location=''\",999)}</script>",
                 n,(au||alp)?"":" class=on",alp?" class=on":"",au?" class=on":"");
             const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};char pk[96]="";
             for(int ii=0;ii<n&&hl<cap-2048;ii++){int i=idx[ii];
@@ -763,6 +774,17 @@ static void _handle(int c){
         (void)!system("setsid a fleet >/dev/null 2>&1 &");
         char h[8192];int hl=snprintf(h,8192,"<title>a fleet</title><body style=\"background:#000;color:#eee;margin:12px\"><pre style=\"font:14px monospace;overflow-x:auto\">%s</pre>",fb&&fn?fb:"no data yet - refreshing, reload in a few seconds");
         free(fb);_sresp(c,200,"text/html",h,hl);return;}
+    if(!strncmp(req,"GET /fwins",10)){   /* fleet-wide tmux window list: serve cache instantly, refresh via lib/fwins.sh in bg (mirrors /fleet) */
+        char fp[P];snprintf(fp,P,"%s/fleetwins.txt",DDIR);size_t fn=0;char*fb=readf(fp,&fn);struct stat ws;
+        /* RATE LIMIT: a scan is an ssh fanout to the whole fleet + a tmux client per box. The page polls every 4s;
+           refiring the scan on every poll ran 175 scans in 11min and kept N boxes + this tmux server under constant
+           load. Cache age gates it — polls stay a 0.2ms file read and cost the fleet nothing. */
+        if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
+            if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
+        _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
+    if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* unified fleet tmux view: all devices' windows in one list, one inline terminal that re-points */
+        char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
+        if(th){_siso(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","no fleetview.html",16);return;}
     if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
         int busy=fd>=0&&flock(fd,LOCK_EX|LOCK_NB)<0;if(fd>=0){if(!busy)flock(fd,LOCK_UN);close(fd);}
         const char*r=busy?"syncing":sync_age();_sresp(c,200,"text/plain",r,(int)strlen(r));return;}
@@ -1059,7 +1081,7 @@ static void _handle(int c){
         char h[8192];int hl=snprintf(h,sizeof h,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>stream</title><style>html,body{margin:0;height:100%%;background:#000;font:13px ui-monospace,monospace}#b{position:fixed;top:0;left:0;bottom:0;width:150px;background:#0a0a0a;border-right:1px solid #222;padding:6px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;z-index:9}#b a{color:#fff;text-decoration:none;padding:7px 9px;border:1px solid #333;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}#b a.on{background:#222;color:#fff;border-color:#555}#b a.sub{margin-left:14px;font-size:11px;border-left:3px solid #555;border-radius:0 5px 5px 0;color:#ccc}#st{position:fixed;bottom:10px;right:14px;display:none;color:#bbb;font:12px ui-monospace,monospace;background:#000a;padding:4px 10px;border-radius:6px;z-index:6}#st.ld{color:#fff;animation:pl 1s infinite}@keyframes pl{50%%{opacity:.4}}#w{position:fixed;inset:0 0 0 160px;display:flex;flex-direction:column}#w img{flex:1;min-height:0;object-fit:contain}#w p{margin:auto;color:#888}</style><div id=b>%s</div><div id=w><p>\xe2\x86\x90 pick a device</p></div><div id=st></div><script>var w=document.getElementById('w'),st=document.getElementById('st'),cur='',n=0;function P(){document.querySelectorAll('#b a').forEach(function(a){a.classList.toggle('on',a.getAttribute('data-d')===cur)})}function sel(d){w.innerHTML='';if(cur===d){cur='';st.style.display='none';P();return}cur=d;n=0;st.style.display='block';st.className='ld';st.textContent='\xe2\x9f\xb3 starting '+d+'\xe2\x80\xa6';var s=[].slice.call(document.querySelectorAll('#b a.sub')).map(function(a){return a.getAttribute('data-d')}).filter(function(x){return x.indexOf(d+':')==0});(s.length>1?s:[d]).forEach(function(m){var i=new Image();i.onload=function(){st.className='';st.textContent='\xe2\x97\x8f '+d+' \xc2\xb7 '+(++n)+' frames'};i.onerror=function(){st.className='';st.textContent='\xe2\x9c\x97 failed \xc2\xb7 '+d};var q=m.split(':');i.src='/stream/s?dev='+encodeURIComponent(q[0])+(q[1]?'&o='+encodeURIComponent(q[1]):'');w.appendChild(i)});P()}</script>",nav);
         _sresp(c,200,"text/html",h,hl);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
-        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3]))?atoi(qw+3):-1;
+        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3])&&!strstr(req,"&all"))?atoi(qw+3):-1;   /* &all = fleet view: skip agent-only gate, show any window */
         if(idx>=0){char tc[256];
             snprintf(tc,256,"p=$(tmux display-message -t a:%d -p '#{pane_pid}' 2>/dev/null);c=$(cat /proc/$p/task/$p/children 2>/dev/null|cut -d' ' -f1);[ -n \"$c\" ]&&cat /proc/$c/comm 2>/dev/null",idx);
             FILE*pp=popen(tc,"r");char nm[64]={0};
@@ -1068,7 +1090,7 @@ static void _handle(int c){
                 static const char NO[]="<!doctype html><style>body{background:#000;color:#fff;font:16px system-ui;text-align:center;padding-top:40vh}a{color:#fff}</style>no agent<br><br><a href=/dash>← dash</a>";
                 _sresp(c,200,"text/html",NO,sizeof NO-1);return;}}
         char tf[P];snprintf(tf,P,"%s/lib/term.html",SDIR);size_t tl=0;char*th=readf(tf,&tl); /* direct-DOM terminal page (replaced xterm.js CDN 7/10) */
-        if(th){_sresp(c,200,"text/html",th,(int)tl);free(th);}
+        if(th){_siso(c,th,(int)tl);free(th);}
         else _sresp(c,404,"text/plain","no term.html",12);
         return;}
     if(!strncmp(req,"GET /cloud",10)){

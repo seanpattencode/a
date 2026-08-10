@@ -1,0 +1,111 @@
+<!doctype html><meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>a fleet</title>
+<!-- Unified fleet tmux view: every device's tmux windows in one list (from /fwins), one inline terminal (/op) that
+     re-points on click/j-k — like one giant tmux session across all reachable devices. Pieces reused: term.html(/op),
+     ssh window attach (w=ssh:dev:idx), fleet.txt reachability. Enumerator: lib/fwins.sh. -->
+<style>
+html,body{margin:0;height:100%}
+body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:column;overflow:hidden}
+#top{padding:6px 10px;border-bottom:1px solid #222;display:flex;gap:14px;align-items:center;font-size:13px;color:#888}
+#top b{color:#fff;font-weight:600}#ms{color:#6c6;font-variant-numeric:tabular-nums}
+#main{flex:1;display:flex;min-height:0}
+#s{width:214px;overflow-y:auto;border-right:1px solid #222;background:#0a0a0a}
+#tw{flex:1;position:relative;background:#000}
+.tf{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;visibility:hidden}   /* hidden-not-display:none: full size, so prerendered terminals fit to the REAL cols/rows */
+.tf.on{visibility:visible}
+.g{color:#6cf;padding:9px 10px 3px;font-size:12px;position:sticky;top:0;background:#0a0a0a}
+.w{display:block;color:#ccc;text-decoration:none;padding:5px 10px;font-size:13px;cursor:pointer;border-left:2px solid #0000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.w:hover{background:#161616}.w.sel{background:#fff;color:#000;border-left-color:#6cf}
+@media(max-width:640px){#main{flex-direction:column}#s{width:auto;height:36vh;border-right:0;border-bottom:1px solid #222}}
+body.nolist #s{display:none}   /* list collapsed = all tmux; default on small screens, ☰ anytime, persisted */
+#nav{display:flex;align-items:stretch;border-top:1px solid #222;background:#0a0a0a}
+#tg{flex:0 0 17%;font-size:30px}
+.nb{flex:1;border:0;background:none;color:#fff;font-size:44px;padding:14px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.nb:active{background:#fff;color:#000}
+#cur{align-self:center;color:#888;font-size:13px;padding:0 14px;white-space:nowrap;max-width:44%;overflow:hidden;text-overflow:ellipsis}
+</style>
+<div id=top><b>a fleet</b><span id=ms>scanning fleet…</span><span style=color:#555>tap LCtrl ◀ · RCtrl ▶ — type anytime, taps never reach the shell</span></div>
+<div id=main><div id=s>…</div><div id=tw></div></div>
+<div id=nav><button class=nb id=tg>☰</button><button class=nb id=pv>◀</button><div id=cur></div><button class=nb id=nx>▶</button></div>
+<script>
+var S=document.getElementById('s'),TW=document.getElementById('tw'),MS=document.getElementById('ms');
+var cur=localStorage.fwsel||'',sel=cur,rows=[],ci=0;   /* cur = what's SHOWN · sel = list highlight (tmux may switch under us) */
+/* prerender +4 ahead +1 behind as hidden full-size iframes so switching is as instant as possible — a visibility swap, not a reconnect */
+var FR={},V=null;
+function frameFor(tg){if(FR[tg])return FR[tg];
+  var f=document.createElement('iframe');f.className='tf';f.dataset.t=tg;
+  f.src='/op?w='+encodeURIComponent(tg)+'&all';
+  f.addEventListener('load',function(){hook(f.contentWindow);if(f===V||document.activeElement===f)foc();});
+  TW.appendChild(f);FR[tg]=f;return f;}
+function foc(){try{V.contentWindow.focus();V.contentDocument.getElementById('kb').focus({preventScroll:true});}catch(e){}}
+function ensure(){if(!rows.length)return;var want={},n=rows.length;
+  for(var d=-1;d<=4;d++)want[rows[((ci+d)%n+n)%n].dataset.t]=1;
+  Object.keys(FR).forEach(function(k){if(!want[k]&&k!==cur){FR[k].remove();delete FR[k];}});
+  var i=0;Object.keys(want).forEach(function(k){if(!FR[k]){var mk=function(){frameFor(k);};k===cur?mk():setTimeout(mk,200+180*i++);}});}
+var swms='',inms='',rtms='',wn2=0,krt=0;   /* header meters: sw=switch · in=keypress delivery lag · rtt=key echo round-trip */
+function hdr(){MS.textContent=(wn2?wn2+' win':'')+(swms?' · sw '+swms:'')+(inms?' · in '+inms:'')+(rtms?' · rtt '+rtms:'')+'ms';}
+function readr(){try{var m=V.contentDocument.getElementById('sb').textContent.match(/r([\d.]+)/);if(m){rtms=m[1];hdr();}}catch(e){}}
+function open_(tg){if(!tg)return;var t0=performance.now();
+  if(tg!==cur){cur=tg;if(V)V.classList.remove('on');V=frameFor(tg);V.classList.add('on');foc();
+    swms=(performance.now()-t0).toFixed(2);hdr();}
+  setsel(tg);ensure();}
+function setsel(tg){if(!tg)return;sel=tg;localStorage.fwsel=tg;hl();}
+function hl(){rows.forEach(function(r,i){var s=r.dataset.t===sel;r.classList.toggle('sel',s);
+  if(s){ci=i;var g=r.previousElementSibling;while(g&&!g.classList.contains('g'))g=g.previousElementSibling;
+    document.getElementById('cur').textContent=(g?g.textContent+' · ':'')+r.textContent;}});}
+/* window switched from INSIDE the terminal (C-j/C-k, M-←/→, C-PgUp/PgDn): follow it, never re-attach.
+   the attached tmux paints its window list in the last status row; the active entry is the highlighted
+   "3:name" cell — same marker `a fl` greps server-side (48;2;255;255;255). Works local + remote, no config. */
+function sync(){var ae=document.activeElement;
+  if(ae&&ae.classList&&ae.classList.contains('tf')&&ae!==V)foc();   /* focus drifted to a hidden frame: reclaim */
+  try{var d=V&&V.contentDocument;if(!d)return;var rs=d.querySelectorAll('#scr>div');
+  for(var i=rs.length-1;i>=0&&i>=rs.length-2;i--){var sp=rs[i].children;
+    for(var j=0;j<sp.length;j++){var bg=sp[j].style.background,m=sp[j].textContent.match(/^\s*(\d+):/);
+      if(m&&bg&&bg!=='rgb(0, 0, 0)'){var p=cur.match(/^(ssh:[^:]+:)/),tg=(p?p[1]:'')+m[1];
+        if(tg!==sel)setsel(tg);return;}}}}catch(e){}}
+setInterval(sync,600);
+var last=null;
+function render(txt){if(txt===last&&rows.length)return;last=txt;   /* identical list = leave the DOM alone (rebuilding it every 4s made rows flicker under the cursor) */
+  var t0=performance.now(),g='',dev='',n=0;
+  txt.split('\n').forEach(function(l){if(!l)return;var p=l.split('\t');if(p.length<3)return;n++;
+    if(p[0]!==dev){dev=p[0];g+='<div class=g>'+esc(dev)+'</div>';}
+    g+='<a class=w data-t="'+esc(p[1])+'">'+esc(p[2]||p[1])+'</a>';});
+  S.innerHTML=g||'<div class=g>no windows — reachable?</div>';
+  rows=[].slice.call(S.querySelectorAll('.w'));
+  rows.forEach(function(r){r.onclick=function(){open_(r.dataset.t);};});
+  if(rows.length&&!rows.some(function(r){return r.dataset.t===sel;}))open_(rows[0].dataset.t);else hl();
+  wn2=n;hdr();}
+function esc(s){return s.replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function poll(){fetch('/fwins').then(function(r){return r.text();}).then(render).catch(function(){});}
+poll();setInterval(poll,4000);
+document.addEventListener('keydown',function(e){if(!rows.length)return;var k=e.key;
+  if(k==='j'||k==='ArrowDown'){ci=Math.min(ci+1,rows.length-1);}
+  else if(k==='k'||k==='ArrowUp'){ci=Math.max(ci-1,0);}
+  else if(k==='Enter'){open_(rows[ci].dataset.t);return;}
+  else return;e.preventDefault();rows.forEach(function(r,i){r.classList.toggle('sel',i===ci);});rows[ci].scrollIntoView({block:'nearest'});});
+/* one-keypress fleet shifting for the rapid switch→type→switch loop: bare LCtrl tap = ◀ prev, bare RCtrl tap = ▶ next,
+   fleet-wide with wrap. A lone modifier can never reach the shell (terminals don't receive bare modifiers) and held
+   combos (Ctrl+C…) stay untouched — any other key between down and up disarms the tap. Hooked into the /op iframe too
+   (same-origin), so it works mid-typing; every switch re-focuses the terminal so typing needs no click. */
+function move(d){if(!rows.length)return;ci=(ci+d+rows.length)%rows.length;open_(rows[ci].dataset.t);rows[ci].scrollIntoView({block:'nearest'});}
+var armed=0,dirty=0;
+function tap(e){var c=e.code;
+  /* keystrokes must NEVER reach a HIDDEN pool frame (focus can drift there on load): swallow + refocus visible */
+  try{var fe=e.view.frameElement;if(fe&&!fe.classList.contains('on')){e.stopImmediatePropagation();e.preventDefault();foc();return;}}catch(x){}
+  if(e.type==='keydown'){
+    if(c==='ControlLeft'||c==='ControlRight'){if(!armed){armed=c;dirty=0;}}
+    else{if(armed)dirty=1;
+      /* per-keypress meters (e.view's clock — iframe events carry their own time origin) */
+      try{inms=Math.max(0,e.view.performance.now()-e.timeStamp).toFixed(2);clearTimeout(krt);krt=setTimeout(readr,130);hdr();}catch(x){}}
+  }else if(c===armed){var a=armed;armed=0;
+    if(!dirty){e.preventDefault();e.stopImmediatePropagation();move(a==='ControlLeft'?-1:1);}}}
+function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('keyup',tap,true);}catch(e){}}
+hook(window);
+var pv=document.getElementById('pv'),nx=document.getElementById('nx'),tg=document.getElementById('tg');
+pv.onpointerdown=function(e){e.preventDefault();move(-1);};   /* act on press, and don't steal focus */
+nx.onpointerdown=function(e){e.preventDefault();move(1);};
+function setlist(on){document.body.classList.toggle('nolist',!on);localStorage.fwlist=on?'1':'0';}
+setlist(localStorage.fwlist?localStorage.fwlist==='1':innerWidth>640);   /* small screen: collapsed unless user chose */
+tg.onpointerdown=function(e){e.preventDefault();setlist(document.body.classList.contains('nolist'));};
+</script>

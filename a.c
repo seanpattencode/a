@@ -65,7 +65,7 @@ a() {
     [[ "$1" == */* && -d "$1" ]] && { echo "📂 $1"; cd "$1"; return; }
     [[ "$1" == *.c && -f "$1" ]] && { sh "$@"; return; }
     [[ "$1" == *.py && -f "$1" ]] && { local py=python3 ev=1; [[ -n "$VIRTUAL_ENV" ]] && py="$VIRTUAL_ENV/bin/python" ev=0; [[ -x .venv/bin/python ]] && py=.venv/bin/python ev=0; local s=$(($(date +%s%N)/1000000)); if command -v uv &>/dev/null && [[ -f pyproject.toml || -f uv.lock ]]; then uv run python "$@"; ev=0; else $py "$@"; fi; local r=$?; echo "{\"cmd\":\"$1\",\"ms\":$(($(($(date +%s%N)/1000000))-s)),\"ts\":\"$(date -Iseconds)\"}" >> $dd/timing.jsonl; [[ $r -ne 0 && $ev -ne 0 ]] && printf '  try: a c fix python env for this project\n'; return $r; }
-    [[ "$1" == kill && "$2" == all || "$1" == killall ]] && { pkill -9 tmux 2>/dev/null; sleep 1; echo "✓"; return; }
+    [[ "$1" == kill && "$2" == all || "$1" == killall ]] && { { printf '%s a-sh %s tty=%s by: ' "$(date '+%F %T')" "$1" "$([[ -t 0 ]] && echo 1 || echo 0)"; ps -o args= -p $PPID 2>/dev/null | head -c100; echo; } >>"$HOME/a/adata/local/tmuxdeaths.log" 2>/dev/null; [[ -t 0 || "$3$2" == *now* ]] || { echo "x refused: headless tmux-server kill — append: now"; return 1; }; pkill -9 tmux 2>/dev/null; sleep 1; echo "✓"; return; }
     [[ "$1" == copy && -z "$TMUX" && -t 0 ]] && { local lc; lc=$(fc -ln -2 -2 2>/dev/null); lc=${lc#"${lc%%[! ]*}"}; [[ "$lc" && "$lc" != a\ copy* ]] && { eval "$lc" 2>&1|command a copy; return; }; echo "x No prev cmd"; return 1; }
     command a "$@"; local r=$?; [[ $r -ne 0 && ( "$1" == update || "$1" == u ) ]] && { git -C "${dd%/adata/local}" pull --ff-only 2>/dev/null; sh "${dd%/adata/local}/a.c"; return; }; [[ -f $dd/cd_target ]] && { read -r d < $dd/cd_target; rm $dd/cd_target; cd "$d" 2>/dev/null; }; return $r
 }
@@ -511,11 +511,10 @@ static int cmd_cat(int c,char**v){perf_disarm();
         while(fgets(b,512,uf)){if(!h++){GA(kh,strlen(kh));}GA(b,strlen(b));}pclose(uf);}}}
     CWD(cd);const char*actx=getenv("A_CTX");char ctd[P];
     if(actx&&actx[0]=='/')snprintf(ctd,P,"%s",actx);else snprintf(ctd,P,"%s/context/%s",AROOT,actx&&actx[0]?actx:bname(cd));
-    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){char s[512];size_t sr=fread(s,1,512,cf);int bin=0;\
-        for(size_t i=0;i<sr;i++)if(!s[i]||(s[i]>0&&s[i]<9)||s[i]==11||s[i]==12||(s[i]>13&&s[i]<32)){bin=1;break;}\
-        if(bin){fclose(cf);char ref[P];size_t rl=(size_t)snprintf(ref,P,"\n==> context doc: %s <==\n",FP);GA(ref,rl);}\
-        else{rewind(cf);char hdr[300];size_t hl=(size_t)snprintf(hdr,300,"\n==> context: %s <==\n",HDR);\
-             GA(hdr,hl);char ln2[512];while(fgets(ln2,512,cf)){size_t sl=strlen(ln2);GA(ln2,sl);}fclose(cf);}nf++;}}
+    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=m=='3'&&l>bud;  /* bud gates context too — 2.4MB embed blew the 1M window */\
+        for(size_t i=0;i<sr&&!bin;i++)if((unsigned char)b[i]<32&&b[i]!=9&&b[i]!=10&&b[i]!=13)bin=1;\
+        {size_t hl=(size_t)snprintf(b,8192,"\n==> context%s: %s <==\n",bin?" doc":"",bin?FP:HDR);GA(b,hl);}\
+        if(bin)fclose(cf);else{rewind(cf);while(fgets(b,512,cf)){size_t sl=strlen(b);GA(b,sl);}fclose(cf);}nf++;}}
     struct stat _cs;
     if(!stat(ctd,&_cs)&&S_ISREG(_cs.st_mode))CTX_EMIT(ctd,bname(ctd))
     else {DIR*dd=opendir(ctd);if(dd){struct dirent*de;while((de=readdir(dd))){if(de->d_name[0]=='.')continue;
@@ -693,7 +692,7 @@ static int cmd_ref(int c,char**v){
         if(!isatty(0))return 0;
         printf("select #: ");fflush(stdout);char ln[16];
         if(!fgets(ln,16,stdin)||!isdigit((unsigned char)ln[0]))return 0;
-        static char sb[128];int x=atoi(ln);if(x<0||x>=n)return 0;snprintf(sb,128,"%s",nm[x]);sel=sb;}
+        int x=atoi(ln);if(x<0||x>=n)return 0;sel=nm[x];}
     int si=-1;char rp[P];
     if(strchr(sel,'/')&&realpath(sel,rp)){struct stat st;if(!stat(rp,&st)&&!S_ISDIR(st.st_mode)){char*s=strrchr(rp,'/');if(s)*s=0;}
         setenv("A_CTX",rp,1);printf("+ %s\n",rp);
@@ -704,7 +703,7 @@ static int cmd_ref(int c,char**v){
     char cf[P];snprintf(cf,P,"%s/explained.txt",pa[si]);
     if(!fexists(cf))snprintf(cf,P,"%s/transcript.txt",pa[si]);
     const char*ctx=fexists(cf)?cf:pa[si];setenv("A_CTX",ctx,1);printf("+ %s%s\n",nm[si],pmode==2?" (-n next step)":pmode?" (-p)":"");
-    if(pmode){perf_disarm();char pp[P];
+    if(pmode){char pp[P];
         if(pmode==2)snprintf(pp,P,"echo; cat '%s/common/prompts/next.txt'",SROOT);
         else{setenv("A_REFQ",q[0]?q:"In one paragraph, summarize the central idea.",1);snprintf(pp,P,"printf '\\n%%s\\n' \"$A_REFQ\"");}
         char cmd[B*2];snprintf(cmd,B*2,"{ A_CTX='%s' a cat 2>/dev/null; %s; } | claude -p --dangerously-skip-permissions --model opus --effort max --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)';echo",ctx,pp);
@@ -757,7 +756,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|clone|add|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|ref|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|clone|add|cmd|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);

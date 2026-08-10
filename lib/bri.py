@@ -1,74 +1,56 @@
 #!/usr/bin/env python3
 # experimental — promoted from my/auto/ after working end-to-end on Gemini + Claude.ai.
-"""bri — extension bridge via HTTP long-poll (bypasses page CSP, works on
-Gemini/Claude.ai/chatgpt/other strict-CSP LLM UIs). Listens :1234 (HTTP:
-GET /poll for next cmd, POST /resp for results); :1235 (push JSON).
+"""bri — extension bridge via HTTP long-poll (bypasses page CSP: works on Gemini/Claude.ai/chatgpt
+and other strict-CSP LLM UIs). :1234 HTTP (GET /poll next cmd, POST /resp results); :1235 push JSON.
 
-ONE page-side client per browser — never two in one tab (a second client makes
-every command double-execute and responses interleave one-behind):
-  Firefox: WebExtension at lib/bri-ext/ — `a bri deploy` builds + installs +
-      restarts. Eval runs in extension context (immune to page CSP, incl.
-      chatgpt.com); fetch likewise. Tampermonkey client removed 2026-06-10.
-  Chrome:  lib/bri-chrome/ (same /poll + /resp protocol).
-  No Marionette/CDP: navigator.webdriver + devtools side-channels get flagged
-  by Google sign-in ("browser may not be secure"); extension context is a real
-  user. Launch Firefox WITHOUT -marionette → sign into target site once.
+ONE page-side client per browser — two in one tab double-execute every command and interleave
+responses one-behind:
+  Firefox: WebExtension lib/bri-ext/ — `a bri deploy` builds+installs+restarts; eval+fetch run in
+      extension context, immune to page CSP incl. chatgpt.com (Tampermonkey client removed 2026-06-10).
+  Chrome:  lib/bri-chrome/ (same protocol).
+  No Marionette/CDP: navigator.webdriver + devtools side-channels trip Google sign-in ("browser may
+  not be secure"); extension context is a real user. Launch FF WITHOUT -marionette, sign in once.
 
-Drive shortcuts (`a bri` with no args prints the full MENU): <url> text click type keys url
-grab links openall tabs grabs closeall research new hint hint-click save screenshot '{json}'.
-EVERY command goes to ONE browser — default firefox; @chrome / @all prefix or BRI_TO env to
-change; raw '{json}' too (an explicit "to" field in the JSON wins).
+`a bri` with no args prints the full MENU of shortcuts. EVERY command drives ONE browser — firefox
+default; @chrome / @all prefix or BRI_TO env retargets; raw '{json}' too (explicit "to" field wins).
 
-Driving a chat/web UI — do NOT hardcode per-site selectors here. They DRIFT and
-break SILENTLY: a script acts but cannot perceive, so it reports ok on a stale
-selector and types nothing. Drive it as an AGENT off the generic primitives,
-confirming each step by screenshot:
+Driving a chat/web UI — NO hardcoded per-site selectors here: they DRIFT and break SILENTLY (a
+script acts but cannot perceive — reports ok on a stale selector, types nothing). Drive it as an
+AGENT off the generic primitives, confirming each step by screenshot:
   a bri hint [host]        # Set-of-Mark: label every clickable element
   a bri screenshot         # read the labels with vision
   a bri hint-click <code>  # click by label; RE-HINT after each action (menus add items)
   a bri save <url> [note]  # log the resulting chat URL (a bri <N> reopens it)
-Discover a flow once by screenshotting each step; record the working path (goal,
-step path, success-oracle, traps) in agent MEMORY and reuse it — but keep
-screenshotting and confirming every step, and re-discover if it's stale. Per-site
-recipes live in agent memory, not in bri.
+Discover a flow once (screenshot each step); record goal/step-path/success-oracle/traps in agent
+MEMORY and reuse — still confirming every step; re-discover when stale. Recipes live there, not in bri.
 
-Read a signed-in app — rendered text can LIE (proven on Keep):
-  The visible cards are truncated previews of only the on-screen notes
-  (content-visibility skips the rest), so `text body` MISSES data both ways.
-  The full set rides in a page JSON blob → parse it, don't scrape the DOM:
-    a bri html > /tmp/k.html      # or browser File>Save As (html caps at 200k)
-    python3 lib/bri/keepx.py /tmp/k.html   # notes#node → indexableText, full bodies
-  General data layer beats DOM for any such app (gkeepapi/Takeout for Keep).
+Rendered text can LIE on signed-in apps (proven on Keep): visible cards are truncated previews of
+only on-screen notes (content-visibility skips the rest), so `text body` MISSES data both ways —
+the full set rides in a page JSON blob; parse it, don't scrape the DOM:
+    a bri html > /tmp/k.html; python3 lib/bri/keepx.py /tmp/k.html   # notes#node → full bodies
+Data layer beats DOM for any such app (gkeepapi/Takeout for Keep; browser html save caps at 200k).
 
-OAuth sign-in (e.g. "Continue with Google"):
-  Some sign-in buttons live in shadow DOM or cross-origin Google Identity
-  Services iframes (accounts.google.com/gsi/iframe/…) that aren't reachable
-  by querySelector when eval is CSP-blocked — true on Claude.ai, common on
-  SaaS apps. Once per provider: click "Continue with Google" yourself in the
-  Firefox tab — your existing Google session usually makes it one click —
-  then cookies persist and the bridge drives every subsequent run unattended.
+OAuth ("Continue with Google"): the button often sits in shadow DOM or a cross-origin gsi iframe
+(accounts.google.com/gsi/iframe/…) unreachable when eval is CSP-blocked — true on Claude.ai, common
+on SaaS. Once per provider click it yourself in the FF tab (existing Google session = one click);
+cookies persist and the bridge drives every subsequent run unattended.
 
 Notes:
-- Custom-element wrappers (rich-textarea, ms-textarea, …) need a CSS
-  descendant combinator (`wrapper [contenteditable]`) to reach the inner
-  <div contenteditable>. The bare wrapper has no working .value setter.
-- Read, don't poke: grab `bri html` (full DOM) or `text body` in ONE call and
-  parse that, vs selector-by-selector eval (slow, and eval is CSP-blocked on
-  Google + Claude.ai). But text=innerText reads only PAINTED nodes — apps using
-  content-visibility/preview-clipping (Keep, Gmail) hide data from it; prefer
-  html, or the app's data blob/API, when the rendered text looks incomplete.
-- Each command gets one response per connected frame (main + iframes). Pick the
-  row whose src is your target origin — its value is longest. The noise rows
-  (ogs/gsi/clients6 proxies, accounts.google.com RotateCookiesPage → CSP
-  "EvalError"/"no response") are subframes, not failure; ignore them.
+- Custom-element wrappers (rich-textarea, ms-textarea, …) need a descendant combinator
+  (`wrapper [contenteditable]`) to reach the inner editable; the bare wrapper has no .value setter.
+- Read, don't poke: ONE `bri html` (full DOM) or `text body` call beats selector-by-selector eval
+  (slow; eval CSP-blocked on Google + Claude.ai). text=innerText reads only PAINTED nodes —
+  content-visibility apps (Keep, Gmail) hide data from it; prefer html or the app's data blob/API.
+- One response per connected frame (main + iframes): pick the row whose src is your target origin
+  (longest value); ogs/gsi/clients6/RotateCookiesPage "EvalError"/"no response" rows are subframes,
+  not failure; ignore them.
 Tail full event stream: tail -f /tmp/bri.log
 """
-import socket, threading, queue, json, sys, time
+import socket, threading, queue, json, sys, time, os, re, glob, subprocess
 
 PORT, CMD, LOG = 1234, 1235, '/tmp/bri.log'
 pollers, pending = [], {}  # pollers: list[(Queue, browser)]  pending: id -> Queue
 
-import re
 def _bid(ua):  # browser/version from a User-Agent — one bridge drives Chrome + Firefox at once
     m = re.search(r'Firefox/([\d.]+)', ua)
     if m: return 'firefox/' + m.group(1)
@@ -186,19 +168,18 @@ def _sock():
             s=socket.socket(); s.connect(('127.0.0.1',CMD)); return s
         except OSError:
             if not i:
-                import subprocess
                 subprocess.Popen([sys.executable,__file__,'serve'],stdout=-3,stderr=-3,start_new_session=True)
             time.sleep(.1)
     sys.exit('x bridge failed to start')
 
 # Shortcut CLI: thin client that pushes JSON to a running bridge on :1235 and
 # prints the response. The raw '{json}' form remains the full API.
-_MONP = lambda: __import__('os').path.expanduser('~/a/adata/local/bri_monitor.txt')
-def _ff_monitor(): import os; return open(_MONP()).read().strip() if os.path.exists(_MONP()) else ''
+_MONP = lambda: os.path.expanduser('~/a/adata/local/bri_monitor.txt')
+def _ff_monitor(): return open(_MONP()).read().strip() if os.path.exists(_MONP()) else ''
 def _ff_move(mon):
     # Event-driven: subscribe to window events; on focus of firefox-nightly (window is mapped &
     # selectable by then) move by con_id. "new" fires too early — selector hits "No matching node".
-    import os, glob, subprocess as sp
+    import subprocess as sp
     sock = os.environ.get('SWAYSOCK') or (sorted(glob.glob(f'/run/user/{os.getuid()}/sway-ipc.*.sock')) or [''])[0]
     if not sock: return
     p = sp.Popen(['swaymsg','-s',sock,'-m','-t','subscribe','["window"]'], stdout=sp.PIPE, stderr=sp.DEVNULL, text=True)
@@ -209,10 +190,26 @@ def _ff_move(mon):
         if ev.get('change')=='focus' and c.get('app_id')=='firefox-nightly' and c.get('id'):
             sp.run(['swaymsg','-s',sock,f'[con_id={c["id"]}] move container to output {mon}'], stdout=sp.DEVNULL, stderr=sp.DEVNULL)
             p.terminate(); return
+def _ffenv():
+    # Env for spawning firefox-nightly. The "already running, but is not responding" dialog = D-Bus
+    # mismatch: FF remoting rides the SESSION bus, sway runs under dbus-run-session (private /tmp bus),
+    # so canonical-bus spawns can't see the running FF and wedge on the profile lock (replicated
+    # 2026-08-08; ate webx claude asks). Adopt the running FF's bus+displays, else sway's.
+    env = os.environ.copy(); env['MOZ_ENABLE_WAYLAND'] = '1'
+    xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
+    socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
+    if socks: env['WAYLAND_DISPLAY'] = socks[0]
+    for c in (['pgrep','-fx','(/usr/lib/)?firefox-nightly'],['pgrep','-x','sway']):   # -fx: main proc only, never a wedged launcher's wrong bus
+        for pid in subprocess.run(c,capture_output=True,text=True).stdout.split():
+            try: e = dict(l.split('=',1) for l in open(f'/proc/{pid}/environ').read().split('\0') if '=' in l)
+            except OSError: continue
+            if e.get('DBUS_SESSION_BUS_ADDRESS'):
+                env.update({k:e[k] for k in ('DBUS_SESSION_BUS_ADDRESS','WAYLAND_DISPLAY','DISPLAY') if e.get(k)}); return env
+    env.setdefault('DBUS_SESSION_BUS_ADDRESS', f'unix:path={xdg}/bus'); return env
+
 def _ff_restart():
     # Live wayland socket — process env may have stale wayland-0 from a dead session,
     # leaving FF connected to nothing and invisible on monitors (looks headless).
-    import os, glob, subprocess, sys
     # LLMs/agents: FAVOR restarting Firefox here. It is the correct, SAFE way to (re)load
     # bri-ext (the eval-capable client that bypasses page CSP) — these prefs make the -9
     # restart restore every tab, and the driven window lands on the chosen monitor, so a
@@ -236,10 +233,7 @@ def _ff_restart():
                                   '  Do NOT auto-proceed; only re-run with FORCE=1 after the user says so.\n')
             return
     subprocess.run(['pkill','-9','-f','^(/usr/lib/)?firefox-nightly'],stdout=-3,stderr=-3); time.sleep(1)  # anchored: unanchored matched vmtouch-firefox-nightly's cmdline (its args are FF paths) and SIGKILLed it every restart
-    env = os.environ.copy(); xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
-    socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
-    if socks: env['WAYLAND_DISPLAY'] = socks[0]
-    env['MOZ_ENABLE_WAYLAND'] = '1'
+    env = _ffenv()   # post-pkill: adopts sway's bus so the next manual launch hands off, not dialogs
     m = _ff_monitor()
     # fork (not thread) — subscribe must survive client process exit, before FF Popen so window::new isn't missed.
     if m and os.fork() == 0:
@@ -247,7 +241,6 @@ def _ff_restart():
     subprocess.Popen(['firefox-nightly'],env=env,stdout=-3,stderr=-3,start_new_session=True)
 
 def _mon():
-    import subprocess, os
     def run(c): return subprocess.run(c, capture_output=True, text=True).stdout
     pid = (run(['pgrep','-f',r'bri\.py$']).strip().split('\n') or [''])[0]
     if pid: print(f'bri.py   pid={pid:<6} {run(["ps","-o","pcpu,pmem,rss,etime","-p",pid]).strip().split(chr(10))[-1]}')
@@ -343,7 +336,7 @@ def _links(match, to, raw=False):  # harvest links from tabs matching <match>: u
             if k not in seen: seen.add(k); out.append((u, t))
     return out
 def _openall(urls, to):  # open as bg tabs (no focus steal); capped + RAM-guarded; ~1.5s reply window per open = stagger
-    import os; mx = int(os.environ.get('BRI_OPEN_MAX', '20'))
+    mx = int(os.environ.get('BRI_OPEN_MAX', '20'))
     if len(urls) > mx: sys.stderr.write(f'! capped {len(urls)} -> {mx} tabs (BRI_OPEN_MAX)\n'); urls = urls[:mx]
     for i, u in enumerate(urls):
         try:
@@ -353,7 +346,6 @@ def _openall(urls, to):  # open as bg tabs (no focus steal); capped + RAM-guarde
         _send({'action': 'open', 'url': u, 'bg': 1, 'fresh': 1}, to); print(f'+ {u}', flush=True)
 
 def client(args):
-    import os
     to = args[0][1:] if args and args[0].startswith('@') else ''   # @firefox / @chrome / @all / @firefox/145 — target a browser (CLI default: firefox)
     if to: args = args[1:]
     to_exp = bool(to or os.environ.get('BRI_TO'))   # explicit target — read-only listings default to all browsers instead
@@ -367,13 +359,11 @@ def client(args):
         return
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
     if a == 'new':  # open a new job tab tagged in the URL; drive it with `a bri hint brijob=<id>`
-        import subprocess
         if len(args) < 2: sys.stderr.write('usage: a bri new <id> [url]   (default url: chatgpt.com)\n'); sys.exit(1)
         jid, url = args[1], (args[2] if len(args) > 2 else 'chatgpt.com')
         if not url.startswith(('http://','https://')): url = 'https://' + url
         url += ('&' if '#' in url else '#') + 'brijob=' + jid
-        env = os.environ.copy(); env.setdefault('WAYLAND_DISPLAY','wayland-1'); env['MOZ_ENABLE_WAYLAND']='1'
-        subprocess.Popen(['firefox-nightly','--new-tab',url], env=env, stdout=-3, stderr=-3, start_new_session=True)
+        subprocess.Popen(['firefox-nightly','--new-tab',url], env=_ffenv(), stdout=-3, stderr=-3, start_new_session=True)
         sys.stdout.write(f'+ job tab: {url}\n  drive: a bri hint brijob={jid} | hint-click <C> brijob={jid} | save <url>\n'); return
     if a == 'mon':     _mon(); return
     if a in ('grab', 'copy'):  # select-all+copy equivalent: full innerText (or --html) of the tab whose URL contains <host>
@@ -445,17 +435,15 @@ def client(args):
         else:
             cur = open(p).read().strip() if os.path.exists(p) else ''
             print(f'current: {cur or "(none, default)"}')
-            import subprocess, glob, json as _j
             sock = (sorted(glob.glob(f'/run/user/{os.getuid()}/sway-ipc.*.sock')) or [''])[0]
             if sock:
                 r = subprocess.run(['swaymsg','-s',sock,'-t','get_outputs','--raw'],capture_output=True,text=True)
                 if r.returncode==0:
-                    for o in _j.loads(r.stdout):
+                    for o in json.loads(r.stdout):
                         rc=o['rect']; print(f"  {o['name']:<10} {o.get('make','')[:10]:<10} {o.get('model','')[:18]:<18} pos=({rc['x']},{rc['y']}) {rc['width']}x{rc['height']}")
             print('set: a bri screen <name>   clear: a bri screen -')
         return
     if a.isdigit():  # `a bri <N>` opens the Nth recent research URL in default browser
-        import subprocess
         p = os.path.expanduser('~/a/adata/git/urls.txt')
         if not os.path.exists(p): print('no urls.txt'); return
         ln = [l.strip() for l in open(p) if l.strip()][-4:]; n = int(a)
@@ -476,7 +464,7 @@ def client(args):
         print(f'+ recording → {f}\n  drive workflow in another shell with `a bri <cmd>` then Ctrl-C\n')
         os.execvp('sh', ['sh', '-c', f'tail -F -n 0 {LOG} | tee {f!r}']); return
     if a == 'deploy':  # zero-click rebuild+install of the FF extension + Firefox restart
-        import subprocess, shutil, glob, briext
+        import shutil, briext
         briext.build()  # regenerate from single source first
         extdir = os.path.join(briext.OUT, 'bri-ext')
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi']
@@ -512,8 +500,8 @@ def client(args):
             if len(args)<2: sys.stderr.write('usage: a bri hint-click <CODE> [host]\n'); sys.exit(1)
             j = {'id':RID,'action':'eval','code':_hl(args[2] if len(args)>2 else '', args[1])}
         elif a=='screenshot':  # avoid when text/html/url can serve — the MENU entry carries the policy
-            import base64, time as _t
-            out = args[1] if len(args)>1 else f'/tmp/bri-{int(_t.time())}.png'
+            import base64
+            out = args[1] if len(args)>1 else f'/tmp/bri-{int(time.time())}.png'
             for r in _send({'action':'screenshot'}, to):
                 v = r.get('value','')
                 if isinstance(v,str) and v.startswith('data:image/'):
@@ -568,7 +556,7 @@ if __name__=='__main__':
     args = sys.argv[1:]
     if args and args[0] == 'bri': args = args[1:]  # `a bri …` passes cmd name as argv[1]
     if not args:
-        up = __import__('subprocess').run(['ss','-ltn','sport = :1234'],capture_output=True,text=True).stdout
+        up = subprocess.run(['ss','-ltn','sport = :1234'],capture_output=True,text=True).stdout
         print(f"[{'running' if ':1234' in up else 'stopped'}] :1234")
         if ':1234' in up:  # connected browsers + default target were invisible — dual-browser confusion 2026-08-02
             s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
@@ -578,7 +566,7 @@ if __name__=='__main__':
         # Numbered → `a bri <N>` opens URL N. URL on its own line so terminals
         # that auto-detect plain URLs make them clickable too.
         try:
-            with open(__import__('os').path.expanduser('~/a/adata/git/urls.txt')) as f:
+            with open(os.path.expanduser('~/a/adata/git/urls.txt')) as f:
                 ln = [l.strip() for l in f if l.strip()][-4:]
             if ln:
                 print("\nrecent research (a bri <N> opens):")
