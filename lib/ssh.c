@@ -13,6 +13,7 @@ static int m_pick(const char *cat,const char *const *items,int n,char *out,size_
     int top=rows-rsv+1;
     #define CLR() printf("\033[%d;1H\033[J",top)
     char f[48]=""; int fl=0,sel=0;
+    struct timespec pk;clock_gettime(CLOCK_MONOTONIC,&pk);  /* 1MS MANDATE: key→painted (first frame = cold render), shown live */
     for(;;){
         int fm[64],nf=0;
         for(int i=0;i<n&&nf<64;i++) if(!fl||strcasestr(items[i],f)) fm[nf++]=i;
@@ -25,9 +26,12 @@ static int m_pick(const char *cat,const char *const *items,int n,char *out,size_
             printf("\n  %s%.*s%s",i==sel?"\033[7m> ":"  ",cl,it,i==sel?"\033[0m":"");
             if(t)printf("  \033[90m%s\033[0m",t+1);
         }
+        {struct timespec pn;clock_gettime(CLOCK_MONOTONIC,&pn);
+         printf("\033[%d;%dH\033[2m%.3fms\033[0m",top,(int)strlen(cat)+5+fl,(double)(pn.tv_sec-pk.tv_sec)*1e3+(double)(pn.tv_nsec-pk.tv_nsec)/1e6);}
         printf("\033[%d;%dH",top,(int)strlen(cat)+3+fl); fflush(stdout);
         unsigned char c; if(read(0,&c,1)!=1){CLR();return -1;}
-        if(c==27){int av; usleep(50000); ioctl(0,FIONREAD,&av);
+        clock_gettime(CLOCK_MONOTONIC,&pk);
+        if(c==27){int av; usleep(2000); ioctl(0,FIONREAD,&av);
             if(av>=2){char s[2]; (void)!read(0,s,2);
                 if(s[0]=='['||s[0]=='O'){
                     if(s[1]=='A'){if(sel>0)sel--;continue;}

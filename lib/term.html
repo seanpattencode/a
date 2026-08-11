@@ -38,7 +38,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,PD=[],pconf=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,PD=[],pconf=0,sm=0,ks=0,kf=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -271,12 +271,13 @@ function paint(){
   dirty.clear();
   const r=G[S.y],w=r&&r.l[S.x]&128?2:1,px=Math.min(cols-1,S.x+(pconf>=2?PD.length:0));
   po.innerHTML=(pconf>=2&&PD.length)?PD.map(q=>'<span style="position:absolute;left:'+(q.x*cw).toFixed(2)+'px;top:'+q.y*chh+'px;opacity:.55">'+(q.ch==='<'?'&lt;':q.ch==='&'?'&amp;':q.ch)+'</span>').join(''):'';
+  if(kf&&((pconf>=2&&PD.length)||!kt)){sm=performance.now()-ks;kf=0;} /* s-meter: key -> char visible, via predicted overlay OR echo (whichever painted first) */
   cur.style.cssText='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
   dt=performance.now()-t0;
   stat();
 }
-function stat(){ /* 1ms mandate: p=parse d=draw */
-  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(kr?' r'+kr.toFixed(2):'')+'ms'+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
+function stat(){ /* 1ms mandate: p=parse d=draw s=key→shown r=key→echo(worked) */
+  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
   while(g.length<rows)g.push(newRow());
@@ -358,7 +359,7 @@ function key(e){
   }
   else return;
   e.preventDefault();
-  if(s.length===1)kt=performance.now();
+  if(s.length===1){kt=ks=performance.now();kf=1;}
   tx(s);
   if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);
 }
