@@ -553,7 +553,7 @@ static void _handle(int c){
                 "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
                 "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:18px/1.35 system-ui}h3{color:#fff;padding:14px 16px 6px;margin:0}"
                 ".r{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1a1a1a}.r:hover{background:#161616}"
-                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none}.r.x .t{color:#666}"
+                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none}.r.x .t{color:#666}.r.x .s:before{content:\"no txt\";color:#c33;margin-right:7px}"
                 ".c{flex:none;color:#999;text-decoration:none;font-size:18px}.s{flex:none;min-width:48px;text-align:right;color:#666;font:13px ui-monospace,monospace;text-transform:uppercase}.s a{color:#666;text-decoration:none}.s a:hover{color:#fff}"
                 ".h{position:sticky;top:0;background:#0b0b0b;color:#fff;font-weight:700;font-size:15px;letter-spacing:.09em;text-transform:uppercase;padding:16px 16px 5px;border-bottom:1px solid #1a1a1a}"
                 ".r.in{padding-left:30px}.nav{padding:4px 16px 10px;font-size:17px}.nav a{color:#888;text-decoration:none;margin-right:14px}.nav a.on{color:#fff;font-weight:600}"

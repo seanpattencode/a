@@ -836,7 +836,8 @@ r'''
 #endif
 /* a book — C list TUI (rules: adata/git/mem/tui.md); args or no tty → python half above via fallback_py. */
 static int bk_cmp(const void*a,const void*b){return strcasecmp((const char*)a,(const char*)b);}
-static char bk_nm[4096][128],bk_ad[4096][96],bk_ak[4096][96];   /* name + resolved author display/key */
+static void _bkfile(const char*,char*);   /* serve.c */
+static char bk_nm[4096][128],bk_ad[4096][96],bk_ak[4096][96],bk_has[4096];   /* name + resolved author display/key + has-txt */
 static int bk_srctag(const char*a){char b[64];int j=0;   /* download-source tag, not an author */
     for(const char*p=a;*p&&j<63;p++)if(isalnum((unsigned char)*p))b[j++]=(char)tolower((unsigned char)*p);b[j]=0;
     return strstr(b,"libgen")||strstr(b,"annasarchive")||strstr(b,"bokxyz")||strstr(b,"zlibrary")||!strcmp(b,"zlib");}
@@ -891,6 +892,7 @@ static int cmd_book(int argc,char**argv){
     if(!n){puts("x no books — a book add <file>");return 1;}
     qsort(nm,(size_t)n,128,bk_cmp);
     bk_resolve(nm,n);g_ak=bk_ak;   /* clean authors once; per-keypress reads stay O(1) */
+    for(int i=0;i<n;i++){char p[P];_bkfile(nm[i],p);bk_has[i]=(char)!access(p,R_OK);}   /* once: repaints stay syscall-free */
     char ft[64]="";int cur=0,fm=0,na=0,sm=0;static char arc[64][128];   /* sm: name|author sort */
     /* raw mode once (per-key reset would eat omnibox type-ahead) */
     struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSANOW,&rt);
@@ -912,7 +914,7 @@ static int cmd_book(int argc,char**argv){
         for(int i=p0;i<p0+ps&&i<nl;i++){
             if(Lb[i]<0){char h[128];const char*a=Lh[i];int j=0;for(;a[j]&&j<cols-3&&j<120;j++)h[j]=a[j]=='-'?' ':a[j];h[j]=0;
                 printf("\033[1;36m%s\033[0m\n",h);continue;}   /* author header */
-            char ln[280];snprintf(ln,280,"%s",nm[Lb[i]]);bk_mid(ln,cols-1);
+            char ln[280];snprintf(ln,280,"%s%s",nm[Lb[i]],bk_has[Lb[i]]?"":" [no txt]");bk_mid(ln,cols-1);
             printf(i==cur?"\033[7m%s\033[0m\n":"%s\n",ln);}
         if(!m)printf("no match: %s\n",ft);
         int cb=0;for(int i=0;i<=cur&&i<nl;i++)if(Lb[i]>=0)cb++;
@@ -966,7 +968,7 @@ static int cmd_book(int argc,char**argv){
             if(!rename(fr,to)){char cd[140];snprintf(cd,140,".%s",nm[i]);bk_cloudmv(nm[i],cd);
                 snprintf(arc[na<64?na:63],128,"%s",nm[i]);if(na<64)na++;
                 memmove(nm[i],nm[i+1],(size_t)(n-1-i)*128);   /* author arrays stay in lockstep */
-                memmove(bk_ad[i],bk_ad[i+1],(size_t)(n-1-i)*96);memmove(bk_ak[i],bk_ak[i+1],(size_t)(n-1-i)*96);n--;}}
+                memmove(bk_ad[i],bk_ad[i+1],(size_t)(n-1-i)*96);memmove(bk_ak[i],bk_ak[i+1],(size_t)(n-1-i)*96);memmove(bk_has+i,bk_has+i+1,(size_t)(n-1-i));n--;}}
     }
     tcsetattr(0,TCSANOW,&ot);
     printf("\033[H\033[2J");   /* exit receipts (tui.md rule 2): stat = ground truth, not memory of the rename */
