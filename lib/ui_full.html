@@ -41,7 +41,7 @@ __MY__
 </div>
 <div id=v_note class=v style="padding-top:20px;align-items:center">
   <form id=nf style="display:flex;flex-direction:column;gap:10px;width:95vw">
-    <textarea id=nc autofocus rows=1 placeholder="note — type, enter to save (shift-enter newline)" class=f style="width:100%;font-size:32px;padding:22px;box-sizing:border-box;resize:none;overflow:hidden" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();nf.requestSubmit()}"></textarea>
+    <textarea id=nc autofocus rows=1 placeholder="note — type, enter to save (shift-enter newline)" class=f style="width:100%;font-size:16px;padding:22px;box-sizing:border-box;resize:none;overflow:hidden" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();nf.requestSubmit()}"></textarea>
     <div style="display:flex;gap:10px">
       <button class=b type=submit style="flex:1">save</button>
       <button class=b type=button onclick="var n=0;ns.textContent='⟳ syncing…';fetch('/api/sync',{method:'POST'});var p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{if(t=='syncing')ns.textContent='⟳ syncing… '+(++n)+'s';else{clearInterval(p);ns.textContent='✓ synced '+t;fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h)}}),1000)">sync</button>
