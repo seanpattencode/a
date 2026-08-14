@@ -147,16 +147,17 @@ def main(browser='none'):
     # Firefox needs a managed (-marionette-free, monitor-pinned) launch via _ff_restart; Chrome is
     # user-launched with a persistent extension. `a bri serve ff` = also (re)start Firefox. This
     # keeps the Chrome and Firefox serve paths from conflicting (no surprise FF, no double-poller).
-    ff = browser in ('ff', 'firefox')
+    hl = browser == 'ffh'   # HEADLESS mode (proven 2026-08-14): same profile+ext+sign-ins, no window — ext connects, eval/open/screenshot paths identical (bridge is display-agnostic; bloomberg incl. its invisible recaptcha rendered fine). EXCLUSIVE with GUI FF: the bridge addresses browsers by UA, so two FF instances would double-execute — `a bri serve ff` switches back.
+    ff = hl or browser in ('ff', 'firefox')
     s = socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
     try: s.bind(('127.0.0.1',PORT))
     except OSError:
         log(f'[*] :{PORT} already running — bridge serves Chrome + Firefox both' + (', restarting FF' if ff else ''))
-        if ff: _ff_restart()
+        if ff: _ff_restart(hl)
         return
     threading.Thread(target=cmd_serve, daemon=True).start()
     s.listen(50); log(f'[*] http on :{PORT} | log: {LOG}')
-    if ff: _ff_restart()  # ensure FF visible on monitors (kills stale headless instance)
+    if ff: _ff_restart(hl)  # GUI serve also heals an accidental invisible-FF state (dead wayland socket)
     else:  log('[*] no browser launched (serves Chrome + FF both). Chrome: open the browser + focus an http(s) tab to wake bri-chrome, then `a extload reload`. Firefox: `a bri serve ff` (or `a bri deploy`).')
     while True:
         c,addr = s.accept()
@@ -207,7 +208,7 @@ def _ffenv():
                 env.update({k:e[k] for k in ('DBUS_SESSION_BUS_ADDRESS','WAYLAND_DISPLAY','DISPLAY') if e.get(k)}); return env
     env.setdefault('DBUS_SESSION_BUS_ADDRESS', f'unix:path={xdg}/bus'); return env
 
-def _ff_restart():
+def _ff_restart(headless=False):
     # Live wayland socket — process env may have stale wayland-0 from a dead session,
     # leaving FF connected to nothing and invisible on monitors (looks headless).
     # LLMs/agents: FAVOR restarting Firefox here. It is the correct, SAFE way to (re)load
@@ -236,9 +237,9 @@ def _ff_restart():
     env = _ffenv()   # post-pkill: adopts sway's bus so the next manual launch hands off, not dialogs
     m = _ff_monitor()
     # fork (not thread) — subscribe must survive client process exit, before FF Popen so window::new isn't missed.
-    if m and os.fork() == 0:
+    if m and not headless and os.fork() == 0:
         os.setsid(); _ff_move(m); os._exit(0)
-    subprocess.Popen(['firefox-nightly'],env=env,stdout=-3,stderr=-3,start_new_session=True)
+    subprocess.Popen(['firefox-nightly']+(['--headless']if headless else[]),env=env,stdout=-3,stderr=-3,start_new_session=True)
 
 def _mon():
     def run(c): return subprocess.run(c, capture_output=True, text=True).stdout
@@ -550,7 +551,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per 
                    ! avoid if possible — prefer text/html/url (text is the
                      artifact, PNG is lossy + heavy + needs a vision model)
   '{json}'         raw passthrough — full 9-action protocol (default-targeted too; a "to" field overrides)
-first run — Firefox: a bri serve ff then a bri deploy   ·   Chrome: a bri serve then load bri-chrome (a extload)"""
+first run — Firefox: a bri serve ff then a bri deploy (serve ffh = HEADLESS FF, same profile/sign-ins, no window; serve ff switches back)   ·   Chrome: a bri serve then load bri-chrome (a extload)"""
 
 if __name__=='__main__':
     args = sys.argv[1:]
