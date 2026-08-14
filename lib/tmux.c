@@ -6,10 +6,12 @@ static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_atta
     (void)!system("tmux list-clients -t '"TMS"' -F'#{client_pid} #{client_tty}' 2>/dev/null|while read p t;do g='"TMS"'-$p;tmux has-session -t \"$g\" 2>/dev/null||tmux new-session -d -t '"TMS"' -s \"$g\" 2>/dev/null;tmux switch-client -c \"$t\" -t \"$g\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
     tm_gc();
-    if(!system("tmux has-session -t '"TMS"' 2>/dev/null"))return;
+    if(system("tmux has-session -t '"TMS"' 2>/dev/null")){
     /* own scope: `a ui reload` cgroup-kill must not take tmux down; diag: my/tmuxlog.sh */
     (void)!system("{ command -v systemd-run >/dev/null 2>&1&&systemctl --user show-environment >/dev/null 2>&1&&Z='systemd-run --user --scope -q --'||Z=;"
-        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done'&&(a snap restore >/dev/null 2>&1 &);tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
+        "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
+    /* restore once per SERVER (@res dies with it) — raw creators (ssh tmux new -A -s a) no longer skip it; 2026-08-14: 7 agents lost */
+    (void)!system("tmux show -gv @res 2>/dev/null|grep -qx 1||{ tmux set -g @res 1;(a snap restore >>\"$HOME/a/adata/local/restore.log\" 2>&1 &);} 2>/dev/null");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
