@@ -66,11 +66,11 @@ while 1:
         threading.Thread(target=worker,daemon=True).start()
     elif cmd=="stop": stop.set()
 PY
-cmp -s $srv.tmp $srv 2>/dev/null && rm -f $srv.tmp || { mv $srv.tmp $srv; pkill -f a_dictate_srv.py 2>/dev/null; sleep .4; }
+cmp -s $srv.tmp $srv && rm -f $srv.tmp || { mv $srv.tmp $srv; pkill -f a_dictate_srv.py; sleep .4; }
 [ -p $R ] || { rm -f $R; mkfifo $R; }
 PD=$HOME/.cache/a_dictate/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8
 [ -d "$PD" ] || { python3 -c "import sherpa_onnx" 2>/dev/null || pip install -q sherpa-onnx; mkdir -p $HOME/.cache/a_dictate
   ( cd $HOME/.cache/a_dictate && wget -q https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2 && tar xf *.tar.bz2 && rm -f *.tar.bz2 ); }
-pgrep -f a_dictate_srv.py >/dev/null 2>&1 || setsid python3 $srv >$S.log 2>&1 </dev/null
+pgrep -f a_dictate_srv.py >/dev/null || setsid -f python3 $srv >$S.log 2>&1 </dev/null
 if [ -f $S.on ]; then rm -f $S.on; echo stop > $R
 else : > $S.on; echo start > $R; fi
