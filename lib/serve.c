@@ -1132,9 +1132,9 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     else{printf("> generating HTML...\n");_html_gen();_prompt_gen();
         if(!_shtml){puts("x HTML generation failed");return 1;}
         printf("+ %d bytes cached\n",_shlen);}
-    int fd=socket(AF_INET,SOCK_STREAM,0);
-    int one=1;setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&one,4);
-    struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port),.sin_addr={htonl(INADDR_ANY)}};
+    int fd=socket(AF_INET,SOCK_STREAM,0);fcntl(fd,F_SETFD,FD_CLOEXEC);
+    setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&(int){1},4);
+    struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port)};
     if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");free(_shtml);return 1;} /* lost the port race -> exit BEFORE any tmux touch, so N concurrent invokes can't stampede the dashboard bridge */
     listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
     /* dashboard bridge — only the serve that actually owns the port reaches here. hooks are idempotent; the bridge is a flock singleton (was a racy `kill -0 $(cat pidfile)` TOCTOU: N serves each saw "none" and spawned N bridges, each a tight `tmux wait-for` loop that under window churn floods the server with client connects and could kill it). the 50ms coalesce caps tmux client spawns at ~20/s no matter how fast the hooks fire. flock fd auto-releases on death (no stale-pid wedge); pidfile path kept as a fallback where flock is absent (e.g. mac). */
