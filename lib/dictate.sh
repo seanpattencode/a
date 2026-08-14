@@ -1,6 +1,7 @@
 # a dictate — live streaming dictation, macOS-style aggressive rewrite (Sean 2026-08-14: "rewrite aggressively, more than macos").
-# Two models: streaming fast-conformer types words ~0.5s behind speech; parakeet re-decodes the current phrase ~1s
-# cadence + at pauses, and the diff is REWRITTEN in place (backspace+retype) -> caps/punctuation/fixes sweep in behind you.
+# Two models: streaming fast-conformer types words ~0.5s behind speech — NEW text is never held back. Parakeet re-decodes
+# the current phrase and REWRITES in place (backspace+retype: caps/punct/fixes), but rewrites WAIT for a word-gap, >=3s
+# apart (5s cap) — mid-flow churn was distracting (Sean 2026-08-14). Pauses (endpoints) still finalize immediately.
 # Finalized phrases are never touched again; phrase = endpoint pause or 15s cap, so cost stays constant (old full-buffer
 # re-decode compounded: 4s/pass at 2min, text trailed 10s). Voice commands ride the streaming partials ("stop" acts ~0.5s).
 # Tap F5 or pad DICTATE: start/stop. a dictate bind: binds F5 (sway), synced. Models auto-download to ~/.cache/a_dictate.
@@ -34,7 +35,7 @@ stop=threading.Event()
 def worker():
     p=subprocess.Popen(["parec","--rate=16000","--channels=1","--format=s16le","--latency-msec=30"],stdout=subprocess.PIPE)
     nfy("🎤 dictation ON",0)
-    st=ON.create_stream();scr="";com="";Rf="";nR=0;ph=[];last=0.0;SESS=[];t0=time.localtime()
+    st=ON.create_stream();scr="";com="";Rf="";nR=0;nw=0;ph=[];last=lastw=0.0;SESS=[];t0=time.localtime()
     def sync(new):  # make screen match: backspace the differing tail, retype — never crosses into finalized text (com is always a shared prefix)
         nonlocal scr
         if new==scr:return
@@ -57,13 +58,14 @@ def worker():
         if Rf and tail and norm(tail[0])==norm(Rf.split()[-1]):tail=tail[1:]  # seam dedupe: models segment words differently
         sync((com+Rf+" "if Rf else com)+" ".join(tail))
         ac=sum(len(x)for x in ph)/16000
-        if cmd is None and ac-last>max(1.0,ac/8)and ac>1.2:  # adaptive cadence: long unpaused phrases refine less often
+        if len(hypw)>nw:nw=len(hypw);lastw=ac
+        if cmd is None and len(hypw)>nR and ac-last>3 and(ac-lastw>.35 or ac-last>5):  # rewrites wait for a word-gap; new text never does
             Rf=pk(ph);nR=len(hypw);last=ac
             sync(com+Rf)
         if(ON.is_endpoint(st)and ac>1.0)or ac>15 or cmd:
             fin=pk(ph)if ph else""
             if fin:sync(com+fin);com=com+fin+" ";SESS.append(fin)
-            Rf="";nR=0;ph=[];last=0.0;ON.reset(st)
+            Rf="";nR=0;nw=0;ph=[];last=lastw=0.0;ON.reset(st)
             if cmd=="enter":yd("key","-d","4","28:1","28:0");scr=com=com.rstrip()+"\n";SESS.append("\n")
             if cmd=="stop":break
     p.terminate()
