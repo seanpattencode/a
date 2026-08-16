@@ -27,12 +27,12 @@ if [ -d /data/data/com.termux ]; then
     deps; [ -z "$M" ] || { echo "+ installing say deps:$M"; pkg install -y $M; }
     deps; [ -z "$M" ] || { echo "x say deps failed:$M"; exit 1; }
     U=https://f-droid.org/en/packages/com.termux.api
-    pm path com.termux.api >/dev/null 2>&1 || { echo "x Termux:API app missing: $U"; [ "$T" = check ] || am start -a android.intent.action.VIEW -d "$U" >/dev/null; exit 1; }
+    /system/bin/pm path com.termux.api >/dev/null 2>&1 || { echo "x Termux:API app missing: $U"; [ "$T" = check ] || am start -a android.intent.action.VIEW -d "$U" >/dev/null; exit 1; }
     [ "$T" = check ] && { echo "✓ say deps: python + termux-api CLI/app"; exit; }
     [ -n "$P" ] && PM=$(python3 -c "print(2**($P/12))") || PM=0.48
     VN="${V:-en-gb-x-gbd-network}"
     # primary: APK HeadlessActivity → TTSService (lets us setVoice() for exact gbd-network)
-    if pm path com.spatten.ttsdumper >/dev/null 2>&1; then
+    if /system/bin/pm path com.spatten.ttsdumper >/dev/null 2>&1; then
         OUT=$(am start -n com.spatten.ttsdumper/.HeadlessActivity --es text "$T" --es voice "$VN" --ef pitch "$PM" 2>&1)
         # Android 12+ blocks background activity launches when termux is not foregrounded
         # (e.g. SSH'd in remotely). Only fall through to termux-tts-speak if that happened.
