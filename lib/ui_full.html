@@ -82,7 +82,7 @@ addEventListener('pointerdown',function(e){if(e.button||e.metaKey||e.ctrlKey||e.
 addEventListener('click',function(e){if(!e.isTrusted)return;if(e.target.closest(_act)&&!e.target.closest(_in)){e.stopImmediatePropagation();e.preventDefault();}},true);
 qi.onblur=function(){setTimeout(function(){if(document.activeElement===document.body)qi.focus()},0)};
 window.onfocus=function(){qi.style.borderColor='#555'};window.onblur=function(){qi.style.borderColor='#333'};
-var _cmds=__CMDS__,_cs=0;
+var _cmds=[__CMDS__],_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
 var PAGES=[['/bm','a bm'],['/feed','a feed'],['/p','a proj'],['/op','a op'],['/fw','a fleet'],['/dash','a dash'],['/stream','a stream'],['/cam','a cam'],['/dev','a devices'],['/jobs','a jobs'],['/note','a note'],['/tasks','a tasks'],['/flow','a flow'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs'],['/cloud','a cloud'],['/prompt','a prompt']];
