@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""a mail — Gmail DRAFTS via API: the draft lands complete (to/subject/body/attachments)
+"""a mail — write a Gmail draft, never send: the draft lands complete (to/subject/body/attachments)
 in Gmail web where Sean lives; he reviews there and presses Send. Nothing auto-sends.
 
 Why drafts and not SMTP: spatten2@fordham.edu is Workspace behind Fordham SAML SSO —

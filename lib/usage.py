@@ -1,4 +1,4 @@
-# a usage — Claude Max (all accounts) + Codex + grok limits, via the undocumented oauth endpoints the CLIs use.
+# a usage — Claude Max/Codex/grok limits (all accounts) via the undocumented oauth endpoints the CLIs use.
 # Claude Code holds ONE login (~/.claude/.credentials.json); each run snapshots the active account into
 # ~/.claude-<email-slug>/ (CLAUDE_CONFIG_DIR dirs too), kept alive by refresh (rotates the RT — the new
 # pair MUST be written back); a stale snapshot (x row) heals next time that account is active.

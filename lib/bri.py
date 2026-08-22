@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # experimental — promoted from my/auto/ after working end-to-end on Gemini + Claude.ai.
-"""bri — extension bridge via HTTP long-poll (bypasses page CSP: works on Gemini/Claude.ai/chatgpt
+"""bri — control Chrome/Firefox tabs: open, click, read, run JS. Extension bridge over HTTP long-poll (bypasses page CSP: works on Gemini/Claude.ai/chatgpt
 and other strict-CSP LLM UIs). :1234 HTTP (GET /poll next cmd, POST /resp results); :1235 push JSON.
 
 ONE page-side client per browser — two in one tab double-execute every command and interleave

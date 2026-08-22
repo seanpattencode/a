@@ -31,16 +31,25 @@ static void list_all(int cache, int quiet) {
         snprintf(cf,P,"%s/i_cache.txt",DDIR);unlink(cf);}
 }
 
+/* d/n's 1st comment/docstring → "≤4-word desc · t": clause-cut, no dangling stopword/punct; """ over # */
+static void d4(const char*d,const char*n,const char*t,char*o){char fp[P],l[256],c[256]="",*p,*s;snprintf(fp,P,"%s/%s",d,n);FILE*f=fopen(fp,"r");
+    for(int i=0;f&&i<3&&fgets(l,256,f);i++){int q=!strncmp(l,"\"\"\"",3);
+        if(q||(!*c&&((*l=='#'&&l[1]==' ')||(*l=='/'&&strchr("/*",l[1]))))){strcpy(c,l+2+q);if(q)break;}}
+    if(f)fclose(f);p=strstr(c," — ");p=p?p+5:(p=strstr(c," - "))?p+3:c;p+=strspn(p," *");
+    p[strcspn(p,":;(|\"\n")]=0;if((s=strstr(p,". ")))*s=0;{int w=4;s=p;while((s=strchr(s,' '))&&--w)s++;if(s)*s=0;}
+    {char*z=p+strlen(p);if(z>p&&strchr(",.",z[-1]))z[-1]=0;}
+    for(char b[24];(s=strrchr(p,' '))&&snprintf(b,24,"%s ",s)&&(s[1]<'!'||strstr(" a an and for in into of on the to via with ",b));)*s=0;
+    snprintf(o,128,"%s%s%s",p,*p?" · ":"",t);}
 static void gen_icache(void){
     load_proj();load_apps();load_cfg();load_sess();
-    char ic[P];snprintf(ic,P,"%s/i_cache.txt",DDIR);
+    char ic[P],ds[128];snprintf(ic,P,"%s/i_cache.txt",DDIR);
     FILE*f=fopen(ic,"w");if(!f)return;
     fputs("a\tdefault agent\n",f);
     {char bf[P];snprintf(bf,P,"%s/bookmarks.txt",SROOT);size_t bl;char*bd=readf(bf,&bl);if(bd){fwrite(bd,1,bl,f);if(bl&&bd[bl-1]!='\n')fputc('\n',f);free(bd);}}
-    int i; for(i=0;i<NPJ;i++){fprintf(f,"%d: %s\tproject\n",i,PJ[i].name);
+    int i;size_t hl=strlen(HOME);for(i=0;i<NPJ;i++){const char*pp=PJ[i].path;int th=!strncmp(pp,HOME,hl);fprintf(f,"%d: %s\tproject\tcd %.*s%s\n",i,PJ[i].name,th,"~",th?pp+hl:pp);
         DIR*sd=opendir(PJ[i].path);struct dirent*se;if(sd){while((se=readdir(sd)))if(se->d_name[0]!='.'&&se->d_type==DT_DIR)fprintf(f,"%s/%s\tdir\n",PJ[i].path,se->d_name);closedir(sd);}}
-    for(i=0;i<NAP;i++)fprintf(f,"%d: %s\tcmd\n",NPJ+i,AP[i].name);
-    for(i=0;i<NSE;i++)fprintf(f,"%s\t%s\n",SE[i].key,SE[i].name);
+    for(i=0;i<NAP;i++)fprintf(f,"%d: %s\tcmd\t%s\n",NPJ+i,AP[i].name,AP[i].cmd);
+    for(i=0;i<NSE;i++)fprintf(f,"%s\tnew %s window\n",SE[i].key,SE[i].name);
 #ifdef __ANDROID__
     {char af[P];snprintf(af,P,"%s/local/apps.txt",AROOT);
     size_t al;char*ad=readf(af,&al);if(ad){fwrite(ad,1,al,f);free(ad);}}
@@ -51,11 +60,8 @@ static void gen_icache(void){
     /* auto-discover lib .py — extract docstring desc */
     {char ld[P];snprintf(ld,P,"%s/lib",SDIR);DIR*d=opendir(ld);struct dirent*e;
     if(d){while((e=readdir(d))){char*dot=strrchr(e->d_name,'.');
-        if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;*dot=0;
-        char fp[P],desc[128]="";snprintf(fp,P,"%s/%s.py",ld,e->d_name);
-        FILE*pf=fopen(fp,"r");if(pf){char h[256];if(fgets(h,256,pf)){
-            char*s=strstr(h," - ");if(s){s+=3;s[strcspn(s,"\"\n")]=0;snprintf(desc,128,"%s",s);}}fclose(pf);}
-        fprintf(f,"%s\t%s\n",e->d_name,desc[0]?desc:"cmd");}closedir(d);}}
+        if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;d4(ld,e->d_name,"cmd",ds);*dot=0;
+        fprintf(f,"%s\t%s\n",e->d_name,ds);}closedir(d);}}
     /* auto-discover my + lab + repos scripts */
     {const char*sd[]={SROOT,SDIR};const char*sl[]={"my","lab"};
     for(int si=0;si<2;si++){char md[P];snprintf(md,P,"%s/%s",sd[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
@@ -63,7 +69,7 @@ static void gen_icache(void){
         char nm[64];snprintf(nm,64,"%s",e->d_name);char*dot=strrchr(nm,'.');
         if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;
         const char*tg=!si&&dot&&!strcmp(dot,".html")?"page":sl[si];if(!si&&dot)*dot=0;
-        fprintf(f,"%s\t%s\n",nm,tg);}closedir(d);}}
+        d4(md,e->d_name,tg,ds);fprintf(f,"%s\t%s\n",nm,ds);}closedir(d);}}
     /* repos: scan adata/repos/ scripts */
     {char rd[P];snprintf(rd,P,"%s/repos",AROOT);DIR*d=opendir(rd);struct dirent*re;
     if(d){while((re=readdir(d))){if(re->d_name[0]=='.')continue;
@@ -74,20 +80,20 @@ static void gen_icache(void){
                 char nm[64];snprintf(nm,64,"%s",se->d_name);*strrchr(nm,'.')=0;
                 fprintf(f,"%s\t%s · repo\n",nm,re->d_name);}}closedir(sd);}}closedir(d);}}}
     /* subcommands not discoverable from filenames */
-    fputs("scp\tsend file (tui pick file/host/dir)\n"
-    "diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\nq\ttail/search open windows\n"
-    "dash\tdashboard\nperf\tperformance\n"
+    fputs("scp\tsend file to host\n"
+    "diff\ttok diff vs main\ncat\twhole codebase as text\nfreq\tusage frequency\nq\ttail/search open windows\n"
+    "perf\tcmd time caps\n"
     "ui\tweb dashboard\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
-    "cal add\tadd event\nhub add\tadd\nhub run\trun\nhub rm\trm\nhub log\tlog\n"
-    "note\tnotes\nnote l\tlist\nnote r\treview\ntasks\ttasks\nssh add\tadd host\nssh all\tall hosts\n"
-    "task add\tadd\ntask l\tlist\ntask r\treview\ntask rank\trank\n"
-    "prompt\tdefault prompt\npow\tpower\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
-    "tutorial\tguided intro\noperator\toperator\n",f);
+    "cal add\tadd event\nhub add\tadd job\nhub run\trun job\nhub rm\tdrop job\nhub log\tjob logs\n"
+    "note\tnotes\nnote l\tlist notes\nnote r\treview notes\nssh add\tadd host\nssh all\twindow per host\n"
+    "task add\tadd task\ntask l\tlist tasks\ntask r\treview tasks\ntask rank\trank tasks\n"
+    "prompt\tedit prompts\npow\tpower off/restart\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
+    "tutorial\tguided intro\noperator\tenglish → command\n",f);
     char sd[P];snprintf(sd,P,"%s/ssh",SROOT);
     char sp[32][P];int sn=listdir(sd,sp,32);
-    for(i=0;i<sn;i++){kvs_t kv=kvfile(sp[i]);const char*nm=kvget(&kv,"Name");
-        if(nm)fprintf(f,"ssh %s\thost\n",nm);}
+    for(i=0;i<sn;i++){kvs_t kv=kvfile(sp[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
+        if(nm)fprintf(f,"ssh %s\t%s%shost\n",nm,ho?ho:"",ho?" · ":"");}
 #ifdef __APPLE__
     {const char*ad[]={"/Applications","/System/Applications"};
     for(int di=0;di<2;di++){DIR*d=opendir(ad[di]);if(!d)continue;struct dirent*e;

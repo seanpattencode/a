@@ -1,5 +1,5 @@
 # experimental
-"""a ios [sim] — build+install+launch+shot the a iOS app (WKWebView on `a serve`). One file, no xcodeproj:
+"""a ios [sim] — build+install the iPhone app, then launch+shot it (WKWebView on `a serve`). One file, no xcodeproj:
 swiftc + hand-built bundle + codesign, 3s. UDID/IP/cert/profile auto-found. Profile: mint once in Xcode, 7-day life."""
 import os,sys,glob,plistlib,subprocess as s
 R=os.path.expanduser("~/a/adata/local/ios");A=R+"/aios.app";B="com.seanpatten.aios"

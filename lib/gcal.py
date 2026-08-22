@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""a cal g — Google Calendar via service account (headless: no OAuth consent screens, no 7-day token expiry).
+"""a cal g — Google Calendar agenda via service account (headless: no OAuth consent screens, no 7-day token expiry).
   a cal g [days]        agenda, default 7 days, merged from every calendar the SA can see
   a cal g add <text..>  quickAdd natural language ('lunch with Ilir Tue 2pm') into the first writable calendar
   a cal g setup         print the one-time Google Cloud recipe + this SA's email

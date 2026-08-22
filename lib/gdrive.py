@@ -1,4 +1,4 @@
-"""aio gdrive"""
+"""a gdrive — Google Drive via rclone: cp/mv/get/ls/backup/migrate"""
 import sys,os,subprocess as sp,json
 from _common import cloud_login,cloud_logout,cloud_sync,_configured_remotes,RCLONE_BACKUP_PATH,DATA_DIR,SYNC_ROOT,DEVICE_ID,alog,get_rclone
 from sync import cloud_sync as cloud_sync_tar

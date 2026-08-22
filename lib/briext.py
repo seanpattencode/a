@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""a briext  —  ONE script that generates BOTH browser extensions (Firefox MV2 + Chrome MV3)
+"""a briext — build both browser extensions, one script (Firefox MV2 + Chrome MV3)
 into adata/local/ext/ on demand. Mirrors `a apk`: single source file, makes the folder tree.
 Shared payload (instant-preload, pageflip, icons) is defined ONCE here so the two cannot drift.
   a briext           generate -> adata/local/ext/{bri-ext,bri-chrome}, print load paths
