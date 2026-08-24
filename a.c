@@ -252,6 +252,7 @@ install)
     [[ -f "$E/e.c" ]] || git clone https://github.com/seanpattencode/e "$E" 2>/dev/null || :
     [[ -f "$E/e.c" ]] && sh "$E/e.c" install || :
     _shell_funcs
+    [[ "$OS" == debian || "$OS" == arch || "$OS" == fedora ]] && { mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps; printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12"/><text x="32" y="50" font-family="monospace" font-size="52" fill="#fff" text-anchor="middle">a</text></svg>' >~/.local/share/icons/hicolor/scalable/apps/a.svg; printf '[Desktop Entry]\nType=Application\nName=a\nComment=agent manager\nExec=a\nTerminal=true\nIcon=a\nCategories=Development;\n' >~/.local/share/applications/a.desktop; ok "app icon"; }  # launcher icon so users SEE a exists (Sean 2026-08-23); mac/windows next
     install_cli() {
         local pkg="$1" cmd="$2" p=$(command -v "$cmd" 2>/dev/null)
         [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && "$cmd" --version &>/dev/null && { ok "$cmd"; return; }
