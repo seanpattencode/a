@@ -1055,20 +1055,19 @@ function startContinuousDebugMonitoring() {
 "pageflip.js": r'''// pageflip — discrete viewport paging, SHARED by both extensions (FF bri-ext + Chrome bri-chrome). Wheel/Down=next, Up=prev (one notch/tap).
 // Universal step: detects the scroll container (window, or a large inner scrollable div) and the obscured
 // top/bottom band (fixed/sticky bars) via pixel probes re-run each flip — so sticky / hide-on-scroll headers
-// never skip content, on any site. ▲▼ buttons; skips text fields; toggle chrome.storage.sync.pageflip (default off).
+// never skip content, on any site. Skips text fields; toggle chrome.storage.sync.pageflip (default off).
 // Single source: lib/briext.py generates both — edit there, then `a briext`.
 (()=>{
   if(window.__pf)return; window.__pf=1;
   document.documentElement.style.scrollBehavior='auto';
-  let zones=[],active=false;
+  let active=false;
   const cx=()=>Math.round(innerWidth/2);
   // px obscured by pinned fixed/sticky bars from the top edge (fromTop=1) or bottom (0): first pixel showing flowing content.
   const obsc=fromTop=>{const lim=Math.floor(innerHeight*0.5);for(let i=0;i<lim;i+=4){const y=fromTop?i:innerHeight-1-i;
-    const st=document.elementsFromPoint(cx(),y);if(!st.length)return i;
-    const t=st.find(e=>!(e.classList&&e.classList.contains('__pf_btn')));if(!t)return i;
+    const st=document.elementsFromPoint(cx(),y);const t=st[0];if(!t)return i;
     const p=getComputedStyle(t).position;if(p!=='fixed'&&p!=='sticky')return i; // flowing content → edge is clear
     // fixed/sticky obscures only if scrollable content sits behind it (else it's an in-flow sticky block, not a bar)
-    if(!st.slice(st.indexOf(t)+1).some(e=>{const q=getComputedStyle(e).position;return q!=='fixed'&&q!=='sticky';}))return i;}return 0;};
+    if(!st.slice(1).some(e=>{const q=getComputedStyle(e).position;return q!=='fixed'&&q!=='sticky';}))return i;}return 0;};
   // scroll container: window (null) unless the document itself doesn't scroll and a large inner element does.
   const scr=()=>{const se=document.scrollingElement||document.documentElement;if(se&&se.scrollHeight>se.clientHeight+2)return null;
     let best=null,ba=0;for(const el of document.querySelectorAll('div,main,section,article,ul')){if(el.scrollHeight<=el.clientHeight+8)continue;
@@ -1080,12 +1079,9 @@ function startContinuousDebugMonitoring() {
   let lw=0;  // wheel = one flip per notch; 200ms cooldown tames momentum wheels/trackpads. ctrl+wheel(zoom), horizontal, fields stay native.
   const onwheel=e=>{if(e.ctrlKey||!e.deltaY||infld(e.target))return;e.preventDefault();
     const n=performance.now();if(n-lw>200){lw=n;go(e.deltaY>0?1:-1);}};
-  const mk=(l,d,b)=>{const e=document.createElement('div');e.textContent=l;e.className='__pf_btn';
-    e.style.cssText=`position:fixed;right:12px;bottom:${b}px;width:52px;height:52px;z-index:2147483647;display:flex;align-items:center;justify-content:center;font:26px sans-serif;background:#000a;color:#fff;border-radius:11px;user-select:none;cursor:pointer`;
-    e.addEventListener('pointerdown',ev=>{go(d);ev.preventDefault();});document.body.appendChild(e);return e;};
   const apply=on=>{
-    if(on&&!active){active=true;addEventListener('keydown',onkey,true);addEventListener('wheel',onwheel,{passive:false,capture:true});zones=[mk('▲',-1,74),mk('▼',1,14)];}
-    else if(!on&&active){active=false;removeEventListener('keydown',onkey,true);removeEventListener('wheel',onwheel,true);zones.forEach(z=>z.remove());zones=[];}};
+    if(on&&!active){active=true;addEventListener('keydown',onkey,true);addEventListener('wheel',onwheel,{passive:false,capture:true});}
+    else if(!on&&active){active=false;removeEventListener('keydown',onkey,true);removeEventListener('wheel',onwheel,true);}};
   chrome.storage.sync.get('pageflip',d=>apply(d.pageflip));
   chrome.storage.onChanged.addListener(c=>c.pageflip&&apply(c.pageflip.newValue));
 })();
@@ -1172,7 +1168,9 @@ FF={
 // tabs.sendMessage (message handlers fire even in throttled tabs); each frame's reply is
 // POSTed to /resp with the command id. open/screenshot are handled HERE (no fan-out).
 const POLL = 'http://127.0.0.1:1234/poll', RESP = 'http://127.0.0.1:1234/resp';
-const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(d)}).catch(()=>{});
+let BRI_CHAN = 'firefox';   // exact channel — UA is frozen ('Firefox/152.0') and hides Nightly; getBrowserInfo isn't
+try { browser.runtime.getBrowserInfo().then(i => { let c = /a\d/.test(i.version)?'nightly':/b\d/.test(i.version)?'beta':(i.buildID||'').startsWith('2010')?'release':'build'; BRI_CHAN = 'firefox-'+c+'/'+i.version; }).catch(()=>{}); } catch(e) {}
+const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({chan:BRI_CHAN, ...d})}).catch(()=>{});
 
 // open+focus a tab — deduped so a broadcast opens ONE tab (or focuses an existing one).
 // Match by NORMALIZED url (origin+path, no trailing slash / query / hash): real pages mutate their
@@ -1220,7 +1218,7 @@ async function run(cmd) {
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
   if (cmd.action === 'tabs') {   // list ALL tabs incl. error/discarded ones content scripts can't see
-    try { return post({id, src:'background', ok:true, value:(await browser.tabs.query({})).filter(t=>!cmd.match||(t.url||'').includes(cmd.match)).map(t=>[t.id, t.discarded?'discarded':t.status, (t.url||'').slice(0,200), (t.title||'').slice(0,60)])}); }
+    try { return post({id, src:'background', ok:true, value:(await browser.tabs.query({})).filter(t=>!cmd.match||(t.url||'').includes(cmd.match)).map(t=>[t.id, t.windowId, t.discarded?'discarded':t.status, (t.url||'').slice(0,200), (t.title||'').slice(0,60)])}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
   if (cmd.action === 'closeall') {   // close EVERY tab whose url contains cmd.match (batch job cleanup; match required)
@@ -1246,7 +1244,7 @@ async function run(cmd) {
 // the one poll loop — re-registers immediately, runs the command without blocking the next poll
 async function loop() {
   let r;
-  try { r = await fetch(POLL); } catch (e) { setTimeout(loop, 1500); return; }
+  try { r = await fetch(POLL, {headers:{'X-Bri-Chan':BRI_CHAN}}); } catch (e) { setTimeout(loop, 1500); return; }
   if (r.status === 200) {
     let cmd = null; try { cmd = await r.json(); } catch (e) {}
     loop();                       // re-register the poll before dispatching
@@ -1365,7 +1363,7 @@ button:hover{background:#444}
 <label><input type=checkbox id=enablePrerender> Enable prerender (full page load)</label>
 <label><input type=checkbox id=debugNotifications> Debug notifications</label>
 <label><input type=checkbox id=debugMode> Debug mode (console + overlay)</label>
-<label><input type=checkbox id=pageflip> Pageflip — wheel/↓ next page, ↑ prev (one notch/tap), ▲▼ buttons</label>
+<label><input type=checkbox id=pageflip> Pageflip — wheel/↓ next page, ↑ prev (one notch/tap)</label>
 <label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
 <label><input type=checkbox id=clickdown2> Clickdown+ — also press-open JS/role=link nav (Amazon/Google); buttons excluded</label>
 <div id=stat></div>
@@ -1452,7 +1450,7 @@ CH={
 const RESP='http://127.0.0.1:1234/resp';
 // keepalive:true lets the POST finish even if the SW is torn down the instant after (fire-and-forget from a
 // dying worker otherwise aborts — this is why every earlier diagnostic vanished). Learned from claude-in-chrome.
-const post=d=>fetch(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d),keepalive:true}).catch(()=>{});
+const post=d=>fetch(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chan:'chrome',...d}),keepalive:true}).catch(()=>{});
 post({sw:'top',off:typeof chrome.offscreen});  // DIAG: SW ran + can reach :1234; reports if chrome.offscreen exists
 
 // DISPATCH runs IN the target tab (ISOLATED world) via executeScript(func,args): pure fn of the command,
@@ -1506,7 +1504,7 @@ async function execCmd(cmd){
   try{
     if(cmd.action==='screenshot')return post({id,src:'sw',ok:true,value:await chrome.tabs.captureVisibleTab({format:cmd.format||'png'})});
     if(cmd.action==='open')return post({id,src:'sw',ok:true,value:await openTab(cmd.url,cmd.bg)});
-    if(cmd.action==='tabs')return post({id,src:'sw',ok:true,value:(await chrome.tabs.query({})).filter(t=>!cmd.match||(t.url||'').includes(cmd.match)).map(t=>[t.id,t.discarded?'discarded':t.status,(t.url||'').slice(0,200),(t.title||'').slice(0,60)])});
+    if(cmd.action==='tabs')return post({id,src:'sw',ok:true,value:(await chrome.tabs.query({})).filter(t=>!cmd.match||(t.url||'').includes(cmd.match)).map(t=>[t.id,t.windowId,t.discarded?'discarded':t.status,(t.url||'').slice(0,200),(t.title||'').slice(0,60)])});
   }catch(e){return post({id,src:'sw',error:String(e)});}
   // target: tabs whose url contains cmd.host, else the active tab of each window (never a hidden background tab)
   let tabs=(await chrome.tabs.query({})).filter(t=>t.url&&/^https?:/.test(t.url));
@@ -1558,7 +1556,7 @@ fetch(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.
 setInterval(()=>chrome.runtime.sendMessage({bri:'ka'}).catch(()=>{}),20000);
 async function loop(){
   for(;;){
-    let r; try{r=await fetch(POLL);}catch(e){await new Promise(s=>setTimeout(s,1500));continue;}
+    let r; try{r=await fetch(POLL,{headers:{'X-Bri-Chan':'chrome'}});}catch(e){await new Promise(s=>setTimeout(s,1500));continue;}
     if(r.status===200){let c=null;try{c=await r.json();}catch(e){} if(c)chrome.runtime.sendMessage({bri:'cmd',cmd:c}).catch(()=>{});}
   }
 }
@@ -1572,7 +1570,7 @@ loop();
 <label><input type=checkbox id=enablePrerender> Instant preload — prerender links on hover (speculation rules)</label>
 <label><input type=checkbox id=debugNotifications> Debug notifications — popup on each preload</label>
 <label><input type=checkbox id=debugMode> Debug mode — console logging + on-page overlay</label>
-<label><input type=checkbox id=pageflip> Pageflip — wheel/Down=next page, Up=prev (one notch/tap), ▲▼ buttons</label>
+<label><input type=checkbox id=pageflip> Pageflip — wheel/Down=next page, Up=prev (one notch/tap)</label>
 <label><input type=checkbox id=clickdown> Clickdown — open links on press, before release (faster; most sites)</label>
 <label><input type=checkbox id=clickdown2> Clickdown+ — also press-open JS/role=link nav (Amazon/Google); buttons excluded</label>
 <p><small>Changes take effect immediately, no reload.</small></p>

@@ -61,6 +61,10 @@ def _ua(head):  # extract User-Agent from the raw HTTP request head (bytes)
     for h in head.split(b'\r\n'):
         if h.lower().startswith(b'user-agent:'): return h.split(b':', 1)[1].decode(errors='replace').strip()
     return ''
+def _chan(head):  # exact browser channel the ext self-reports (X-Bri-Chan) — UA is frozen, hides Nightly/Canary
+    for h in head.split(b'\r\n'):
+        if h.lower().startswith(b'x-bri-chan:'): return h.split(b':', 1)[1].decode(errors='replace').strip()
+    return ''
 
 def log(*a):
     line = ' '.join(str(x) for x in a)
@@ -79,7 +83,7 @@ def handle(c, addr):
     head, _, rest = req.partition(b'\r\n\r\n')
     method, path, *_ = (head.split(b'\r\n',1)[0].decode(errors='replace').split() + ['',''])
     if method == 'GET' and path == '/poll':
-        q = queue.Queue(); entry = (q, _bid(_ua(head))); pollers.append(entry)   # remember which browser this poller is
+        q = queue.Queue(); entry = (q, _chan(head) or _bid(_ua(head))); pollers.append(entry)   # remember which exact browser this poller is
         try: cmd = q.get(timeout=25)
         except Exception: cmd = None
         try: pollers.remove(entry)
@@ -99,7 +103,7 @@ def handle(c, addr):
         m = body.decode(errors='replace')
         log(f'<< {m}')
         try:
-            obj = json.loads(m); obj['br'] = _bid(_ua(head)); m = json.dumps(obj)   # tag which browser/version answered
+            obj = json.loads(m); obj['br'] = obj.get('chan') or _chan(head) or _bid(_ua(head)); m = json.dumps(obj)   # tag which exact browser answered
             rid = obj.get('id')
             if rid in pending: pending[rid].put(m)
         except Exception: pass
@@ -128,16 +132,16 @@ def cmd_serve():
         conn = ', '.join(sorted({b for _,b in pollers})) or 'none'
         if rid is not None: pending[rid] = queue.Queue()
         for q,_b in tq: q.put(msg)
+        err = '' if tq else f'no {tgt} client (connected: {conn}). FF ext: a bri deploy'
         if rid is None:
-            hint = '' if tq else f'  → no {tgt} client (connected: {conn}). FF ext: a bri deploy\n'
-            c.send(f'sent to {len(tq)}/{len(pollers)} pollers (target={tgt}; connected: {conn})\n{hint}'.encode())
+            c.send((f'sent to {len(tq)}/{len(pollers)} pollers (target={tgt}; connected: {conn})\n'+(f'  → {err}\n' if err else '')).encode())
         else:
             out, end = [], time.time()+8
-            while time.time() < end:
+            while not err and time.time() < end:   # msg was queued to zero pollers: waiting out the 8s can only ever return nothing
                 try: out.append(pending[rid].get(timeout=min(1.5,end-time.time()) if out else end-time.time()))
                 except Exception: break
             del pending[rid]
-            c.send(('\n'.join(out) or '{"error":"no response"}').encode()+b'\n')
+            c.send(('\n'.join(out) or json.dumps({'error': err or 'no response'})).encode()+b'\n')
         c.close()
 
 def main(browser='none'):
@@ -394,7 +398,7 @@ def client(args):
         rs = _send({'action': 'tabs', 'match': args[1] if len(args) > 1 else ''}, to if to_exp else 'all')
         n = 0
         for r in rs:
-            for i, st, u, ti in (r.get('value') or []): n += 1; print(f'{r.get("br","?").split("/")[0]:<8}{i:>4} {st:<10} {u}  [{ti}]')
+            for i, w, st, u, ti in (r.get('value') or []): n += 1; print(f'{(r.get("chan") or r.get("br","?")):<23} w{w:<3}{i:>4} {st:<9} {u}  [{ti}]')
         if not n: sys.stderr.write(f'x no tab rows [answered: {", ".join(sorted({r["br"] for r in rs if r.get("br")})) or "none"} — browser ext missing the tabs action? a briext + browser restart deploys it]\n'); sys.exit(1)
         return
     if a == 'grabs':  # full innerText of EVERY tab matching <match> (grab = one best tab), ==== <url> headers
@@ -509,18 +513,13 @@ def client(args):
                     open(out,'wb').write(base64.b64decode(v.split(',',1)[1]))
                     print(out); return
             sys.stderr.write('x no image returned (ext loaded? a bri deploy)\n'); sys.exit(1)
-        else:
-            sys.stderr.write("bri <url> | text [sel] | click <sel> | type <sel> <text> | keys <sel> <key> | url | deploy | restart | mon | '{json}'\n"
-                "  deploy:  rebuild lib/bri-ext xpi + restart Firefox\n"
-                "  restart: quit + relaunch Firefox Nightly (clears tab leaks)\n"
-                "  mon:     bri.py + Firefox CPU/RAM/tabs snapshot\n"
-                "  raw {json} supports all 9 actions + custom fields — use for "
-                "eval/wait/html or any control the shortcuts hide.\n"); sys.exit(1)
+        else: sys.stderr.write(MENU+'\n'); sys.exit(1)   # one maintained list, not a second stale copy
         if to != 'all': j['to'] = to   # CLI targets firefox by default; @all (or BRI_TO=all) broadcasts to every browser
         msg = json.dumps(j)
-    s = _sock()
-    s.sendall((msg+'\n').encode())
-    while (ch := s.recv(1<<16)): sys.stdout.write(ch.decode(errors='replace'))
+    s = _sock(); s.sendall((msg+'\n').encode()); r = b''
+    while (ch := s.recv(1<<16)): r += ch
+    sys.stdout.write(r.decode(errors='replace'))
+    sys.exit(r.startswith(b'{"error"'))   # rc, not just text: hub jobs and scripts cannot see a dead target otherwise
 
 MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per cmd: firefox default, @chrome/@all prefix retargets
   serve [ff]       start bridge (:1234 http, :1235 cmd) — serves Chrome+FF both; add 'ff' to also launch Firefox on monitor
