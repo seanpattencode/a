@@ -7,15 +7,14 @@ static void alog(const char *cmd, const char *cwd) {
         tm->tm_year+1900, tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec,
         ts.tv_nsec / 1000000, DEV);
     FILE *f = fopen(lf, "w");
-    if (!f) { mkdirp(dir); f = fopen(lf, "w"); if (!f) return; }  /* month rollover: mkdir only on miss, hot path stays one open */
+    if (!f) { mkdirp(dir); f = fopen(lf, "w"); if (!f) return; }  /* mkdir only on month rollover */
     const char *sid = getenv("ASID");
     fprintf(f, "%02d/%02d %02d:%02d %s %s %s%s%s\n",
         tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min,
         DEV, cmd, cwd, sid?" sid:":"", sid?sid:"");
     fclose(f);
-    /* monthly shards (2026-08): one flat 313k-entry activity tree = 18.6MB tree object rewritten per sync
-       -> every git object walk took minutes. throttled bg prune: skip-worktree + rm month dirs older than
-       previous month (keeps git history; *T* skips any pre-shard flat files until migrated). */
+    /* monthly shards (2026-08): flat 313k-file tree = 18.6MB tree object per sync commit, walks took minutes.
+       bg prune 1/day: skip-worktree+rm months older than prev (*T* = pre-shard flat files, skip). */
     char mk[P]; snprintf(mk,P,"%s/git/activity/.last_prune",AROOT);
     struct stat st; if(stat(mk,&st)==0 && t-st.st_mtime<86400) return;
     fclose(fopen(mk,"w"));
