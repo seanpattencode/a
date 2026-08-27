@@ -15,11 +15,15 @@ static int tok_rule(const char *cwd, char *v, int vsz) {
     { char tr[512]; pcmd(c,tr,(int)sizeof(tr)); char *pl=strstr(tr,"paths="),*mc=strstr(tr,"module=");
       if(pl){ pl+=6; size_t i=0; while(pl[i]&&pl[i]!='\n'&&i<255){paths[i]=pl[i];i++;} paths[i]=0; }
       if(mc) modcap=atol(mc+7);
-      char *tc=strstr(tr,"total=");   /* total= repo-wide cap (tracked bytes/4) — the entropy deadman, enforced at push too */
-      if(tc){ long totcap=atol(tc+6);
+      char *tc=strstr(tr,"total="),*rp=strstr(tr,"ramp=");   /* total= repo-wide cap (tracked bytes/4) — the entropy deadman, enforced at push too. ramp=<start> <target> <from> <to>: cap lowers an equal % per whole day from start to target, holds after (twin: ~/i lib/tokcap) */
+      if(tc){ long totcap=atol(tc+6),rs,rt; int y0,m0,d0,y1,m1,d1;
+        if(rp&&sscanf(rp+5,"%ld %ld %d-%d-%d %d-%d-%d",&rs,&rt,&y0,&m0,&d0,&y1,&m1,&d1)==8){
+          struct tm ta={0},tb={0}; ta.tm_year=y0-1900;ta.tm_mon=m0-1;ta.tm_mday=d0;ta.tm_isdst=-1;tb.tm_year=y1-1900;tb.tm_mon=m1-1;tb.tm_mday=d1;tb.tm_isdst=-1;
+          long dn=(long)(difftime(mktime(&tb),mktime(&ta))/86400),de=(long)(difftime(time(0),mktime(&ta))/86400); double f=dn>0?(de<0?0:de>dn?1:(double)de/dn):1;
+          snprintf(c,B,"awk -v s=%ld -v t=%ld -v f=%.6f 'BEGIN{printf \"%%d\",s*(t/s)^f+.5}'",rs,rt,f); pcmd(c,o,64); if(atol(o)>0) totcap=atol(o); }
         snprintf(c,B,"cd \"$(cd '%s'&&git rev-parse --show-toplevel)\"&&git ls-files -z|xargs -0 cat 2>/dev/null|wc -c",cwd);
         pcmd(c,o,64); long tt=atol(o)/4;
-        if(totcap&&tt>totcap&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  TOTAL  repo %ld tok > cap %ld (.tokrule total=)\n",tt,totcap);n++;} } }
+        if(totcap&&tt>totcap&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  TOTAL  repo %ld tok > cap %ld (.tokrule total=/ramp=)\n",tt,totcap);n++;} } }
     char list[B*4];
     snprintf(c,B,"cd '%s'&&{ git diff --name-only %s -- %s 2>/dev/null;git ls-files --others --exclude-standard -- %s 2>/dev/null; }|sort -u",cwd,br,paths,paths);
     pcmd(c,list,(int)sizeof(list));
@@ -192,7 +196,7 @@ static int cmd_diff(int argc, char **argv) { AB;
                 else if (dl[0]=='-' && dl[1]!='-') db_ += l-1;
             } pclose(dp); }
             int tok = (ab - db_) / 4; total += tok;
-            if (strlen(msg) > 55) { msg[52]='.'; msg[53]='.'; msg[54]='.'; msg[55]=0; }
+            if(strlen(msg)>55)strcpy(msg+52,"...");
             printf("  %d  %s  %+6d  %s\n", i++, ts, tok, msg);
         }
         pclose(fp); printf("\nTotal: %+d tokens\n", total); return 0;
@@ -233,9 +237,8 @@ static int cmd_diff(int argc, char **argv) { AB;
         char ut[B],uc[B];snprintf(uc,B,"git ls-files --others --exclude-standard 2>/dev/null%s",ps);pcmd(uc,ut,B);
         if(ut[0]){printf("\nUntracked:\n");char*p=ut;while(*p){char*e=strchr(p,'\n');if(e)*e=0;if(*p){
             printf("  \033[48;2;26;84;42m+ %s\033[0m\n",p);size_t sz;char*d=readf(p,&sz);
-            if(d){int nl=1;for(size_t j=0;j<sz;j++)if(d[j]=='\n')nl++;FS(p);if(cf>=0){fs[cf].al=nl;fs[cf].ab=(int)sz;}free(d);}
+            if(d){FS(p);if(cf>=0){fs[cf].ab=(int)sz;for(char*q=d;*q;){char*n2=strchr(q,'\n');if(n2)*n2=0;fs[cf].al++;if(filt)printf("  \033[48;2;26;84;42m+ %s\033[0m\n",q);if(!n2)break;q=n2+1;}}free(d);}
         }if(e)p=e+1;else break;}}
-        if(wt&&!nf){puts("No changes");return 0;}
         {char c[B],o[32];snprintf(c,B,"git ls-tree -r -l '%s' 2>/dev/null|awk '{s+=$4}END{print s}'",tgt);pcmd(c,o,32);ws=atol(o);}
     }
     for(int j=0;j<nf;j++){struct stat st;if(!stat(fs[j].name,&st))fs[j].sb=(int)st.st_size-fs[j].ab+fs[j].db;}
