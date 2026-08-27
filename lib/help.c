@@ -114,9 +114,9 @@ static void gen_icache(void){
 #endif
     fclose(f);
     if(!fork()){char ad[P],fp2[P],ln[256];snprintf(ad,P,"%s/git/activity",AROOT);
-        DIR*d=opendir(ad);if(!d)_exit(0);FC ct[1024];int nc=0;struct dirent*e;
-        while((e=readdir(d))){if(e->d_name[0]=='.')continue;
-            snprintf(fp2,P,"%s/%s",ad,e->d_name);int fd=open(fp2,O_RDONLY);if(fd<0)continue;
+        char fc[P+64];snprintf(fc,sizeof(fc),"find '%s' -maxdepth 2 -name '*_*.txt' 2>/dev/null",ad);
+        FILE*d=popen(fc,"r");if(!d)_exit(0);FC ct[1024];int nc=0;
+        while(fgets(fp2,P,d)){fp2[strcspn(fp2,"\n")]=0;int fd=open(fp2,O_RDONLY);if(fd<0)continue;
             int r=(int)read(fd,ln,255);close(fd);if(r<=0)continue;ln[r]=0;
             char*p=ln;for(int j=0;j<3&&*p;j++){while(*p&&*p!=' ')p++;while(*p==' ')p++;}
             char*end=p;while(*end&&*end!=' '&&*end!='\n')end++;
@@ -124,7 +124,7 @@ static void gen_icache(void){
             *end=0;if(!*p)continue;
             int j;for(j=0;j<nc;j++)if(!strcmp(ct[j].n,p)){ct[j].c++;break;}
             if(j==nc&&nc<1024){snprintf(ct[nc].n,64,"%s",p);ct[nc].c=1;nc++;}}
-        closedir(d);qsort(ct,(size_t)nc,sizeof(ct[0]),ctcmp);
+        pclose(d);qsort(ct,(size_t)nc,sizeof(ct[0]),ctcmp);
         snprintf(fp2,P,"%s/freq_cache.txt",DDIR);
         FILE*ff=fopen(fp2,"w");if(ff){for(int j=0;j<nc;j++)if(ct[j].c>1)fprintf(ff,"%s:%d\n",ct[j].n,ct[j].c);fclose(ff);}  /* c==1 = one-shot noise: pollutes ranking + triples scoring buckets */
         {snprintf(fp2,P,"%s/web_cache.txt",DDIR);

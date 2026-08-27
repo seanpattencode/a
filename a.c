@@ -439,11 +439,11 @@ static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
     for(int i=2;i<c;i++){if(!strcmp(v[i],"-v"))vb=1;else if(*v[i]>='0'&&*v[i]<='9')n=atoi(v[i]);}
     char ad[P];snprintf(ad,P,"%s/git/activity",AROOT);
-    DIR*d=opendir(ad);if(!d){puts("x no activity log");return 1;}
+    char fc[P+64];snprintf(fc,sizeof(fc),"find '%s' -maxdepth 2 -name '*_*.txt' 2>/dev/null",ad);
+    FILE*d=popen(fc,"r");if(!d){puts("x no activity log");return 1;}
     FC ct[1024];int nc=0;
-    struct dirent*e;char fp[P],ln[256];
-    while((e=readdir(d))){if(e->d_name[0]=='.')continue;
-        snprintf(fp,P,"%s/%s",ad,e->d_name);
+    char fp[P],ln[256];
+    while(fgets(fp,P,d)){fp[strcspn(fp,"\n")]=0;
         int fd=open(fp,O_RDONLY);if(fd<0)continue;
         int r=(int)read(fd,ln,255);close(fd);if(r<=0)continue;ln[r]=0;
         char*p=ln;for(int i=0;i<3&&*p;i++){while(*p&&*p!=' ')p++;while(*p==' ')p++;}
@@ -454,7 +454,7 @@ static int cmd_freq(int c,char**v){perf_disarm();
         *end=0;
         int j;for(j=0;j<nc;j++)if(!strcmp(ct[j].n,p)){ct[j].c++;break;}
         if(j==nc&&nc<1024){snprintf(ct[nc].n,64,"%s",p);ct[nc].c=1;nc++;}}
-    closedir(d);
+    pclose(d);
     qsort(ct,(size_t)nc,sizeof(ct[0]),ctcmp);
     if(!n||n>nc)n=nc;
     long tu=0,tk=0;
