@@ -38,7 +38,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,PD=[],pconf=0,sm=0,ks=0,kf=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,gc=0,gl=0,polast='',curlast='',pd='',px0=0,py0=0,pcf=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -69,7 +69,6 @@ function put(ch,w){
   if(S.pw&&S.wrap){S.pw=false;S.x=0;lf();}
   S.pw=false;
   if(S.x+w>cols)S.x=Math.max(0,cols-w);
-  if(PD.length){const q=PD[0];if(q.y===S.y&&q.x===S.x){if(q.ch===ch){PD.shift();if(pconf<4)pconf++;}else{PD=[];pconf=0;}}} /* echo at predicted cell: confirm (or miss = predictor off) */
   const r=G[S.y];
   if(r.l[S.x]&512&&S.x>0){r.t[S.x-1]=' ';r.l[S.x-1]&=~128;} /* overwrote right half: unghost the wide base */
   r.t[S.x]=ch;r.f[S.x]=S.fg;r.b[S.x]=S.bg;r.l[S.x]=S.fl|(w===2?128:0);
@@ -104,6 +103,7 @@ function feed(d){
     else if(c!==0x7f)put(S.cs0&&ACS[ch]?ACS[ch]:ch,wcw(c));
   }
   pt=performance.now()-t0;
+  if(pd){if(S.y===py0&&S.x>=px0&&S.x<=px0+pd.length){const a=S.x-px0;if(a>0){gc+=a;gl=kr;pcf+=a;pd=pd.slice(a);px0=S.x;}}else{pd='';pcf=0;}}else pcf=0; /* reconcile: drop confirmed prefix; zone-left OR output-while-idle => disarm (password-safe) */
   if(!raf)raf=requestAnimationFrame(paint);
 }
 function title(){ /* OSC 0/2 "#S:#W" -> pin reconnects to the viewed window */
@@ -269,15 +269,17 @@ function paint(){
   const t0=performance.now();
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
-  const r=G[S.y],w=r&&r.l[S.x]&128?2:1,px=Math.min(cols-1,S.x+(pconf>=2?PD.length:0));
-  po.innerHTML=(pconf>=2&&PD.length)?PD.map(q=>'<span style="position:absolute;left:'+(q.x*cw).toFixed(2)+'px;top:'+q.y*chh+'px;opacity:.55">'+(q.ch==='<'?'&lt;':q.ch==='&'?'&amp;':q.ch)+'</span>').join(''):'';
-  if(kf&&((pconf>=2&&PD.length)||!kt)){sm=performance.now()-ks;kf=0;} /* s-meter: key -> char visible, via predicted overlay OR echo (whichever painted first) */
-  cur.style.cssText='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
+  const pon=pcf>=1&&pd,px=Math.min(cols-1,pon?px0+pd.length:S.x),r=G[S.y],w=r&&r.l[px]&128?2:1;
+  const ph=pon?[...pd].map((c,i)=>'<span style="position:absolute;left:'+((px0+i)*cw).toFixed(2)+'px;top:'+py0*chh+'px">'+(c==='<'?'&lt;':c==='&'?'&amp;':c)+'</span>').join(''):'';
+  if(ph!==polast){po.innerHTML=ph;polast=ph;} /* only-on-change: no reflow on output frames / unchanged predictions */
+  if(kf&&(pon||!kt)){sm=performance.now()-ks;kf=0;} /* s-meter: key -> char visible, via predicted overlay OR echo (whichever painted first) */
+  const cs='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
+  if(cs!==curlast){cur.style.cssText=cs;curlast=cs;}
   dt=performance.now()-t0;
   stat();
 }
 function stat(){ /* 1ms mandate: p=parse d=draw s=key→shown r=key→echo(worked) */
-  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
+  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(pd?' P'+pd.length:'')+(gc?' g'+gc+'@'+gl.toFixed(1):'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
   while(g.length<rows)g.push(newRow());
@@ -361,15 +363,13 @@ function key(e){
   e.preventDefault();
   if(s.length===1){kt=ks=performance.now();kf=1;}
   tx(s);
-  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);
+  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);else{pcf=0;if(pd){pd='';if(!raf)raf=requestAnimationFrame(paint);}}
 }
-/* local prediction — typed-char feedback ONLY (Sean 2026-08-08): overlay at the cursor, grid stays authoritative,
-   so wrong guesses can't corrupt. Gated mosh-style: renders only after 2 confirmed echoes; any miss or 250ms
-   silence (echo-off contexts like passwords) disarms + erases. No Enter/BS/cursor prediction, no tmux tricks. */
-function pred(k){const px=S.x+PD.length;if(px>=cols)return;
-  PD.push({x:px,y:S.y,ch:k,t:performance.now()});
-  if(pconf>=2&&!raf)raf=requestAnimationFrame(paint);}
-setInterval(function(){if(PD.length&&performance.now()-PD[0].t>250){PD=[];pconf=0;if(!raf)raf=requestAnimationFrame(paint);}},120);
+/* local echo (Sean 2026-08-28 rewrite): pd=typed-but-unechoed chars anchored at (px0,py0). feed() reconciles by how
+   far the REAL cursor advanced — no per-char match, no timeout — so it's smooth on high-RTT links (qsim/Japan). pcf>=1
+   gate never shows before an echo confirms (password-safe); pd clears on redraw/Enter/non-printable. grid authoritative. */
+function pred(k){if(pd===''){px0=S.x;py0=S.y;}if(px0+pd.length>=cols)return;pd+=k;
+  if(pcf>=1){cancelAnimationFrame(raf);raf=0;paint();}} /* SYNCHRONOUS: char in the DOM this turn, not next frame (1ms mandate) */
 addEventListener('keydown',key);
 kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); /* IME/swipe path; keydown covers the rest */
 kb.addEventListener('paste',e=>{
