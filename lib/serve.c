@@ -252,7 +252,6 @@ static void _ws_term(int c,const char*target){
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",0);
         unsetenv("TMUX");unsetenv("TMUX_PANE");  /* serve may live in a pane; inherited TMUX would make `a tmux` switch the real client instead of grouped-attaching this pty */
-        if(target&&!strcmp(target,"cloudadd"))execlp("a","a","cloud",(char*)0);
         if(target&&!strncmp(target,"ssh:",4)){char d2[160];snprintf(d2,160,"%s",target+4);char*cl=strchr(d2,':');
             if(cl){*cl=0;char ses[192];snprintf(ses,192,"a:%s",cl+1);setenv("A_TMUX_SESSION",ses,1);}
             execlp("a","a","ssh",d2,(char*)0);}
@@ -283,23 +282,6 @@ static void _ws_reload(int c){ /* dev hot-reload: relay a FIFO byte -> WS "reloa
     }
     close(f);
 }
-static char*_cloud_html(void){
-    char cmd[P];snprintf(cmd,P,"sh '%s/lib/cloudls.sh'",SDIR);FILE*p=popen(cmd,"r");
-    char rl[4096]={0};if(p){(void)!fread(rl,1,4095,p);pclose(p);}
-    int cap=32768;char*h=malloc(cap);int hl=snprintf(h,cap,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{display:block;text-decoration:none;color:inherit;cursor:pointer}a:hover div{background:#111}div{padding:14px;border-bottom:1px solid #222}.e{font-weight:600}.s{color:#888;font-size:13px}.o{display:inline-block;margin-top:8px;background:#555;color:#fff;border-radius:6px;padding:6px 12px;font-size:14px}select{background:#111;color:#fff;border:1px solid #333;padding:6px;font:inherit;border-radius:6px;margin:4px 0}button.cp{background:#555;color:#fff;border:0;border-radius:6px;padding:7px 14px;font:inherit;cursor:pointer}#cpstat{margin-top:10px;font-size:14px}</style><h3 style=color:#888>Cloud storage</h3>");
-    char opts[2048];int ol=0;
-    for(char*l=rl,*nl;(nl=strchr(l,'\n'));l=nl+1){*nl=0;if(!*l)continue;
-        char*ty=strchr(l,'|'),*id=0,*s=0;if(ty)*ty++=0;if(ty)id=strchr(ty,'|');if(id)*id++=0;if(id)s=strchr(id,'|');if(s)*s++=0;
-        int icl=ty&&!strcmp(ty,"iclouddrive");char url[256];
-        if(icl)snprintf(url,256,"https://www.icloud.com/iclouddrive/");
-        else snprintf(url,256,"https://drive.google.com/drive/u/0/?authuser=%s",id&&*id?id:"");
-        hl+=snprintf(h+hl,(size_t)(cap-hl),"<a href=\"%s\" target=_blank><div><span class=e>%s</span><br><span class=s>%s</span><br><span class=o>%s</span></div></a>",url,id&&*id?id:l,s?s:"",icl?"Open iCloud Drive":"Open Google Drive");
-        char nm[64];snprintf(nm,64,"%s",l);char*cl=strrchr(nm,':');if(cl)*cl=0;
-        ol+=snprintf(opts+ol,(size_t)(2048-ol),"<option value=\"%s\">%s%s%s</option>",nm,nm,id&&*id?" - ":"",id&&*id?id:"");}
-    hl+=snprintf(h+hl,(size_t)(cap-hl),"<a href=\"/op?w=cloudadd\"><div><span class=o style=background:#555>+ Add cloud service</span></div></a>");
-    hl+=snprintf(h+hl,(size_t)(cap-hl),"<div><h3 style=color:#888>Copy between clouds</h3>from <select id=src>%s</select> to <select id=dst>%s</select> <button class=cp onclick=startcp()>Copy</button> <button class=cp onclick=stopcp() style=background:#bbb>Stop</button><div id=cpstat></div></div>",opts,opts);
-    hl+=snprintf(h+hl,(size_t)(cap-hl),"%s","<script>function cpoll(){fetch('/api/cloudcp-status').then(r=>r.text()).then(t=>{var e=document.getElementById('cpstat'),p=t.split('|');if(p[0]=='running'){e.innerHTML='Copying '+(p[1]||'')+' ...';setTimeout(cpoll,2000)}else if(p[0]=='done'){e.innerHTML='Finished - <a target=_blank style=color:#fff href=\"'+p[1]+'\">'+p[1]+'</a>'}else if(p[0]=='stopped'){e.innerHTML='<span style=color:#ccc>Stopped: '+(p[1]||'')+'</span>'}else if(p[0]=='error'){e.innerHTML='<span style=color:#fff>Error: '+(p[1]||'')+'</span>'}else{e.textContent=''}})}function startcp(){var s=document.getElementById('src').value,d=document.getElementById('dst').value;if(s==d){alert('pick two different remotes');return}document.getElementById('cpstat').textContent='Starting ...';fetch('/api/cloudcp?src='+encodeURIComponent(s)+'&dst='+encodeURIComponent(d),{method:'POST'}).then(function(){setTimeout(cpoll,800)})}function stopcp(){fetch('/api/cloudcp-stop',{method:'POST'}).then(function(){setTimeout(cpoll,400)})}cpoll();</script>");
-    return h;}
 static char*_phtml;static int _phlen;static time_t _pgen_t;
 static void _prompt_gen(void){ /* cached; GET /prompt regens when sources newer than cache (mtime check) */
         int pp[2];if(pipe(pp))return;pid_t ch=fork();
@@ -1078,26 +1060,6 @@ static void _handle(int c){
         if(th){_siso(c,th,(int)tl);free(th);}
         else _sresp(c,404,"text/plain","no term.html",12);
         return;}
-    if(!strncmp(req,"GET /cloud",10)){
-        char cf[P];snprintf(cf,P,"%s/local/.cloud.html",AROOT);char*cached=readf(cf,NULL);
-        if(cached){if(!fork()){close(c);char*h=_cloud_html();writef(cf,h);free(h);_exit(0);}
-            _sresp(c,200,"text/html",cached,(int)strlen(cached));free(cached);return;}
-        char*h=_cloud_html();writef(cf,h);_sresp(c,200,"text/html",h,(int)strlen(h));free(h);return;}
-    if(!strncmp(req,"GET /api/cloudcp-status",23)){
-        char*s=readf("/tmp/.a_cloudcp.status",NULL);
-        if(s){int n=(int)strlen(s);while(n>0&&(s[n-1]=='\n'||s[n-1]=='\r'))s[--n]=0;_sresp(c,200,"text/plain",s,n);free(s);}
-        else _sresp(c,200,"text/plain","idle",4);return;}
-    if(!strncmp(req,"POST /api/cloudcp-stop",22)){
-        (void)!system("pkill -f 'rclone copy' 2>/dev/null;pkill -f cloudcp.sh 2>/dev/null");
-        int fd=open("/tmp/.a_cloudcp.status",O_WRONLY|O_CREAT|O_TRUNC,0644);
-        if(fd>=0){(void)!write(fd,"stopped|cancelled by user",25);close(fd);}
-        _sresp(c,200,"text/plain","stopped",7);return;}
-    if(!strncmp(req,"POST /api/cloudcp",17)){
-        char src[64]={0},dst[64]={0};const char*sp=strstr(req,"src="),*dp=strstr(req,"dst=");
-        if(sp){sp+=4;int i=0;for(;sp[i]&&sp[i]!='&'&&sp[i]!=' '&&i<63;i++){if(!isalnum((unsigned char)sp[i])&&sp[i]!='-'&&sp[i]!='_')break;src[i]=sp[i];}src[i]=0;}
-        if(dp){dp+=4;int i=0;for(;dp[i]&&dp[i]!='&'&&dp[i]!=' '&&i<63;i++){if(!isalnum((unsigned char)dp[i])&&dp[i]!='-'&&dp[i]!='_')break;dst[i]=dp[i];}dst[i]=0;}
-        if(src[0]&&dst[0]){if(!fork()){close(c);execlp("a","a","cloudcp",src,dst,(char*)0);_exit(1);}_sresp(c,200,"text/plain","started",7);}
-        else _sresp(c,400,"text/plain","need src&dst",12);return;}
     if(!strncmp(req,"POST /op/new",12)){
         char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 & echo $!",SDIR);
         FILE*p=popen(tc,"r");char pid[32]={0};

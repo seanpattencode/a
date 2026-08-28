@@ -32,8 +32,7 @@ static int cmd_agent(int argc, char **argv) {
     if(argc<3)return agls();
     if(!strcmp(argv[2],"run")&&argc>3){char f[P];
         snprintf(f,P,"%s/scan/%s.py",SROOT,argv[3]);
-        if(!fexists(f)){snprintf(f,P,"%s/lib/platonic_agents/%s.py",SDIR,argv[3]);
-        if(!fexists(f)){printf("x Not found: %s\n",argv[3]);return 1;}}
+        if(!fexists(f)){printf("x Not found: %s\n",argv[3]);return 1;}
         perf_disarm();
         CWD(wd);
         char sn[256];snprintf(sn,256,"agent-%s-%ld",argv[3],(long)time(NULL));

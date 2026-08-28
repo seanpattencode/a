@@ -421,14 +421,12 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/op.c"
 #include "lib/pow.c"
 #include "lib/audio.c"
-#include "lib/bench.c"
 #include "lib/serve.c"
 #include "lib/tok.c"
 #include "lib/debloat.c"
 #include "lib/m.c"
 #include "lib/h.c"
 #include "lib/handoff.c"
-#include "lib/piper.c"
 #include "lib/checkin.c"
 #include "lib/pedal.c"
 #include "lib/grep.c"
@@ -729,7 +727,7 @@ static int cmd_cmp(const void*a,const void*b){return strcmp(((const cmd_t*)a)->n
 static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
     {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},
-    {"audio",cmd_audio},{"bench",cmd_bench},{"book",cmd_book},{"cal",cmd_cal},{"cam",cmd_cam},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
+    {"audio",cmd_audio},{"book",cmd_book},{"cal",cmd_cal},{"cam",cmd_cam},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"debloat",cmd_debloat},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
@@ -739,7 +737,7 @@ static const cmd_t CMDS[] = {
     {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
     {"o",cmd_op},{"once",cmd_run_once},{"op",cmd_op},{"operator",cmd_op},
-    {"p",cmd_push},{"pedal",cmd_pedal},{"perf",cmd_perf},{"piper",cmd_piper},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
+    {"p",cmd_push},{"pedal",cmd_pedal},{"perf",cmd_perf},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},{"q",cmd_q},
     {"ref",cmd_ref},{"relay",cmd_relay},{"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
@@ -759,7 +757,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|ref|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|bench|c|l|g|co|cp|gp|done|clone|add|cmd|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|ref|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|c|l|g|co|cp|gp|done|clone|add|cmd|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);

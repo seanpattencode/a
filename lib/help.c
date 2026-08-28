@@ -54,9 +54,6 @@ static void gen_icache(void){
     {char af[P];snprintf(af,P,"%s/local/apps.txt",AROOT);
     size_t al;char*ad=readf(af,&al);if(ad){fwrite(ad,1,al,f);free(ad);}}
 #endif
-    {char ad[P];snprintf(ad,P,"%s/lib/platonic_agents",SDIR);DIR*d=opendir(ad);struct dirent*e;
-    if(d){while((e=readdir(d))){char*p=strrchr(e->d_name,'.');
-        if(p&&(p[1]=='p'||p[1]=='c')){*p=0;fprintf(f,"agent run %s\tagent\n",e->d_name);}}closedir(d);}}
     /* auto-discover lib .py — extract docstring desc */
     {char ld[P];snprintf(ld,P,"%s/lib",SDIR);DIR*d=opendir(ld);struct dirent*e;
     if(d){while((e=readdir(d))){char*dot=strrchr(e->d_name,'.');

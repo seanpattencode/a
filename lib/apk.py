@@ -1740,7 +1740,7 @@ def run():
         else:
             for fn,src,_l,_m in NLIBS:w(D+"/app/src/main/cpp/"+fn,src)
             w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
-        # Stage bundled bins + terminfo source (from a droid/droidtmux output)
+        # Stage bundled bins + terminfo source (prebuilt under SRCD; the droidtmux.py builder is in git history)
         sf=D+"/app/src/main/jniLibs/"+ABI;os.makedirs(sf,exist_ok=True)
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
         stage={ADROID:"liba.so",f"{SRCD}/tmux-build-a/tmux":"libtmux.so",f"{SRCD}/ncurses-6.4/progs/tic":"libtic.so"}
@@ -1750,7 +1750,6 @@ def run():
         if ADROID in miss:
             cc=f"{_ND}/{_NV}/toolchains/llvm/prebuilt/{_NH}/bin/{TRIPLE}30-clang"   # 30: bionic statx (feed.c) needs API>=30; fleet is all Android 13+
             S.check_call([cc,'-DSRC="/data/local/tmp"',"-w"]+cf.split()+["-o",ADROID,f"{R}/a.c"])
-        if any(SRCD in s for s in miss):S.check_call(["a","droidtmux"],env={**os.environ,"DABI":ABI,"DPUSH":"0"})
         miss=[s for s in stage if not os.path.exists(s)]
         if miss:sys.exit(f"x build failed: {miss}")
         for s,n in {**stage,**{k:v for k,v in opt.items() if os.path.exists(k)}}.items():
