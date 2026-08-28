@@ -28,18 +28,25 @@ Guided walkthrough — tells you what `a` is, asks what you're working on, and t
 ## Core Commands
 
 ```bash
-a                # Show all commands 
-a c              # Start Claude (co=codex, g=gemini, a=default agent)
-a push           # Checkpoint: commit + push
-a pull           # Nuke local: reset to remote
-a diff           # Check token diff
-a revert         # Interactive: pick commit to restore
+a                # Menu of everything — type to filter, enter to run
+a c              # New tmux window running Claude (co=codex, g=gemini, a=default)
+a j "prompt"     # Job: own worktree + agent, runs in the background
 a <#>            # cd to project by number
-a j "prompt"     # Launch agent job in background
-a n "text"       # Quick note
-a hub            # Schedule operations
+a f              # Triage: notes/tasks/prompts → agents
+a n "text"       # Write a note
+a push           # Checkpoint: commit + push
+a diff           # Token diff vs main (also the gate `a push` enforces)
+a pull           # Nuke local: hard reset to remote, delete untracked
+a revert         # Pick a commit to restore
+a cat            # Whole codebase as text, to paste into an LLM
+a ssh <host>     # Shell on another machine (`a ssh all` = a window per host)
+a hub            # Schedule jobs: add / run / rm / log
 a help           # Full command list
 ```
+
+Every row in the `a` menu carries a short grey description of what it does. For
+script commands it is read from that script's own first line, so it stays true as
+they change; hosts show their address, projects their path.
 
 ## Multi-device
 

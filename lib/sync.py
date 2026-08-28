@@ -1,4 +1,4 @@
-"""cloud_sync — tar.zst backup of a local dir to every configured a-gdrive remote.
+"""a sync — adata + gdrive backup; module: cloud_sync tar.zst backup of a local dir to every configured a-gdrive remote.
 Sole live export (imported by gdrive.py for `a gdrive sync`); `a sync` itself is C (net.c cmd_sync).
 _merge_rclone seeds ~/.config/rclone/rclone.conf from the synced login/ copy so a fresh device can ship."""
 import os, subprocess as sp

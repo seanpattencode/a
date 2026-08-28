@@ -71,8 +71,8 @@ a() {
 }
 aio() { a "$@"; }
 ai() { a "$@"; }
-# a-tmux-env-fix: pull live graphical env from tmux global (session may explicitly unset DISPLAY/WAYLAND_DISPLAY)
-[ -n "$TMUX" ] && [ -z "$WAYLAND_DISPLAY$DISPLAY" ] && eval "$(tmux show-environment -g 2>/dev/null|grep -E '^(WAYLAND_DISPLAY|DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR)='|sed 's/^/export /')"
+# a-tmux-env-fix: pull live graphical env from tmux global (session may explicitly unset DISPLAY/WAYLAND_DISPLAY); tmux global may lack it too (compositor never pushed it) -> probe the wayland socket
+[ -n "$TMUX" ] && [ -z "$WAYLAND_DISPLAY$DISPLAY" ] && eval "$(tmux show-environment -g 2>/dev/null|grep -E '^(WAYLAND_DISPLAY|DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR)='|sed 's/^/export /')"; [ -z "$WAYLAND_DISPLAY$DISPLAY" ] && for _s in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/wayland-*; do [ -S "$_s" ] && export WAYLAND_DISPLAY="${_s##*/}" && break; done
 AFUNC
     done
     if [[ -d /data/data/com.termux ]]; then

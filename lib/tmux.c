@@ -38,10 +38,9 @@ static int tm_new(const char *w, const char *wd, const char *cmd) {
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
     return system(c);
 }
-static void tm_sk(const char*w,const char*s,int l){char t[256];tm_t(w,t);pid_t p=fork();
-    if(p==0){if(l)execlp("tmux","tmux","send-keys","-l","-t",t,s,(char*)NULL);
-    else execlp("tmux","tmux","send-keys","-t",t,s,(char*)NULL);_exit(1);}
-    if(p>0)waitpid(p,NULL,0);}
+static void tm_sk(const char*w,const char*s,int l){char t[256];tm_t(w,t); /* cancel first: scrolled pane = copy-mode, which EATS keys ('g' pops goto-line). 2 execs, not ';'-chain: chain aborts when cancel errors */
+    char*v[2][7]={{"tmux","send","-t",t,"-X","cancel",0},{"tmux","send","-t",t,l?"-l":(char*)s,l?(char*)s:0,0}};
+    for(int i=0;i<2;i++){pid_t p=fork();if(p==0){execvp("tmux",v[i]);_exit(1);}if(p>0)waitpid(p,NULL,0);}}
 #define tm_send(w,s) tm_sk(w,s,1)
 #define tm_key(w,s) tm_sk(w,s,0)
 static int tm_read(const char*w,char*buf,int len){char t[256];tm_t(w,t);

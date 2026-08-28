@@ -31,16 +31,25 @@ static void list_all(int cache, int quiet) {
         snprintf(cf,P,"%s/i_cache.txt",DDIR);unlink(cf);}
 }
 
+/* d/n's 1st comment/docstring → "≤4-word desc · t": clause-cut, no dangling stopword/punct; """ over # */
+static void d4(const char*d,const char*n,const char*t,char*o){char fp[P],l[256],c[256]="",*p,*s;snprintf(fp,P,"%s/%s",d,n);FILE*f=fopen(fp,"r");
+    for(int i=0;f&&i<3&&fgets(l,256,f);i++){int q=!strncmp(l,"\"\"\"",3);
+        if(q||(!*c&&((*l=='#'&&l[1]==' ')||(*l=='/'&&strchr("/*",l[1]))))){strcpy(c,l+2+q);if(q)break;}}
+    if(f)fclose(f);p=strstr(c," — ");p=p?p+5:(p=strstr(c," - "))?p+3:c;p+=strspn(p," *");
+    p[strcspn(p,":;(|\"\n")]=0;if((s=strstr(p,". ")))*s=0;{int w=4;s=p;while((s=strchr(s,' '))&&--w)s++;if(s)*s=0;}
+    {char*z=p+strlen(p);if(z>p&&strchr(",.",z[-1]))z[-1]=0;}
+    for(char b[24];(s=strrchr(p,' '))&&snprintf(b,24,"%s ",s)&&(s[1]<'!'||strstr(" a an and for in into of on the to via with ",b));)*s=0;
+    snprintf(o,128,"%s%s%s",p,*p?" · ":"",t);}
 static void gen_icache(void){
     load_proj();load_apps();load_cfg();load_sess();
-    char ic[P];snprintf(ic,P,"%s/i_cache.txt",DDIR);
+    char ic[P],ds[128];snprintf(ic,P,"%s/i_cache.txt",DDIR);
     FILE*f=fopen(ic,"w");if(!f)return;
     fputs("a\tdefault agent\n",f);
     {char bf[P];snprintf(bf,P,"%s/bookmarks.txt",SROOT);size_t bl;char*bd=readf(bf,&bl);if(bd){fwrite(bd,1,bl,f);if(bl&&bd[bl-1]!='\n')fputc('\n',f);free(bd);}}
-    int i; for(i=0;i<NPJ;i++){fprintf(f,"%d: %s\tproject\n",i,PJ[i].name);
+    int i;size_t hl=strlen(HOME);for(i=0;i<NPJ;i++){const char*pp=PJ[i].path;int th=!strncmp(pp,HOME,hl);fprintf(f,"%d: %s\tproject\tcd %.*s%s\n",i,PJ[i].name,th,"~",th?pp+hl:pp);
         DIR*sd=opendir(PJ[i].path);struct dirent*se;if(sd){while((se=readdir(sd)))if(se->d_name[0]!='.'&&se->d_type==DT_DIR)fprintf(f,"%s/%s\tdir\n",PJ[i].path,se->d_name);closedir(sd);}}
-    for(i=0;i<NAP;i++)fprintf(f,"%d: %s\tcmd\n",NPJ+i,AP[i].name);
-    for(i=0;i<NSE;i++)fprintf(f,"%s\t%s\n",SE[i].key,SE[i].name);
+    for(i=0;i<NAP;i++)fprintf(f,"%d: %s\tcmd\t%s\n",NPJ+i,AP[i].name,AP[i].cmd);
+    for(i=0;i<NSE;i++)fprintf(f,"%s\tnew %s window\n",SE[i].key,SE[i].name);
 #ifdef __ANDROID__
     {char af[P];snprintf(af,P,"%s/local/apps.txt",AROOT);
     size_t al;char*ad=readf(af,&al);if(ad){fwrite(ad,1,al,f);free(ad);}}
@@ -51,11 +60,8 @@ static void gen_icache(void){
     /* auto-discover lib .py — extract docstring desc */
     {char ld[P];snprintf(ld,P,"%s/lib",SDIR);DIR*d=opendir(ld);struct dirent*e;
     if(d){while((e=readdir(d))){char*dot=strrchr(e->d_name,'.');
-        if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;*dot=0;
-        char fp[P],desc[128]="";snprintf(fp,P,"%s/%s.py",ld,e->d_name);
-        FILE*pf=fopen(fp,"r");if(pf){char h[256];if(fgets(h,256,pf)){
-            char*s=strstr(h," - ");if(s){s+=3;s[strcspn(s,"\"\n")]=0;snprintf(desc,128,"%s",s);}}fclose(pf);}
-        fprintf(f,"%s\t%s\n",e->d_name,desc[0]?desc:"cmd");}closedir(d);}}
+        if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;d4(ld,e->d_name,"cmd",ds);*dot=0;
+        fprintf(f,"%s\t%s\n",e->d_name,ds);}closedir(d);}}
     /* auto-discover my + lab + repos scripts */
     {const char*sd[]={SROOT,SDIR};const char*sl[]={"my","lab"};
     for(int si=0;si<2;si++){char md[P];snprintf(md,P,"%s/%s",sd[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
@@ -63,7 +69,7 @@ static void gen_icache(void){
         char nm[64];snprintf(nm,64,"%s",e->d_name);char*dot=strrchr(nm,'.');
         if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;
         const char*tg=!si&&dot&&!strcmp(dot,".html")?"page":sl[si];if(!si&&dot)*dot=0;
-        fprintf(f,"%s\t%s\n",nm,tg);}closedir(d);}}
+        d4(md,e->d_name,tg,ds);fprintf(f,"%s\t%s\n",nm,ds);}closedir(d);}}
     /* repos: scan adata/repos/ scripts */
     {char rd[P];snprintf(rd,P,"%s/repos",AROOT);DIR*d=opendir(rd);struct dirent*re;
     if(d){while((re=readdir(d))){if(re->d_name[0]=='.')continue;
@@ -74,20 +80,20 @@ static void gen_icache(void){
                 char nm[64];snprintf(nm,64,"%s",se->d_name);*strrchr(nm,'.')=0;
                 fprintf(f,"%s\t%s · repo\n",nm,re->d_name);}}closedir(sd);}}closedir(d);}}}
     /* subcommands not discoverable from filenames */
-    fputs("scp\tsend file (tui pick file/host/dir)\n"
-    "diff\tgit diff\ncat\tcodebase dump\nfreq\tusage frequency\nq\ttail/search open windows\n"
-    "dash\tdashboard\nperf\tperformance\n"
+    fputs("scp\tsend file to host\n"
+    "diff\ttok diff vs main\ncat\twhole codebase as text\nfreq\tusage frequency\nq\ttail/search open windows\n"
+    "perf\tcmd time caps\n"
     "ui\tweb dashboard\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
-    "cal add\tadd event\nhub add\tadd\nhub run\trun\nhub rm\trm\nhub log\tlog\n"
-    "note\tnotes\nnote l\tlist\nnote r\treview\ntasks\ttasks\nssh add\tadd host\nssh all\tall hosts\n"
-    "task add\tadd\ntask l\tlist\ntask r\treview\ntask rank\trank\n"
-    "prompt\tdefault prompt\npow\tpower\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
-    "tutorial\tguided intro\noperator\toperator\n",f);
+    "cal add\tadd event\nhub add\tadd job\nhub run\trun job\nhub rm\tdrop job\nhub log\tjob logs\n"
+    "note\tnotes\nnote l\tlist notes\nnote r\treview notes\nssh add\tadd host\nssh all\twindow per host\n"
+    "task add\tadd task\ntask l\tlist tasks\ntask r\treview tasks\ntask rank\trank tasks\n"
+    "prompt\tedit prompts\npow\tpower off/restart\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
+    "tutorial\tguided intro\noperator\tenglish → command\n",f);
     char sd[P];snprintf(sd,P,"%s/ssh",SROOT);
     char sp[32][P];int sn=listdir(sd,sp,32);
-    for(i=0;i<sn;i++){kvs_t kv=kvfile(sp[i]);const char*nm=kvget(&kv,"Name");
-        if(nm)fprintf(f,"ssh %s\thost\n",nm);}
+    for(i=0;i<sn;i++){kvs_t kv=kvfile(sp[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
+        if(nm)fprintf(f,"ssh %s\t%s%shost\n",nm,ho?ho:"",ho?" · ":"");}
 #ifdef __APPLE__
     {const char*ad[]={"/Applications","/System/Applications"};
     for(int di=0;di<2;di++){DIR*d=opendir(ad[di]);if(!d)continue;struct dirent*e;
@@ -188,7 +194,7 @@ static int cmd_done(int argc,char**argv){AB;
         char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\n",sp,np);fputs("echo '✓ done';a diff\n",sf);
+        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\nAP='%s'\nw(){ printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sp,np,tp?tp:"");fputs("echo '✓ done';a diff\n",sf);
             if(dl[0])fprintf(sf,"printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
             {FILE*nf=fopen(np,"w");if(nf){
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking opus (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
@@ -196,6 +202,7 @@ static int cmd_done(int argc,char**argv){AB;
                 fprintf(nf," echo; echo '=== TASK ==='; cat '%s/common/prompts/next.txt'; } | claude -p --dangerously-skip-permissions --model opus --effort \"$EF\" --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)'\necho\nexec ${SHELL:-bash}\n",SROOT);fclose(nf);}}
             const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
+            const char*KX="[ \"$k\" = %c ]&&{ tmux selectp -t $AP;tmux send -t $AP -X cancel 2>/dev/null;tmux send -t $AP -l '%s';sleep 0.4;tmux send -t $AP Enter; }\n"; /* copy-mode eats sent keys ('g'=goto-line) — cancel first */
             if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\nprintf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
             else fputs("printf '\\033[2mno test command\\033[0m\\n'\n",sf);
             fputs("while :;do\n",sf);
@@ -211,28 +218,29 @@ static int cmd_done(int argc,char**argv){AB;
             if(ts[0])fputs("printf '\\033[1;36m[r]\\033[0m re-run test\\n'\n",sf);
             fputs("printf '\\033[1;33m[n]\\033[0m suggest next step (opus)\\n'\nprintf '\\033[1;33m[b]\\033[0m suggest next + book/effort\\n'\nfi\n",sf);
             fputs("printf '\\033[2mpress a key (other=close)\\033[0m '\nread -rsn1 k </dev/tty;echo\n",sf);
-            if(dl[0])fprintf(sf,"[ \"$k$M\" = y1 ]&&{ A_PANE='%s' a push -f;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",tp?tp:"");
-            if(dl[0]&&tp)fprintf(sf,"[ \"$k\" = p ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,PP,tp);
-            if(tp)fprintf(sf,"[ \"$k\" = c ]&&{ tmux select-pane -t '%s';tmux send-keys -t '%s' -l '%s';sleep 0.4;tmux send-keys -t '%s' Enter; }\n",tp,tp,CR,tp);
+            if(dl[0])fputs("[ \"$k$M\" = y1 ]&&{ A_PANE=$AP a push -f;w;}\n",sf);
+            if(dl[0]&&tp)fprintf(sf,KX,'p',PP);
+            if(tp)fprintf(sf,KX,'c',CR);
             if(ts[0])fputs("[ \"$k\" = r ]&&{ printf '\\033[1;33m$ \\033[0m%s\\n' \"$TS\";eval \"$TS\" 2>&1;}\n",sf);
-            fprintf(sf,"[ \"$k\" = n ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s'\n",np);
-            fprintf(sf,"[ \"$k\" = b ]&&tmux split-window -v -t \"$TMUX_PANE\" 'sh %s -i'\n",np);
+            fprintf(sf,"[ \"$k\" = n ]&&tmux splitw -v -t \"$TMUX_PANE\" 'sh %s'\n",np);
+            fprintf(sf,"[ \"$k\" = b ]&&tmux splitw -v -t \"$TMUX_PANE\" 'sh %s -i'\n",np);
             fputs("[ \"$k\" = s ]&&exec ${SHELL:-bash}\n",sf);
-            if(tp)fprintf(sf,"[ \"$k\" = e ]&&tmux select-pane -t '%s'\n",tp);
-            for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %c ]&&{ %s;printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",ck[i],cx[i]);
+            if(tp)fputs("[ \"$k\" = e ]&&tmux selectp -t $AP\n",sf);
+            for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %c ]&&{ %s;w;}\n",ck[i],cx[i]);
             fputs("case \"$k\" in o) M=1;; r|n|b) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
             char c[P*2];
             /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */
-            if(tp){snprintf(c,P*2,"tmux kill-pane -a -t '%s' 2>/dev/null",tp);(void)!system(c);}
-            snprintf(c,P*2,"tmux split-window -v -l 70%% -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
+            if(tp){snprintf(c,P*2,"tmux killp -a -t '%s' 2>/dev/null",tp);(void)!system(c);}
+            snprintf(c,P*2,"tmux splitw -v -l 70%% -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
     (void)!write(STDERR_FILENO,"\a",1);
     puts("✓ done");return 0;}
 
-static int cmd_dir(int c,char**v){(void)c;(void)v;char w[P];if(getcwd(w,P))puts(w);execlp("ls","ls",(char*)0);return 1;}
+static int cmd_dir(int c,char**v){(void)c;(void)v;char w[P];if(getcwd(w,P))puts(w);fflush(0);execlp("ls","ls",(char*)0);return 1;}  /* exec drops the buffer: unflushed, the cwd line is lost when stdout isn't a tty */
 static int cmd_x(int c,char**v){
     if(!tmux_kill_gate("x",isatty(0)||(c>2&&!strcmp(v[2],"now"))))return 1;
     (void)!system("tmux kill-server 2>/dev/null");puts("✓ All sessions killed");return 0;}
-static int cmd_search(int c,char**v){AB;char u[B]="https://google.com";
-    if(c>2){int l=snprintf(u,B,"https://google.com/search?q=");for(int i=2;i<c&&l<B-1;i++)l+=snprintf(u+l,(size_t)(B-l),"%s%s",i>2?"+":"",v[i]);}
+static int cmd_search(int c,char**v){AB;char u[B];
+    int l=snprintf(u,B,"https://google.com%s",c>2?"/search?q=":"");
+    for(int i=2;i<c&&l<B-1;i++)l+=snprintf(u+l,(size_t)(B-l),"%s%s",i>2?"+":"",v[i]);
     bg_exec(OPENER,u);return 0;}

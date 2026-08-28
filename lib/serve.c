@@ -96,24 +96,6 @@ static void _html_gen(void){
     char tf[P];snprintf(tf,P,"%s/lib/ui_full.html",SDIR);_sgen_t=time(NULL);
     char*src=readf(tf,NULL);if(!src)return;
     char*s=src;
-    /* build commands JSON from a i */
-    char cmds[65536]="[]";
-    {char out[65536];int pp[2];pipe(pp);pid_t ch=fork();
-    if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","i",(char*)0);_exit(1);}
-    close(pp[1]);int ol=0;{int r;while((r=(int)read(pp[0],out+ol,(size_t)(65535-ol)))>0)ol+=r;}
-    close(pp[0]);waitpid(ch,NULL,0);out[ol]=0;
-    /* parse tab-separated lines into JSON array */
-    int cl=1;cmds[0]='[';
-    for(char*l=out;*l;){char*nl=strchr(l,'\n');if(nl)*nl=0;
-        for(char*q=l;*q;q++)if(*q=='"')*q='\'';else if(*q=='\\')*q='/';  /* one raw " kills the router script */
-        char*tab=strchr(l,'\t');char*name=l,*desc="";
-        if(tab){*tab=0;desc=tab+1;}
-        while(*name==' ')name++;
-        if(*name&&cl<65000){
-            if(cl>1)cmds[cl++]=',';
-            cl+=snprintf(cmds+cl,(size_t)(65535-cl),"[\"%s\",\"%s\"]",name,desc);}
-        l=nl?nl+1:l+strlen(l);}
-    cmds[cl++]=']';cmds[cl]=0;}
     /* substitute placeholders */
     int cap=131072;_shtml=malloc((size_t)cap);_shlen=0;
     #define EMIT(p,n) {if(_shlen+(n)>=cap){cap*=2;_shtml=realloc(_shtml,(size_t)cap);}memcpy(_shtml+_shlen,p,(size_t)(n));_shlen+=(n);}
@@ -122,7 +104,10 @@ static void _html_gen(void){
             char*end=strstr(p+2,"__");
             if(end&&(end-p)<16){
                 char tag[16];memcpy(tag,p+2,(size_t)(end-p-2));tag[end-p-2]=0;
-                if(!strcmp(tag,"CMDS")){EMIT(cmds,(int)strlen(cmds));}
+                if(!strcmp(tag,"CMDS")){FILE*f=popen("a i","r");char l[16384],e[16400];   /* ["name","desc"], per `a i` line, unbounded (64K buffers cut it mid-string = blank page); " and \ neutered — one raw " kills the router script; JS ignores the trailing comma */
+                    while(f&&fgets(l,16384,f)){l[strcspn(l,"\n")]=0;for(char*q=l;*q;q++)if(*q=='"')*q='\'';else if(*q=='\\')*q='/';
+                        char*t=strchr(l,'\t');if(t)*t=0;if(*l){int el=snprintf(e,16400,"[\"%s\",\"%s\"],",l,t?t+1:"");EMIT(e,el);}}
+                    if(f)pclose(f);}
                 else if(!strcmp(tag,"PO")){EMIT("<option value=\"\">~ (home)</option>",(int)strlen("<option value=\"\">~ (home)</option>"));}
                 else if(!strcmp(tag,"DO")){char h[64]="";gethostname(h,64);char o[128];int ll=snprintf(o,128,"<option value=\"\">local: %s</option>",h);EMIT(o,ll);
                     char hbr[300]="";/* homebox is a role pointer (ssh.c hb): label it with the real entry sharing its Host so the picker says which box it is */

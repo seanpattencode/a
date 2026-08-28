@@ -1,4 +1,5 @@
-"""a apk [path] [serial] [noauth]   |   a apk build|self [abi]   |   a apk auth [serial]
+"""a apk — build+install the phone app
+  a apk [path] [serial] [noauth]   |   a apk build|self [abi]   |   a apk auth [serial]
 
 WHY THE APK EXISTS OVER TERMUX (keep this division — termux owns ALL logic + HTML + as much GUI as possible, to cut duplication + tokens):
 The apk is the thin shell for the only three things a termux terminal script can't do itself on Android OS:
