@@ -1110,7 +1110,7 @@ FF={
 "manifest.json": r'''{
   "manifest_version": 2,
   "name": "a-bridge",
-  "version": "1.0",
+  "version": "1.2",
   "description": "HTTP long-poll bridge for `a` automation. The SINGLE poll connection lives in background.js (one connection, not tab-throttled); content.js runs dispatched commands per-frame. Deps: Firefox Nightly + xpinstall.signatures.required=false in user.js.",
   "permissions": [
     "<all_urls>",
@@ -1178,9 +1178,9 @@ const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'applica
 const _opening = new Map();
 const _norm = u => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/,''); }
                      catch (e) { return u.split(/[?#]/)[0].replace(/\/+$/,''); } };
-function openTab(url, bg, fresh) {     // bg:true → load in background; dedup only the find-or-create,
-  if (fresh) return browser.tabs.create({url, active:!bg}).then(t => ({id:t.id, focused:!bg}));  // fresh: skip dedup (norm drops ?query — collides SERPs)
-  const key = _norm(url);             // activate PER-CALL so a foreground flip always focuses even if a bg prefetch is in flight
+function openTab(url, bg, fresh) {     // dedup by origin+path; hit → navigate to exact url
+  if (fresh) return browser.tabs.create({url, active:!bg}).then(t => ({id:t.id, focused:!bg}));  // fresh: new tab
+  const key = _norm(url);
   if (!_opening.has(key)) _opening.set(key, (async () => {
     const hit = (await browser.tabs.query({})).find(t => t.url && _norm(t.url) === key);
     const tab = hit || await browser.tabs.create({url, active:false});
@@ -1189,7 +1189,7 @@ function openTab(url, bg, fresh) {     // bg:true → load in background; dedup 
   })());
   const p = _opening.get(key);
   return bg ? p.then(id => ({id, focused:false}))
-            : p.then(async id => { await browser.tabs.update(id, {active:true}); return {id, focused:true}; });
+            : p.then(async id => { await browser.tabs.update(id, {url, active:true}); return {id, focused:true}; });  // {url}: land on the EXACT url (SERP re-search), per-call not cached
 }
 
 // execute one command: open/screenshot run here; everything else fans out to all frames.
@@ -1494,9 +1494,10 @@ function DISPATCH(m){
   return run().catch(e=>({error:String(e)}));
 }
 
-// open+focus a tab, deduped by normalized origin+path (bri-ext parity) — privileged, lives in the SW
+// open+focus; dedup by origin+path; hit → navigate to exact url (SW)
 async function openTab(url,bg){const norm=u=>{try{const x=new URL(u);return x.origin+x.pathname.replace(/\/+$/,'')}catch(e){return (u||'').split(/[?#]/)[0]}};
   const key=norm(url);const hit=(await chrome.tabs.query({})).find(t=>t.url&&norm(t.url)===key);
+  if(hit&&hit.url!==url)await chrome.tabs.update(hit.id,{url});
   const tab=hit||await chrome.tabs.create({url,active:!bg});if(hit&&!bg)await chrome.tabs.update(hit.id,{active:true});return{id:tab.id,focused:!bg};}
 
 async function execCmd(cmd){

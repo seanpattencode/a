@@ -468,13 +468,13 @@ def client(args):
         f = f'{d}/bri-{name}.log'
         print(f'+ recording → {f}\n  drive workflow in another shell with `a bri <cmd>` then Ctrl-C\n')
         os.execvp('sh', ['sh', '-c', f'tail -F -n 0 {LOG} | tee {f!r}']); return
-    if a == 'deploy':  # zero-click rebuild+install of the FF extension + Firefox restart
+    if a == 'deploy':  # zero-click rebuild+install of the FF ext + Firefox restart
         import shutil, briext
-        briext.build()  # regenerate from single source first
+        briext.build()  # regenerate from single source
         extdir = os.path.join(briext.OUT, 'bri-ext')
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi']
                               + [f for f in glob.glob(f'{extdir}/*') if not f.endswith('.xpi')])
-        # Prefer Nightly profile (active one); fall back to dev/release.
+        # Prefer Nightly (active); fall back to dev/release.
         cands = glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) \
               + glob.glob(os.path.expanduser('~/.mozilla/firefox/*default*'))
         prof = [p for p in cands if 'nightly' in p.lower()] or \
@@ -484,6 +484,7 @@ def client(args):
         os.makedirs(f'{prof[0]}/extensions', exist_ok=True)
         shutil.copy(f'{extdir}/a-bridge.xpi', f'{prof[0]}/extensions/a-bridge@seanpatten.xpi')
         print(f'  → {prof[0]}/extensions/')
+        shutil.rmtree(f'{prof[0]}/startupCache', ignore_errors=True)   # else FF re-runs STALE ext bytecode: 3 correct deploys silently no-op'd (2026-08-24)
         _ff_restart()
         print(f'deployed bri-ext v{json.load(open(f"{extdir}/manifest.json"))["version"]}'); return
     if a.startswith('{'):  # raw JSON gets the same default target — verbatim passthrough broadcast to BOTH browsers (every webx eval double-ran, 2026-08-02); explicit 'to' wins
