@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # a say [-l] [-v voice] [-p semitones] text…
-#   online (default): edge-tts en-GB-RyanNeural at -0.5    -v r=ryan, s=sonia, or full
-#   local  (-l):      Kokoro   bm_lewis         at -2.5    -v bm_lewis|bm_george|... or am_*/af_*
 set -eu
 L=0; V=""; P=""
 while getopts lv:p: o; do case $o in
@@ -14,6 +12,7 @@ a say [-l] [-v voice] [-p semitones] text…
   local  (-l):      Kokoro   bm_lewis         at -2.5  (-v bm_lewis|bm_george|...)
   -p semitones, negative = lower pitch
 e.g.  a say hello                       # ryan online
+      a say check                       # verify dependencies
       a say -l hello                    # bm_lewis local
       a say -l -v bm_george -p -3 hi    # different local voice + pitch
 EOF
@@ -22,18 +21,18 @@ if [ $L = 1 ]; then : "${V:=bm_lewis}"; : "${P:=-2.5}"
 else case "$V" in r|"") V=en-GB-RyanNeural;; s) V=en-GB-SoniaNeural;; esac; : "${P:=-0.5}"
 fi
 T="$*"
-# Termux: launch the TTS APK (adata/git/my/tts_apk) which calls setVoice() — needed because
-# termux-tts-speak only exposes setLanguage(Locale) and can't pick by voice name.
-# Defaults below were chosen by Sean using the slider UI in the APK:
-#   voice = en-gb-x-gbd-network  (Google's online GBD British male — same voice Readera uses)
-#   pitch = 0.48 multiplier (~-12.7 semitones)
-# Why 0.48: the GBD voice itself reads slightly brighter than other en-GB Google voices, so
-# going below the Pixel system pitch (0.54) is needed to land at the same warmth Sean prefers.
 if [ -d /data/data/com.termux ]; then
+    need(){ command -v "$1" >/dev/null || M="$M $2"; }
+    deps(){ M=""; need python3 python; need termux-tts-speak termux-api; }
+    deps; [ -z "$M" ] || { echo "+ installing say deps:$M"; pkg install -y $M; }
+    deps; [ -z "$M" ] || { echo "x say deps failed:$M"; exit 1; }
+    U=https://f-droid.org/en/packages/com.termux.api
+    /system/bin/pm path com.termux.api >/dev/null 2>&1 || { echo "x Termux:API app missing: $U"; [ "$T" = check ] || am start -a android.intent.action.VIEW -d "$U" >/dev/null; exit 1; }
+    [ "$T" = check ] && { echo "✓ say deps: python + termux-api CLI/app"; exit; }
     [ -n "$P" ] && PM=$(python3 -c "print(2**($P/12))") || PM=0.48
     VN="${V:-en-gb-x-gbd-network}"
     # primary: APK HeadlessActivity → TTSService (lets us setVoice() for exact gbd-network)
-    if pm path com.spatten.ttsdumper >/dev/null 2>&1; then
+    if /system/bin/pm path com.spatten.ttsdumper >/dev/null 2>&1; then
         OUT=$(am start -n com.spatten.ttsdumper/.HeadlessActivity --es text "$T" --es voice "$VN" --ef pitch "$PM" 2>&1)
         # Android 12+ blocks background activity launches when termux is not foregrounded
         # (e.g. SSH'd in remotely). Only fall through to termux-tts-speak if that happened.
