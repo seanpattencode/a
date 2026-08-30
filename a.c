@@ -444,8 +444,8 @@ static int cmd_freq(int c,char**v){perf_disarm();
     FC ct[1024];int nc=0;
     char fp[P],ln[256];
     while(fgets(fp,P,d)){fp[strcspn(fp,"\n")]=0;
-        int fd=open(fp,O_RDONLY);if(fd<0)continue;
-        int r=(int)read(fd,ln,255);close(fd);if(r<=0)continue;ln[r]=0;
+        FILE*af=fopen(fp,"r");if(!af)continue;
+        while(fgets(ln,256,af)){
         char*p=ln;for(int i=0;i<3&&*p;i++){while(*p&&*p!=' ')p++;while(*p==' ')p++;}
         char*end=p;while(*end&&*end!='\n')end++;*end=0;
         if(!*p)continue;
@@ -454,6 +454,7 @@ static int cmd_freq(int c,char**v){perf_disarm();
         *end=0;
         int j;for(j=0;j<nc;j++)if(!strcmp(ct[j].n,p)){ct[j].c++;break;}
         if(j==nc&&nc<1024){snprintf(ct[nc].n,64,"%s",p);ct[nc].c=1;nc++;}}
+        fclose(af);}
     pclose(d);
     qsort(ct,(size_t)nc,sizeof(ct[0]),ctcmp);
     if(!n||n>nc)n=nc;

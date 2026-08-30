@@ -56,13 +56,14 @@ static int cmd_log(int argc, char **argv) {
     { char fq[P+80];snprintf(fq,sizeof(fq),"find '%s' -maxdepth 2 -name '*_*.txt' 2>/dev/null|sort|tail -30",adir);
     char*fn[32];int nf=0;char pb[P];FILE*pf=popen(fq,"r");
     if(pf){while(nf<32&&fgets(pb,P,pf)){pb[strcspn(pb,"\n")]=0;fn[nf++]=strdup(pb);}pclose(pf);}
-    int o=snprintf(c,B,"awk '/^[0-9][0-9]\\//{split($2,t,\":\");h=int(t[1]);m=t[2];ap=\"AM\";"
+    int o=snprintf(c,B,"cat");
+    for(int i=0;i<nf;i++)o+=snprintf(c+o,(size_t)(B-o)," '%s'",fn[i]);
+    o+=snprintf(c+o,(size_t)(B-o),"|grep \"^[0-9][0-9]/\"|sort|tail -30|awk '/^[0-9][0-9]\\//{split($2,t,\":\");h=int(t[1]);m=t[2];ap=\"AM\";"
         "if(h>=12){ap=\"PM\";if(h>12)h-=12}if(h==0)h=12;"
         "c=\"\";for(i=4;i<NF;i++){if(i>4)c=c\" \";c=c$i}"
         "if(length(c)>40)c=substr(c,1,18)\"...\"substr(c,length(c)-14);"
         "n=split($NF,p,\"/\");d=p[n];printf \"%%5s %%2d:%%s%%s  %%-12s %%-40s %%s\\n\",$1,h,m,ap,$3,c,d}'");
-    for(int i=0;i<nf;i++)o+=snprintf(c+o,(size_t)(B-o)," '%s'",fn[i]);
-    (void)!system(c);for(int i=0;i<nf;i++)free(fn[i]);}
+    if(nf)(void)!system(c);for(int i=0;i<nf;i++)free(fn[i]);}
 
     /* Status footer — pure C, no shell-outs */
     #define AGO(buf,sz,sec) do { int _s=(int)(sec); if(_s<60)snprintf(buf,sz,"%ds ago",_s); \
