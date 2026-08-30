@@ -44,7 +44,7 @@ static int cmd_log(int argc, char **argv) {
         return 0;
     }
 
-    char adir[P]; snprintf(adir, P, "%s/git/activity", AROOT);
+    char adir[P]; snprintf(adir, P, "%s/local/activity", AROOT);
 
     if (sub && !strcmp(sub, "all")) { perf_disarm();
         char c[B]; snprintf(c, B, "find '%s' -maxdepth 2 -name '*.txt' -exec cat {} + 2>/dev/null", adir);

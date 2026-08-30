@@ -438,7 +438,7 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 static int cmd_freq(int c,char**v){perf_disarm();
     int vb=0,n=0;
     for(int i=2;i<c;i++){if(!strcmp(v[i],"-v"))vb=1;else if(*v[i]>='0'&&*v[i]<='9')n=atoi(v[i]);}
-    char ad[P];snprintf(ad,P,"%s/git/activity",AROOT);
+    char ad[P];snprintf(ad,P,"%s/local/activity",AROOT);
     char fc[P+64];snprintf(fc,sizeof(fc),"find '%s' -maxdepth 2 -name '*_*.txt' 2>/dev/null",ad);
     FILE*d=popen(fc,"r");if(!d){puts("x no activity log");return 1;}
     FC ct[1024];int nc=0;
