@@ -1,0 +1,7 @@
+<meta name=viewport content="width=device-width,initial-scale=1">
+<style>body{background:#000;color:#fff;font:18px system-ui;margin:0}#q{width:100%;box-sizing:border-box;font:inherit;padding:12px}#l div{padding:12px;border-bottom:1px solid #222}.w{color:#888}.on{color:#6f6}.x{color:#f44}audio{width:100%}</style>
+<input id=q autofocus placeholder=search><small id=t></small><audio id=p controls></audio><div id=l></div>
+<script>
+var n=0,cur;function S(v){var t0=performance.now(),k=++n;fetch('/musics?f='+encodeURIComponent(v)).then(r=>r.text()).then(x=>{if(k<n)return;l.innerHTML='';for(var s of x.split('\n'))if(s){let f=s.split('\t'),d=l.appendChild(document.createElement('div'));d.textContent=f[1]||f[0];d.onpointerdown=_=>{if(cur)cur.className='';(cur=d).className='w';p.src=f[1]?'/musicg?f='+f[0]:'/musicf?f='+encodeURIComponent(f[0]);p.play()};d.onclick=_=>p.play()}t.textContent=(performance.now()-t0).toFixed(1)+'ms'})}
+q.oninput=_=>{for(var d of l.children)d.hidden=!d.textContent.toLowerCase().includes(q.value.toLowerCase());clearTimeout(q.k);q.k=setTimeout(S,200,q.value)};p.onplaying=_=>{if(cur)cur.className='on'};p.onerror=_=>{if(cur)cur.className='x'};S('')
+</script>

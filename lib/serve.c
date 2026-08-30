@@ -749,6 +749,15 @@ static void _handle(int c){
         if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
             if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
         _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
+    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);   /* a music web: /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
+        if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);setenv("MC",mc,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */
+            FILE*p=popen(rel[0]?"ls \"$MC\"|grep -iF -- \"$Q\";jq -cn --arg q \"$Q\" '{context:{client:{clientName:\"WEB\",clientVersion:\"2.20250101.00.00\"}},query:$q,params:\"EgIQAQ%3D%3D\"}'|curl -s -m6 -d @- -H content-type:application/json 'https://www.youtube.com/youtubei/v1/search?prettyPrint=false'|jq -r '[..|.videoRenderer?|select(.)|\"\\(.videoId)\\t\\(.title.runs[0].text) \\(.lengthText.simpleText//\"\")\"]|.[:5][]'":"ls \"$MC\"","r");
+            size_t n=p?fread(b,1,8192,p):0;if(p)pclose(p);_sresp(c,200,"text/plain; charset=utf-8",b,(int)n);return;}
+        if(req[10]=='g'){char id[32],cm[64];_qp(req,"?f=",id,32);snprintf(cm,64,"a music get %s|tail -1",id);FILE*p=popen(cm,"r");if(p){(void)!fgets(rel,P,p);pclose(p);}rel[strcspn(rel,"\n")]=0;}
+        else if(req[10]=='f')_docrel(req,rel);
+        else{char tf[P];snprintf(tf,P,"%s/lib/music.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(th){_sdoc(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","x",1);return;}
+        char fp[P];snprintf(fp,P,"%s/%s",mc,rel);size_t n=0;char*d=readf(fp,&n);
+        if(d){_sresp(c,200,strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm",d,(int)n);free(d);}else _sresp(c,404,"text/plain","x",1);return;}
     if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* unified fleet tmux view: all devices' windows in one list, one inline terminal that re-points */
         char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
         if(th){_siso(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","no fleetview.html",16);return;}
