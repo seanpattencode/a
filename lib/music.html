@@ -20,5 +20,7 @@ setInterval(function(){if(!cur)return;var b=p.buffered.length?p.buffered.end(0):
 g.onclick=_=>{cf.hidden=!cf.hidden;if(!cf.hidden)C('')};
 function C(v){fetch('/musicc?f='+v).then(r=>r.text()).then(x=>{var a=x.split(' ');cap.value=a[0];tt.checked=a[1]!='0';cz.textContent=(a[2]||'?')+'MB used'})}
 cap.onchange=_=>C('cap-'+(cap.value|0));tt.onchange=_=>C('trim-'+(tt.checked?1:0));
-S('')
+q.onkeydown=e=>{if(e.key=='Enter'){clearTimeout(q.k);S(q.value)}};   /* Enter always re-runs the search, even when the text hasn't changed */
+addEventListener('pageshow',_=>{if(q.value)S(q.value)});   /* a refresh restores the typed text without firing input — search it, don't sit on stale rows */
+S(q.value)
 </script>
