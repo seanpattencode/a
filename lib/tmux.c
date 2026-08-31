@@ -123,7 +123,7 @@ static void tm_ensure_conf(void) {
         "set -g status-right \"\"\n"
 /* hints (^key) only when client wide enough to be a desktop; mobile/narrow shows clean labels */
 #define WH(x) "#{?#{e|>:#{client_width},70}," x ",}"
-        "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange] #[range=user|feed]Feed" WH(" ^#{l:,}") " #[norange] #[range=user|park]\xe2\x8f\xb8Park" WH(" M-p") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ..." WH(" ^.") " #[norange] #[range=user|kbd]Kb#[norange] \"\n"
+        "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ..." WH(" ^.") " #[norange] #[range=user|kbd]Kb#[norange] \"\n"
 #undef WH
         "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] ,#[fg=#000000 bg=#ffffff bold] #I:#W #[default] }\"\n"
         /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
@@ -149,8 +149,9 @@ static void tm_ensure_conf(void) {
            overlay is gone. C-M-, keeps the old full window for long sessions in the feed. */
         "bind -n C-, " SSHIF "'send C-,' {display-popup -E -w 90% -h 85% -T ' agents ' 'a feed'}\n"
         "bind -n C-M-, " SSHIF "'send C-M-,' {run \"tmux selectw -t :feed 2>/dev/null||tmux neww -n feed 'a feed'\"}\n"
-/* the panel's ... menu; shared by the C-. key and the click case below */
-#define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills"
+/* the panel's ... menu; shared by the C-. key and the click case below.
+   Feed+Park demoted off the bar into here — DELETION CANDIDATES, little real use (Sean 2026-08-31); not yet: C-,/C-M-,/M-p binds live too */
+#define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills Feed 7 \"popup -E -w 90% -h 85% \\\"a feed\\\"\" Park 8 \"selectw -n;killw -t:!;display \\\"parked - resume: a feed\\\"\""
         "bind -n C-. " SSHIF "'send C-.' {" AMENU "}\n"
 #undef SSHIF
         "bind-key -n C-q detach\n"
@@ -162,8 +163,7 @@ static void tm_ensure_conf(void) {
         "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
         "win) tmux new-window;;"
         "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; new) tmux splitw;; "
-        "x) tmux killp;; close) tmux killw;; park) tmux selectw -n;tmux killw -t:!;tmux display \"\xe2\x8f\xb8 parked - resume: a feed\";; "
-        "feed) tmux selectw -t :feed 2>/dev/null||tmux neww -n feed \"a feed\";; "
+        "x) tmux killp;; close) tmux killw;; "
         "menu) tmux " AMENU ";; "
         "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
         "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n",
