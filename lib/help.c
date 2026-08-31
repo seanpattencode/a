@@ -192,8 +192,11 @@ static int cmd_done(int argc,char**argv){AB;
         char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\nAP='%s'\nw(){ printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sp,np,tp?tp:"");fputs("echo '✓ done';a diff\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
+        /* order = importance bottom-up (Sean 2026-08-31): a long pane isn't seen at once, the BOTTOM is —
+           no scroll, so most important last. bottom→top: actions, diff (the real thing), test output (its
+           output), agent report — least useful, not the real thing; maybe deleted later (undecided). */
+        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\nAP='%s'\nw(){ printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sp,np,tp?tp:"");fputs("echo '✓ done'\n",sf);
+            if(*me)fprintf(sf,"printf '\\033[1;32m=== agent report ===\\033[0m\\n';cat<<'A_RPT'\n%s\nA_RPT\n",me);
             {FILE*nf=fopen(np,"w");if(nf){
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking opus (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
                 if(ts[0])fprintf(nf," echo; echo '=== TEST CMD OUTPUT ==='; %s 2>&1;",ts);
@@ -203,8 +206,10 @@ static int cmd_done(int argc,char**argv){AB;
             const char*KX="[ \"$k\" = %c ]&&{ tmux selectp -t $AP;tmux send -t $AP -X cancel 2>/dev/null;tmux send -t $AP -l '%s';sleep 0.4;tmux send -t $AP Enter; }\n"; /* copy-mode eats sent keys ('g'=goto-line) — cancel first */
             if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\nprintf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
             else fputs("printf '\\033[2mno test command\\033[0m\\n'\n",sf);
+            fputs("printf '\\033[1;36m=== diff ===\\033[0m\\n';D=$(a diff 2>&1);printf '%s\\n' \"$D\";TK=$(printf '%s\\n' \"$D\"|grep -aE '^(net|fork):'|tail -1)\n",sf);
+            if(dl[0])fprintf(sf,"printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
             fputs("while :;do\n",sf);
-            if(*me)fprintf(sf,"printf '\\033[1;32m=== agent report ===\\033[0m\\n';cat<<'A_RPT'\n%s\nA_RPT\n",me);
+            fputs("[ -n \"$TK\" ]&&printf '%s\\n' \"$TK\"\n",sf);  /* tok line glued to actions: visible with no scroll (2026-08-30 intent kept) */
             fputs("if [ -z \"$M\" ];then printf '\\033[1;35m=== actions (key) ===\\033[0m\\n'\n",sf);
             if(dl[0]&&tp)fputs("printf '\\033[1;33m[p]\\033[0m tell agent: push (recommended)\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;33m[c]\\033[0m crunch the code\\n'\n",sf);
