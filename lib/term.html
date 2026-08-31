@@ -400,6 +400,7 @@ scr.addEventListener('touchmove',e=>{ /* drag = wheel rows */
 },{passive:true});
 const refit=()=>{clearTimeout(rt);rt=setTimeout(fit,150);};
 (visualViewport||window).addEventListener('resize',refit);
+function claim(){if(W&&W.readyState===1)W.send('{"claim":1}');} /* /fw: re-take my window while hidden */
 const T={sizeTo,S,sent:[],
   feed:d=>{feed(d);paint();},
   dump:()=>G.map(r=>r.t.join('').replace(/\s+$/,'')).join('\n'),

@@ -248,6 +248,7 @@ static int _ws_recv(int c,char*buf,int bsz){
 }
 static void _ws_term(int c,const char*target){
     int m,s;if(openpty(&m,&s,NULL,NULL,NULL)<0)return;
+    char cty[64];{const char*tn=ttyname(s);snprintf(cty,64,"%s",tn?tn:"");}
     pid_t p=fork();
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",0);
@@ -265,7 +266,9 @@ static void _ws_term(int c,const char*target){
         if(pf[1].revents&POLLIN){int n=(int)read(m,buf,4096);if(n<=0)break;_ws_send(c,buf,n,0x82);}
         if(pf[0].revents&POLLIN){int n=_ws_recv(c,buf,4096);if(n<0)break;
             if(buf[0]=='{'){char*co=strstr(buf,"\"cols\":");char*ro=strstr(buf,"\"rows\":");
-                if(co&&ro){struct winsize w={.ws_row=(unsigned short)atoi(ro+7),.ws_col=(unsigned short)atoi(co+7)};ioctl(m,TIOCSWINSZ,&w);continue;}}
+                if(co&&ro){struct winsize w={.ws_row=(unsigned short)atoi(ro+7),.ws_col=(unsigned short)atoi(co+7)};ioctl(m,TIOCSWINSZ,&w);continue;}
+                /* claim (/fw): switch-client onto itself re-takes window-size latest hidden — never resize-window, it manual-locks (def3b2ee); non-tmux pty no-ops */
+                if(strstr(buf,"\"claim\"")){char cc[300];snprintf(cc,300,"s=$(tmux lsc -f '#{==:#{client_tty},%s}' -F '#{session_name}' 2>/dev/null);[ -n \"$s\" ]&&tmux switch-client -c %s -t \"$s\" 2>/dev/null",cty,cty);(void)!system(cc);continue;}}
             (void)!write(m,buf,(size_t)n);}
         if(pf[0].revents&(POLLHUP|POLLERR)||pf[1].revents&(POLLHUP|POLLERR))break;
     }
@@ -1102,13 +1105,6 @@ static void _handle(int c){
         if(th){_siso(c,th,(int)tl);free(th);}
         else _sresp(c,404,"text/plain","no term.html",12);
         return;}
-    if(!strncmp(req,"POST /op/new",12)){
-        char tc[B];snprintf(tc,B,"cd %s&&PATH=$HOME/.local/bin:$PATH nohup a o </dev/null >/dev/null 2>&1 & echo $!",SDIR);
-        FILE*p=popen(tc,"r");char pid[32]={0};
-        if(p){(void)!fgets(pid,32,p);pclose(p);pid[strcspn(pid,"\n")]=0;}
-        const char*bn=strrchr(SDIR,'/');bn=bn?bn+1:SDIR;
-        char nm[64];int nl=snprintf(nm,64,"op-%s-%s",bn,pid);
-        _sresp(c,200,"text/plain",nm,nl);return;}
     _sresp(c,404,"text/plain","not found",9);
 }
 static int cmd_cam(int c,char**v){(void)c;(void)v;AB;perf_disarm();

@@ -41,9 +41,14 @@ function frameFor(tg){if(FR[tg])return FR[tg];
   TW.appendChild(f);FR[tg]=f;return f;}
 function foc(){try{V.contentWindow.focus();V.contentDocument.getElementById('kb').focus({preventScroll:true});}catch(e){}}
 function ensure(){if(!rows.length)return;var want={},n=rows.length;
-  for(var d=-1;d<=4;d++)want[rows[((ci+d)%n+n)%n].dataset.t]=1;
+  for(var d of[0,1,2,3,4,-1])want[rows[((ci+d)%n+n)%n].dataset.t]=1;   /* ahead first for fast shifts */
   Object.keys(FR).forEach(k=>{if(!want[k]&&k!==cur){FR[k].remove();delete FR[k];}});
-  var i=0;Object.keys(want).forEach(k=>{if(!FR[k]){var mk=()=>frameFor(k);k===cur?mk():setTimeout(mk,200+180*i++);}});}
+  var i=0;Object.keys(want).forEach(k=>{if(!FR[k]){var mk=()=>frameFor(k);k===cur?mk():setTimeout(mk,200+180*i++);}});claimAll();}
+/* claim: hidden frames re-take windows drifted by other clients/tabs, so the resize reflow runs unwatched, never on arrival — move/attention-driven, no polling */
+var clt=0;
+function claimAll(){var t=Date.now();if(t-clt<250)return;clt=t;
+  for(var k in FR)if(FR[k]!==V)try{FR[k].contentWindow.claim()}catch(e){}}
+onfocus=claimAll;document.onvisibilitychange=()=>{document.hidden||claimAll()};
 var swms='',inms='',rtms='',wn2=0,krt=0;   /* header meters: sw=switch · in=keypress delivery lag · rtt=key echo round-trip */
 function hdr(){MS.textContent=(wn2?wn2+' win':'')+(fms?' · find '+fms:'')+(swms?' · sw '+swms:'')+(inms?' · in '+inms:'')+(rtms?' · rtt '+rtms:'')+'ms';}
 function readr(){try{var m=V.contentDocument.getElementById('sb').textContent.match(/r([\d.]+)/);if(m){rtms=m[1];hdr();}}catch(e){}}
@@ -110,7 +115,7 @@ function tap(e){var c=e.code;
   /* keystrokes must NEVER reach a HIDDEN pool frame (focus can drift there on load): swallow + refocus visible */
   try{var fe=e.view.frameElement;if(fe&&!fe.classList.contains('on')){e.stopImmediatePropagation();e.preventDefault();foc();return;}}catch(x){}
   if(e.type==='keydown'){
-    if(/^(Control|Shift)(Left|Right)$/.test(c)){if(!armed){armed=c;dirty=0;}}
+    if(/^(Control|Shift)(Left|Right)$/.test(c)){if(!armed){armed=c;dirty=0;claimAll();}}
     else{if(armed)dirty=1;
       /* per-keypress meters (e.view's clock — iframe events carry their own time origin) */
       try{inms=Math.max(0,e.view.performance.now()-e.timeStamp).toFixed(2);clearTimeout(krt);krt=setTimeout(readr,130);hdr();}catch(x){}}
