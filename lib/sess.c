@@ -164,13 +164,14 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         {struct stat st;if(!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: input-box rules */
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
-        if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],buf))continue;fm[nm++]=(char*)ICFG[i];}}
+        char*fb=buf;int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' ')fb+=2,fl-=2;  /* he types the cmd he means: "a app" head-matches `app`; plain "app" unchanged */
+        if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],fb))continue;fm[nm++]=(char*)ICFG[i];}}
         else for (int i=0;i<n&&nm<2048&&blen<256;i++) {  /* paste-scale buf can't be a filter (b2 cap) → prompt row only */
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||(!strncmp(lines[i],"web ",4)&&!strstr(lines[i]," · bm"))))continue;
-            if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,buf);int ok=1;
+            if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,fb);int ok=1;
                 for(w=strtok(b2," ");w&&ok;w=strtok(0," "))if(!strcasestr(s,w))ok=0;if(!ok)continue;
-                if(s[blen]<=' '&&!strncasecmp(s,buf,(size_t)blen)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
+                if(s[fl]<=' '&&!strncasecmp(s,fb,(size_t)fl)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
             fm[nm++]=lines[i];
         }
         const char*ag=cfget("i_agent");if(!*ag)ag="claude";const char*ef=cfget("i_effort");if(!*ef)ef=strstr(ag,"codex")?"xhigh":"max";
