@@ -71,11 +71,12 @@ static void hub_timer(hub_t *j, int on) {
     char sd[P]; snprintf(sd,P,"%s/.config/systemd/user",HOME); mkdirp(sd);
     int bt=!strcmp(j->s,"boot"); /* Schedule "boot" = long-running service: starts at boot (linger), Restart=always. oneshot+nohup dies with the cgroup. */
     if(on){
-        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Service]\nType=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash -lc '%s'\n%s",j->n,bt?"simple":"oneshot",getenv("PATH"),j->p,bt?"Restart=always\nRestartSec=5\n[Install]\nWantedBy=default.target\n":"");
+        char pe[B*2];{const char*s=j->p;char*d=pe;while(*s&&d<pe+sizeof pe-3){if(*s=='%')*d++='%';*d++=*s++;}*d=0;} /* systemd resolves % specifiers inside ExecStart BEFORE bash — unescaped %T/%N made the unit fatally invalid (2026-08-31); double them */
+        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Service]\nType=%s\nEnvironment=PATH=%s\nExecStart=/bin/bash -lc '%s'\n%s",j->n,bt?"simple":"oneshot",getenv("PATH"),pe,bt?"Restart=always\nRestartSec=5\n[Install]\nWantedBy=default.target\n":"");
         char svc[P]; snprintf(svc,P,"%s/a-%s.service",sd,j->n); writef(svc,buf);
         if(bt)snprintf(buf,B*2,"systemctl --user daemon-reload;systemctl --user enable a-%s.service >/dev/null 2>&1;systemctl --user restart a-%s.service",j->n,j->n);
         else{
-        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Timer]\nOnCalendar=%s\nPersistent=true\n[Install]\nWantedBy=timers.target\n",j->n,j->s);
+        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Timer]\nOnCalendar=%s\nAccuracySec=1us\nPersistent=true\n[Install]\nWantedBy=timers.target\n",j->n,j->s); /* max precision (Sean 2026-08-31): systemd default AccuracySec=1min drifts fires; 1us floor measured +1.16ms actual. HH:MM:SS scheds pass straight through */
         char tmr[P]; snprintf(tmr,P,"%s/a-%s.timer",sd,j->n); writef(tmr,buf);
         /* stop+stamp=now, else Persistent catch-up fires a rescheduled live timer instantly */
         snprintf(buf,B*2,"systemctl --user stop a-%s.timer 2>/dev/null;touch %s/.local/share/systemd/timers/stamp-a-%s.timer 2>/dev/null;systemctl --user daemon-reload;systemctl --user enable --now a-%s.timer >/dev/null 2>&1",j->n,HOME,j->n,j->n);}
