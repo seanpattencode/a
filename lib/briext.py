@@ -1192,6 +1192,14 @@ function openTab(url, bg, fresh) {     // dedup by origin+path; hit → navigate
             : p.then(async id => { await browser.tabs.update(id, {url, active:true}); return {id, focused:true}; });  // {url}: land on the EXACT url (SERP re-search), per-call not cached
 }
 
+// user.js loadDivertedInBackground (wiki-feed appends) backgrounds even hand-clicked target=_blank links; a click on a
+// localhost dashboard must focus like Chrome. Human click = opener tab active+localhost; automation opens have no/bg opener.
+browser.tabs.onCreated.addListener(async t => {
+  if (t.active || !t.openerTabId) return;
+  try { const o = await browser.tabs.get(t.openerTabId);
+    if (o.active && /^https?:\/\/(localhost|127\.0\.0\.1):/.test(o.url)) browser.tabs.update(t.id, {active:true}); } catch (e) {}
+});
+
 // execute one command: open/screenshot run here; everything else fans out to all frames.
 async function run(cmd) {
   const id = cmd.id;
