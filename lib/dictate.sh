@@ -34,7 +34,7 @@ def pk(ph):  # parakeet: punctuated truth for the phrase, command words stripped
 stop=threading.Event()
 def worker():
     p=subprocess.Popen(["parec","--rate=16000","--channels=1","--format=s16le","--latency-msec=30"],stdout=subprocess.PIPE)
-    nfy("🎤 dictation ON",0)
+    nfy("🎤 dictation ON — speak close to the mic",0)  # distance is the biggest lever on accuracy and it is not obvious (Sean 2026-08-31): measured 84% at his usual level vs 91% up close; the mic gain knob is inert on the MV7+, so proximity is the ONLY gain control
     st=ON.create_stream();scr="";com="";Rf="";nR=0;nw=0;ph=[];last=lastw=0.0;SESS=[];t0=time.localtime()
     def sync(new):  # make screen match: backspace the differing tail, retype — never crosses into finalized text (com is always a shared prefix)
         nonlocal scr
