@@ -749,11 +749,42 @@ static void _handle(int c){
         if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
             if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
         _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
-    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);   /* a music web: /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
-        if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);setenv("MC",mc,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */
-            FILE*p=popen(rel[0]?"ls \"$MC\"|grep -iF -- \"$Q\";jq -cn --arg q \"$Q\" '{context:{client:{clientName:\"WEB\",clientVersion:\"2.20250101.00.00\"}},query:$q,params:\"EgIQAQ%3D%3D\"}'|curl -s -m6 -d @- -H content-type:application/json 'https://www.youtube.com/youtubei/v1/search?prettyPrint=false'|jq -r '[..|.videoRenderer?|select(.)|\"\\(.videoId)\\t\\(.title.runs[0].text) \\(.lengthText.simpleText//\"\")\"]|.[:5][]'":"ls \"$MC\"","r");
-            size_t n=p?fread(b,1,8192,p):0;if(p)pclose(p);_sresp(c,200,"text/plain; charset=utf-8",b,(int)n);return;}
-        if(req[10]=='g'){char id[32],cm[64];_qp(req,"?f=",id,32);snprintf(cm,64,"a music get %s|tail -1",id);FILE*p=popen(cm,"r");if(p){(void)!fgets(rel,P,p);pclose(p);}rel[strcspn(rel,"\n")]=0;}
+    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web: /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
+        if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */
+            FILE*p=popen(rel[0]?"ls \"$MC\"|grep -v '\\.part$'|grep -iF -- \"$Q\";jq -cn --arg q \"$Q\" '{context:{client:{clientName:\"WEB\",clientVersion:\"2.20250101.00.00\"}},query:$q,params:\"EgIQAQ%3D%3D\"}'|curl -s -m6 -d @- -H content-type:application/json 'https://www.youtube.com/youtubei/v1/search?prettyPrint=false'|jq -r '[..|.videoRenderer?|select(.)|\"\\(.videoId)\\t\\(.title.runs[0].text) \\(.lengthText.simpleText//\"\")\"]|.[:5][]'":"ls \"$MC\"","r");
+            size_t n=p?fread(b,1,8191,p):0;if(p)pclose(p);_sresp(c,200,"text/plain; charset=utf-8",b,(int)n);b[n]=0;
+            char*ar[16];int an=0;ar[an++]="a";ar[an++]="music";ar[an++]="pre";   /* prefetch every hit at once (first first) so a tap plays instantly; ids come off the network → argv, never a shell, and only [A-Za-z0-9_-] */
+            for(char*ln=b;*ln&&an<15;){char*e=strchr(ln,'\n'),*t=strchr(ln,'\t');
+                if(t&&(!e||t<e)&&t-ln<16){int ok=1;for(char*z=ln;z<t;z++)if(!isalnum((unsigned char)*z)&&*z!='-'&&*z!='_')ok=0;
+                    if(ok){*t=0;ar[an++]=ln;}}
+                if(!e)break;ln=e+1;}
+            ar[an]=0;if(an>3&&!fork()){close(c);execvp("a",ar);_exit(0);}
+            return;}
+        if(req[10]=='c'){_docrel(req,rel);setenv("K",rel,1);char b[64];   /* gear: "<cap-GB> <clip> <MB-now>"; ?f=cap-8 / trim-0 set it */
+            FILE*p=popen("a music cfg \"$K\"","r");size_t n=p?fread(b,1,63,p):0;if(p)pclose(p);
+            _sresp(c,200,"text/plain",b,(int)n);return;}
+        if(req[10]=='t'){_docrel(req,rel);setenv("K",rel,1);char b[64];   /* "<skip-in> <stop-at>" — dead air at the two ends */
+            FILE*p=popen("a music trim \"$K\"","r");size_t n=p?fread(b,1,63,p):0;if(p)pclose(p);
+            _sresp(c,200,"text/plain",b,(int)n);return;}
+        if(req[10]=='g'){char id[32],cm[80];_qp(req,"?f=",id,32);setenv("I",id,1);
+            FILE*ip=popen("sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q","r");   /* the 10s head prefetch recorded the name */
+            if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}
+            char fl[P+300],pt[P+308];snprintf(fl,sizeof fl,"%s/%s",mc,rel);snprintf(pt,sizeof pt,"%s.part",fl);
+            if(rel[0]&&access(fl,F_OK)&&!access(pt,F_OK)){   /* head only: send it now, then the rest as yt-dlp resumes — ONE response, so playback starts at 0ms and never gaps */
+                pid_t sf=fork();if(sf)return;
+                if(!fork()){execlp("a","a","music","get",id,(char*)0);_exit(0);}
+                char h[200];int hl=snprintf(h,200,"HTTP/1.1 200 OK\r\nContent-Type:%s\r\nConnection:close\r\nCache-Control:no-store\r\n\r\n",strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm");
+                if(write(c,h,(size_t)hl)!=hl)_exit(0);
+                off_t off=0;struct stat st;
+                for(int idle=0;idle<600;idle++){int fd=open(access(fl,F_OK)?pt:fl,O_RDONLY);
+                    if(fd>=0){char bu[65536];ssize_t r;
+                        if(!fstat(fd,&st)&&st.st_size>off&&lseek(fd,off,SEEK_SET)>=0)
+                            while((r=read(fd,bu,65536))>0){if(write(c,bu,(size_t)r)!=r)_exit(0);off+=r;idle=0;}
+                        close(fd);}
+                    if(!stat(fl,&st)&&off>=st.st_size)_exit(0);   /* renamed by yt-dlp + fully sent = done */
+                    usleep(100000);}
+                _exit(0);}
+            if(!rel[0]||access(fl,F_OK)){snprintf(cm,80,"a music get %s|tail -1",id);   /* nothing on disk (archived, or head pruned): fetch it whole */FILE*p2=popen(cm,"r");if(p2){(void)!fgets(rel,P,p2);pclose(p2);}rel[strcspn(rel,"\n")]=0;}}
         else if(req[10]=='f')_docrel(req,rel);
         else{char tf[P];snprintf(tf,P,"%s/lib/music.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(th){_sdoc(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","x",1);return;}
         char fp[P];snprintf(fp,P,"%s/%s",mc,rel);size_t n=0;char*d=readf(fp,&n);
