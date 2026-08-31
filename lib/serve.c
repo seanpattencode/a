@@ -749,8 +749,10 @@ static void _handle(int c){
         if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
             if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
         _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
-    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web: /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
-        if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */
+    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);
+        if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);char b[8192];
+            if(rel[0]){char d[P];signal(SIGCHLD,SIG_DFL);snprintf(d,P,"jq -n >/dev/null 2>&1||sh '%s/a.c' install jq >/dev/null 2>&1",SDIR);
+                if(system(d)){_sresp(c,500,"text/plain","x jq install failed",19);return;}}
             FILE*p=popen(rel[0]?"ls \"$MC\"|grep -v '\\.part$'|grep -iF -- \"$Q\";jq -cn --arg q \"$Q\" '{context:{client:{clientName:\"WEB\",clientVersion:\"2.20250101.00.00\"}},query:$q,params:\"EgIQAQ%3D%3D\"}'|curl -s -m6 -d @- -H content-type:application/json 'https://www.youtube.com/youtubei/v1/search?prettyPrint=false'|jq -r '[..|.videoRenderer?|select(.)|\"\\(.videoId)\\t\\(.title.runs[0].text) \\(.lengthText.simpleText//\"\")\"]|.[:5][]'":"ls \"$MC\"|grep -v '\\.part$'","r");
             size_t n=p?fread(b,1,8191,p):0;if(p)pclose(p);_sresp(c,200,"text/plain; charset=utf-8",b,(int)n);b[n]=0;
             char*ar[16];int an=0;ar[an++]="a";ar[an++]="music";ar[an++]="pre";   /* prefetch every hit at once (first first) so a tap plays instantly; ids come off the network → argv, never a shell, and only [A-Za-z0-9_-] */
