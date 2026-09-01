@@ -1,11 +1,8 @@
-"""a-side task engine — CANONICAL since 2026-08-31 (ported from ~/i/lib/task/task.py per the 08-27 port plan block).
-Data: ~/a/adata/git/tasks.txt · ordinal = block order (no rank numbers) · i task = stub re-exporting this.
-Old 607-dir adata/git/tasks/ + note.c cmd_task = the stale twin until archived/reworked (follow-up in the board).
+"""a-side task engine, CANONICAL (ported from i 2026-08-31 per the 08-27 plan; i task = stub calling this).
+Data ~/a/adata/git/tasks.txt + tasks-archive.txt · ordinal = block order, no rank numbers · block form: `== [date] title [a:window] ==` + context lines.
+CLI: task.py [N|add <title>|ctx N <line>|down N|archive N (done=alias, github-url receipt)|agent N [window|self]|date N [ts]|rank N K]
+Old 607-dir adata/git/tasks/ + note.c cmd_task = stale twin pending archive/rework.
 """
-"""i task [N|add <title>|ctx N <line>|down N (10 places)|archive N (done=alias)|agent N [window|self]|date N [YYYY-MM-DD HH:MM:SS]|rank N K] — tasks.txt, problems.md form: `== [date] title [a:window] ==` +
-context lines (verbatim + source, decode, resume:); block order = priority; add → top; done → tasks-done.txt; agent = tag the tmux window on it
-(self = the caller's own window; blank = clear); spawn hands the whole block to a new agent.
-EXPECTED TO REPLACE the old a task (a/lib/note.c cmd_task, adata/git/tasks/ 607 dirs) — Sean 2026-08-27 "lets blank page it first"; port = path + sync once the ~/a WIP lands."""
 import html,os,re,subprocess,sys,threading,time
 D=os.environ['HOME']+'/a/adata/git';F=D+'/tasks.txt';TAG=r' ?\[a:([^\]\s]*)\]';DT=r'^== (\d{4}-\d\d-\d\d(?: \d\d:\d\d:\d\d)?|\d\d-\d\d) ' # date prefix on the title, to the second; MM-DD (days.txt form) still read
 CF=' '.join(['--dangerously-skip-permissions']+[f'--{k} {v}'for k,v in re.findall(r'^m_(model|effort): *(.*)',open(os.path.expanduser('~/a/adata/git/workspace/config.txt')).read(),re.M)])if os.path.exists(os.path.expanduser('~/a/adata/git/workspace/config.txt'))else'--dangerously-skip-permissions' # same flags a res resumes with
@@ -114,12 +111,12 @@ def page(): # one-at-a-time is client-side (rows stay in the DOM, prev/next togg
   'function step(d){show(d,performance.now())}'
  'function show(d,t0){var R=rows();K=Math.max(0,Math.min(R.length-1,K+d));var cu=ORD?ORD[K]:K;R.forEach((r,i)=>r.classList.toggle("on",i==cu));'
  'cnt.textContent=(K+1)+" of "+R.length;tr0.textContent="task "+(K+1)+" of "+R.length+" · "+(performance.now()-t0).toFixed(3)+"ms"}'
- 'document.body.classList.add("one");show(0,performance.now());'
+ 'document.body.classList.add("one");show(0,performance.now());if(location.search.indexOf("by=date")>0)tsort();'
  'document.querySelectorAll("a[data-w]").forEach(a=>a.href="http://"+location.hostname+":1111/op?w="+a.dataset.w);' # real link: window.open was popup-blocked; /op keeps ?w= (/term drops it); w = window INDEX (names repeat after a res)
  'function renum(){rows().forEach((r,k)=>{r.dataset.i=k+1;r.querySelector(".n").textContent="rank "+(k+1)})}function ed(b){var x=b.closest(".tk").querySelector(".ed");x.hidden=!x.hidden}function nf(b){var x=b.closest(".tk").querySelector(".nf");x.hidden=!x.hidden}function sv(b){var r=b.closest(".tk"),i=+r.dataset.i,t0=performance.now();fetch("/tasks/set",{method:"POST",body:"n="+i+"&b="+encodeURIComponent(r.querySelector("textarea").value),headers:{"content-type":"application/x-www-form-urlencoded"}}).then(q=>q.text()).then(t=>{tr0.textContent="set "+i+" · "+t.trim()+" · "+(performance.now()-t0).toFixed(1)+"ms";setTimeout(()=>location.reload(),500)})}'
- 'var ORD=null;function tsort(){var t0=performance.now(),R=rows();ORD=ORD?null:R.map(function(_,i){return i}).sort(function(a,b){var x=R[a].dataset.d,y=R[b].dataset.d;return(x?0:1)-(y?0:1)||(x<y?-1:x>y?1:0)||a-b});K=0;sR.textContent=ORD?"order: date (s)":"order: rank (s)";show(0,t0)}function tq(v,b,x){var t0=performance.now(),r=b&&b.closest(".tk"),R=rows(),i=r?+r.dataset.i:0,c=v+(i?" "+i:"")+(x&&/^(add|date)$/.test(v)?" "+x:"");'
+ 'var ORD=null;function mkord(){var R=rows();return R.map(function(_,i){return i}).sort(function(a,b){var x=R[a].dataset.d,y=R[b].dataset.d;return(x?0:1)-(y?0:1)||(x<y?-1:x>y?1:0)||a-b})}function tsort(){var t0=performance.now();ORD=ORD?null:mkord();K=0;sR.textContent=ORD?"order: date (s)":"order: rank (s)";history.replaceState("","",ORD?"/tasks?by=date":"/tasks");show(0,t0)}function tq(v,b,x){var t0=performance.now(),r=b&&b.closest(".tk"),R=rows(),i=r?+r.dataset.i:0,c=v+(i?" "+i:"")+(x&&/^(add|date)$/.test(v)?" "+x:"");'
   'var P={agent:"tmux window name of the agent already on it (blank = clear)",rank:"new rank (1 = top)"};if(P[v]){var w=prompt(P[v]);if(w===null)return;c+=" "+w}'
- 'if(v=="down"&&!ORD){R[Math.min(i+9,R.length-1)].after(r);renum();K=+r.dataset.i-1;show(0,t0)}if(v=="archive"&&!ORD){r.remove();renum();show(0,t0)}var op=performance.now()-t0,local=/^(down|archive)$/.test(v)&&!ORD;'
+ 'if(v=="down"){R[Math.min(i+9,R.length-1)].after(r);renum();if(ORD)ORD=mkord();else K=+r.dataset.i-1;show(0,t0)}if(v=="archive"){r.remove();renum();if(ORD)ORD=mkord();show(0,t0)}var op=performance.now()-t0,local=/^(down|archive)$/.test(v);'
  'var u="/tasks/run",bd="c="+encodeURIComponent(c);if(/^(spawn|resume)$/.test(v)){u="/tasks/"+v+"?n="+i;bd=""}if(v=="go"){u="/problems/go?w="+encodeURIComponent(x);bd="";local=1}'
  'requestAnimationFrame(()=>requestAnimationFrame(()=>{var pt=performance.now()-t0;fetch(u,{method:"POST",body:bd,headers:{"content-type":"application/x-www-form-urlencoded"}}).then(q=>q.text()).then(t=>{'
  'tr0.textContent=c+" · op "+op.toFixed(3)+"ms · painted "+pt.toFixed(2)+"ms · "+t.trim()+" · round trip "+(performance.now()-t0).toFixed(1)+"ms";if(t[0]=="x"||!local)setTimeout(()=>location.reload(),600)})}))}document.addEventListener("keydown",function(ev){if(ev.ctrlKey||ev.metaKey||ev.altKey)return;if(/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||""))return;var q=ev.key;if(q=="j")return step(1);if(q=="k")return step(-1);if(q=="s")return tsort();if(q=="c"){ev.preventDefault();tn.focus();return}var R=rows(),r=R[ORD?ORD[K]:K],b=r&&r.querySelector("[data-k="+q+"]");if(b)b.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))});</script>')
