@@ -8,7 +8,6 @@ context lines (verbatim + source, decode, resume:); block order = priority; add 
 EXPECTED TO REPLACE the old a task (a/lib/note.c cmd_task, adata/git/tasks/ 607 dirs) — Sean 2026-08-27 "lets blank page it first"; port = path + sync once the ~/a WIP lands."""
 import html,os,re,subprocess,sys,threading,time
 D=os.environ['HOME']+'/a/adata/git';F=D+'/tasks.txt';TAG=r' ?\[a:([^\]\s]*)\]';DT=r'^== (\d{4}-\d\d-\d\d(?: \d\d:\d\d:\d\d)?|\d\d-\d\d) ' # date prefix on the title, to the second; MM-DD (days.txt form) still read
-DK=lambda h:(m:=re.match(DT,h))and(m[1]if len(m[1])>5 else time.strftime('%Y-')+m[1]) # sort key: MM-DD → this year
 CF=' '.join(['--dangerously-skip-permissions']+[f'--{k} {v}'for k,v in re.findall(r'^m_(model|effort): *(.*)',open(os.path.expanduser('~/a/adata/git/workspace/config.txt')).read(),re.M)])if os.path.exists(os.path.expanduser('~/a/adata/git/workspace/config.txt'))else'--dangerously-skip-permissions' # same flags a res resumes with
 DEV=os.uname().nodename # this machine; a task's dev: line says where its agent lives
 SYNC=f'flock {D}/.tasksync sh -c "cd {D}&&git add tasks.txt tasks-done.txt 2>/dev/null;git commit -qm task -- tasks.txt tasks-done.txt" >/dev/null 2>&1 &'  # LOCAL commit only: adata/git main has no push uplink (mem adata-git-machinery); fleet sync distributes
@@ -46,7 +45,7 @@ def run(a,cli=False): # THE mutation path — CLI and the web bridge both call i
  if a[:1]==['add']and a[1:]:ls[0:0]=['== '+' '.join(a[1:])+' ==','']
  elif a[:1]==['ctx']and a[2:]:ls.insert(hi[int(a[1])],' '.join(a[2:]))
  elif a[:1]==['down']:k=int(a[1])-1;j=min(k+10,n-1);ls[hi[k]:hi[j+1]]=ls[hi[k+1]:hi[j+1]]+ls[blk(k)] # rank down 10 places (Sean 08-27: one is too close)
- elif a[:1]in(['archive'],['done']):k=int(a[1])-1;open(D+'/tasks-archive.txt','a').write(time.strftime('%F ')+'\n'.join(ls[blk(k)])+'\n');del ls[blk(k)]
+ elif a[:1]in(['archive'],['done']):k=int(a[1])-1;open(D+'/tasks-archive.txt','a').write(time.strftime('%F ')+'\n'.join(ls[blk(k)])+'\n');del ls[blk(k)];arch=1
  elif a[:1]==['rank']and a[2:]:k=int(a[1])-1;j=min(max(int(a[2])-1,0),n-1);b=ls[blk(k)];del ls[blk(k)];hi=[i for i,l in enumerate(ls)if l.startswith('== ')]+[len(ls)];ls[hi[j]:hi[j]]=b # move block N to position K
  elif a[:1]==['date']:k=hi[int(a[1])-1];v=' '.join(a[2:]).replace('T',' ');ls[k]=re.sub(DT,'== ',ls[k]);ls[k]=ls[k].replace('== ',f'== {v} ',1)if re.fullmatch(r'\d{4}-\d\d-\d\d(?: \d\d:\d\d(?::\d\d)?)?|\d\d-\d\d',v)else ls[k]
  elif a[:1]==['agent']:
@@ -67,15 +66,19 @@ def run(a,cli=False): # THE mutation path — CLI and the web bridge both call i
  else:return'x add|ctx|down|archive|agent'
  open(F,'w').write('\n'.join(ls)+'\n')
  os.system(SYNC)if cli else threading.Thread(target=os.system,args=(SYNC,),daemon=True).start() # git sync off the request path
+ if locals().get('arch'): # archive must PROVE itself: push board+archive to origin, receipt = the github commit url (ui-principles 5/16)
+  gc='cd '+D+'&&git fetch origin -q&&export GIT_INDEX_FILE=/tmp/_ti$$;git read-tree origin/main;git update-index --add --cacheinfo 100644,$(git hash-object -w tasks.txt),tasks.txt;git update-index --add --cacheinfo 100644,$(git hash-object -w tasks-archive.txt),tasks-archive.txt;n=$(git commit-tree $(git write-tree) -p origin/main -m "task archive");rm -f $GIT_INDEX_FILE;unset GIT_INDEX_FILE;git push origin -q $n:main&&u=$(git config remote.origin.url);u=${u#*github.com[:/]};echo "https://github.com/${u%.git}/commit/$(git rev-parse --short $n)"'
+  r=subprocess.run(['sh','-c',gc],capture_output=True,text=True).stdout.strip()
+  return '✓ archived · pushed '+r if r.startswith('http') else '✓ archived locally · ✗ push failed — retry or check origin'
  return'✓'
 def setblock(n,t): # replace block n with the editor's text (first line = title; == == re-added if dropped); web /tasks/set
  ls,hi=blocks();L=[l.rstrip()for l in t.strip('\n').splitlines()]
  if not L:return'x empty'
  if not L[0].startswith('== '):L[0]=f'== {L[0].strip("= ").strip()} =='
  ls[hi[n-1]:hi[n]]=L+[''];open(F,'w').write('\n'.join(ls)+'\n');threading.Thread(target=os.system,args=(SYNC,),daemon=True).start();return'✓'
-def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next toggle: sub-ms, no navigation) # /tasks[?by=date] — the file rendered; rank view = file order (instant local moves); date view = dated first, soonest first (actions reload)
+def page(): # one-at-a-time is client-side (rows stay in the DOM, prev/next toggle: sub-ms, no navigation) # /tasks[?by=date] — the file rendered; rank view = file order (instant local moves); date view = dated first, soonest first (actions reload)
  W={};[W.setdefault(p[0],p[1:])for p in(l.split('\t')for l in tm('#{window_name}\t#{session_name}:#{window_index}\t#{pane_current_command}'))if len(p)==3];S=live()
- B=lambda v,t,x='',_K={'archive':'e','done':'e','down':'d','rank':'r','agent':'a','spawn':'g','resume':'g','go':'g'}:(lambda k=_K.get(v):f'<button class=bb'+(f' data-k={k}' if k else '')+f' onpointerdown="tq(\'{v}\',this,\'{x}\')">{t}'+(f' ({k})' if k else '')+'</button>')();e=html.escape;ls,hi=blocks();R=lambda k,t:f'<b style="color:{k}">{t}</b> ';O=sorted(range(len(hi)-1),key=lambda j:(not DK(ls[hi[j]]),DK(ls[hi[j]])or'',j))if by=='date'else list(range(len(hi)-1));q='?by=date&'if by=='date'else'?'
+ B=lambda v,t,x='',_K={'archive':'e','done':'e','down':'d','rank':'r','agent':'a','spawn':'g','resume':'g','go':'g'}:(lambda k=_K.get(v):f'<button class=bb'+(f' data-k={k}' if k else '')+f' onpointerdown="tq(\'{v}\',this,\'{x}\')">{t}'+(f' ({k})' if k else '')+'</button>')();e=html.escape;ls,hi=blocks();R=lambda k,t:f'<b style="color:{k}">{t}</b> ';O=range(len(hi)-1)
  def row(i,h,body):
   pv='\n'.join(l for l in body.splitlines() if not l.startswith(('resume: ','sid: ','dev: ')));pv=pv[:300]+' [...]' if len(pv)>300 else pv
   m=re.search(TAG,h);w=m[1]if m else'';sd=next((l[5:].strip()for l in body.splitlines()if l.startswith('sid: ')),'');rs=next((l[8:].strip()for l in body.splitlines()if l.startswith('resume: ')),'');dvc=next((l[5:].strip()for l in body.splitlines()if l.startswith('dev: ')),'')
@@ -87,17 +90,17 @@ def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next
   act=B('spawn','spawn new agent')if st=='NO AGENT'else f'<a class=bb data-w="{(ix:=inf[1][2:])}" target=_blank>open in a term</a>'+B('go','go → local terminal',ix)if inf else B('resume','resume')if st=='RESUMABLE'else''
   s=R(c,st)+act+'<button class=bb data-k=i onpointerdown="nf(this)">details ⋯ (i)</button>'
   nl=body.count('\n')+1 if body else 0
-  return(f'<div class=tk data-i={i} style="margin:6px 0;border:1px solid {c};border-radius:8px;padding:5px 8px"><div style="font-size:15px"><span class=n>rank {i}</span> {dp}{e(re.sub(DT,"== ",re.sub(TAG,"",h)).strip("= ").strip())}</div>'
+  return(f'<div class=tk data-i={i} data-d="{(m2:=re.match(DT,h))and(m2[1]if len(m2[1])>5 else time.strftime(chr(37)+chr(89)+chr(45))+m2[1])or""}" style="margin:6px 0;border:1px solid {c};border-radius:8px;padding:5px 8px"><div style="font-size:15px"><span class=n>rank {i}</span> {dp}{e(re.sub(DT,"== ",re.sub(TAG,"",h)).strip("= ").strip())}</div>'
    +(f'<div style="color:#999;font-size:12.5px;white-space:pre-wrap;margin:2px 0 0;flex:1 1 auto;min-height:0;overflow-y:auto">{e(pv)}</div>' if pv else'')
    +f'<div class=bt>{B("archive","archive")} {B("down","rank down 10")} {B("rank","set rank")} <label class=bb style="font-size:12px">date <input type=datetime-local step=1 value="{dv}" onchange="tq(\'date\',this,this.value)" style="font:inherit;background:#000;color:#fff;border:0" title="empty the field to clear the date"></label> {B("agent","tag existing agent")} {s}<button class=bb data-k=o onpointerdown="ed(this)">context · edit ({nl} lines) (o)</button></div>'
    f'<div class=nf hidden style="font-size:13px;margin-top:6px;border-top:1px solid #444;padding-top:6px">{dt}</div>'
    f'<div class=ed hidden><textarea spellcheck=false style="width:96%;height:34vh;background:#000;color:#fff;font:15px/1.45 monospace;border:1px solid #fff;border-radius:8px;padding:8px;margin-top:6px">{e(h)}\n{e(body)}</textarea><div><button class=bb onpointerdown="sv(this)">save</button> <span class=d>line 1 = title; add context lines below</span></div></div></div>')
  return('<style>.bt{display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:12px;margin-top:auto;padding-top:4px}.bt>*{flex:none}.bt .bb{font-size:12px;padding:1px 8px;text-decoration:none}.top .bb{font-size:12px;padding:2px 8px}@media(max-width:700px){.bt{flex-direction:column;align-items:stretch}}.n{background:#333;color:#ccc;border-radius:5px;padding:0 6px;font-size:11px;vertical-align:middle}.top{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:0 0 6px}.grp{display:flex;gap:5px;align-items:center;border:1px solid #555;border-radius:7px;padding:2px 6px;background:#111;font-size:12px}#cnt{min-width:6.5em;text-align:center;font:12px system-ui;color:#ccc}body.one .tk{display:none}body.one .tk.on{display:flex;flex-direction:column;height:56vh;overflow-y:auto}.nf div{display:flex;gap:9px;align-items:baseline;margin:4px 0}.nf b{background:#222;border:1px solid #555;border-radius:5px;padding:0 7px;min-width:7em;font:13px system-ui;color:#bbb;text-align:center}</style>' # thin: one button per line
 +''.join(row(j+1,ls[hi[j]],'\n'.join(ls[hi[j]+1:hi[j+1]]).strip())for j in O)
- +f'<div class=top><span class=grp><span class=d style="font-size:12px">order</span><a class=bb href=/tasks style="{"background:#245"if by!="date"else""}">by rank (s)</a><a class=bb href="/tasks?by=date" style="{"background:#245"if by=="date"else""}">by date (s)</a></span>'
+ +f'<div class=top><span class=grp><button class=bb id=sR onpointerdown="tsort()">order: rank (s)</button></span>'
  '<span class=grp><button class=bb onpointerdown="step(-1)">‹ prev (k)</button><b id=cnt>list</b><button class=bb onpointerdown="step(1)">next › (j)</button></span></div>'
  '<details><summary class=d style="cursor:pointer">tasks — order = priority · how it works</summary><div class=d style="font-size:15px;line-height:1.6;margin:4px 0 0 14px">'
- 'rank = list position · rank down 10 = 10 places down, instant; set rank = move to a rank · date = the native date+time picker (to the second), stored at the start of the title; empty the field (picker Clear) to remove it; by date = dated first, soonest first<br>'
+ 'rank = list position · rank down 10 = 10 places down, instant; set rank = move to a rank · date = native picker, stored at the start of the title; empty field = clear; s = rank⇄date order, client-side<br>'
  'context · edit (N lines) = the block in a text box, save writes it back · agents: i task ctx N &lt;line&gt;<br>'
  'spawn new agent = a j with the whole block; tagged + resume command recorded<br>'
  'tag existing agent = the tmux window already on it · agents: i task agent N self<br>'
@@ -109,17 +112,17 @@ def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next
  +'<input id=tn class=bb placeholder="new task" style="width:70%;font-size:20px" onkeydown="if(event.key==\'Enter\'&&tn.value)tq(\'add\',null,tn.value)"> <button class=bb onpointerdown="if(tn.value)tq(\'add\',null,tn.value)">add (⏎)</button> <span class=d style="font-size:12px;margin-left:6px">c = focus</span>'
  '<script>const rows=()=>[...document.querySelectorAll(".tk")];var K=0;'
   'function step(d){show(d,performance.now())}'
- 'function show(d,t0){var R=rows();K=Math.max(0,Math.min(R.length-1,K+d));R.forEach((r,i)=>r.classList.toggle("on",i==K));'
+ 'function show(d,t0){var R=rows();K=Math.max(0,Math.min(R.length-1,K+d));var cu=ORD?ORD[K]:K;R.forEach((r,i)=>r.classList.toggle("on",i==cu));'
  'cnt.textContent=(K+1)+" of "+R.length;tr0.textContent="task "+(K+1)+" of "+R.length+" · "+(performance.now()-t0).toFixed(3)+"ms"}'
  'document.body.classList.add("one");show(0,performance.now());'
  'document.querySelectorAll("a[data-w]").forEach(a=>a.href="http://"+location.hostname+":1111/op?w="+a.dataset.w);' # real link: window.open was popup-blocked; /op keeps ?w= (/term drops it); w = window INDEX (names repeat after a res)
  'function renum(){rows().forEach((r,k)=>{r.dataset.i=k+1;r.querySelector(".n").textContent="rank "+(k+1)})}function ed(b){var x=b.closest(".tk").querySelector(".ed");x.hidden=!x.hidden}function nf(b){var x=b.closest(".tk").querySelector(".nf");x.hidden=!x.hidden}function sv(b){var r=b.closest(".tk"),i=+r.dataset.i,t0=performance.now();fetch("/tasks/set",{method:"POST",body:"n="+i+"&b="+encodeURIComponent(r.querySelector("textarea").value),headers:{"content-type":"application/x-www-form-urlencoded"}}).then(q=>q.text()).then(t=>{tr0.textContent="set "+i+" · "+t.trim()+" · "+(performance.now()-t0).toFixed(1)+"ms";setTimeout(()=>location.reload(),500)})}'
- 'var BYD=location.search.includes("by=date");function tq(v,b,x){var t0=performance.now(),r=b&&b.closest(".tk"),R=rows(),i=r?+r.dataset.i:0,c=v+(i?" "+i:"")+(x&&/^(add|date)$/.test(v)?" "+x:"");'
+ 'var ORD=null;function tsort(){var t0=performance.now(),R=rows();ORD=ORD?null:R.map(function(_,i){return i}).sort(function(a,b){var x=R[a].dataset.d,y=R[b].dataset.d;return(x?0:1)-(y?0:1)||(x<y?-1:x>y?1:0)||a-b});K=0;sR.textContent=ORD?"order: date (s)":"order: rank (s)";show(0,t0)}function tq(v,b,x){var t0=performance.now(),r=b&&b.closest(".tk"),R=rows(),i=r?+r.dataset.i:0,c=v+(i?" "+i:"")+(x&&/^(add|date)$/.test(v)?" "+x:"");'
   'var P={agent:"tmux window name of the agent already on it (blank = clear)",rank:"new rank (1 = top)"};if(P[v]){var w=prompt(P[v]);if(w===null)return;c+=" "+w}'
- 'if(v=="down"&&!BYD){R[Math.min(i+9,R.length-1)].after(r);renum();K=+r.dataset.i-1;show(0,t0)}if(v=="archive"&&!BYD){r.remove();renum();show(0,t0)}var op=performance.now()-t0,local=/^(down|archive)$/.test(v)&&!BYD;'
+ 'if(v=="down"&&!ORD){R[Math.min(i+9,R.length-1)].after(r);renum();K=+r.dataset.i-1;show(0,t0)}if(v=="archive"&&!ORD){r.remove();renum();show(0,t0)}var op=performance.now()-t0,local=/^(down|archive)$/.test(v)&&!ORD;'
  'var u="/tasks/run",bd="c="+encodeURIComponent(c);if(/^(spawn|resume)$/.test(v)){u="/tasks/"+v+"?n="+i;bd=""}if(v=="go"){u="/problems/go?w="+encodeURIComponent(x);bd="";local=1}'
  'requestAnimationFrame(()=>requestAnimationFrame(()=>{var pt=performance.now()-t0;fetch(u,{method:"POST",body:bd,headers:{"content-type":"application/x-www-form-urlencoded"}}).then(q=>q.text()).then(t=>{'
- 'tr0.textContent=c+" · op "+op.toFixed(3)+"ms · painted "+pt.toFixed(2)+"ms · "+t.trim()+" · round trip "+(performance.now()-t0).toFixed(1)+"ms";if(t[0]=="x"||!local)setTimeout(()=>location.reload(),600)})}))}document.addEventListener("keydown",function(ev){if(ev.ctrlKey||ev.metaKey||ev.altKey)return;if(/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||""))return;var q=ev.key;if(q=="j")return step(1);if(q=="k")return step(-1);if(q=="s"){location=BYD?"/tasks":"/tasks?by=date";return}if(q=="c"){ev.preventDefault();tn.focus();return}var R=rows(),r=R[K],b=r&&r.querySelector("[data-k="+q+"]");if(b)b.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))});</script>')
+ 'tr0.textContent=c+" · op "+op.toFixed(3)+"ms · painted "+pt.toFixed(2)+"ms · "+t.trim()+" · round trip "+(performance.now()-t0).toFixed(1)+"ms";if(t[0]=="x"||!local)setTimeout(()=>location.reload(),600)})}))}document.addEventListener("keydown",function(ev){if(ev.ctrlKey||ev.metaKey||ev.altKey)return;if(/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||""))return;var q=ev.key;if(q=="j")return step(1);if(q=="k")return step(-1);if(q=="s")return tsort();if(q=="c"){ev.preventDefault();tn.focus();return}var R=rows(),r=R[ORD?ORD[K]:K],b=r&&r.querySelector("[data-k="+q+"]");if(b)b.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))});</script>')
 if __name__=='__main__':
  t=time.perf_counter_ns();a=sys.argv[1:];ls,hi=blocks();n=len(hi)-1
  if a and a[0].isdigit():print('\n'.join(ls[hi[int(a[0])-1]:hi[int(a[0])]]))
