@@ -234,8 +234,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             FP("%s \033[36m✓ %s · %.*s%s\033[0m\033[K\n",sel==0?" >":"  ",strstr(lastnote,"/notes/")?"✎ note":"☐ task",pl2,lastpr,cut?"…":"");
             FP("%s \033[%dm⌕ open in web\033[0m\033[K\n",sel==1?" >":"  ",sel==1?37:90);}
         for(int i=0;i<show;i++){int j=top+i,gj=j+vo,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
-            int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);
-            char*desc=t2?t2+1:(t?t+1:"");int dc=W<110?W/2:W-60>200?200:W-60;  /* desc window grows with width: win-row convo tails get the room; narrow = half, so the name column survives long descs */
+            int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);if(ml>W-7)ml=W-7;
+            char*desc=t2?t2+1:(t?t+1:"");int dc=W<110?W/2:W-60>200?200:W-60;  /* name never cut — desc gets the leftover */
+            if(dc>W-7-ml)dc=W-7-ml;if(dc<8){desc="";dc=0;}
             static char db[320];int hl=0;
             if(t2&&!strncmp(t+1,"win\t",4)){char*hit=0;int wl2=0;char*mm=strstr(desc," · ");int hd=mm?(int)(mm-desc)+4:0;
                 if(blen)for(char*pw=buf;*pw&&!hit;){while(*pw==' ')pw++;int L2=(int)strcspn(pw," ");if(!L2)break;
@@ -245,7 +246,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     snprintf(db,320,"%.*s%s%.*s\033[7m%.*s\033[27m%.*s",hd,desc,st2>desc+hd?"…":"",pre,st2,wl2,hit,tl2,hit+wl2);desc=db;hl=9;}
                 else if((int)strlen(desc)>dc&&mm){int rm=dc-hd-3;if(rm>8){char*tp=desc+strlen(desc)-(size_t)rm;while((*tp&0xC0)==0x80)tp++;snprintf(db,320,"%.*s…%s",hd,desc,tp);desc=db;}}}  /* no hit: old view — head + …convo tail end */
             int dl=(int)strnlen(desc,(size_t)dc+(size_t)hl),dv;while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;dv=dl-hl;  /* never cut mid-UTF-8 */
-            if(ml>W-7-dv)ml=W-7-dv;FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
+            FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dv,dl,desc);FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,ccol);  /* +1: top rule of input box */
         #undef FP
