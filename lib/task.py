@@ -97,7 +97,7 @@ def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next
  +f'<div class=top><span class=grp><span class=d style="font-size:12px">order</span><a class=bb href=/tasks style="{"background:#245"if by!="date"else""}">by rank (s)</a><a class=bb href="/tasks?by=date" style="{"background:#245"if by=="date"else""}">by date (s)</a></span>'
  '<span class=grp><button class=bb onpointerdown="step(-1)">‹ prev (k)</button><b id=cnt>list</b><button class=bb onpointerdown="step(1)">next › (j)</button></span></div>'
  '<details><summary class=d style="cursor:pointer">tasks — order = priority · how it works</summary><div class=d style="font-size:15px;line-height:1.6;margin:4px 0 0 14px">'
- 'rank = list position · rank down 10 = 10 places down, instant; set rank = move to a rank · date = the native date+time picker (to the second), stored at the start of the title; clear date removes it — either or both; by date = dated first, soonest first<br>'
+ 'rank = list position · rank down 10 = 10 places down, instant; set rank = move to a rank · date = the native date+time picker (to the second), stored at the start of the title; empty the field (picker Clear) to remove it; by date = dated first, soonest first<br>'
  'context · edit (N lines) = the block in a text box, save writes it back · agents: i task ctx N &lt;line&gt;<br>'
  'spawn new agent = a j with the whole block; tagged + resume command recorded<br>'
  'tag existing agent = the tmux window already on it · agents: i task agent N self<br>'
