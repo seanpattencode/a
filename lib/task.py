@@ -2,7 +2,7 @@
 Data: ~/a/adata/git/tasks.txt · ordinal = block order (no rank numbers) · i task = stub re-exporting this.
 Old 607-dir adata/git/tasks/ + note.c cmd_task = the stale twin until archived/reworked (follow-up in the board).
 """
-"""i task [N|add <title>|ctx N <line>|down N (10 places)|done N|agent N [window|self]|date N [YYYY-MM-DD HH:MM:SS]|rank N K] — tasks.txt, problems.md form: `== [date] title [a:window] ==` +
+"""i task [N|add <title>|ctx N <line>|down N (10 places)|archive N (done=alias)|agent N [window|self]|date N [YYYY-MM-DD HH:MM:SS]|rank N K] — tasks.txt, problems.md form: `== [date] title [a:window] ==` +
 context lines (verbatim + source, decode, resume:); block order = priority; add → top; done → tasks-done.txt; agent = tag the tmux window on it
 (self = the caller's own window; blank = clear); spawn hands the whole block to a new agent.
 EXPECTED TO REPLACE the old a task (a/lib/note.c cmd_task, adata/git/tasks/ 607 dirs) — Sean 2026-08-27 "lets blank page it first"; port = path + sync once the ~/a WIP lands."""
@@ -46,7 +46,7 @@ def run(a,cli=False): # THE mutation path — CLI and the web bridge both call i
  if a[:1]==['add']and a[1:]:ls[0:0]=['== '+' '.join(a[1:])+' ==','']
  elif a[:1]==['ctx']and a[2:]:ls.insert(hi[int(a[1])],' '.join(a[2:]))
  elif a[:1]==['down']:k=int(a[1])-1;j=min(k+10,n-1);ls[hi[k]:hi[j+1]]=ls[hi[k+1]:hi[j+1]]+ls[blk(k)] # rank down 10 places (Sean 08-27: one is too close)
- elif a[:1]==['done']:k=int(a[1])-1;open(D+'/tasks-done.txt','a').write(time.strftime('%F ')+'\n'.join(ls[blk(k)])+'\n');del ls[blk(k)]
+ elif a[:1]in(['archive'],['done']):k=int(a[1])-1;open(D+'/tasks-archive.txt','a').write(time.strftime('%F ')+'\n'.join(ls[blk(k)])+'\n');del ls[blk(k)]
  elif a[:1]==['rank']and a[2:]:k=int(a[1])-1;j=min(max(int(a[2])-1,0),n-1);b=ls[blk(k)];del ls[blk(k)];hi=[i for i,l in enumerate(ls)if l.startswith('== ')]+[len(ls)];ls[hi[j]:hi[j]]=b # move block N to position K
  elif a[:1]==['date']:k=hi[int(a[1])-1];v=' '.join(a[2:]).replace('T',' ');ls[k]=re.sub(DT,'== ',ls[k]);ls[k]=ls[k].replace('== ',f'== {v} ',1)if re.fullmatch(r'\d{4}-\d\d-\d\d(?: \d\d:\d\d(?::\d\d)?)?|\d\d-\d\d',v)else ls[k]
  elif a[:1]==['agent']:
@@ -64,7 +64,7 @@ def run(a,cli=False): # THE mutation path — CLI and the web bridge both call i
   ls[k+1:hi[int(a[1])]]=[l for l in ls[k+1:hi[int(a[1])]]if not l.startswith('resume: ')]
   if wd:ls.insert(k+1,'resume: cd '+wd+' && '+(f'claude {CF} --resume {sd}'if sd else'claude {CF} --continue')) # full copy-pasteable command; --resume <sid> hits THAT session (--continue would take the cwd's newest)
   if not w and a[2:]:return'x no such window'
- else:return'x add|ctx|down|done|agent'
+ else:return'x add|ctx|down|archive|agent'
  open(F,'w').write('\n'.join(ls)+'\n')
  os.system(SYNC)if cli else threading.Thread(target=os.system,args=(SYNC,),daemon=True).start() # git sync off the request path
  return'✓'
@@ -75,7 +75,7 @@ def setblock(n,t): # replace block n with the editor's text (first line = title;
  ls[hi[n-1]:hi[n]]=L+[''];open(F,'w').write('\n'.join(ls)+'\n');threading.Thread(target=os.system,args=(SYNC,),daemon=True).start();return'✓'
 def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next toggle: sub-ms, no navigation) # /tasks[?by=date] — the file rendered; rank view = file order (instant local moves); date view = dated first, soonest first (actions reload)
  W={};[W.setdefault(p[0],p[1:])for p in(l.split('\t')for l in tm('#{window_name}\t#{session_name}:#{window_index}\t#{pane_current_command}'))if len(p)==3];S=live()
- B=lambda v,t,x='',_K={'done':'e','down':'d','rank':'r','agent':'a','spawn':'g','resume':'g','go':'g'}:(lambda k=_K.get(v):f'<button class=bb'+(f' data-k={k}' if k else '')+f' onpointerdown="tq(\'{v}\',this,\'{x}\')">{t}'+(f' ({k})' if k else '')+'</button>')();e=html.escape;ls,hi=blocks();R=lambda k,t:f'<b style="color:{k}">{t}</b> ';O=sorted(range(len(hi)-1),key=lambda j:(not DK(ls[hi[j]]),DK(ls[hi[j]])or'',j))if by=='date'else list(range(len(hi)-1));q='?by=date&'if by=='date'else'?'
+ B=lambda v,t,x='',_K={'archive':'e','done':'e','down':'d','rank':'r','agent':'a','spawn':'g','resume':'g','go':'g'}:(lambda k=_K.get(v):f'<button class=bb'+(f' data-k={k}' if k else '')+f' onpointerdown="tq(\'{v}\',this,\'{x}\')">{t}'+(f' ({k})' if k else '')+'</button>')();e=html.escape;ls,hi=blocks();R=lambda k,t:f'<b style="color:{k}">{t}</b> ';O=sorted(range(len(hi)-1),key=lambda j:(not DK(ls[hi[j]]),DK(ls[hi[j]])or'',j))if by=='date'else list(range(len(hi)-1));q='?by=date&'if by=='date'else'?'
  def row(i,h,body):
   pv='\n'.join(l for l in body.splitlines() if not l.startswith(('resume: ','sid: ','dev: ')));pv=pv[:300]+' [...]' if len(pv)>300 else pv
   m=re.search(TAG,h);w=m[1]if m else'';sd=next((l[5:].strip()for l in body.splitlines()if l.startswith('sid: ')),'');rs=next((l[8:].strip()for l in body.splitlines()if l.startswith('resume: ')),'');dvc=next((l[5:].strip()for l in body.splitlines()if l.startswith('dev: ')),'')
@@ -89,7 +89,7 @@ def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next
   nl=body.count('\n')+1 if body else 0
   return(f'<div class=tk data-i={i} style="margin:6px 0;border:1px solid {c};border-radius:8px;padding:5px 8px"><div style="font-size:15px"><span class=n>rank {i}</span> {dp}{e(re.sub(DT,"== ",re.sub(TAG,"",h)).strip("= ").strip())}</div>'
    +(f'<div style="color:#999;font-size:12.5px;white-space:pre-wrap;margin:2px 0 0;flex:1 1 auto;min-height:0;overflow-y:auto">{e(pv)}</div>' if pv else'')
-   +f'<div class=bt>{B("done","done")} {B("down","rank down 10")} {B("rank","set rank")} <label class=bb style="font-size:12px">date <input type=datetime-local step=1 value="{dv}" onchange="tq(\'date\',this,this.value)" style="font:inherit;background:#000;color:#fff;border:0" title="empty the field to clear the date"></label> {B("agent","tag existing agent")} {s}<button class=bb data-k=o onpointerdown="ed(this)">context · edit ({nl} lines) (o)</button></div>'
+   +f'<div class=bt>{B("archive","archive")} {B("down","rank down 10")} {B("rank","set rank")} <label class=bb style="font-size:12px">date <input type=datetime-local step=1 value="{dv}" onchange="tq(\'date\',this,this.value)" style="font:inherit;background:#000;color:#fff;border:0" title="empty the field to clear the date"></label> {B("agent","tag existing agent")} {s}<button class=bb data-k=o onpointerdown="ed(this)">context · edit ({nl} lines) (o)</button></div>'
    f'<div class=nf hidden style="font-size:13px;margin-top:6px;border-top:1px solid #444;padding-top:6px">{dt}</div>'
    f'<div class=ed hidden><textarea spellcheck=false style="width:96%;height:34vh;background:#000;color:#fff;font:15px/1.45 monospace;border:1px solid #fff;border-radius:8px;padding:8px;margin-top:6px">{e(h)}\n{e(body)}</textarea><div><button class=bb onpointerdown="sv(this)">save</button> <span class=d>line 1 = title; add context lines below</span></div></div></div>')
  return('<style>.bt{display:flex;flex-wrap:wrap;gap:5px;align-items:center;font-size:12px;margin-top:auto;padding-top:4px}.bt>*{flex:none}.bt .bb{font-size:12px;padding:1px 8px;text-decoration:none}.top .bb{font-size:12px;padding:2px 8px}@media(max-width:700px){.bt{flex-direction:column;align-items:stretch}}.n{background:#333;color:#ccc;border-radius:5px;padding:0 6px;font-size:11px;vertical-align:middle}.top{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:0 0 6px}.grp{display:flex;gap:5px;align-items:center;border:1px solid #555;border-radius:7px;padding:2px 6px;background:#111;font-size:12px}#cnt{min-width:6.5em;text-align:center;font:12px system-ui;color:#ccc}body.one .tk{display:none}body.one .tk.on{display:flex;flex-direction:column;height:56vh;overflow-y:auto}.nf div{display:flex;gap:9px;align-items:baseline;margin:4px 0}.nf b{background:#222;border:1px solid #555;border-radius:5px;padding:0 7px;min-width:7em;font:13px system-ui;color:#bbb;text-align:center}</style>' # thin: one button per line
@@ -103,7 +103,7 @@ def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next
  'tag existing agent = the tmux window already on it · agents: i task agent N self<br>'
  'details ⋯ = every piece of info on the row, each one labelled (rank, date, state, window, tmux target, process, session id, resume command)<br>'
  'open in a term = a serve terminal on that window · go → local terminal = switches your tmux client<br>'
- 'keys — j/k next/prev · e done · o context · i details · d down10 · r set rank · a agent · g spawn/resume/go · s order · c new; keys act on the shown task<br>'
+ 'keys — j/k next/prev · e archive · o context · i details · d down10 · r set rank · a agent · g spawn/resume/go · s order · c new; keys act on the shown task<br>'
  'replaces the old a task · file: ~/a/adata/git/tasks.txt (a-git; local commits, fleet-synced)</div></details><div id=tr0 class=d>&nbsp;</div>'
  
  +'<input id=tn class=bb placeholder="new task" style="width:70%;font-size:20px" onkeydown="if(event.key==\'Enter\'&&tn.value)tq(\'add\',null,tn.value)"> <button class=bb onpointerdown="if(tn.value)tq(\'add\',null,tn.value)">add (⏎)</button> <span class=d style="font-size:12px;margin-left:6px">c = focus</span>'
@@ -116,7 +116,7 @@ def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next
  'function renum(){rows().forEach((r,k)=>{r.dataset.i=k+1;r.querySelector(".n").textContent="rank "+(k+1)})}function ed(b){var x=b.closest(".tk").querySelector(".ed");x.hidden=!x.hidden}function nf(b){var x=b.closest(".tk").querySelector(".nf");x.hidden=!x.hidden}function sv(b){var r=b.closest(".tk"),i=+r.dataset.i,t0=performance.now();fetch("/tasks/set",{method:"POST",body:"n="+i+"&b="+encodeURIComponent(r.querySelector("textarea").value),headers:{"content-type":"application/x-www-form-urlencoded"}}).then(q=>q.text()).then(t=>{tr0.textContent="set "+i+" · "+t.trim()+" · "+(performance.now()-t0).toFixed(1)+"ms";setTimeout(()=>location.reload(),500)})}'
  'var BYD=location.search.includes("by=date");function tq(v,b,x){var t0=performance.now(),r=b&&b.closest(".tk"),R=rows(),i=r?+r.dataset.i:0,c=v+(i?" "+i:"")+(x&&/^(add|date)$/.test(v)?" "+x:"");'
   'var P={agent:"tmux window name of the agent already on it (blank = clear)",rank:"new rank (1 = top)"};if(P[v]){var w=prompt(P[v]);if(w===null)return;c+=" "+w}'
- 'if(v=="down"&&!BYD){R[Math.min(i+9,R.length-1)].after(r);renum();K=+r.dataset.i-1;show(0,t0)}if(v=="done"&&!BYD){r.remove();renum();show(0,t0)}var op=performance.now()-t0,local=/^(down|done)$/.test(v)&&!BYD;'
+ 'if(v=="down"&&!BYD){R[Math.min(i+9,R.length-1)].after(r);renum();K=+r.dataset.i-1;show(0,t0)}if(v=="archive"&&!BYD){r.remove();renum();show(0,t0)}var op=performance.now()-t0,local=/^(down|archive)$/.test(v)&&!BYD;'
  'var u="/tasks/run",bd="c="+encodeURIComponent(c);if(/^(spawn|resume)$/.test(v)){u="/tasks/"+v+"?n="+i;bd=""}if(v=="go"){u="/problems/go?w="+encodeURIComponent(x);bd="";local=1}'
  'requestAnimationFrame(()=>requestAnimationFrame(()=>{var pt=performance.now()-t0;fetch(u,{method:"POST",body:bd,headers:{"content-type":"application/x-www-form-urlencoded"}}).then(q=>q.text()).then(t=>{'
  'tr0.textContent=c+" · op "+op.toFixed(3)+"ms · painted "+pt.toFixed(2)+"ms · "+t.trim()+" · round trip "+(performance.now()-t0).toFixed(1)+"ms";if(t[0]=="x"||!local)setTimeout(()=>location.reload(),600)})}))}document.addEventListener("keydown",function(ev){if(ev.ctrlKey||ev.metaKey||ev.altKey)return;if(/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||""))return;var q=ev.key;if(q=="j")return step(1);if(q=="k")return step(-1);if(q=="s"){location=BYD?"/tasks":"/tasks?by=date";return}if(q=="c"){ev.preventDefault();tn.focus();return}var R=rows(),r=R[K],b=r&&r.querySelector("[data-k="+q+"]");if(b)b.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))});</script>')
