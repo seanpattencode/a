@@ -106,7 +106,7 @@ def page(by=''): # one-at-a-time is client-side (rows stay in the DOM, prev/next
  'keys — j/k next/prev · e done · o context · i details · d down10 · r set rank · a agent · g spawn/resume/go · s order · c new; keys act on the shown task<br>'
  'replaces the old a task · file: ~/a/adata/git/tasks.txt (a-git; local commits, fleet-synced)</div></details><div id=tr0 class=d>&nbsp;</div>'
  
- +'<input id=tn class=bb placeholder="new task title → top" style="width:70%;font-size:20px"> <button class=bb onpointerdown="if(tn.value)tq(\'add\',null,tn.value)">add (c)</button>'
+ +'<input id=tn class=bb placeholder="new task" style="width:70%;font-size:20px" onkeydown="if(event.key==\'Enter\'&&tn.value)tq(\'add\',null,tn.value)"> <button class=bb onpointerdown="if(tn.value)tq(\'add\',null,tn.value)">add (⏎)</button> <span class=d style="font-size:12px;margin-left:6px">c = focus</span>'
  '<script>const rows=()=>[...document.querySelectorAll(".tk")];var K=0;'
   'function step(d){show(d,performance.now())}'
  'function show(d,t0){var R=rows();K=Math.max(0,Math.min(R.length-1,K+d));R.forEach((r,i)=>r.classList.toggle("on",i==K));'
