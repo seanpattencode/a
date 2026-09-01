@@ -771,12 +771,20 @@ static void _handle(int c){
         if(req[10]=='t'){_docrel(req,rel);setenv("K",rel,1);char b[64];   /* "<skip-in> <stop-at>" — dead air at the two ends */
             FILE*p=popen("a music trim \"$K\"","r");size_t n=p?fread(b,1,63,p):0;if(p)pclose(p);
             _sresp(c,200,"text/plain",b,(int)n);return;}
-        if(req[10]=='g'){char id[32],cm[80];_qp(req,"?f=",id,32);setenv("I",id,1);
-            FILE*ip=popen("sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q","r");   /* the 10s head prefetch recorded the name */
+        if(req[10]=='r'){_docrel(req,rel);setenv("K",rel,1);char b[256];   /* clear one track's local bytes; .index keeps the how-to-get */
+            FILE*p=popen("a music rm \"$K\"","r");size_t n=p?fread(b,1,255,p):0;if(p)pclose(p);
+            _sresp(c,200,"text/plain",b,(int)n);return;}
+        if(req[10]=='g'){char id[32];_qp(req,"?f=",id,32);setenv("I",id,1);
+            #define MIDX "sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q"
+            FILE*ip=popen(MIDX,"r");   /* the 10s head prefetch recorded the name */
             if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}
             char fl[P+300],pt[P+308];snprintf(fl,sizeof fl,"%s/%s",mc,rel);snprintf(pt,sizeof pt,"%s.part",fl);
-            if(rel[0]&&access(fl,F_OK)&&!access(pt,F_OK)){   /* head only: send it now, then the rest as yt-dlp resumes — ONE response, so playback starts at 0ms and never gaps */
+            if(!rel[0]||access(fl,F_OK)){   /* not complete on disk: stream as it downloads — was a blocking whole-file get when no .part (1hr track = minutes of dead air, Sean 2026-09-01) */
                 pid_t sf=fork();if(sf)return;
+                if(!rel[0]){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}   /* head: resolves name -> .index row (written AFTER its 160KB curl, so get can't race the .part) */
+                    for(int w=0;w<600&&!rel[0];w++){usleep(100000);FILE*p2=popen(MIDX,"r");if(p2){if(fgets(rel,P,p2))rel[strcspn(rel,"\n")]=0;pclose(p2);}}
+                    if(!rel[0])_exit(0);
+                    snprintf(fl,sizeof fl,"%s/%s",mc,rel);snprintf(pt,sizeof pt,"%s.part",fl);}
                 if(!fork()){execlp("a","a","music","get",id,(char*)0);_exit(0);}
                 char h[200];int hl=snprintf(h,200,"HTTP/1.1 200 OK\r\nContent-Type:%s\r\nConnection:close\r\nCache-Control:no-store\r\n\r\n",strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm");
                 if(write(c,h,(size_t)hl)!=hl)_exit(0);
@@ -789,7 +797,8 @@ static void _handle(int c){
                     if(!stat(fl,&st)&&off>=st.st_size)_exit(0);   /* renamed by yt-dlp + fully sent = done */
                     usleep(100000);}
                 _exit(0);}
-            if(!rel[0]||access(fl,F_OK)){snprintf(cm,80,"a music get %s|tail -1",id);   /* nothing on disk (archived, or head pruned): fetch it whole */FILE*p2=popen(cm,"r");if(p2){(void)!fgets(rel,P,p2);pclose(p2);}rel[strcspn(rel,"\n")]=0;}}
+            #undef MIDX
+            }
         else if(req[10]=='f')_docrel(req,rel);
         else{char tf[P];snprintf(tf,P,"%s/lib/music.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(th){_sdoc(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","x",1);return;}
         char fp[P];snprintf(fp,P,"%s/%s",mc,rel);size_t n=0;char*d=readf(fp,&n);

@@ -83,10 +83,15 @@ int main(int ac,char**av){
     for(int i=0;i<N;i++)if(strstr(L[i],"a-gdrive")){snprintf(R,80,"%smusic",L[i]);break;}
     snprintf(C,256,"%s/a/adata/local/music",getenv("HOME"));sh("mkdir -p \"%s\"",C);
     if(isatty(0))tcgetattr(0,&T0);
-    int s=(ac>1&&(!strcmp(av[1],"yt")||!strcmp(av[1],"y")||!strcmp(av[1],"get")||!strcmp(av[1],"g")||!strcmp(av[1],"pre")||!strcmp(av[1],"trim")||!strcmp(av[1],"cfg")))?2:1;
+    int s=(ac>1&&(!strcmp(av[1],"yt")||!strcmp(av[1],"y")||!strcmp(av[1],"get")||!strcmp(av[1],"g")||!strcmp(av[1],"pre")||!strcmp(av[1],"trim")||!strcmp(av[1],"cfg")||!strcmp(av[1],"rm")))?2:1;
     char q[512]="";for(int i=s;i<ac;i++)snprintf(q+strlen(q),512-strlen(q),"%s%s",i>s?" ":"",av[i]);
     if(s==2&&av[1][0]=='y'){srch(q);return 0;}
     if(s==2&&av[1][0]=='c'){cfg(ac>2?av[2]:0);prune();return 0;}   /* a lowered cap takes effect on the spot */
+    if(s==2&&av[1][0]=='r'){char f2[600],*nm=q;   /* rm <id|file>: clear one track's local bytes (file + .part); .index keeps the how-to-get */
+        lines("sed -n 's|^%s  ||p' \"%s/.index\" 2>&-|sed q",q,C);if(N)nm=L[0];
+        snprintf(f2,600,"%s/%s",C,nm);int r1=!remove(f2);
+        snprintf(f2,600,"%s/%s.part",C,nm);int r2=!remove(f2);
+        printf(r1||r2?"cleared %s%s\n":"x nothing local: %s%s\n",nm,r2?" (+part)":"");return 0;}
     if(s==2&&av[1][0]=='t'){char f2[600],*nm=q;   /* trim <id|file> */
         lines("sed -n 's|^%s  ||p' \"%s/.index\" 2>&-|sed q",q,C);if(N)nm=L[0];
         snprintf(f2,600,"%s/%s",C,nm);if(!access(f2,F_OK))trims(q,f2,1);

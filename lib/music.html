@@ -12,6 +12,8 @@ audio{width:76.92%;height:54px;transform:scale(1.3);transform-origin:0 100%;marg
 var n=0,cur,t0=performance.now(),tr=[0,0],re=0,M=v=>(v=Math.max(0,v|0),(v/60|0)+':'+String(v%60).padStart(2,'0'));
 function S(v){var s0=performance.now(),k=++n;fetch('/musics?f='+encodeURIComponent(v)).then(r=>r.text()).then(x=>{if(k<n)return;l.innerHTML='';l.scrollTop=0;
  for(var s of x.split('\n'))if(s){let f=s.split('\t'),d=l.appendChild(document.createElement('div'));d.textContent=f[1]||f[0];d.dataset.k=f[0];
+  let xb=d.appendChild(document.createElement('span'));xb.textContent='×';xb.style.cssText='float:right;color:#555;padding:0 12px';
+  xb.onpointerdown=e=>{e.stopPropagation();fetch('/musicr?f='+encodeURIComponent(f[0])).then(r=>r.text()).then(x=>{t.textContent=x.trim();d.style.opacity=.4})};
   d.onpointerdown=_=>{if(cur)cur.className='';(cur=d).className='w';t0=performance.now();tr=[0,0];re=0;
    p.src=f[1]?'/musicg?f='+f[0]:'/musicf?f='+encodeURIComponent(f[0]);T(f[0]);p.play()};d.onclick=_=>p.play()}
  t.textContent=l.children.length+' hits in '+(performance.now()-s0).toFixed(0)+'ms · tap one to play'})}
