@@ -793,7 +793,15 @@ static void _handle(int c){
         else if(req[10]=='f')_docrel(req,rel);
         else{char tf[P];snprintf(tf,P,"%s/lib/music.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(th){_sdoc(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","x",1);return;}
         char fp[P];snprintf(fp,P,"%s/%s",mc,rel);size_t n=0;char*d=readf(fp,&n);
-        if(d){_sresp(c,200,strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm",d,(int)n);free(d);}else _sresp(c,404,"text/plain","x",1);return;}
+        if(d){const char*mt=strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm";   /* Range support: without Accept-Ranges/206 Chrome marks audio unseekable (seekable=0-0) — trim skip and the seek bar both clamp to 0 */
+            char*rg=strstr(req,"Range: bytes=");size_t s0=0,e0=n?n-1:0;
+            if(rg){s0=(size_t)atoll(rg+13);char*dh=strchr(rg+13,'-');if(dh&&isdigit((unsigned char)dh[1])){e0=(size_t)atoll(dh+1);if(e0>=n)e0=n?n-1:0;}}
+            char h[256];int hl;
+            if(rg&&s0<n){hl=snprintf(h,256,"HTTP/1.1 206 OK\r\nContent-Type:%s\r\nAccept-Ranges:bytes\r\nContent-Range:bytes %zu-%zu/%zu\r\nContent-Length:%zu\r\nConnection:close\r\n\r\n",mt,s0,e0,n,e0-s0+1);
+                if(write(c,h,(size_t)hl)==hl)(void)!write(c,d+s0,e0-s0+1);}
+            else{hl=snprintf(h,256,"HTTP/1.1 200 OK\r\nContent-Type:%s\r\nAccept-Ranges:bytes\r\nContent-Length:%zu\r\nConnection:close\r\n\r\n",mt,n);
+                if(write(c,h,(size_t)hl)==hl)(void)!write(c,d,n);}
+            free(d);}else _sresp(c,404,"text/plain","x",1);return;}
     if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* unified fleet tmux view: all devices' windows in one list, one inline terminal that re-points */
         char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
         if(th){_siso(c,th,(int)tl);free(th);}else _sresp(c,404,"text/plain","no fleetview.html",16);return;}

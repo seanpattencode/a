@@ -1,4 +1,4 @@
-/* a music [term|yt q|get id] — cache-first gdrive music + youtube. menu: digits play, [s]earch→digit = save+play, [a]rchive = rm local (cloud+.index keep the how-to-get). termux: pkg yt-dlp rclone termux-api; 403: pip -U yt-dlp or retry */
+/* a music [term|yt q|get id] — cache-first gdrive music + youtube. menu: digits play, [s]earch→digit = save+play, [a]rchive = rm local (cloud+.index keep the how-to-get). termux: pkg yt-dlp rclone termux-api ffmpeg (no ffmpeg = every trim silently 0 0); 403: pip -U yt-dlp or retry */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,9 +37,9 @@ static void prune(void);
 static void prune(void){   /* stay under the cap by dropping the oldest tracks — the .index line stays, so any of them is one tap from coming back */
     sh("cd \"%s\";[ -s .cfg ]||exit 0;set -- $(cat .cfg);L=$(awk -v g=\"$1\" 'BEGIN{printf \"%%d\",g*1024}');[ \"$L\" -gt 0 ]||exit 0;"
        "while [ $(du -sm . 2>&-|cut -f1) -gt $L ];do f=$(ls -1tr 2>&-|grep -v '\\.part$'|sed q);[ -n \"$f\" ]||break;rm -f \"$f\";done",C);}
-static void trims(const char*id,const char*f,int full){   /* "<skip-in> <stop-at>": dead air at the two ends, so a tap starts on the first real sound */
+static void trims(const char*id,const char*f,int full){   /* "<skip-in> <stop-at>": dead air at the two ends, so a tap starts on the first real sound. Future: sponsorblock music_offtopic API (id-keyed, pre-download) could feed this; not needed now */
     setenv("F",f,1);setenv("I",id,1);
-    sh("cd \"%s\";[ -s .trim ]&&awk -v k=\"$I\" 'substr($0,1,length(k)+1)==k\" \"{f=1}END{exit !f}' .trim&&%s exit 0;"
+    sh("cd \"%s\";command -v ffmpeg>/dev/null||pkg install -y ffmpeg>/dev/null 2>&1;[ -s .trim ]&&awk -v k=\"$I\" 'substr($0,1,length(k)+1)==k\" \"{f=1}END{exit !f}' .trim&&%s exit 0;"
        "D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 \"$F\");"
        "S=$(ffmpeg -hide_banner -nostats -v info -t 20 -i \"$F\" -af silencedetect=noise=-91dB:d=0.05 -f null - 2>&1|grep -o 'silence_[a-z]*: [0-9.]*'|awk '$1==\"silence_start:\"{n++;st=$2+0}$1==\"silence_end:\"{if(n==1&&st<0.05)print $2;exit}');"
        "E=$([ %d = 1 ]&&ffmpeg -hide_banner -nostats -v info -sseof -20 -i \"$F\" -af silencedetect=noise=-91dB:d=0.05 -f null - 2>&1|grep -o 'silence_[a-z]*: [0-9.]*'|awk -v D=$D 'BEGIN{o=D>25?D-20:0}$1==\"silence_start:\"{s=$2}$1==\"silence_end:\"{e=$2}END{if(s!=\"\"&&D-(o+e)<0.5)printf \"%%.3f\",o+s}');"

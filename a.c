@@ -243,7 +243,7 @@ install)
             if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd android-tools 2>/dev/null && ok "pkgs"
                 $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone rsync tcc cppcheck cbmc frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
-        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone rsync cronie termux-services android-tools && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
+        termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone rsync cronie termux-services android-tools ffmpeg && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
     esac
     _ensure_cc
