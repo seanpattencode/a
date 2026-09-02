@@ -753,7 +753,7 @@ static const cmd_t CMDS[] = {
 #define NCMDS (sizeof(CMDS)/sizeof(*CMDS))
 static char perf_msg[B];
 __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
-    (void)!write(STDERR_FILENO,perf_msg,strlen(perf_msg));kill(0,SIGTERM);_exit(124);}
+    (void)!write(STDERR_FILENO,perf_msg,strlen(perf_msg));kill(-getpid(),SIGTERM);_exit(124);}  /* pgrp 0 from tmux run-shell = server */
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
@@ -764,7 +764,7 @@ static void perf_arm(const char *cmd) {
     signal(SIGALRM,perf_alarm);
     struct itimerval tv={{0,0},{(long)(l/1000000),(long)(l%1000000)}};setitimer(ITIMER_REAL,&tv,NULL);
 }
-static void perf_disarm(void) { struct itimerval z={{0,0},{0,0}};setitimer(ITIMER_REAL,&z,NULL);signal(SIGALRM,SIG_DFL); }
+static void perf_disarm(void) { alarm(0);signal(SIGALRM,SIG_DFL); }
 static struct timespec gt0;
 static void gt_print(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     fprintf(stderr,"%ldus\n",(t.tv_sec-gt0.tv_sec)*1000000L+(t.tv_nsec-gt0.tv_nsec)/1000);}
