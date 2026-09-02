@@ -178,7 +178,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);if(b+sizeof(t)+2>me)me=b+sizeof(t)+2;}}
         TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");
         #undef TAG
-        while(*me==' '||*me==']')me++;
+        while(*me==' '||*me==']')me++;int fl=(int)strcspn(dl," ");
         /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */
         for(char*ent=cu;*ent&&ncu<16;){char*nx=strstr(ent,"||");if(nx)*nx=0;
             char*p1=strstr(ent,"::"),*p2=p1?strstr(p1+2,"::"):0;
@@ -213,7 +213,7 @@ static int cmd_done(int argc,char**argv){AB;
             fputs("if [ -z \"$M\" ];then printf '\\033[1;37m=== actions (key) ===\\033[0m\\n'\n",sf);
             if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent: push (recommended)\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;37m[c]\\033[0m crunch the code\\n\\033[1;37m[e]\\033[0m talk to agent\\n'\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;37m[v]\\033[0m open in editor: %%s/%.*s\\n' \"$PWD\"\n",(int)strcspn(dl," "),dl);
+            fprintf(sf,"printf '\\033[1;37m[v]\\033[0m edit: %%s/%.*s\\n' \"$PWD\"\n",fl,dl);
             for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;37m[%c]\\033[0m %%s: %%s\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
             fputs("printf '\\033[1;37m[o]\\033[0m more\\n'\nelse printf '\\033[1;37m=== more (key) ===\\033[0m\\n'\n",sf);
             if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m push: git add+commit -- %s && git push\\n'\n",dl);
@@ -228,7 +228,7 @@ static int cmd_done(int argc,char**argv){AB;
             fprintf(sf,"[ \"$k\" = b ]&&tmux splitw -v -t \"$TMUX_PANE\" 'sh %s -i'\n",np);
             fputs("[ \"$k\" = s ]&&exec ${SHELL:-bash}\n",sf);
             if(tp)fputs("[ \"$k\" = e ]&&tmux selectp -t $AP\n",sf);
-            if(dl[0])fprintf(sf,"[ \"$k\" = v ]&&${EDITOR:-e} %.*s\n",(int)strcspn(dl," "),dl);
+            fprintf(sf,"[ \"$k\" = v ]&&${EDITOR:-e} %.*s\n",fl,dl);
             for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %c ]&&{ %s;w;}\n",ck[i],cx[i]);
             fputs("case \"$k\" in o) M=1;; r|n|b|v) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
