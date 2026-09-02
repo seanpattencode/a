@@ -54,6 +54,9 @@ static void gen_icache(void){
     {char af[P];snprintf(af,P,"%s/local/apps.txt",AROOT);
     size_t al;char*ad=readf(af,&al);if(ad){fwrite(ad,1,al,f);free(ad);}}
 #endif
+    {char ad[P];snprintf(ad,P,"%s/lib/platonic_agents",SDIR);DIR*d=opendir(ad);struct dirent*e;
+    if(d){while((e=readdir(d))){char*p=strrchr(e->d_name,'.');
+        if(p&&(p[1]=='p'||p[1]=='c')){*p=0;fprintf(f,"agent run %s\tagent\n",e->d_name);}}closedir(d);}}
     /* auto-discover lib .py — extract docstring desc */
     {char ld[P];snprintf(ld,P,"%s/lib",SDIR);DIR*d=opendir(ld);struct dirent*e;
     if(d){while((e=readdir(d))){char*dot=strrchr(e->d_name,'.');
@@ -73,9 +76,8 @@ static void gen_icache(void){
         char rp[P];snprintf(rp,P,"%s/%s",rd,re->d_name);DIR*sd=opendir(rp);struct dirent*se;
         if(sd){while((se=readdir(sd))){if(se->d_name[0]=='.'||se->d_name[0]=='_')continue;
             char*dot=strrchr(se->d_name,'.');
-            if(dot&&(!strcmp(dot,".py")||!strcmp(dot,".c")||!strcmp(dot,".sh"))){
-                char nm[64];snprintf(nm,64,"%s",se->d_name);*strrchr(nm,'.')=0;
-                fprintf(f,"%s\t%s · repo\n",nm,re->d_name);}}closedir(sd);}}closedir(d);}}}
+            if(dot&&(!strcmp(dot,".py")||!strcmp(dot,".c")||!strcmp(dot,".sh")))
+                fprintf(f,"%.*s\t%s · repo\n",(int)(dot-se->d_name),se->d_name,re->d_name);}closedir(sd);}}closedir(d);}}}
     /* subcommands not discoverable from filenames */
     fputs("scp\tsend file to host\n"
     "diff\ttok diff vs main\ncat\twhole codebase as text\nfreq\tusage frequency\nq\ttail/search open windows\n"
@@ -186,7 +188,8 @@ static int cmd_done(int argc,char**argv){AB;
             if(!nx)break;ent=nx+2;}
         {char used[32]="pcseoyrnbv";   /* key colliding with built-ins/each other = both handlers fire on one press -> remap to first free */
             for(int i=0;i<ncu;i++){
-                if(strchr(used,ck[i]))for(const char*q="123456789adfghijklmqtuvwxz";*q;q++)if(!strchr(used,*q)){ck[i]=*q;break;}
+                if(strchr(used,ck[i])){char o=ck[i];for(const char*q="123456789adfghijklmqtuvwxz";*q;q++)if(!strchr(used,*q)){ck[i]=*q;break;}
+                    fprintf(stderr,"a done: key [%c] is built-in (p c s e o y r n b v) -> shown as [%c]; announce [%c]\n",o,ck[i],ck[i]);}
                 used[strlen(used)]=ck[i];}}
         if(dl[0]){char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(me,"\n"),me,dl);fclose(cf);}}
         char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
@@ -242,7 +245,7 @@ static int cmd_done(int argc,char**argv){AB;
 static int cmd_dir(int c,char**v){(void)c;(void)v;char w[P];if(getcwd(w,P))puts(w);fflush(0);execlp("ls","ls",(char*)0);return 1;}  /* exec drops the buffer: unflushed, the cwd line is lost when stdout isn't a tty */
 static int cmd_x(int c,char**v){
     if(!tmux_kill_gate("x",isatty(0)||(c>2&&!strcmp(v[2],"now"))))return 1;
-    (void)!system("tmux kill-server 2>/dev/null");puts("✓ All sessions killed");return 0;}
+    (void)!system("tmux kill-serv 2>/dev/null");puts("✓ All sessions killed");return 0;}
 static int cmd_search(int c,char**v){AB;char u[B];
     int l=snprintf(u,B,"https://google.com%s",c>2?"/search?q=":"");
     for(int i=2;i<c&&l<B-1;i++)l+=snprintf(u+l,(size_t)(B-l),"%s%s",i>2?"+":"",v[i]);
