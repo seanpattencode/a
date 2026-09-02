@@ -1,6 +1,6 @@
 /* data */
 static const char *dprompt(void) {
-    static char b[B*32]; const char*a=cfget("prompt");if(!*a)a="default";  /* SILENTLY truncates default.txt past sizeof(b) — bit twice (16KB cut greats mid-name; 64KB cut tail sections at file 67KB, 2026-07): keep ~2x file-size headroom */
+    static char b[B*64]; const char*a=cfget("prompt");if(!*a)a="default";  /* SILENTLY truncates default.txt past sizeof(b) — bit THRICE (16KB cut greats mid-name; 64KB cut tail at 67KB, 2026-07; 128KB cut tail at 148KB, 2026-09-02): keep ~2x file-size headroom */
     char p[P]; snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,a);
     char *d=readf(p,NULL); b[0]=0; if(d){snprintf(b,sizeof(b),"%s ",d);free(d);} return b;
 }
