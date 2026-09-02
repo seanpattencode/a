@@ -17,12 +17,12 @@ def _idxw(IDX, rows):   # atomic replace (unique tmp+rename) — bare write_text
 POSD = ADATA / "local" / "bookpos"
 def _pos_w(name, off):   # position register: local mirror instantly + gdrive fire-and-forget → other devices see it in seconds, not at next git merge
     POSD.mkdir(parents=True, exist_ok=True); (POSD / name).write_text(str(off))
-    subprocess.Popen(["rclone", "copyto", str(POSD / name), f"a-gdrive:books/pos/{name}", "--contimeout", "5s", "--retries", "2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(["rclone", "copyto", str(POSD / name), f"a-gdrive2:books/pos/{name}", "--contimeout", "5s", "--retries", "2"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 def _pos_r(name, seed=0):   # cloud-first, HARD 4s deadline (subprocess timeout= — rclone --timeout is idle-IO, NOT a deadline: hung the reader open under a sync storm), loud fallback → mirror → col5 seed
     POSD.mkdir(parents=True, exist_ok=True); t = POSD / (name + ".new")
     print(">> position: cloud…", end="", flush=True)
     try:
-        r = subprocess.run(["rclone", "copyto", f"a-gdrive:books/pos/{name}", str(t), "--contimeout", "2s", "--retries", "1", "--low-level-retries", "2"], capture_output=True, timeout=4)
+        r = subprocess.run(["rclone", "copyto", f"a-gdrive2:books/pos/{name}", str(t), "--contimeout", "2s", "--retries", "1", "--low-level-retries", "2"], capture_output=True, timeout=4)
         if t.exists(): t.rename(POSD / name); print(" ✓")
         else: print(f" fail rc{r.returncode} → local" if r.returncode else " no register → local")
     except subprocess.TimeoutExpired: print(" timeout 4s → local")
@@ -436,7 +436,7 @@ def cmd_drip(args):
     elif s.get("state") == "running" and rate: print(f"  next page ~{time.strftime('%H:%M', time.localtime(s.get('ts', 0) + int(3600 / rate)))}")
     for l in (DRIP / "drip.log").read_text().splitlines()[-4:] if (DRIP / "drip.log").exists() else []: print(f"  {l}")
 def cmd_sync():
-    path = "a-gdrive:adata/books/"
+    path = "a-gdrive2:adata/books/"
     # registry upsert FIRST — the list is instantly complete everywhere; content streams up behind it (pull-on-open)
     IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
     rows = [l for l in IDX.read_text().splitlines() if l.strip()]
@@ -575,8 +575,8 @@ if __name__ == "__main__":
     if len(args) < 2:
         # tty gets the C pager (lib/book.c, rules: adata/git/mem/tui.md); this path = pipes/help
         print("a book              list TUI: j/k move, spc/b page, a add, o read, c chat, e archive, / filter, q quit\n"
-              "a book add <file>   register a local file → upload to a-gdrive:books/, append to index.txt\n"
-              "a book push|pull <name>  rclone copy to/from a-gdrive:books/<name>/\n"
+              "a book add <file>   register a local file → upload to a-gdrive2:books/, append to index.txt\n"
+              "a book push|pull <name>  rclone copy to/from a-gdrive2:books/<name>/\n"
               "a book read <name>  open in e -r at saved position; Ctrl-T speaks line; quit saves pos\n"
               "a book chat <name>  interactive Q&A against the book's processed output\n"
               "a book transcribe|translate|explain|comic <name>  OCR / translate / annotate / manga panels (--rtl|--ltr)\n"
@@ -598,7 +598,7 @@ if __name__ == "__main__":
         if len(m) != 1: sys.exit(f"x {len(m)} matches" + "".join(f"\n  {d.name}" for d in m[:9]))
         t = m[0].with_name(m[0].name[1:] if m[0].name[0] == '.' else '.' + m[0].name)
         o = m[0].name; m[0].rename(t); print("+ restored " + t.name if t.name[0] != '.' else "+ " + t.name)
-        subprocess.Popen(["rclone","moveto",f"a-gdrive:adata/books/{o}",f"a-gdrive:adata/books/{t.name}"],
+        subprocess.Popen(["rclone","moveto",f"a-gdrive2:adata/books/{o}",f"a-gdrive2:adata/books/{t.name}"],
             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)  # cloud follows, else any sync pull resurrects the old name
     elif cmd == "lib":
         import json; subprocess.run("pkill -9 -f /opt/calibre;sleep 2",shell=True); p=os.path.expanduser('~/.config/calibre/global.py.json'); json.dump({**json.load(open(p)),'library_path':os.path.expanduser('~/calibre-lib')},open(p,'w'))
@@ -794,9 +794,9 @@ if __name__ == "__main__":
             "--ef","pitch","0.48", "--es","book",name, "--ei","start",str(pos))
         Path(tmp.name).unlink(missing_ok=True)
     elif cmd in ("push", "pull", "index"):
-        # cross-device library: rclone <-> a-gdrive:books/, line per book in adata/git/books/index.txt
+        # cross-device library: rclone <-> a-gdrive2:books/ (a-gdrive full since 08-2026, writes 403; flipped 09-02), line per book in adata/git/books/index.txt
         IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()
-        RC = "a-gdrive:books"
+        RC = "a-gdrive2:books"
         if cmd == "index":
             txt = IDX.read_text()
             subprocess.run(["column","-t","-s","\t"], input=txt, text=True) if txt.strip() else print(f"empty — try: a book push <name>")
