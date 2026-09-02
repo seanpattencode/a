@@ -474,6 +474,19 @@ def client(args):
         extdir = os.path.join(briext.OUT, 'bri-ext')
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi']
                               + [f for f in glob.glob(f'{extdir}/*') if not f.endswith('.xpi')])
+    if a == 'get':  # save what the ACTIVE tab shows → ~/Downloads (or [out]): largest <video>/<img> (or css <sel>). Bytes fetched IN the tab (its session; blob:/data: too) ride the bridge base64; an http video or a MediaSource blob (YouTube) goes to yt-dlp with the tab's cookies
+        import base64, urllib.parse
+        sel = args[1] if len(args) > 1 else 'video,img'
+        code = ('(async()=>{if(top!==self||document.hidden)return null;const e=[...document.querySelectorAll(%s)].sort((a,b)=>b.offsetWidth*b.offsetHeight-a.offsetWidth*a.offsetHeight)[0];if(!e)return null;const u=e.currentSrc||e.src,r=[u,location.href];'
+                'if(e.tagName=="VIDEO"&&/^http/.test(u))return r;try{const b=await(await fetch(u)).blob();r.push(await new Promise(z=>{const f=new FileReader();f.onload=()=>z(f.result);f.readAsDataURL(b)}))}catch(x){}return r})()') % json.dumps(sel)
+        v = next((r['value'] for r in _send({'action': 'eval', 'code': code}, to) if isinstance(r.get('value'), list)), None)
+        if not v: sys.stderr.write(f'x no <{sel}> on the active tab\n'); sys.exit(1)
+        dl, h = os.path.expanduser('~/Downloads'), v[0].startswith('http')
+        if len(v) > 2:
+            out = args[2] if len(args) > 2 else f'{dl}/' + ((urllib.parse.unquote(os.path.basename(v[0].split('?')[0])) if h else '') or f'bri-{int(time.time())}.' + v[2].split(';')[0].split('/')[1])
+            open(out, 'wb').write(base64.b64decode(v[2].split(',', 1)[1])); print(f'{out}  ← {v[0]}'); return
+        prof = glob.glob(os.path.expanduser('~/.mozilla/firefox/*default-nightly'))   # the agent FF's cookies
+        os.execvp('yt-dlp', ['yt-dlp', '--js-runtimes', 'node', '-P', dl] + (['--cookies-from-browser', 'firefox:' + prof[0]] if prof else []) + (['-o', args[2]] if len(args) > 2 else []) + [v[0] if h else v[1]])
         # Prefer Nightly (active); fall back to dev/release.
         cands = glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) \
               + glob.glob(os.path.expanduser('~/.mozilla/firefox/*default*'))
@@ -553,6 +566,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per 
   '{json}'         raw passthrough — full 9-action protocol (default-targeted too; a "to" field overrides)
 first run — Firefox: a bri serve ff then a bri deploy (serve ffh = HEADLESS FF, same profile/sign-ins, no window; serve ff switches back)   ·   Chrome: a bri serve then load bri-chrome (a extload)"""
 
+  get [sel] [out]  save what the active tab shows → ~/Downloads: largest <video>/<img> (or css sel); img fetched in-tab (its session), video via yt-dlp with the tab's cookies
 if __name__=='__main__':
     args = sys.argv[1:]
     if args and args[0] == 'bri': args = args[1:]  # `a bri …` passes cmd name as argv[1]
