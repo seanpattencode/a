@@ -112,6 +112,7 @@ static void tm_ensure_conf(void) {
         "set -s extended-keys on\n"
         "set -as terminal-features 'xterm*:extkeys:overline'\n"
         "set -as terminal-overrides ',*:Smol=\\E[53m:Rmol=\\E[55m'\n"
+        "set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'\n"   /* OSC52 to every client on copy — foot+xterm terminfo lack Ms here */
         "set -g assume-paste-time 0\n"
         "set -g window-style bg=default\n"
         "set -g window-active-style bg=default\n"

@@ -2,7 +2,7 @@
 <!-- term.html: direct-DOM terminal for a's /ws (tmux-backed), served at /op; /term = iframe. Runs positioned at col*cw,
      wide/odd glyphs clipped to exact cells = alignment by construction; tmux owns scrollback/selection. Zero deps.
      ?w=<win> ?fs=<px> ?host=<h:p> · verify: adata/git/my/term/test.py · out of scope until screamed (unk counter shows):
-     OSC title/clipboard, F-keys, combining marks, DECOM, 47/1047/1048, SO/SI G1 -->
+     F-keys, combining marks, DECOM, 47/1047/1048, SO/SI G1 -->
 <meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>a term</title>
@@ -106,9 +106,11 @@ function feed(d){
   if(pd){if(S.y===py0&&S.x>=px0&&S.x<=px0+pd.length){const a=S.x-px0;if(a>0){gc+=a;gl=kr;pcf+=a;pd=pd.slice(a);px0=S.x;}}else{pd='';pcf=0;}}else pcf=0; /* reconcile: drop confirmed prefix; zone-left OR output-while-idle => disarm (password-safe) */
   if(!raf)raf=requestAnimationFrame(paint);
 }
-function title(){ /* OSC 0/2 "#S:#W" -> pin reconnects to the viewed window */
+function title(){ /* OSC 0/2 "#S:#W" -> pin reconnects to the viewed window; OSC 52 -> browser clipboard (tmux copy auto-copies here) */
   const m=ob.match(/^[02];(?:[^:]*:)?(.*)$/);
-  if(m){wn=m[1];document.title=m[1];}
+  if(m){wn=m[1];document.title=m[1];return;}
+  const c=ob.match(/^52;[^;]*;([A-Za-z0-9+/=]+)$/);
+  if(c&&navigator.clipboard)navigator.clipboard.writeText(new TextDecoder().decode(Uint8Array.from(atob(c[1]),x=>x.charCodeAt(0)))).catch(()=>0);
 }
 function ctrl(c){
   if(c===8){if(S.pw)S.pw=false;else S.x=Math.max(0,S.x-1);}
@@ -388,6 +390,7 @@ scr.addEventListener('pointerdown',e=>{
   if(e.pointerType!=='touch'&&mev(e.button===2?2:e.button,e.clientX,e.clientY,false))e.preventDefault();
 });
 scr.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')mev(e.button===2?2:e.button,e.clientX,e.clientY,true);});
+scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);}); /* drag motion -> tmux starts/extends selection; release above ends it = copy */
 scr.addEventListener('contextmenu',e=>{if(S.mouse)e.preventDefault();});
 /* scroll gestures target the CURSOR row: never the status bar, where wheel = selectw (window jumps) */
 addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,(S.y+.5)*chh,false))e.preventDefault();},{passive:false});

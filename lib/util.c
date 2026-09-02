@@ -101,9 +101,9 @@ static int raw_line(const char*prompt,char*buf,int sz){
 static int m_pick(const char*cat,const char*const*items,int n,char*out,size_t osz);/* live-filter picker, lib/ssh.c */
 
 
-static const char*clip_cmd(void){static char c[64];if(!getenv("TMUX"))return NULL;
-    if(!pcmd("tmux show -sv copy-command 2>/dev/null",c,64)&&c[0]){c[strcspn(c,"\n")]=0;return c;}
-    return "tmux load-buffer -";}
+static const char*clip_cmd(void){static char c[64];   /* never read tmux copy-command back: its default "" passed the c[0] test and poisoned the conf as copy-pipe '' */
+    if(!c[0]){pcmd("command -v wl-copy pbcopy termux-clipboard-set 2>/dev/null",c,64);c[strcspn(c,"\n")]=0;}
+    return c[0]?c:getenv("TMUX")?"tmux load-buffer -":NULL;}
 static int to_clip(const char*d){const char*c=clip_cmd();if(!c)return 1;
     char cm[80];snprintf(cm,80,"%s 2>/dev/null",c);signal(SIGPIPE,SIG_IGN);
     FILE*f=popen(cm,"w");if(!f)return 1;fputs(d,f);return pclose(f);}
