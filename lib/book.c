@@ -866,7 +866,7 @@ static void bk_mid(char*s,int w){int l=(int)strlen(s);if(l<=w||w<8)return;int h=
 /* cloud follows local rename (bg moveto) — else sync pull resurrects old name */
 static void bk_cloudmv(const char*a,const char*b){if(fork())return;
     int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
-    execl("/bin/sh","sh","-c","r=$(rclone listremotes 2>/dev/null|grep a-gdrive|head -1);"
+    execl("/bin/sh","sh","-c","r=$(rclone listremotes 2>/dev/null|grep '^a-gdrive2:');"
         "[ -n \"$r\" ]&&exec rclone moveto \"${r}adata/books/$0\" \"${r}adata/books/$1\"",a,b,(char*)0);_exit(0);}
 static void bk_jget(const char*j,const char*k,char*o,int n){o[0]=0;char pat[24];snprintf(pat,24,"\"%s\":",k);   /* flat one-level state.json only */
     const char*p=strstr(j,pat);if(!p)return;p+=strlen(pat);while(*p==' ')p++;if(*p=='"')p++;   /* json.dumps pads ": " */
