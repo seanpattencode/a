@@ -760,7 +760,8 @@ typedef struct{time_t t;char*p;}rv_t;static int _rvcmp(const void*a,const void*b
             if(n>=nc){nc=nc?nc*2:64;rs=realloc(rs,nc*sizeof*rs);}rs[n].t=st.st_mtime;rs[n++].p=l;}
         qsort(rs,n,sizeof*rs,_rvcmp);int cap=1<<17;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
         for(size_t i=0;i<n&&hl<cap-4096;i++){long a=(long)(now-rs[i].t);char fp[P];snprintf(fp,P,"%s/.a_done",rs[i].p);char*b=readf(fp,NULL);if(!b)continue;char*m=strrchr(b,']');m=m?m+1:b;while(*m==' ')m++;m[strcspn(m,"\n")]=0;for(char*q=m;*q;q++)if(*q=='<'||*q=='>')*q=' ';
-            const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%ld%c</span> <b>%s</b> %.300s</div>",a<3600?a/60:a<86400?a/3600:a/86400,a<3600?'m':a<86400?'h':'d',rp,m);free(b);}
+            const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;char ag[32];if(a<3600)snprintf(ag,32,"%ldm",a/60);else if(a<86400)snprintf(ag,32,"%ldh%02ldm",a/3600,a%3600/60);else snprintf(ag,32,"%ldd%ldh%02ldm",a/86400,a%86400/3600,a%3600/60);   /* age to the minute (Sean 09-03) */
+            hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%s</span> <b>%s</b> %.300s</div>",ag,rp,m);free(b);}
         free(rs);free(rl);_sdoc(c,h,hl);free(h);return;}
     if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web: /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
         if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */
