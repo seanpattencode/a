@@ -332,6 +332,7 @@ static void _prompt_gen(void){ /* cached; GET /prompt regens when sources newer 
         free(o);_phtml=h;_phlen=hl;_pgen_t=time(0);
 }
 static char _rl[160];
+typedef struct{time_t t;char*p,*w,*n;}rv_t;static int _rvcmp(const void*a,const void*b){time_t x=((const rv_t*)a)->t,y=((const rv_t*)b)->t;return y>x?1:y<x?-1:0;}   /* /review rows, newest first */
 static void _handle(int c){
     static char req[262144];int n=0;
     while(n<262143){int r=(int)read(c,req+n,262143-n);if(r<=0)break;n+=r;req[n]=0;if(strstr(req,"\r\n\r\n"))break;}
@@ -413,7 +414,6 @@ static void _handle(int c){
         {size_t o=0;char*d=readf(fp,&o);FILE*b=fopen(bf,"w");if(b){if(d)(void)!fwrite(d,1,o,b);fclose(b);}free(d);}
         FILE*wf=fopen(fp,"w");int ok=0;if(wf){fwrite(ct,1,(size_t)w,wf);ok=!ferror(wf);fclose(wf);}
         char saved[512],gurl[B]="";
-typedef struct{time_t t;char*p;}rv_t;static int _rvcmp(const void*a,const void*b){time_t x=((const rv_t*)a)->t,y=((const rv_t*)b)->t;return y>x?1:y<x?-1:0;}   /* /review rows, newest first */
         if(ok){  /* 3-way merge onto origin/main's latest, push just this file via plumbing (survives local divergence); url or ERR */
             char gc[B*3];snprintf(gc,B*3,"cd '%s'&&F='%s';T=/tmp/_t$$;M=/tmp/_m$$;I=/tmp/_i$$;git fetch origin -q;git show origin/main:\"$F\">$T 2>/dev/null||cp '%s' $T;"
                 "if git merge-file -p \"$F\" '%s' $T>$M;then cp $M \"$F\";GIT_INDEX_FILE=$I git read-tree origin/main;GIT_INDEX_FILE=$I git update-index --add --cacheinfo 100644,$(git hash-object -w $M),\"$F\";"
@@ -756,12 +756,15 @@ typedef struct{time_t t;char*p;}rv_t;static int _rvcmp(const void*a,const void*b
     if(!strncmp(req,"GET /review",11)){   /* a review: GUI review queue (Sean 2026-09-02) — the .a_done of every dir `a done` ever ran in (DDIR/review.txt, registered by cmd_done), newest first; shell = lib/review.html */
         char tf[P];snprintf(tf,P,"%s/lib/review.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(!th){_sresp(c,404,"text/plain","no review.html",14);return;}
         char rf[P];snprintf(rf,P,"%s/review.txt",DDIR);char*rl=readf(rf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;
-        for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l)){nl=strchr(l,'\n');if(nl)*nl=0;char fp[P];snprintf(fp,P,"%s/.a_done",l);struct stat st;if(stat(fp,&st))continue;
-            if(n>=nc){nc=nc?nc*2:64;rs=realloc(rs,nc*sizeof*rs);}rs[n].t=st.st_mtime;rs[n++].p=l;}
+        for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l)){nl=strchr(l,'\n');if(nl)*nl=0;char*w=strchr(l,'\t'),*nm=0;if(w){*w++=0;if((nm=strchr(w,'\t')))*nm++=0;if(strspn(w,"0123456789")!=strlen(w))w=0;}   /* dir[\tindex[\tname]] */
+            size_t j=0;for(;j<n&&strcmp(rs[j].p,l);j++);if(j<n){rs[j].w=w;rs[j].n=nm;continue;}   /* same dir again: newest window wins */
+            char fp[P];snprintf(fp,P,"%s/.a_done",l);struct stat st;if(stat(fp,&st))continue;
+            if(n>=nc){nc=nc?nc*2:64;rs=realloc(rs,nc*sizeof*rs);}rs[n].t=st.st_mtime;rs[n].p=l;rs[n].w=w;rs[n++].n=nm;}
         qsort(rs,n,sizeof*rs,_rvcmp);int cap=1<<17;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
         for(size_t i=0;i<n&&hl<cap-4096;i++){long a=(long)(now-rs[i].t);char fp[P];snprintf(fp,P,"%s/.a_done",rs[i].p);char*b=readf(fp,NULL);if(!b)continue;char*m=strrchr(b,']');m=m?m+1:b;while(*m==' ')m++;m[strcspn(m,"\n")]=0;for(char*q=m;*q;q++)if(*q=='<'||*q=='>')*q=' ';
             const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;char ag[32];if(a<3600)snprintf(ag,32,"%ldm",a/60);else if(a<86400)snprintf(ag,32,"%ldh%02ldm",a/3600,a%3600/60);else snprintf(ag,32,"%ldd%ldh%02ldm",a/86400,a%86400/3600,a%3600/60);   /* age to the minute (Sean 09-03) */
-            hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%s</span> <b>%s</b> %.300s</div>",ag,rp,m);free(b);}
+            char bt[384]="";if(rs[i].w){char nm[64]="";if(rs[i].n){int k=0;for(const char*q=rs[i].n;*q&&k<63;q++)if(isalnum((unsigned char)*q)||strchr("-_.",*q))nm[k++]=*q;nm[k]=0;}snprintf(bt,384,"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"op(this)\" data-w=\"%s\" data-n=\"%s\">open conversation in terminal: %s</button></div>",rs[i].w,nm,nm[0]?nm:"window");}   /* own line, plain words (Sean 09-03: a play icon reads as music); pull-up web terminal of the agent's tmux window */
+            hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%s</span> <b>%s</b> %.300s%s</div>",ag,rp,m,bt);free(b);}
         free(rs);free(rl);_sdoc(c,h,hl);free(h);return;}
     if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web: /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
         if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */

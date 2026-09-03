@@ -1,5 +1,8 @@
 <!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>a review</title>
-<style>body{margin:0;background:#000;color:#fff;font:20px ui-monospace,monospace;padding:24px}#ms{position:fixed;right:10px;bottom:10px;color:#888;font-size:13px}</style>
-<!-- a review (Sean 2026-09-02): a done outputs awaiting his decision; grows only by scream. route: serve.c GET /review -->
-<div style="color:#888;margin-bottom:8px">a review · every repo's <b>a done</b>, newest first · no decision marks yet, scream for them</div><div id=ms></div>
-<script>var t0=performance.now();requestAnimationFrame(function(){requestAnimationFrame(function(){ms.textContent=(performance.now()-t0).toFixed(3)+'ms paint'})})</script>
+<style>body{margin:0;background:#000;color:#fff;font:20px ui-monospace,monospace;padding:24px 24px 66vh}#ms{position:fixed;right:10px;bottom:10px;color:#888;font-size:13px}.op{background:#111;color:#fff;border:1px solid #666;border-radius:8px;padding:8px 14px;font:16px ui-monospace,monospace;touch-action:manipulation}
+#pull{display:none;position:fixed;left:0;right:0;bottom:0;height:62vh;background:#000;border-top:2px solid #444;z-index:9;flex-direction:column}#pf{flex:1;width:100%;border:0;background:#000}#pb{height:48px;display:flex;align-items:center;gap:12px;padding:0 12px;border-top:1px solid #222}#pt{color:#888;font-size:13px;flex:1}</style>
+<!-- a review (Sean 2026-09-02): a done outputs awaiting his decision; grows only by scream. route: serve.c GET /review. button = pull-up web terminal (/op) of the agent's tmux window, bottom-anchored, height not width (Sean 09-03: vertical works for mobile) -->
+<div style="color:#888;margin-bottom:8px">a review · every repo's <b>a done</b>, newest first · the button under a row opens that agent's conversation in a terminal pulled up from the bottom · no decision marks yet</div><div id=ms></div>
+<div id=pull><iframe id=pf></iframe><div id=pb><span id=pt></span><button class=op onpointerdown="pull.style.display='none';pf.src='about:blank'">&#10005; close</button></div></div>
+<script>var t0=performance.now();requestAnimationFrame(function(){requestAnimationFrame(function(){ms.textContent=(performance.now()-t0).toFixed(3)+'ms paint'})});
+function op(b){var t=performance.now();pull.style.display='flex';pf.src='/op?w='+b.dataset.w+'&all';requestAnimationFrame(function(){requestAnimationFrame(function(){pt.textContent=b.dataset.n+' · tmux window '+b.dataset.w+' · panel '+(performance.now()-t).toFixed(3)+'ms, terminal loads in the frame'})})}</script>
