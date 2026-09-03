@@ -1189,7 +1189,7 @@ function openTab(url, bg, fresh) {     // dedup by origin+path; hit → navigate
   })());
   const p = _opening.get(key);
   return bg ? p.then(id => ({id, focused:false}))
-            : p.then(async id => { await browser.tabs.update(id, {url, active:true}); return {id, focused:true}; });  // {url}: land on the EXACT url (SERP re-search), per-call not cached
+            : p.then(async id => { const t = await browser.tabs.get(id); await browser.tabs.update(id, t.url === url ? {active:true} : {url, active:true}); await browser.windows.update(t.windowId, {focused:true}); return {id, focused:true}; });  // same url = FOCUS only, no reload (a streaming answer survives; Sean 2026-09-03); else land on the EXACT url (SERP re-search), per-call not cached
 }
 
 // user.js loadDivertedInBackground (wiki-feed appends) backgrounds even hand-clicked target=_blank links; a click on a
