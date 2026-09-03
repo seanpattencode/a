@@ -413,6 +413,7 @@ static void _handle(int c){
         {size_t o=0;char*d=readf(fp,&o);FILE*b=fopen(bf,"w");if(b){if(d)(void)!fwrite(d,1,o,b);fclose(b);}free(d);}
         FILE*wf=fopen(fp,"w");int ok=0;if(wf){fwrite(ct,1,(size_t)w,wf);ok=!ferror(wf);fclose(wf);}
         char saved[512],gurl[B]="";
+typedef struct{time_t t;char*p;}rv_t;static int _rvcmp(const void*a,const void*b){time_t x=((const rv_t*)a)->t,y=((const rv_t*)b)->t;return y>x?1:y<x?-1:0;}   /* /review rows, newest first */
         if(ok){  /* 3-way merge onto origin/main's latest, push just this file via plumbing (survives local divergence); url or ERR */
             char gc[B*3];snprintf(gc,B*3,"cd '%s'&&F='%s';T=/tmp/_t$$;M=/tmp/_m$$;I=/tmp/_i$$;git fetch origin -q;git show origin/main:\"$F\">$T 2>/dev/null||cp '%s' $T;"
                 "if git merge-file -p \"$F\" '%s' $T>$M;then cp $M \"$F\";GIT_INDEX_FILE=$I git read-tree origin/main;GIT_INDEX_FILE=$I git update-index --add --cacheinfo 100644,$(git hash-object -w $M),\"$F\";"
@@ -752,10 +753,17 @@ static void _handle(int c){
         if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
             if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
         _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
-    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);
-        if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);char b[8192];
-            if(rel[0]){char d[P];signal(SIGCHLD,SIG_DFL);snprintf(d,P,"jq -n >/dev/null 2>&1||sh '%s/a.c' install jq >/dev/null 2>&1",SDIR);
-                if(system(d)){_sresp(c,500,"text/plain","x jq install failed",19);return;}}
+    if(!strncmp(req,"GET /review",11)){   /* a review: GUI review queue (Sean 2026-09-02) — the .a_done of every dir `a done` ever ran in (DDIR/review.txt, registered by cmd_done), newest first; shell = lib/review.html */
+        char tf[P];snprintf(tf,P,"%s/lib/review.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(!th){_sresp(c,404,"text/plain","no review.html",14);return;}
+        char rf[P];snprintf(rf,P,"%s/review.txt",DDIR);char*rl=readf(rf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;
+        for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l)){nl=strchr(l,'\n');if(nl)*nl=0;char fp[P];snprintf(fp,P,"%s/.a_done",l);struct stat st;if(stat(fp,&st))continue;
+            if(n>=nc){nc=nc?nc*2:64;rs=realloc(rs,nc*sizeof*rs);}rs[n].t=st.st_mtime;rs[n++].p=l;}
+        qsort(rs,n,sizeof*rs,_rvcmp);int cap=1<<17;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
+        for(size_t i=0;i<n&&hl<cap-4096;i++){long a=(long)(now-rs[i].t);char fp[P];snprintf(fp,P,"%s/.a_done",rs[i].p);char*b=readf(fp,NULL);if(!b)continue;char*m=strrchr(b,']');m=m?m+1:b;while(*m==' ')m++;m[strcspn(m,"\n")]=0;for(char*q=m;*q;q++)if(*q=='<'||*q=='>')*q=' ';
+            const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%ld%c</span> <b>%s</b> %.300s</div>",a<3600?a/60:a<86400?a/3600:a/86400,a<3600?'m':a<86400?'h':'d',rp,m);free(b);}
+        free(rs);free(rl);_sdoc(c,h,hl);free(h);return;}
+    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web: /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
+        if(req[10]=='s'){_docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */
             FILE*p=popen(rel[0]?"ls \"$MC\"|grep -v '\\.part$'|grep -iF -- \"$Q\";jq -cn --arg q \"$Q\" '{context:{client:{clientName:\"WEB\",clientVersion:\"2.20250101.00.00\"}},query:$q,params:\"EgIQAQ%3D%3D\"}'|curl -s -m6 -d @- -H content-type:application/json 'https://www.youtube.com/youtubei/v1/search?prettyPrint=false'|jq -r '[..|.videoRenderer?|select(.)|\"\\(.videoId)\\t\\(.title.runs[0].text) \\(.lengthText.simpleText//\"\")\"]|.[:5][]'":"ls \"$MC\"|grep -v '\\.part$'","r");
             size_t n=p?fread(b,1,8191,p):0;if(p)pclose(p);_sresp(c,200,"text/plain; charset=utf-8",b,(int)n);b[n]=0;
             char*ar[16];int an=0;ar[an++]="a";ar[an++]="music";ar[an++]="pre";   /* prefetch every hit at once (first first) so a tap plays instantly; ids come off the network → argv, never a shell, and only [A-Za-z0-9_-] */

@@ -173,7 +173,8 @@ static int cmd_done(int argc,char**argv){AB;
     char p[P],msg[B]="";snprintf(p,P,"%s/.done",DDIR);ajoin(msg,B,argc,argv,2);
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
-        FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}}
+        FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}
+        char rf[P];snprintf(rf,P,"%s/review.txt",DDIR);char*rb=readf(rf,NULL);char key[P];snprintf(key,P,"%s\n",wd);if(!rb||!strstr(rb,key)){FILE*r=fopen(rf,"a");if(r){fputs(key,r);fclose(r);}}free(rb);}   /* register this dir for :1111/review (a review) */
     if(getenv("TMUX")){char ts[B]="",dl[B]="",cu[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
         char ck[16];char*cc[16],*cx[16];int ncu=0;char*me=msg;
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
