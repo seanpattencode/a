@@ -337,6 +337,10 @@ static int _rvdoc(const char*m,const char*dir,int k,char*out,int n){   /* a revi
     const char*a=strstr(m,"<doc>"),*b=a?strstr(a,"</doc>"):0;if(!a||!b)return 0;a+=5;
     for(int i=0;a<b;i++){const char*e=memchr(a,',',(size_t)(b-a));if(!e)e=b;if(i==k){while(a<e&&*a==' ')a++;int l=(int)(e-a);while(l&&a[l-1]==' ')l--;if(l<=0)return 0;if(*a=='/')snprintf(out,(size_t)n,"%.*s",l,a);else snprintf(out,(size_t)n,"%s/%.*s",dir,l,a);return 1;}a=e+1;}
     return 0;}
+static int _rvpath(int N,int K,char*fp,int n){   /* a review: K-th <doc> path of done.log line N; 1 = found */
+    char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);int i=0,ok=0;fp[0]=0;
+    for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l),i++){nl=strchr(l,'\n');if(nl)*nl=0;if(i!=N)continue;char*f[5]={l,0,0,0,0};int k=1;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}if(k==5)ok=_rvdoc(f[4],f[3],K,fp,n);break;}
+    free(rl);return ok;}
 static void _handle(int c){
     static char req[262144];int n=0;
     while(n<262143){int r=(int)read(c,req+n,262143-n);if(r<=0)break;n+=r;req[n]=0;if(strstr(req,"\r\n\r\n"))break;}
@@ -757,9 +761,13 @@ static void _handle(int c){
         if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
             if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
         _sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
-    if(!strncmp(req,"GET /review/doc?n=",18)){int N=atoi(req+18);const char*kq=strstr(req,"&k=");int K=kq?atoi(kq+3):0;char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);char fp[P]="";int i=0;
-        for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l),i++){nl=strchr(l,'\n');if(nl)*nl=0;if(i!=N)continue;char*f[5]={l,0,0,0,0};int k=1;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}if(k==5)_rvdoc(f[4],f[3],K,fp,P);break;}
-        free(rl);size_t bl=0;char*b=fp[0]?readf(fp,&bl):0;if(!b){_sresp(c,404,"text/plain","no such document",16);return;}   /* only paths an a done recorded: the server is on the LAN */
+    if(!strncmp(req,"GET /review/armed",17)){const char*rt=getenv("XDG_RUNTIME_DIR");char af[P];snprintf(af,P,"%s/a_pick",rt&&*rt?rt:"/tmp");char*q=readf(af,NULL);char out[P]="";
+        for(char*l=q,*nl;l&&*l;l=nl?nl+1:l+strlen(l)){nl=strchr(l,'\n');if(nl)*nl=0;if(*l&&access(l,R_OK)==0){snprintf(out,P,"%s",strrchr(l,'/')?strrchr(l,'/')+1:l);break;}}
+        free(q);_sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}   /* a review: what the e picker queue will attach next (i pick arm), for the banner */
+    if(!strncmp(req,"GET /review/arm?n=",18)){int N=atoi(req+18);const char*kq=strstr(req,"&k=");int K=kq?atoi(kq+3):0;char fp[P]="",msg[P]="not found";
+        if(_rvpath(N,K,fp,P)&&access(fp,R_OK)==0){const char*rt=getenv("XDG_RUNTIME_DIR");char af[P];snprintf(af,P,"%s/a_pick",rt&&*rt?rt:"/tmp");FILE*f=fopen(af,"w");if(f){fprintf(f,"%s\n",fp);fclose(f);snprintf(msg,P,"armed %s",strrchr(fp,'/')?strrchr(fp,'/')+1:fp);}}
+        _sresp(c,200,"text/plain; charset=utf-8",msg,(int)strlen(msg));return;}   /* a review: arm the e file picker queue with this document: the next Attach/Upload click in any browser attaches it, no navigating (Sean 2026-09-03: auto arm like resume does) */
+    if(!strncmp(req,"GET /review/doc?n=",18)){int N=atoi(req+18);const char*kq=strstr(req,"&k=");int K=kq?atoi(kq+3):0;char fp[P]="";_rvpath(N,K,fp,P);size_t bl=0;char*b=fp[0]?readf(fp,&bl):0;if(!b){_sresp(c,404,"text/plain","no such document",16);return;}   /* only paths an a done recorded: the server is on the LAN */
         const char*dot=strrchr(fp,'.'),*ct="text/plain; charset=utf-8";if(dot){if(!strcmp(dot,".pdf"))ct="application/pdf";else if(!strcmp(dot,".html"))ct="text/html; charset=utf-8";else if(!strcmp(dot,".png"))ct="image/png";else if(!strcmp(dot,".jpg")||!strcmp(dot,".jpeg"))ct="image/jpeg";else if(!strcmp(dot,".svg"))ct="image/svg+xml";}
         if(!strncmp(ct,"text/plain",10)){size_t oc=bl*6+512;char*o=malloc(oc);int ol=snprintf(o,oc,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{margin:0;padding:16px 16px 80px;background:#000;color:#fff;font:18px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}</style>");
             for(size_t q=0;q<bl&&ol<(int)oc-8;q++){char ch=b[q];if(ch=='<')ol+=snprintf(o+ol,oc-(size_t)ol,"&lt;");else if(ch=='>')ol+=snprintf(o+ol,oc-(size_t)ol,"&gt;");else if(ch=='&')ol+=snprintf(o+ol,oc-(size_t)ol,"&amp;");else o[ol++]=ch;}
