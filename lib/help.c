@@ -174,14 +174,14 @@ static int cmd_done(int argc,char**argv){AB;
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
     {char wd[P];if(getcwd(wd,P)){char df[P];snprintf(df,P,"%s/.a_done",wd);
         FILE*f=fopen(df,"w");if(f){fputs(msg[0]?msg:"done",f);fclose(f);}}
-        char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char wi[128]="";const char*tp0=getenv("TMUX_PANE");   /* :1111/review (a review): one line per a done — ts, tmux window index, window name, dir, message. Per AGENT, not per repo (Sean 2026-09-03: many agents work one repo at once; .a_done above is per repo and overwrites) */
+        char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char wi[128]="";const char*tp0=getenv("TMUX_PANE");   /* :1111/review (a review): one line per a done, ts, tmux window index, window name, dir, message. Per AGENT, not per repo (Sean 2026-09-03: many agents work one repo at once; .a_done above is per repo and overwrites) */
         if(tp0){char tc[256];snprintf(tc,256,"tmux display-message -p -t '%s' '#I\t#W' 2>/dev/null",tp0);FILE*tf=popen(tc,"r");if(tf){if(fgets(wi,128,tf))wi[strcspn(wi,"\n")]=0;pclose(tf);}}
         FILE*r=fopen(lf,"a");if(r){char*nm=strchr(wi,'\t');if(nm)*nm++=0;char em[B];int k=0;for(const char*q=msg[0]?msg:"done";*q&&k<B-1;q++)em[k++]=(*q=='\n'||*q=='\t')?' ':*q;em[k]=0;fprintf(r,"%ld\t%s\t%s\t%s\t%s\n",(long)time(NULL),wi,nm?nm:"",wd,em);fclose(r);}}   /* register this dir for :1111/review (a review) */
-    if(getenv("TMUX")){char ts[B]="",dl[B]="",cu[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
+    if(getenv("TMUX")){char ts[B]="",dl[B]="",cu[B]="",dc[B]="",sp[P];const char*tp=getenv("TMUX_PANE");
         char ck[16];char*cc[16],*cx[16];int ncu=0;char*me=msg;
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);if(b+sizeof(t)+2>me)me=b+sizeof(t)+2;}}
-        TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");
+        TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");TAG(dc,"doc");   /* <doc>paths</doc>: documents for :1111/review to show (a review); stripped from the pane text like the others */
         #undef TAG
         while(*me==' '||*me==']')me++;int fl=(int)strcspn(dl," ");
         /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */

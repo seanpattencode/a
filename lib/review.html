@@ -9,11 +9,12 @@
 var FIT=1,HC=0,HR=0,HN='',HW='',TR=0;try{FIT=localStorage.rvfit==='0'?0:1}catch(e){}fb.textContent='fit width: '+(FIT?'on':'off');
 function fitTog(){FIT=FIT?0:1;try{localStorage.rvfit=FIT}catch(e){}fb.textContent='fit width: '+(FIT?'on':'off');fitApply()}
 function font(){var d=pf.contentDocument,sc=d&&d.getElementById('scr');if(!sc||!sc.style.font)return 0;var e=d.createElement('span');e.style.cssText='position:absolute;visibility:hidden;white-space:pre;font:'+sc.style.font;e.textContent='0000000000';d.body.appendChild(e);var w=e.getBoundingClientRect().width/10;e.remove();var m=/\/(\d+\.?\d*)px/.exec(sc.style.font);return{cw:w,lh:m?+m[1]:w*2}}
-function fitApply(){var t=performance.now(),f=FIT&&HC?font():0,s=1,W='100%',H='100%';
+function fitApply(){if(!HW)return;var t=performance.now(),f=FIT&&HC?font():0,s=1,W='100%',H='100%';
   if(f){var iw=HC*f.cw+2,ih=HR*f.lh;s=pw.clientWidth/iw;W=iw*s+'px';H=ih*s+'px';pf.style.width=iw+'px';pf.style.height=ih+'px'}else{pf.style.width=pf.style.height='100%'}
   pf.style.transform='scale('+s+')';ps.style.width=W;ps.style.height=H;pw.scrollTop=pw.scrollHeight;
   pt.textContent=HN+' · tmux window '+HW+(HC?' · host '+HC+'x'+HR:'')+(f?' · scale '+s.toFixed(3):FIT&&HC?' · measuring':'')+' · '+(performance.now()-t).toFixed(3)+'ms';
   if(FIT&&HC&&!f&&TR++<12)setTimeout(fitApply,250)}   /* the frame's terminal sets its font a moment after load; retry until measurable */
 function op(b){HC=HR=0;TR=0;HN=b.dataset.n;HW=b.dataset.w;pull.style.display='flex';fitApply();pf.src='/op?w='+HW+'&all';
   fetch('/review/wsz?w='+HW).then(function(r){return r.text()}).then(function(x){var a=x.split(' ');HC=+a[0]||0;HR=+a[1]||0;fitApply()});pf.onload=function(){setTimeout(fitApply,300)}}
+function dv(b){HC=HR=0;TR=0;HW='';HN=b.dataset.n;pull.style.display='flex';pf.style.transform='';pf.style.width=pf.style.height='100%';ps.style.width=ps.style.height='100%';pf.onload=null;pf.src=b.dataset.u;pt.textContent='document · '+HN}   /* <doc> files: pdf/html/images render natively, text as text */
 addEventListener('resize',function(){if(pull.style.display==='flex')fitApply()});</script>
