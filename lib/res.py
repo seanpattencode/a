@@ -263,8 +263,9 @@ def _snip(ut, q, w):                                  # the line that MATCHED, m
     return f"{s[:j]}\x1b[4m{s[j:j+len(q)]}\x1b[24m{s[j+len(q):]}" if j >= 0 else s
 
 
-def _claunch(sid, cwd):                               # resume one claude transcript in a new window
-    subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(cwd)}", "-c", cwd, RESUME["claude"] % sid])
+def _stamp(t): l = time.localtime(t); return f"{time.strftime('%b', l)}{l.tm_mday}-{l.tm_hour % 12 or 12}{l.tm_min:02d}{'ap'[l.tm_hour > 11]}"   # Sep4-346p = tm_name (tmux.c): the WHEN in every agent window name
+def _claunch(r):                                      # resume one claude transcript row [mt, sid, cwd, ..] in a window named by ITS date
+    subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(r[2])}-{_stamp(r[0])}", "-c", r[2], RESUME["claude"] % r[1]])
 
 
 def _load(cut=0):                                     # rows [mt, sid, cwd, turns, text]; cut=mtime floor else newest 150
@@ -335,12 +336,12 @@ def pick():                                           # resume picker: menu keys
             elif b >= b" ": q, sel = q + b.decode("utf-8", "ignore"), 0
     finally:
         termios.tcsetattr(0, termios.TCSADRAIN, old); sys.stdout.write("\x1b[?1049l\x1b[?25h"); sys.stdout.flush()
-    if isinstance(act, list): _claunch(act[1], act[2])
+    if isinstance(act, list): _claunch(act)
     elif act and act[0] == "hrs":
         rs = _load(time.time() - act[1] * 3600)
-        for r in rs: _claunch(r[1], r[2])
+        for r in rs: _claunch(r)
         print(f"+ revived {len(rs)} ≤{act[1]:g}h")
-    elif act: subprocess.run(["tmux", "new-window", "-n", f"r-{act[0]}", act[1]])
+    elif act: subprocess.run(["tmux", "new-window", "-n", f"r-{act[0]}-{_stamp(time.time())}", act[1]])
 
 
 RQ = r'''LIVE=$(tmux list-panes -s -t a -F "#{pane_start_command}" 2>/dev/null|grep -oE "[0-9a-f]{8}-[0-9a-f-]{27}")
@@ -350,9 +351,9 @@ for j in $(ls -t ~/.claude/projects/*/*.jsonl 2>/dev/null|head -15);do s=$(basen
  printf "%s|%s|%s|%s|%s\n" "$(echo "$LIVE"|grep -q "$s"&&echo 1||echo 0)" "$s" "${c:-?}" "$(stat -c %Y "$j" 2>/dev/null||stat -f %m "$j" 2>/dev/null||echo 0)" "${p:-?}";done'''
 
 
-def _resume_attach(host, live, cwd, sid):             # parked → resume into the box's tmux (survives ssh drop), then attach
+def _resume_attach(host, live, cwd, sid, mt):         # parked → resume into the box's tmux (survives ssh drop), then attach
     if not live:
-        subprocess.run(["a", "ssh", host, "tmux", "new-window", "-t", "a", "-c", cwd, "-n", "r-" + sid[:8],
+        subprocess.run(["a", "ssh", host, "tmux", "new-window", "-t", "a", "-c", cwd, "-n", f"r-{os.path.basename(cwd)}-{_stamp(mt)}",
                         f"claude --dangerously-skip-permissions{MF} --resume {sid}"])
     os.execvp("a", ["a", "ssh", host])
 
@@ -390,7 +391,7 @@ def remote(host):                                     # review one box's agent w
     except EOFError: return
     if not (x.isdigit() and 1 <= int(x) <= len(rows)): return
     _h, live, cwd, sid, _mt, _p = rows[int(x) - 1]
-    _resume_attach(host, live, cwd, sid)
+    _resume_attach(host, live, cwd, sid, _mt)
 
 
 def main(a):

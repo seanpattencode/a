@@ -29,20 +29,7 @@ static int cmd_sess(int argc, char **argv) {
         pl+=snprintf(prompt+pl,(size_t)(B-pl),"%s%s",pl?" ":"",argv[i]);
         is_prompt = 1;
     }
-    char sn[256];{struct tm*t=localtime(&(time_t){time(NULL)});int h=t->tm_hour%12;if(!h)h=12;
-        snprintf(sn,256,"%s-%s-%d%02d%s",s->name,bname(wd),h,t->tm_min,t->tm_hour>=12?"p":"a");
-        if(tm_has(sn))snprintf(sn,256,"%s-%s-%d%02d%02d%s",s->name,bname(wd),h,t->tm_min,t->tm_sec,t->tm_hour>=12?"p":"a");}
-    const char *xp = is_prompt ? prompt : NULL;
-    /* Existing session = attach, send prompt via keys (already running) */
-    if (tm_has(sn)) {
-        if (is_prompt && prompt[0]) {
-            tm_send(sn, prompt); usleep(100000);
-            tm_key(sn, "Enter");
-            puts("Prompt queued (existing session)");
-        }
-        tm_go(sn);
-        return 0;
-    }
+    const char*sn=tm_name(s->name,bname(wd),time(0)),*xp=is_prompt?prompt:NULL;   /* tm_name never returns a taken name, so the old attach-existing branch was unreachable: gone */
     if (create_sess(sn, wd, s->cmd, xp) != 2) { if(isatty(1))tm_go(sn);
         else {char q[160],wi[16]="?";snprintf(q,160,"tmux list-windows -t '" TMS "' -f '#{==:#{window_name},%s}' -F '#{window_index}' 2>/dev/null",sn);pcmd(q,wi,16);wi[strcspn(wi,"\n")]=0;
             printf("→ win %s · %s\n  tmux attach -t " TMS ":%s\n",wi[0]?wi:"?",sn,wi[0]?wi:sn);} }

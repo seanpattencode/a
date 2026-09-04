@@ -17,6 +17,10 @@ static int tm_has(const char *w) {
     return !system(c);
 }
 static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
+/* agent window name = <pre>-<base>-Sep4-346p: who, where, WHEN, readable on the bar (Sean 2026-09-04). taken → +seconds, still taken → +pid */
+static const char*tm_name(const char*pre,const char*base,time_t t){static char b[256];struct tm*l=localtime(&t);char m[6];strftime(m,6,"%b",l);
+    int n=snprintf(b,256,"%.64s-%.64s-%s%d-%d%02d",pre,base,m,l->tm_mday,l->tm_hour%12?l->tm_hour%12:12,l->tm_min),ap=l->tm_hour<12?'a':'p';
+    snprintf(b+n,256-(size_t)n,"%c",ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c",l->tm_sec,ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c-%d",l->tm_sec,ap,(int)getpid());return b;}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
     char c[B];const char*op=getenv("TMUX")?"switch-client":"attach-session";

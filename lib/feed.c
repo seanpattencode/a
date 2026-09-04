@@ -438,7 +438,7 @@ static void f_paint(int sel, long rus, int refreshing) {
 __attribute__((noreturn)) static void f_attach(FI *x) {                  /* parked → resume window; live → THE sid's window. local jumps via switch-client (grouped sessions don't follow select-window); remote selects on the box then attaches */
     f_rst();
     int lo = !strcmp(x->host, DEV);
-    if (!x->live) { char wn[20]; snprintf(wn, 20, "r-%.8s", x->sid);
+    if (!x->live) { const char *wn = tm_name("r", bname(x->cwd), x->mt ? x->mt : time(0));   /* named by the transcript's own date: 20 windows all called r-i told you nothing */
         const char *md = (x->mdl[0] && strcmp(x->mdl, "?")) ? x->mdl : (*cfget("m_model") ? cfget("m_model") : "opus");   /* default = model the session used before */
         char rc[240];   /* model field names the binary: grok-*, gpt-*=codex (config.toml owns its model), else claude */
         if (!strncmp(x->mdl, "gpt", 3)) snprintf(rc, 240, "codex resume --dangerously-bypass-approvals-and-sandbox '%s'", x->sid);

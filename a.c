@@ -587,7 +587,7 @@ static int cmd_j(int c,char**v){
     if(pr[0])pl+=snprintf(pr+pl,(size_t)(B-pl),"\n\nWhen done: write .a_done — one simple sentence + test cmd; output beginning...end 4 lines max; no spacing between sections");
     tm_ensure_conf();
     char jcmd[B];jcmd_fill(jcmd,0,wd,pr[0]?pr:NULL);
-    char sn[64];snprintf(sn,64,"j-%s-%ld",bname(wd),(long)getpid());
+    const char*sn=tm_name("j",bname(wd),time(0));
     if(!tm_new(sn,wd,jcmd))sess_log(sn,wd);
     {char q[160],wi[16]="?";snprintf(q,160,"tmux list-windows -t '" TMS "' -f '#{==:#{window_name},%s}' -F '#{window_index}' 2>/dev/null",sn);pcmd(q,wi,16);wi[strcspn(wi,"\n")]=0;printf("→ tmux win %s · %s\n",wi[0]?wi:"?",sn);}
     fflush(stdout);  /* tm_go execs without flushing stdio — emit the report first */
