@@ -479,7 +479,7 @@ static int cmd_cat(int c,char**v){perf_disarm();
     {char cm[B];init_db();load_cfg();CWD(wc);size_t sl=strlen(SDIR);
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
     snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* primary repo first (spends the budget), cat_more repos (e.g. u), /a last as stubs */
-    size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,skf=0,nst=0;
+    size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,skf=0,nst=0,nam=0;
     size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):2400000;
     size_t kl=0,kcap=0;char*kd=NULL;  /* skipped-file map: silent omission reads as "covered everything" */
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
@@ -496,7 +496,7 @@ static int cmd_cat(int c,char**v){perf_disarm();
         rewind(f);nf++;
         char hdr[600];size_t hl=(size_t)snprintf(hdr,600,"\n==> %s (%d lines) <==\n",p,tl);
         GA(hdr,hl);
-        int st=m=='3'&&(l>bud||(ia&&!strncmp(p,SDIR,sl)&&p[sl]=='/'));nst+=st;int hd=st?10:tl,tl2=5;
+        int am=ia&&!strncmp(p,SDIR,sl)&&p[sl]=='/',st=m=='3'&&(l>bud||am);nam+=st&&am;nst+=st&&!am;int hd=st?10:tl,tl2=5;
         int i=0;while(fgets(ln,512,f)){size_t sl=strlen(ln);
             if(i<hd||(tl>hd+tl2&&i>=tl-tl2)){GA(ln,sl);}
             if(i==hd&&tl>hd+tl2){GA("  ...\n",6);}
@@ -529,7 +529,7 @@ static int cmd_cat(int c,char**v){perf_disarm();
      if(f){char hd[64];size_t hl2=(size_t)snprintf(hd,64,"\n==> prompt: %s <==\n",ap);GA(hd,hl2);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
     if(!d)return 1;d[l]=0;
     char tf[P];snprintf(tf,P,"%s/local/a_cat.txt",AROOT);writef(tf,d);
-    {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full. CONTEXT %s: %d files, %d stubbed to 10+5 lines, %d skipped (A_CB=%zu)\n\n",tf,lc,(nst||skf)?"INCOMPLETE":"COMPLETE",nf,nst,skf,bud);}
+    {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full. CONTEXT %s: %d files, %d /a as map (10+5 lines), %d stubbed, %d skipped (A_CB=%zu)\n\n",tf,lc,(nst||skf)?"INCOMPLETE":"COMPLETE",nf,nam,nst,skf,bud);}
     (void)!write(1,d,l);to_clip(d);
     fprintf(stderr,"✓ %d files %zu+%zuprompt tok%s cat %s\n  context: %s/\n",nf,cl2/4,(l-cl2)/4,skf?" (skipped)":"",tf,ctd);
     free(d);}
