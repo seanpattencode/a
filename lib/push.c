@@ -17,14 +17,15 @@ static int tok_rule(const char *cwd, char *v, int vsz, const char *only) {   /* 
       if(only&&*only)snprintf(paths,256,"%s",only);
       if(mc) modcap=atol(mc+7);
       char *tc=strstr(tr,"total="),*rp=strstr(tr,"ramp=");   /* total= repo-wide cap (tracked bytes/4) — the entropy deadman, enforced at push too. ramp=<start> <target> <from> <to>: cap lowers an equal % per whole day from start to target, holds after (twin: ~/i lib/tokcap) */
+      double ff=0,fk=1;char *fb=strstr(tr,"fable=");if(fb&&sscanf(fb+6,"%lf %lf",&ff,&fk)<2)fb=0;   /* fable=<fixed> <k>: the cap is in served-context Fable tokens; repo bytes/4 -> fixed + k*bytes/4 before comparing (i/.tokrule 2026-09-05) */
       if(tc){ long totcap=atol(tc+6),rs,rt; int y0,m0,d0,y1,m1,d1;
         if(rp&&sscanf(rp+5,"%ld %ld %d-%d-%d %d-%d-%d",&rs,&rt,&y0,&m0,&d0,&y1,&m1,&d1)==8){
           struct tm ta={0},tb={0}; ta.tm_year=y0-1900;ta.tm_mon=m0-1;ta.tm_mday=d0;ta.tm_isdst=-1;tb.tm_year=y1-1900;tb.tm_mon=m1-1;tb.tm_mday=d1;tb.tm_isdst=-1;
           long dn=(long)(difftime(mktime(&tb),mktime(&ta))/86400),de=(long)(difftime(time(0),mktime(&ta))/86400); double f=dn>0?(de<0?0:de>dn?1:(double)de/dn):1;
           snprintf(c,B,"awk -v s=%ld -v t=%ld -v f=%.6f 'BEGIN{printf \"%%d\",s*(t/s)^f+.5}'",rs,rt,f); pcmd(c,o,64); if(atol(o)>0) totcap=atol(o); }
         snprintf(c,B,"cd \"$(cd '%s'&&git rev-parse --show-toplevel)\"&&git ls-files -z|xargs -0 cat 2>/dev/null|wc -c",cwd);
-        pcmd(c,o,64); long tt=atol(o)/4;
-        if(totcap&&tt>totcap&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  TOTAL  repo %ld tok > cap %ld (.tokrule total=/ramp=)\n",tt,totcap);n++;} } }
+        pcmd(c,o,64); long tt=atol(o)/4;if(fb)tt=(long)(ff+fk*(double)tt);
+        if(totcap&&tt>totcap&&vl<vsz-1){vl+=snprintf(v+vl,(size_t)(vsz-vl),"  TOTAL  repo %ld %s > cap %ld (.tokrule total=/ramp=)\n",tt,fb?"fable-tok":"tok",totcap);n++;} } }
     char list[B*4];
     snprintf(c,B,"cd '%s'&&{ git diff --name-only %s -- %s 2>/dev/null;git ls-files --others --exclude-standard -- %s 2>/dev/null; }|sort -u",cwd,br,paths,paths);
     pcmd(c,list,(int)sizeof(list));
