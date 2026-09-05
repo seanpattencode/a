@@ -563,10 +563,9 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per 
   screenshot [p]   PNG of active tab → p (default /tmp/bri-<ts>.png)
                    ! avoid if possible — prefer text/html/url (text is the
                      artifact, PNG is lossy + heavy + needs a vision model)
+  get [sel] [out]  save what the active tab shows → ~/Downloads: largest <video>/<img> (or css sel); img fetched in-tab (its session), video via yt-dlp with the tab's cookies
   '{json}'         raw passthrough — full 9-action protocol (default-targeted too; a "to" field overrides)
 first run — Firefox: a bri serve ff then a bri deploy (serve ffh = HEADLESS FF, same profile/sign-ins, no window; serve ff switches back)   ·   Chrome: a bri serve then load bri-chrome (a extload)"""
-
-  get [sel] [out]  save what the active tab shows → ~/Downloads: largest <video>/<img> (or css sel); img fetched in-tab (its session), video via yt-dlp with the tab's cookies
 if __name__=='__main__':
     args = sys.argv[1:]
     if args and args[0] == 'bri': args = args[1:]  # `a bri …` passes cmd name as argv[1]
