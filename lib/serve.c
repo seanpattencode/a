@@ -774,7 +774,7 @@ static void _handle(int c){
         if(!ok)snprintf(out,B*2,"x no <diff> files on that a done");
         else{char v[B*2];if(tok_rule(f[3],v,(int)sizeof v))snprintf(out,B*2,"x TOK INCREASE RULE\n%s",v);
             else{char*m=strrchr(f[4],']');m=m?m+1:f[4];while(*m==' ')m++;char mf[P];snprintf(mf,P,"%s/review_msg_%d.txt",DDIR,(int)getpid());FILE*mfp=fopen(mf,"w");if(mfp){fputs(*m?m:"a done",mfp);fclose(mfp);}   /* commit message = the done sentence, via -F: it is agent text, never a shell word */
-                char cmd[B*2];snprintf(cmd,B*2,"cd '%s'&&git add -- %s&&git commit -F '%s' -- %s&&" PUSHCMD "&&{ git fetch -q origin 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&echo PUSHED_OK $(git rev-parse --short HEAD); }",f[3],fl,mf,fl);
+                char cmd[B*2];snprintf(cmd,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -F '%s' -- %s; }&&" PUSHCMD "&&{ git fetch -q origin 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&echo PUSHED_OK $(git rev-parse --short HEAD); }",f[3],fl,fl,mf,fl);
                 FILE*pp=popen(cmd,"r");size_t n=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[n]=0;unlink(mf);}}
         free(rl);_sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
     if(!strncmp(req,"GET /review/tell?w=",19)){int w=atoi(req+19);char cmd[B],out[128];snprintf(cmd,B,"tmux send -t a:%d -X cancel 2>/dev/null;tmux send -t a:%d -l '%s'&&sleep 0.4&&tmux send -t a:%d Enter",w,w,PP,w);   /* a review: the panel's [p], typed into that agent's window (copy-mode cancelled first, as the panel does) */

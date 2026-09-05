@@ -51,7 +51,7 @@ static int cmd_push(int argc, char **argv) { AB;
         char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
         if(!nl){puts("x no .commit (after a done)");free(cs);return 1;}
         *nl=0;char*f=nl+1;f[strcspn(f,"\n")]=0;char c[B*2],vo[B];
-        snprintf(c,B*2,"cd '%s'&&git add -- %s&&git commit -m \"%s\" -- %s&&" PUSHCMD,cwd,f,cs,f);pcmd(c,vo,B);
+        snprintf(c,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -m \"%s\" -- %s; }&&" PUSHCMD,cwd,f,f,cs,f);pcmd(c,vo,B);   /* files already committed (agents commit paths-only) -> just push */
         if(strstr(vo,"PUSH_CONFLICT")){printf("✗ %s: rebase conflict with origin — aborted, tree restored (commit kept local).\n  Same lines changed by another agent. Merge by hand: git pull --rebase, resolve, a push -f\n",cs);free(cs);return 1;}
         snprintf(c,B*2,"cd '%s'&&git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo https://github.com/$u/commit/$(git rev-parse --short HEAD);}",cwd);
         pcmd(c,vo,B);vo[strcspn(vo,"\n")]=0;
