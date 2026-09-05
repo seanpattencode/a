@@ -22,7 +22,7 @@ Inspect / debug the APK's live web UI from your dev machine (the app runs `a ser
     curl -s localhost:9112/api/omni --data-urlencode 'q=ssh <dev> a c <prompt>'   # drive it (e.g. ssh fedora-wan + launch claude)
 Chrome DevTools also works: chrome://inspect (WebContentsDebugging is on) to see the in-app WebView.
 Drive the UI programmatically (no coordinate-tapping) — pick any menu item / open the menu:
-    adb -s <serial> shell am start -n com.aios.a/.M --es nav note      # native items: a (web ui) Native Setup Read Rec Termux homebox Bubble; any other name = web page (note task term jobs proj …)
+    adb -s <serial> shell am start -n com.aios.a/.M --es nav note      # native items: a (web ui) Native Setup Read Rec Termux homebox; any other name = web page (note task term jobs proj …)
     adb -s <serial> shell am start -n com.aios.a/.M --ez menu true     # open the menu overlay
 Assistant: Cap handles ACTION_ASSIST — register via Settings → Default apps → Digital assistant app (or adb shell cmd role add-role-holder --user 0 android.app.role.ASSISTANT com.aios.a); assist gesture then = capture UI with mic hot; simulate the gesture: adb shell input keyevent 219
 ui_full.html is re-copied from assets on every launch, so a fresh `a apk` reinstall always updates the UI.
@@ -46,7 +46,6 @@ class M:Activity(){
 companion object{init{System.loadLibrary("anative")};@JvmStatic var su=false}
 private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0;private var cur="$BASE/";private var loaded=false
 private var wsOut:OutputStream?=null;private var rt:LinearLayout?=null
-private fun bubOn()=(getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any{it.service.className=="com.aios.a.BubbleService"}
 private val wsExec=java.util.concurrent.Executors.newSingleThreadExecutor()
 private fun pg(s:String)=w.loadDataWithBaseURL(null,"<body style='font:18px monospace;padding:20px;background:#000;color:#0f0'>$s","text/html","utf-8",null)
 private fun jsEval(s:String)=h.post{w.evaluateJavascript(s,null)}
@@ -89,7 +88,7 @@ return n!=null||i?.getBooleanExtra("prov",false)==true}
 override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);applyNav(i)}
 private fun goMenu(){val f=backB;if(f!=null)f() else moveTaskToBack(true)}   // back = home menu selector; menu already open = background app, NEVER finish (thrown-out-of-app bug, Sean 2026-08-02)
 override fun onBackPressed(){goMenu()}
-override fun onResume(){val _wt=android.os.SystemClock.elapsedRealtime();super.onResume();if(!su){su=true;setup()};spawn();startWd(this);if(!loaded){n=0;h.postDelayed({if(!loaded)w.loadUrl(cur)},700)};rt?.setPadding(0,0,0,if(bubOn())(resources.displayMetrics.density*52).toInt() else 0);rt?.post{android.util.Log.i("aPerf","warm: resume->frame "+(android.os.SystemClock.elapsedRealtime()-_wt)+"ms")}}
+override fun onResume(){val _wt=android.os.SystemClock.elapsedRealtime();super.onResume();if(!su){su=true;setup()};spawn();startWd(this);if(!loaded){n=0;h.postDelayed({if(!loaded)w.loadUrl(cur)},700)};rt?.post{android.util.Log.i("aPerf","warm: resume->frame "+(android.os.SystemClock.elapsedRealtime()-_wt)+"ms")}}
 override fun onDestroy(){try{ms?.release()}catch(e:Exception){};Ms.tok=null;Ms.playing=false;stopService(Intent(this,Ms::class.java));Ms.nm(this).cancel(9);super.onDestroy()}   /* task swiped = player gone: no zombie "playing" notification */
 private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}  /* always refresh: reinstall must update the UI */
@@ -111,7 +110,7 @@ override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){
 val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE}
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
 // ONE page nav = the web UI's own home omnibox. This selector holds only what HTML can't reach on-device (two menus both listing pages was confusing — Sean 2026-08-23). Shortcuts / adb --es nav <page> route into the web page.
-val items=listOf<Pair<String,()->Unit>>("a" to {show(1)},"Native" to {show(0)},"Setup" to {show(2)},"Read" to {show(3)},"Rec" to {show(4)},"Termux" to {startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},"homebox" to {startActivity(Intent(this,Cap::class.java))},"Bubble" to {if(android.provider.Settings.canDrawOverlays(this))startService(Intent(this,BubbleService::class.java)) else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:$packageName")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))})
+val items=listOf<Pair<String,()->Unit>>("a" to {show(1)},"Native" to {show(0)},"Setup" to {show(2)},"Read" to {show(3)},"Rec" to {show(4)},"Termux" to {startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},"homebox" to {startActivity(Intent(this,Cap::class.java))})
 val mb=S(this,items,{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
 root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.navTo("a");getSharedPreferences("nav",0).getString("cur",null)?.let{cur=it;n=0;w.loadUrl(cur)};nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->if(!mb.navTo(nm)){show(1);val r=when(nm){"home"->"/";"task"->"/tasks";"job"->"/jobs";else->"/$nm"};if(loaded)w.evaluateJavascript("navpage('$r')",null) else {cur="$BASE$r";n=0;w.loadUrl(cur)}}};backB={if(mb.o)moveTaskToBack(true) else mb.open()};if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(0,{goMenu()});applyNav(intent)}}   // Android 15+/17 predictive dispatch skips onBackPressed for gesture back — both paths -> goMenu
@@ -126,7 +125,7 @@ private val fb=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSi
 private val fk=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=46f;textAlign=Paint.Align.CENTER}
 private val fq=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=52f;color=0xFFFFFF00.toInt()}
 private val fd=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=34f;textAlign=Paint.Align.CENTER}
-private val desc=mapOf("a" to "web ui","native" to "native terminal","setup" to "setup & permissions","read" to "speed reader","rec" to "audio recorder","termux" to "open termux","homebox" to "ssh homebox","bubble" to "floating scroll bubble")
+private val desc=mapOf("a" to "web ui","native" to "native terminal","setup" to "setup & permissions","read" to "speed reader","rec" to "audio recorder","termux" to "open termux","homebox" to "ssh homebox")
 fun open(){o=true;q="";so=0f;onOp();v.isFocusableInTouchMode=true;v.requestFocus();requestLayout();v.invalidate()}
 private fun cl(){o=false;q="";onCl();requestLayout();v.invalidate()}
 private fun flt():List<Int>{val ql=q.lowercase();val s=it.indices.sortedByDescending{j->cnt[it[j].first]?:0};return if(ql.isEmpty())s else s.filter{j->it[j].first.lowercase().contains(ql)}}
@@ -307,15 +306,11 @@ b.getPixels(r,2,cw*95,0,0,cw*95,ch);b.recycle();return r}
 class Stp(val a:Activity):android.view.View(a){
 private val p=Paint().apply{color=-1;textSize=60f;textAlign=Paint.Align.CENTER;isAntiAlias=true;typeface=Typeface.MONOSPACE}
 private fun go(i:Intent?)=i?.let{a.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}
-private fun bubOn()=(a.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any{it.service.className==BubbleService::class.java.name}
 private val items=listOf<Pair<()->String,()->Unit>>(
 {"Set as keyboard"} to{go(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS))},
 {"Set as launcher"} to{go(Intent(android.provider.Settings.ACTION_HOME_SETTINGS))},
-{"Grant usage access"} to{go(Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS))},
 {"Grant mic permission"} to{a.requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),1)},
-{"Open Shizuku setup"} to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))},
-{"Enable scroll access"} to{go(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))},
-{"Bubble "+(if(bubOn())"on" else "off")} to{val i=Intent(a,BubbleService::class.java);if(bubOn()){a.getSharedPreferences("bub",0).edit().putBoolean("on",false).apply();a.stopService(i)} else if(android.provider.Settings.canDrawOverlays(a))a.startService(i) else go(Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,android.net.Uri.parse("package:${a.packageName}")))}
+{"Open Shizuku setup"} to{go(a.packageManager.getLaunchIntentForPackage("moe.shizuku.privileged.api")?:Intent(Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/RikkaApps/Shizuku/releases/latest")))}
 )
 private var sel=0
 init{isFocusable=true;isFocusableInTouchMode=true}
@@ -403,18 +398,6 @@ private fun speakPage(){ensureTts{val ts=tts ?:return@ensureTts;ts.stop();for((i
 override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION_DOWN&&e.y>height-110f){speakPage();return true}
 if(nTouch(e.action and 0xFF,e.x,e.y)!=0){spoken=-1;tts?.stop();invalidate()};return true}
 override fun onDetachedFromWindow(){super.onDetachedFromWindow();tts?.shutdown();tts=null}}
-class Sc:android.accessibilityservice.AccessibilityService(){
-companion object{var inst:Sc?=null}
-override fun onServiceConnected(){inst=this}
-override fun onAccessibilityEvent(e:android.view.accessibility.AccessibilityEvent?){}
-override fun onInterrupt(){}
-override fun onDestroy(){inst=null;super.onDestroy()}
-private var bn:android.view.accessibility.AccessibilityNodeInfo?=null;private var ba=0
-private fun scan(n:android.view.accessibility.AccessibilityNodeInfo?){if(n==null)return;if(n.isScrollable){val r=android.graphics.Rect();n.getBoundsInScreen(r);val a=r.width()*r.height();if(a>ba){ba=a;bn=n}};for(i in 0 until n.childCount)scan(n.getChild(i))}
-fun scroll(fwd:Boolean){bn=null;ba=0;scan(rootInActiveWindow);val n=bn?:return
- val pg=(if(fwd)android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_DOWN else android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_PAGE_UP).id
- if(!n.performAction(pg))n.performAction(if(fwd)android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)}
-}
 fun startWd(c:Context){val w=Intent(c,Wd::class.java);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(w) else c.startService(w)}catch(e:Exception){}}
 // Wd = serve keep-alive (reason #2 the apk exists). Durable foreground service: every 8s, probe :1112; if dead, txRun "a serve 1112" — which cold-starts termux if it died (proven: revives in <2s). So serve comes back in the BACKGROUND, before the user opens the app. serve is blocking + double-bind-safe (2nd a serve hits EADDRINUSE, exits) so re-firing when alive is harmless. (poll, not event: android has no cross-process death signal; held-conn liveness needs serve's WS endpoint — upgrade later if the 8s probe ever shows.)
 class Wd:android.app.Service(){override fun onBind(i:Intent?):IBinder?=null
@@ -438,48 +421,7 @@ fun upd(c:Context){nm(c).notify(9,note(c))}}
 override fun onCreate(){super.onCreate();inst=this}
 override fun onDestroy(){inst=null;super.onDestroy()}
 override fun onStartCommand(i:Intent?,f:Int,id:Int):Int{startForeground(9,note(this),android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);return START_NOT_STICKY}}
-class Boot:android.content.BroadcastReceiver(){override fun onReceive(c:Context,i:Intent){startWd(c);if(c.getSharedPreferences("bub",0).getBoolean("on",false)){val s=Intent(c,BubbleService::class.java);if(Build.VERSION.SDK_INT>=26)c.startForegroundService(s) else c.startService(s)}}}
-class BubbleService:android.app.Service(){
-companion object{init{System.loadLibrary("bubble")}}
-external fun render(px:IntArray,w:Int,h:Int)
-private var vs:List<View> =emptyList()
-override fun onBind(i:Intent?):IBinder?=null
-private fun queue()=getSharedPreferences("bub",0).getString("q","")!!.split("\n").filter{it.isNotEmpty()&&it!="com.android.settings"&&packageManager.getLaunchIntentForPackage(it)!=null}
-private fun fg():String?{val u=getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
- val e=System.currentTimeMillis();val s=u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST,e-86400000L,e)?:return null
- return s.maxByOrNull{it.lastTimeUsed}?.packageName}
-private fun tmuxNext(){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService");i.action="com.termux.RUN_COMMAND";i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",TMUXNEXT));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)startForegroundService(i) else startService(i)}catch(e:Exception){}}
-private fun recent():List<String>{val u=getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager;val e=System.currentTimeMillis();val st=u.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_BEST,e-604800000L,e)?:return emptyList();return st.sortedByDescending{it.lastTimeUsed}.map{it.packageName}.distinct().filter{it!=packageName&&packageManager.getLaunchIntentForPackage(it)!=null}.take(10)}
-private fun cycle(){val p=getSharedPreferences("bub",0);var q=queue();if(q.size<2){q=recent();p.edit().putString("q",q.joinToString("\n")).putInt("idx",0).apply()};if(q.isEmpty())return
- val idx=(p.getInt("idx",0)+1)%q.size;p.edit().putInt("idx",idx).apply()
- packageManager.getLaunchIntentForPackage(q[idx])?.let{startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}}
-private fun dismiss(){val q=ArrayList(queue());val i=q.indexOf(fg());if(i>=0){q.removeAt(i);getSharedPreferences("bub",0).edit().putString("q",q.joinToString("\n")).apply()};if(q.isNotEmpty())packageManager.getLaunchIntentForPackage(q[(if(i<0)0 else i)%q.size])?.let{startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}}
-@android.annotation.SuppressLint("ClickableViewAccessibility")
-override fun onCreate(){super.onCreate();getSharedPreferences("bub",0).edit().putBoolean("on",true).apply()
-val ch="bub";val nm=getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(android.app.NotificationChannel(ch,"a",android.app.NotificationManager.IMPORTANCE_MIN))
-val nt=android.app.Notification.Builder(this,ch).setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("a bubble").build()
-if(Build.VERSION.SDK_INT>=34)startForeground(1,nt,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(1,nt)
-val s=(resources.displayMetrics.density*40).toInt();val px=IntArray(s*s);render(px,s,s)
-val bmp=Bitmap.createBitmap(s,s,Bitmap.Config.ARGB_8888);bmp.setPixels(px,0,s,0,0,s,s)
-val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager
-val pf=getSharedPreferences("bub",0);var ox=pf.getInt("ox",(resources.displayMetrics.density*6).toInt());var oy=pf.getInt("oy",0);var dx0=0f;var dy0=0f;var bx=0;var by=0
-fun relay(){vs.forEach{val lp=it.layoutParams as WindowManager.LayoutParams;lp.x=ox;lp.y=(it.tag as Int)+oy;wm.updateViewLayout(it,lp)}}
-fun mk(dy:Int,tint:Int,lab:String,drag:Boolean,act:()->Unit):View{val fl=FrameLayout(this)
- val w=ImageView(this);w.setImageBitmap(bmp);if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP)
- val tv=TextView(this);tv.text=lab;tv.setTextColor(Color.WHITE);tv.textSize=10f;tv.gravity=Gravity.CENTER
- fl.addView(w,FrameLayout.LayoutParams(s,s));fl.addView(tv,FrameLayout.LayoutParams(s,s))
- fl.setOnTouchListener{_,e->when(e.action){
-  MotionEvent.ACTION_DOWN->{w.setColorFilter(Color.WHITE,PorterDuff.Mode.SRC_ATOP);if(drag){dx0=e.rawX;dy0=e.rawY;bx=ox;by=oy}else act();true}
-  MotionEvent.ACTION_MOVE->{if(drag){ox=bx+(dx0-e.rawX).toInt();oy=by+(e.rawY-dy0).toInt();relay()};true}
-  MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{if(tint!=0)w.setColorFilter(tint,PorterDuff.Mode.SRC_ATOP) else w.clearColorFilter();if(drag)pf.edit().putInt("ox",ox).putInt("oy",oy).apply();true}
-  else->false}}
- val lp=WindowManager.LayoutParams(s,s,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT)
- lp.gravity=Gravity.END or Gravity.CENTER_VERTICAL;lp.x=ox;lp.y=dy+oy;fl.tag=dy;wm.addView(fl,lp);return fl}
-fun sc(fwd:Boolean){val i=Sc.inst;if(i==null){android.widget.Toast.makeText(this,"Enable scroll access in Setup",android.widget.Toast.LENGTH_SHORT).show();startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))}else i.scroll(fwd)}
-val h=(s+16)/2
-vs=listOf(mk(-6*h,0xFF1565C0.toInt(),"drop",false){dismiss()},mk(-4*h,0xFF00ACC1.toInt(),"up",false){sc(false)},mk(-2*h,0xFFFB8C00.toInt(),"down",false){sc(true)},mk(0,0xFF2E7D32.toInt(),"home",false){startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},mk(2*h,0,"next",false){cycle()},mk(4*h,0xFF6A1B9A.toInt(),"tmux",false){tmuxNext()},mk(6*h,0xFFAD1457.toInt(),"move",true){})}
-override fun onDestroy(){super.onDestroy();val wm=getSystemService(Context.WINDOW_SERVICE) as WindowManager;vs.forEach{try{wm.removeView(it)}catch(e:Exception){}}}}
+class Boot:android.content.BroadcastReceiver(){override fun onReceive(c:Context,i:Intent){startWd(c)}}
 '''
 NC=r'''#include <jni.h>
 #include <pthread.h>
@@ -788,7 +730,6 @@ class Home : Activity() {
     private lateinit var bmp: Bitmap
     private lateinit var v: View
     private var wrap: android.widget.FrameLayout? = null
-    private fun bubOn() = (getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager).getRunningServices(99).any { it.service.className == "com.aios.a.BubbleService" }
     private val la by lazy { getSystemService(Context.LAUNCHER_APPS_SERVICE) as android.content.pm.LauncherApps }
     private val SCF = android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or android.content.pm.LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
     private external fun nResize(w: Int, h: Int)
@@ -840,7 +781,7 @@ class Home : Activity() {
         ex.execute { scan() }
     }
 
-    override fun onResume() { super.onResume(); nResume(); wrap?.setPadding(0, 0, 0, if (bubOn()) (resources.displayMetrics.density * 52).toInt() else 0); if (::bmp.isInitialized) v.invalidate(); ex.execute { scan() } }
+    override fun onResume() { super.onResume(); nResume(); if (::bmp.isInitialized) v.invalidate(); ex.execute { scan() } }
 
     private fun atlas(sz: Float): IntArray {
         val p = Paint().apply { textSize = sz; color = -1; isAntiAlias = true; typeface = Typeface.MONOSPACE; textAlign = Paint.Align.CENTER }
@@ -868,7 +809,6 @@ class Home : Activity() {
             if (pkg.startsWith("~")) { try { startActivity(Intent(pkg.substring(1)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) {} ; return }
             val c = (cnt[pkg] ?: 0) + 1; cnt[pkg] = c; nCnt(i, c)
             ex.execute { db.execSQL("INSERT OR REPLACE INTO f VALUES(?,?)", arrayOf(pkg, c)) }
-            getSharedPreferences("bub",0).let{p->val q=p.getString("q","")!!.split("\n").filter{it.isNotEmpty()};if(pkg !in q)p.edit().putString("q",(q+pkg).joinToString("\n")).apply()}
             packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
         }
     }
@@ -1558,22 +1498,14 @@ RF(jint, nGetTotal)(JNIEnv* e, jclass c) { (void)e;(void)c; return n_pages; }
 MXML=r'''<?xml version="1.0" encoding="utf-8"?>
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"/>
 '''
-CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\nadd_library(reader SHARED reader.c)\ntarget_link_libraries(reader log)\nadd_library(bubble SHARED bubble.c)\ntarget_link_libraries(bubble log m)\n'
-BUB_C=r'''#include <jni.h>
-#include <math.h>
-JNIEXPORT void JNICALL Java_com_aios_a_BubbleService_render(JNIEnv*e,jobject o,jintArray a,jint w,jint h){
- (void)o;jint*p=(*e)->GetIntArrayElements(e,a,NULL);float c=(float)w/2.0f,r=c-2;
- for(int y=0;y<h;y++)for(int x=0;x<w;x++){float dx=(float)x-c,dy=(float)y-c;p[y*w+x]=sqrtf(dx*dx+dy*dy)<=r?(jint)0xFFFF2020:0;}
- (*e)->ReleaseIntArrayElements(e,a,p,0);}
-'''
-MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:launchMode="singleTop" android:taskAffinity="com.aios.a.m" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:label="a kb" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><service android:name=".VoiceLineService" android:label="a voice line" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><activity android:name=".Cap" android:exported="true" android:launchMode="singleTask" android:taskAffinity="com.aios.a.cap" android:excludeFromRecents="true" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"><intent-filter><action android:name="android.intent.action.ASSIST"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".BubbleService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="bubble"/></service><service android:name=".Wd" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="serve"/></service><service android:name=".Ms" android:exported="false" android:foregroundServiceType="mediaPlayback"/><service android:name=".Sc" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/acc"/></service><receiver android:name=".Boot" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver></application></manifest>'
+CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\nadd_library(reader SHARED reader.c)\ntarget_link_libraries(reader log)\n'
+MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:launchMode="singleTop" android:taskAffinity="com.aios.a.m" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:label="a kb" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><service android:name=".VoiceLineService" android:label="a voice line" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><activity android:name=".Cap" android:exported="true" android:launchMode="singleTask" android:taskAffinity="com.aios.a.cap" android:excludeFromRecents="true" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"><intent-filter><action android:name="android.intent.action.ASSIST"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".Wd" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="serve"/></service><service android:name=".Ms" android:exported="false" android:foregroundServiceType="mediaPlayback"/><receiver android:name=".Boot" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver></application></manifest>'
 if SELF:MF=MF.replace('android:label="a apk"','android:label="a (self)"').replace('com.aios.a.shizuku','com.aios.a.self.shizuku')   # unique label + provider authority (duplicate authority = INSTALL_FAILED_CONFLICTING_PROVIDER, blocks side-by-side)
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
 # launcher deep-links: each web box = manifest shortcut "a <box>" -> .M --es nav <box> (sync with KT `web`); a-Home + Pixel launcher search both surface these
 BOX="note task term home proj op dash stream job book docs cloud prompt".split()
 SC='<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">'+''.join(f'<shortcut android:shortcutId="{b}" android:shortcutShortLabel="@string/s_{b}"><intent android:action="android.intent.action.MAIN" android:targetPackage="{P}" android:targetClass="com.aios.a.M"><extra android:name="nav" android:value="{b}"/></intent></shortcut>' for b in BOX)+'</shortcuts>'
 STR='<resources>'+''.join(f'<string name="s_{b}">a {b}</string>' for b in BOX)+'</resources>'
-ACC='<?xml version="1.0" encoding="utf-8"?><accessibility-service xmlns:android="http://schemas.android.com/apk/res/android" android:accessibilityEventTypes="typeWindowStateChanged" android:accessibilityFeedbackType="feedbackGeneric" android:canRetrieveWindowContent="true" android:accessibilityFlags="flagRetrieveInteractiveWindows"/>'
 GS='pluginManagement{repositories{google();mavenCentral()};plugins{id("com.android.application") version "8.2.0";id("org.jetbrains.kotlin.android") version "1.9.22"}}\ndependencyResolutionManagement{repositories{google();mavenCentral()}}\ninclude(":app")\n'
 H=os.path.expanduser("~");IT=os.path.exists("/data/data/com.termux")
 SDK="/data/data/com.termux/files/home/android-sdk" if IT else os.environ.get("ANDROID_HOME") or next((p for p in[H+"/Library/Android/sdk",H+"/Android/Sdk"] if os.path.isdir(p)),H+"/Android/Sdk")
@@ -1755,8 +1687,8 @@ def run():
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
         w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC);w(D+"/app/src/main/res/xml/shortcuts.xml",SC);w(D+"/app/src/main/res/values/strings.xml",STR)
         w(D+"/app/src/main/java/com/aios/a/Home.kt",HKT);w(D+"/app/src/main/res/values/styles.xml",TXML)
-        w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",MXML);w(D+"/app/src/main/res/xml/acc.xml",ACC)
-        NLIBS=[("native.c",NC,"anative",""),("launcher.c",LC,"launcher","-lm "),("keyboard.c",KC,"keyboard",""),("reader.c",RDR_C,"reader",""),("bubble.c",BUB_C,"bubble","-lm ")]
+        w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",MXML)
+        NLIBS=[("native.c",NC,"anative",""),("launcher.c",LC,"launcher","-lm "),("keyboard.c",KC,"keyboard",""),("reader.c",RDR_C,"reader","")]
         if IT:
             sf=D+"/app/src/main/jniLibs/arm64-v8a";os.makedirs(sf,exist_ok=True)
             for fn,src,lib,lm in NLIBS:
