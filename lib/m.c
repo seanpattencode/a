@@ -26,7 +26,7 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
             struct pollfd pf={fd,POLLIN,0};int pr=poll(&pf,1,100);
             if(pr<0)break;
             if(!pr){if(tty&&!al){struct timespec tn;clock_gettime(CLOCK_MONOTONIC,&tn);
-                printf("\r\033[2m%.3s %.1fs\033[0m ","⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋"+fr++%10*3,(double)(tn.tv_sec-t0.tv_sec)+(double)(tn.tv_nsec-t0.tv_nsec)/1e9);fflush(stdout);}continue;}
+                printf("\r\033[2m%.3s %.1fs\033[0m ",&"⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋"[fr++%10*3],(double)(tn.tv_sec-t0.tv_sec)+(double)(tn.tv_nsec-t0.tv_nsec)/1e9);fflush(stdout);}continue;}
             n=read(fd,ch,sizeof ch);if(n<=0)break;
             if(tty&&!al)fputs("\r\033[K",stdout);
             fwrite(ch,1,(size_t)n,stdout);fflush(stdout);
@@ -53,7 +53,7 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
     snprintf(x,sizeof x,"(flock /tmp/.a_git.lock -c \"cd '%s'&&git add m&&{ git diff --cached --quiet||{ git commit -q -m m&&timeout 8 git push -q;};}\")>/dev/null 2>&1 &",SROOT);
     (void)!system(x);
 }
-static int m_resume(char*m,size_t sz){  /* saved convos (adata/git/m/agents/*.txt) newest-first, first-msg preview; pick → m="/<name>" */
+static int m_resume(char*m,size_t sz){  /* saved convos (adata/git/m/agents/) newest-first, first-msg preview; pick → m="/<name>" */
     static char ib[24][96];const char*it[24];char ls[4096],sel[96];int n=0;
     {char gc[B];snprintf(gc,B,"cd '%s/m/agents' 2>/dev/null&&ls -t|sed 's/\\.txt$//'|while read -r f;do printf '%%s\t%%.60s\n' \"$f\" \"$(sed -n 2p \"$f.txt\")\";done",SROOT);pcmd(gc,ls,sizeof ls);}
     for(char*q=ls;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
@@ -123,9 +123,9 @@ static size_t m_input(char **out,const char *sfn,int menu){
             (void)!read(0,s,1);if(s[0]!='['&&s[0]!='O')continue;
             size_t si=0;while(si<7){if(read(0,s+1+si,1)!=1)break;char e=s[1+si];si++;if((e>='A'&&e<='Z')||(e>='a'&&e<='z')||e=='~')break;}
             if(si>=4&&!memcmp(s+1,"200~",4))paste=1;else if(si>=4&&!memcmp(s+1,"201~",4))paste=0;continue;}
-        if(menu&&c=='/'&&!l&&!paste){int r=m_slash(m,cap);
-            if(r==1){l=strlen(m);break;}
-            if(r==2){l=strlen(m);continue;}
+        if(menu&&c=='/'&&!l&&!paste){int rs=m_slash(m,cap);
+            if(rs==1){l=strlen(m);break;}
+            if(rs==2){l=strlen(m);continue;}
             M_ST(st,sfn)continue;}
         if(c=='\r'||c=='\n'){if(!paste)break;MFIT;m[l++]='\n';}  /* pasted \n = literal; falls through to the drain check */
         else if(c==127||c==8){while(l&&(m[l-1]&0xC0)==0x80)l--;if(l)l--;continue;}

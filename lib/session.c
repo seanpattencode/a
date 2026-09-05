@@ -31,7 +31,7 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     int ai = cmd && (strstr(cmd,"claude") || strstr(cmd,"codex") || strstr(cmd,"gemini") || strstr(cmd,"aider") || strstr(cmd,"grok"));
     char sid[64]="",acmd[B];
     if(cmd&&(strstr(cmd,"claude ")||strstr(cmd,"grok "))&&!strstr(cmd,"--resume")&&!strstr(cmd,"--continue"))   /* sid in argv = feed's live/pane anchor */
-        pcmd("cat /proc/sys/kernel/random/uuid 2>/dev/null||uuidgen|tr A-Z a-z",sid,64),sid[strcspn(sid,"\n")]=0;
+        {pcmd("cat /proc/sys/kernel/random/uuid 2>/dev/null||uuidgen|tr A-Z a-z",sid,64);sid[strcspn(sid,"\n")]=0;}
     snprintf(acmd,B,"%s%s%s",cmd?cmd:"",sid[0]?" --session-id ":"",sid);
     char wcmd[B*2],ctxf[P]="",csuf[512]="";
     int is_claude=ai&&strstr(acmd,"claude"),is_gemini=ai&&strstr(acmd,"gemini"),is_codex=ai&&strstr(acmd,"codex"),is_grok=ai&&strstr(acmd,"grok");

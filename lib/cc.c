@@ -4,4 +4,4 @@ static int cmd_cc(int c,char**v){(void)c;(void)v;
     puts("tcc: missing");printf("Build+install tcc? [y/N] ");fflush(stdout);
     char b[4];if(!fgets(b,4,stdin)||(*b|32)!='y')return 0;
     char s[B];snprintf(s,B,"set -e;T=%s/tcc$$;git clone -q --depth 1 https://github.com/TinyCC/tinycc.git $T;cd $T;./configure --cc=clang --prefix=$HOME/.local>/dev/null;make -j4>/dev/null;make install>/dev/null;rm -rf $T",TMP);
-    return system(s)?puts("x"),1:(puts("✓"),0);}
+    if(system(s)){puts("x");return 1;}puts("✓");return 0;}

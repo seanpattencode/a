@@ -61,7 +61,7 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
     if(pw&&pw[0])l+=snprintf(d+l,(size_t)(B-l),"Password: %s\n",pw);
     if(k&&v&&v[0])snprintf(d+l,(size_t)(B-l),"%s: %s\n",k,v);
     writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);
-    char g[B];snprintf(g,B,"flock /tmp/.a_git.lock sh -c \"cd %1$s;git add ssh/%2$s.txt&&git commit -qm ssh:%2$s&&git push -q\" 2>/dev/null &",SROOT,n);(void)!system(g);}
+    char g[B];snprintf(g,B,"flock /tmp/.a_git.lock sh -c \"cd %s;git add ssh/%s.txt&&git commit -qm ssh:%s&&git push -q\" 2>/dev/null &",SROOT,n,n);(void)!system(g);}
 typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}host_t;
 static int ssh_idx(const char*a,const host_t*H,int nh){
     if(isdigit((unsigned char)*a))return atoi(a);
@@ -69,12 +69,12 @@ static int ssh_idx(const char*a,const host_t*H,int nh){
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
-    host_t H[32];int nh=0,arc=0;
+    host_t H[32];int nh=0;
     char paths[32][P];int np=listdir(dir,paths,32);
     for(int i=np-1;i>=0&&nh<32;i--){
         kvs_t kv=kvfile(paths[i]);const char*n=kvget(&kv,"Name");if(!n)continue;
         int dup=0;for(int j=0;j<nh;j++)if(!strcmp(H[j].name,n)){dup=1;break;}
-        if(dup){do_archive(paths[i]);arc++;continue;}
+        if(dup){do_archive(paths[i]);continue;}
         snprintf(H[nh].name,128,"%s",n);const char*h=kvget(&kv,"Host"),*p=kvget(&kv,"Password");
         const char*j=kvget(&kv,"Jump"),*jp=kvget(&kv,"JumpPw");
         snprintf(H[nh].host,256,"%s",h?h:"");
@@ -118,7 +118,7 @@ static int cmd_ssh(int argc,char**argv){
         #undef SA
         if(!got||!*sel)return 0;
         sel[strcspn(sel," \t\n")]=0;  /* first token = host/command name */
-        if(!strcmp(sel,"default")){const char*d=cfget("default_ssh");if(*d)execvp("a",(char*[]){"a","ssh",(char*)d,NULL});return 0;}
+        if(!strcmp(sel,"default")){char*d=cfget("default_ssh");if(*d)execvp("a",(char*[]){"a","ssh",d,NULL});return 0;}
         execvp("a",(char*[]){"a","ssh",sel,NULL});return 1;}
 
     /* start/stop/status */
@@ -319,9 +319,9 @@ static int cmd_ssh(int argc,char**argv){
                     "[ \"$h\" = '%s' ]&&echo ${B}$i)& done;wait",H[idx].pw,ul,H[idx].host,stem);
                 fprintf(stderr,"! %s scanning...\n",H[idx].name);
                 FILE*rf=popen(rc,"r");char ip[64]={0};if(rf){(void)!fgets(ip,63,rf);pclose(rf);ip[strcspn(ip,"\n")]=0;}
-                if(ip[0]){char nh[256];snprintf(nh,256,"%.*s@%s",ul,H[idx].host,ip);
-                    snprintf(H[idx].host,256,"%s",nh);ssh_savex(dir,H[idx].name,nh,H[idx].pw,"Hint",H[idx].hint);
-                    ssh_parse(nh,hp,port);fprintf(stderr,"✓ %s → %s\n",H[idx].name,nh);}
+                if(ip[0]){char nhs[256];snprintf(nhs,256,"%.*s@%s",ul,H[idx].host,ip);
+                    snprintf(H[idx].host,256,"%s",nhs);ssh_savex(dir,H[idx].name,nhs,H[idx].pw,"Hint",H[idx].hint);
+                    ssh_parse(nhs,hp,port);fprintf(stderr,"✓ %s → %s\n",H[idx].name,nhs);}
                 else if(H[idx].hint[0])fprintf(stderr,"! %s — %s\n",H[idx].name,H[idx].hint);}}}
     if(!H[idx].pw[0]&&!H[idx].jump[0]){char tc[B];int l=ssh_pre(tc,B,"","-oBatchMode=yes -oConnectTimeout=3",port,hp);
         snprintf(tc+l,(size_t)(B-l)," true 2>/dev/null");

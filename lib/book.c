@@ -470,7 +470,7 @@ def cmd_add(path):
 GUT = Path.home() / "civilization/data/gutenberg"   # /civ local dump: 69,999 PG .txt, no network
 
 def _gut_index():
-    # id/author/title/lang TSV from the dump files' own headers; one-time ~1min build, then instant
+    # gut index: id/author/title/lang TSV; one-time ~1min build, then instant
     idx = GUT.parent / "gutenberg-authors.tsv"
     if idx.exists(): return idx
     import re
@@ -836,14 +836,14 @@ r'''
 #endif
 /* a book — C list TUI (rules: adata/git/mem/tui.md); args or no tty → python half above via fallback_py. */
 static int bk_cmp(const void*a,const void*b){return strcasecmp((const char*)a,(const char*)b);}
-static void _bkfile(const char*,char*);   /* serve.c */
+static void bkfile(const char*,char*);   /* serve.c */
 static char bk_nm[4096][128],bk_ad[4096][96],bk_ak[4096][96],bk_has[4096];   /* name + resolved author display/key + has-txt */
 static int bk_srctag(const char*a){char b[64];int j=0;   /* download-source tag, not an author */
     for(const char*p=a;*p&&j<63;p++)if(isalnum((unsigned char)*p))b[j++]=(char)tolower((unsigned char)*p);b[j]=0;
     return strstr(b,"libgen")||strstr(b,"annasarchive")||strstr(b,"bokxyz")||strstr(b,"zlibrary")||!strcmp(b,"zlib");}
 static void bk_norm(const char*a,char*o,int n){char t[12][32];int c=0;   /* alnum tokens lowercased + SORTED */
     for(const char*p=a;*p&&c<12;){while(*p&&!isalnum((unsigned char)*p))p++;if(!*p)break;
-        int l=0;while(*p&&isalnum((unsigned char)*p)&&l<31)t[c][l++]=(char)tolower((unsigned char)*p),p++;t[c][l]=0;if(l)c++;}
+        int l=0;while(*p&&isalnum((unsigned char)*p)&&l<31){t[c][l++]=(char)tolower((unsigned char)*p);p++;}t[c][l]=0;if(l)c++;}
     for(int i=1;i<c;i++){char x[32];strcpy(x,t[i]);int j=i-1;for(;j>=0&&strcmp(t[j],x)>0;j--)strcpy(t[j+1],t[j]);strcpy(t[j+1],x);}
     int k=0;for(int i=0;i<c&&k<n-2;i++){for(int z=0;t[i][z]&&k<n-2;z++)o[k++]=t[i][z];if(i+1<c)o[k++]=' ';}o[k]=0;}
 /* author w/o metadata: tail after last --- (title---author); but if the tail reads like a title (>4 words)
@@ -861,7 +861,7 @@ static char (*g_ak)[96];   /* set before qsort of an index[] by resolved-author 
 static int g_akcmp(const void*pa,const void*pb){return strcmp(g_ak[*(const int*)pa],g_ak[*(const int*)pb]);}
 /* over-long names get middle-… so beginning AND end show (end-truncation would hide the title) */
 static void bk_mid(char*s,int w){int l=(int)strlen(s);if(l<=w||w<8)return;int h=(w-3)/2;
-    char*e=s+l-(w-3-h);while((*e&0xC0)==(char)0x80)e++;
+    char*e=s+l-(w-3-h);while((*e&0xC0)==0x80)e++;
     memmove(s+h+3,e,strlen(e)+1);memcpy(s+h,"\xe2\x80\xa6",3);}
 /* cloud follows local rename (bg moveto) — else sync pull resurrects old name */
 static void bk_cloudmv(const char*a,const char*b){if(fork())return;
@@ -892,7 +892,7 @@ static int cmd_book(int argc,char**argv){
     if(!n){puts("x no books — a book add <file>");return 1;}
     qsort(nm,(size_t)n,128,bk_cmp);
     bk_resolve(nm,n);g_ak=bk_ak;   /* clean authors once; per-keypress reads stay O(1) */
-    for(int i=0;i<n;i++){char p[P];_bkfile(nm[i],p);bk_has[i]=(char)!access(p,R_OK);}   /* once: repaints stay syscall-free */
+    for(int i=0;i<n;i++){char p[P];bkfile(nm[i],p);bk_has[i]=(char)!access(p,R_OK);}   /* once: repaints stay syscall-free */
     char ft[64]="";int cur=0,fm=0,na=0,sm=0;static char arc[64][128];   /* sm: name|author sort */
     /* raw mode once (per-key reset would eat omnibox type-ahead) */
     struct termios ot,rt;tcgetattr(0,&ot);rt=ot;rt.c_lflag&=~(tcflag_t)(ICANON|ECHO);rt.c_cc[VMIN]=1;tcsetattr(0,TCSANOW,&rt);
@@ -928,7 +928,7 @@ static int cmd_book(int argc,char**argv){
         if(k==27){struct pollfd pf={0,POLLIN,0};   /* arrows = ESC[A/B → k/j (lone ESC stays quit/exit-filter) */
             if(poll(&pf,1,10)>0){char s[2]={0,0};
                 if(read(0,s,1)!=1)k=0;
-                else if(s[0]=='[')k=read(0,s+1,1)==1&&s[1]=='A'?(ar=1,'k'):s[1]=='B'?(ar=1,'j'):0;
+                else if(s[0]=='['){if(read(0,s+1,1)==1&&(s[1]=='A'||s[1]=='B')){ar=1;k=s[1]=='A'?'k':'j';}else k=0;}
                 else k=s[0];}}   /* ESC then a fast real key (or Alt+key): keep the key, drop the ESC */
         if(fm&&!ar){if(k=='\r'||k=='\n'||k==27)fm=0;
             else if(k==127||k==8){size_t l=strlen(ft);if(l)ft[l-1]=0;}
@@ -947,9 +947,9 @@ static int cmd_book(int argc,char**argv){
             char t=0;(void)!read(0,&t,1);
             if(t=='a'){tcsetattr(0,TCSANOW,&ot);printf("\033[H\033[2J-- live transcription log, Ctrl-C detaches --\n");fflush(stdout);
                 char ac[P];snprintf(ac,P,"%s/local/bookdrip/drip.log",AROOT);execlp("tail","tail","-n","24","-f",ac,(char*)0);}
-            if(t=='r'){char rt[12]="20",fp2[P],rc[B];snprintf(fp2,P,"%s/local/bookdrip/state.json",AROOT);   /* keep the configured rate across resume */
-                size_t l2=0;char*j2=readf(fp2,&l2);if(j2){bk_jget(j2,"rate",rt,12);free(j2);if(!rt[0])strcpy(rt,"20");}
-                snprintf(rc,B,"a book drip auto %s >/dev/null 2>&1;systemctl --user restart bookdrip.service 2>/dev/null;sleep 1",rt);
+            if(t=='r'){char rr[12]="20",fp2[P],rc[B];snprintf(fp2,P,"%s/local/bookdrip/state.json",AROOT);   /* keep the configured rate across resume */
+                size_t l2=0;char*j2=readf(fp2,&l2);if(j2){bk_jget(j2,"rate",rr,12);free(j2);if(!rr[0])strcpy(rr,"20");}
+                snprintf(rc,B,"a book drip auto %s >/dev/null 2>&1;systemctl --user restart bookdrip.service 2>/dev/null;sleep 1",rr);
                 (void)!system(rc);}
             else if(t=='x')(void)!system("a book drip stop >/dev/null 2>&1");}
         else if(k=='a'){tcsetattr(0,TCSANOW,&ot);signal(SIGCHLD,SIG_DFL);printf("\033[H\033[2J\033[0m");fflush(stdout);   /* e --pick = the fleet file selector; esc/quit in e → back to menu */

@@ -58,7 +58,7 @@ static int cmd_dir_file(int argc, char **argv) { (void)argc;
     return 0;
 }
 
-static FC fq[1024];int nfq;
+static FC fq[1024];static int nfq;
 /* first-char index: a freq entry can only be a prefix of a line if their first chars match (case-insensit),
  * so bucket entries by lowercased first char and scan only that bucket — provably identical result, O(bucket)
  * not O(nfq). Most file/dir lines hit an empty bucket → instant. */
@@ -76,7 +76,7 @@ static int ifr_on;static double ifr_ms;  /* ifr_ms = when pixels hit the pty (tr
 static void ifr_blast(void){struct winsize w;char p[P];size_t l;
     if(ioctl(1,TIOCGWINSZ,&w))return;snprintf(p,P,"%s/i_frame.%dx%d",DDIR,w.ws_row,w.ws_col);char*f=readf(p,&l);
     if(f&&l){(void)!write(1,f,l);ifr_on=1;
-        struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ifr_ms=(double)(t.tv_sec-_t0.tv_sec)*1e3+(double)(t.tv_nsec-_t0.tv_nsec)/1e6;}
+        struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ifr_ms=(double)(t.tv_sec-T0.tv_sec)*1e3+(double)(t.tv_nsec-T0.tv_nsec)/1e6;}
     free(f);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
@@ -93,8 +93,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
     tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);if(!ifr_on)write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);}
     int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="",lastnote[P]="";time_t lastfire=0;
-    static const char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
-    struct timespec tk=_t0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since _t0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
+    static char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
+    struct timespec tk=T0; const char*act="render";  /* tk = per-frame timer (first paint = cold render since T0; after a key = key→repaint); act = WHAT produced this frame, so the footer says what it just measured */
     bld:n=0;free(raw);  /* detached regen lands AFTER our read → mtime flip re-enters (typed buf survives): first launch matches live convo */
     {
     raw=readf(cache,&len);
@@ -126,22 +126,22 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             execlp("sh","sh","-c",cm,(char*)0);_exit(0);}}}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
-    {static const char*acts[]={"home\tssh into homebox","tmux split-window\tpane\tnew pane below","tmux new-window\twin\topen new window","tmux kill-pane\tpane\tclose this pane","tmux kill-window\twin\tclose this window","tmux detach\tquit\tdetach, session keeps running","tmux kill-session\tquit\tkill session + windows","tmux resize-pane -Z\tpane\ttoggle pane zoom","tmux set synchronize-panes\tpane\ttoggle sync all panes",
+    {static char*acts[]={"home\tssh into homebox","tmux split-window\tpane\tnew pane below","tmux new-window\twin\topen new window","tmux kill-pane\tpane\tclose this pane","tmux kill-window\twin\tclose this window","tmux detach\tquit\tdetach, session keeps running","tmux kill-session\tquit\tkill session + windows","tmux resize-pane -Z\tpane\ttoggle pane zoom","tmux set synchronize-panes\tpane\ttoggle sync all panes",
         "m main\tm\topen main m.txt","m new\tm\tnew agent file in agent/","m archive\tm\tarchive whole m.txt + push","m archive turn\tm\ttrim last turn","m archive undo\tm\trevert last archive","m restart\tm\tkill+respawn window (reload layout)","m edit\tm\topen m.txt in e",
         "m agent claude\tm\tswitch to Claude","m agent codex\tm\tswitch to Codex (GPT)","m agent gemini\tm\tswitch to Gemini",
         "m model opus\tm\tClaude Opus (1M ctx, deepest)","m model sonnet\tm\tClaude Sonnet (fast/cheap)","m model haiku\tm\tClaude Haiku (fastest)","m model gpt-5\tm\tCodex GPT-5","m model gpt-5.5\tm\tCodex GPT-5.5",
         "m model gemini-2.5-flash\tm\tGemini Flash","m model gemini-2.5-pro\tm\tGemini Pro","m model gemini-3-pro-preview\tm\tGemini 3 Pro preview",
         "m effort low\tm\tlow reasoning effort","m effort medium\tm\tmedium effort","m effort high\tm\thigh effort","m effort max\tm\tmax (Claude only)","m effort xhigh\tm\txhigh (Codex only)",
         "m tier default\tm\tdefault tier","m tier fast\tm\tpriority/fast tier","m tier flex\tm\tflex tier (cheap, slow)",0};
-    for(int i=0;acts[i]&&n<2048;i++)lines[n++]=(char*)acts[i];}
+    for(int i=0;acts[i]&&n<2048;i++)lines[n++]=acts[i];}
     {static LNK lk[2048];for(int i=0;i<n;i++){lk[i].s=lines[i];lk[i].k=fq_get(lines[i]);lk[i].i=i;}
      qsort(lk,(size_t)n,sizeof*lk,lnk_cmp);for(int i=0;i<n;i++)lines[i]=lk[i].s;}
     }
     {char*t;int j=0;
-    if(ft0){for(int i=0;i<n;i++)if((t=strchr(lines[i],'\t'))){
+    if(ft0){for(int i=0;i<n;i++){if((t=strchr(lines[i],'\t'))){
         char tg[64];char*t2=strchr(t+1,'\t');size_t tl=t2?(size_t)(t2-t-1):strlen(t+1);
         if(tl>63)tl=63;memcpy(tg,t+1,tl);tg[tl]=0;
-        if(strstr(ft0,tg))lines[j++]=lines[i];}n=j;}}
+        if(strstr(ft0,tg))lines[j++]=lines[i];}}n=j;}}
     int m_mode=ft0&&!strcmp(ft0,"m");
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
     #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)  /* heap buf: paste of any length */
@@ -151,8 +151,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         {struct stat st;if(!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: input-box rules */
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
-        char*fb=buf;int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' ')fb+=2,fl-=2;  /* he types the cmd he means: "a app" head-matches `app`; plain "app" unchanged */
-        if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],fb))continue;fm[nm++]=(char*)ICFG[i];}}
+        char*fb=buf;int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' '){fb+=2;fl-=2;}  /* he types the cmd he means: "a app" head-matches `app`; plain "app" unchanged */
+        if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],fb))continue;fm[nm++]=ICFG[i];}}
         else for (int i=0;i<n&&nm<2048&&blen<256;i++) {  /* paste-scale buf can't be a filter (b2 cap) → prompt row only */
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||(!strncmp(lines[i],"web ",4)&&!strstr(lines[i]," · bm"))))continue;
@@ -173,20 +173,20 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(m_mode){load_cfg();const char*cm=cfget("m_model");if(!*cm)cm="opus";
             const char*cg=cfget("m_agent");if(!*cg)cg="claude";
             const char*cf=cfget("m_effort");if(!*cf)cf="low";
-            struct stat st;long tot=0;char hp[P];
-            snprintf(hp,P,"%s/m/m.txt",SDIR);if(!stat(hp,&st))tot+=st.st_size;
-            snprintf(hp,P,"%s/local/a_cat.txt",AROOT);if(!stat(hp,&st))tot+=st.st_size;
-            snprintf(hp,P,"%s/mem/index.txt",SROOT);if(!stat(hp,&st))tot+=st.st_size;
+            struct stat st;long tsz=0;char hp[P];
+            snprintf(hp,P,"%s/m/m.txt",SDIR);if(!stat(hp,&st))tsz+=st.st_size;
+            snprintf(hp,P,"%s/local/a_cat.txt",AROOT);if(!stat(hp,&st))tsz+=st.st_size;
+            snprintf(hp,P,"%s/mem/index.txt",SROOT);if(!stat(hp,&st))tsz+=st.st_size;
             snprintf(hp,P,"%s/m_status",DDIR);char*ms=readf(hp,NULL);
             if(ms)ms[strcspn(ms,"\n")]=0;
-            hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tot/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
+            hll=snprintf(hl,2048,"tok %ldk %s -m %s eff=%s%s%s",tsz/4/1000,cg,cm,cf,ms&&*ms?" │ ":"",ms?ms:"");
             free(ms); hdr_rows=hll>0?(hll+Wc-1)/Wc:1;}
         int em=m_mode?(ws.ws_row>hdr_rows+5?ws.ws_row-hdr_rows-5:1):maxshow;  /* -2 more: input box rules */
         int avail=em-vo-xtra>0?em-vo-xtra:1,ms=sel-vo,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
         int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
         double fms;{struct timespec _n;clock_gettime(CLOCK_MONOTONIC,&_n);fms=(_n.tv_sec-tk.tv_sec)*1e3+(_n.tv_nsec-tk.tv_nsec)/1e6;}
-        {char fb[B*4];int fl=0;
-        #define FP(f,...) fl+=snprintf(fb+fl,fl<B*4?(size_t)(B*4-fl):0,f,##__VA_ARGS__)
+        {char rb[B*4];int rl=0;
+        #define FP(...) rl+=snprintf(rb+rl,rl<B*4?(size_t)(B*4-rl):0,__VA_ARGS__)
         FP("\033[H\033[?25l");
         if(m_mode){int p=0;
             do{int ch=(hll-p)>Wc?Wc:(hll-p);
@@ -198,7 +198,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         RULE;
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
-        else if(!blen&&!plen){char sn2[32]="";if(ifr_ms)snprintf(sn2,32,"seen %.3f · ",ifr_ms);
+        else if(!blen&&!plen){char sn2[32]="";if(ifr_ms>0)snprintf(sn2,32,"seen %.3f · ",ifr_ms);
             FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
         else{int W=ws.ws_col?ws.ws_col:80,aw=W-plen-4,off=0,cw=0;char cnt[24]="";  /* one row, tail-anchored: end stays visible; Nc count = proof the whole paste landed */
             if(aw>440)aw=440;if(aw<8)aw=8;
@@ -224,22 +224,22 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);if(ml>W-7)ml=W-7;
             char*desc=t2?t2+1:(t?t+1:"");int dc=W<110?W/2:W-60>200?200:W-60;  /* name never cut — desc gets the leftover */
             if(dc>W-7-ml)dc=W-7-ml;if(dc<8){desc="";dc=0;}
-            static char db[320];int hl=0;
+            static char db[320];int hm=0;
             if(t2&&!strncmp(t+1,"win\t",4)){char*hit=0;int wl2=0;char*mm=strstr(desc," · ");int hd=mm?(int)(mm-desc)+4:0;
                 if(blen)for(char*pw=buf;*pw&&!hit;){while(*pw==' ')pw++;int L2=(int)strcspn(pw," ");if(!L2)break;
                     char wq[64];if(L2<64){memcpy(wq,pw,(size_t)L2);wq[L2]=0;if((hit=strcasestr(desc,wq)))wl2=L2;}pw+=L2;}
                 if(hit&&hit>=desc+hd){char*st2=hit-20;if(st2<desc+hd)st2=desc+hd;while((*st2&0xC0)==0x80)st2++;  /* filter hit: snippet around the FIRST typed word found in the convo, match reversed — show WHY it matched (res.py _snip) */
-                    int pre=(int)(hit-st2),rm=dc-hd-pre-wl2-4,tl2=(int)strlen(hit+wl2);if(rm<0)rm=0;if(tl2>rm)tl2=rm;while(tl2>0&&(hit[wl2+tl2]&0xC0)==0x80)tl2--;
-                    snprintf(db,320,"%.*s%s%.*s\033[7m%.*s\033[27m%.*s",hd,desc,st2>desc+hd?"…":"",pre,st2,wl2,hit,tl2,hit+wl2);desc=db;hl=9;}
+                    int pre=(int)(hit-st2),rm=dc-hd-pre-wl2-4,tw=(int)strlen(hit+wl2);if(rm<0)rm=0;if(tw>rm)tw=rm;while(tw>0&&(hit[wl2+tw]&0xC0)==0x80)tw--;
+                    snprintf(db,320,"%.*s%s%.*s\033[7m%.*s\033[27m%.*s",hd,desc,st2>desc+hd?"…":"",pre,st2,wl2,hit,tw,hit+wl2);desc=db;hm=9;}
                 else if((int)strlen(desc)>dc&&mm){int rm=dc-hd-3;if(rm>8){char*tp=desc+strlen(desc)-(size_t)rm;while((*tp&0xC0)==0x80)tp++;snprintf(db,320,"%.*s…%s",hd,desc,tp);desc=db;}}}  /* no hit: old view — head + …convo tail end */
-            int dl=(int)strnlen(desc,(size_t)dc+(size_t)hl),dv;while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;dv=dl-hl;  /* never cut mid-UTF-8 */
+            int dl=(int)strnlen(desc,(size_t)dc+(size_t)hm),dv;while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;dv=dl-hm;  /* never cut mid-UTF-8 */
             FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dv,dl,desc);FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,ccol);  /* +1: top rule of input box */
         #undef FP
-        (void)!write(STDOUT_FILENO,fb,(size_t)fl);
+        (void)!write(STDOUT_FILENO,rb,(size_t)rl);
         if(sv&&!ft0){sv=0;char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames: blast fires whenever this pane size recurs. non-atomic: torn read = one cosmetic frame */
-            if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);(void)!write(fd,fb,(size_t)fl);close(fd);}}}
+            if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);(void)!write(fd,rb,(size_t)rl);close(fd);}}}
         char ch;
         int lw=na&&fresh;  /* live tail ticks only while the receipt is fresh (foreground, ≤3min) — then back to pure block-on-key */
         if(m_mode||lw){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,m_mode?250:500);
@@ -303,7 +303,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 (void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,u);return 0;}
             execvp("a",(char*[]){"a",lastnote,NULL});return 0;}
         if(do_pick&&nm&&sel>=vo&&sel-vo<nm){char*m=fm[sel-vo],cmd[256];
-            {char*wt=strstr(m,"\twin\t@");if(wt){IRST;char wc[64];snprintf(wc,64,"tmux selectw -t %.*s",(int)strcspn(wt+5," "),wt+5);(void)!system(wc);
+            {char*wt=strstr(m,"\twin\t@");if(wt){IRST;char sw[64];snprintf(sw,64,"tmux selectw -t %.*s",(int)strcspn(wt+5," "),wt+5);(void)!system(sw);
                 if(!getenv("TMUX"))execlp("tmux","tmux","attach","-t",TMS,(char*)0);return 0;}}  /* outside tmux selectw is invisible — attach */
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}

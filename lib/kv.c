@@ -31,7 +31,7 @@ static kvs_t kvfile(const char *path) {
     kvs_t r = kvparse(d); free(d); return r;
 }
 
-static int _ldcmp(const void*a,const void*b){return strcmp((const char*)a,(const char*)b);}
+static int ldcmp(const void*a,const void*b){return strcmp((const char*)a,(const char*)b);}
 static int listdir(const char *dir, char paths[][P], int max) {
     DIR *d = opendir(dir); if (!d) return 0;
     struct dirent *e; int n = 0;
@@ -40,5 +40,5 @@ static int listdir(const char *dir, char paths[][P], int max) {
         char *dot = strrchr(e->d_name, '.'); if (!dot || (strcmp(dot, ".txt") && strcmp(dot, ".md"))) continue;
         snprintf(paths[n++], P, "%s/%s", dir, e->d_name);
     }
-    closedir(d); qsort(paths,n,P,_ldcmp); return n;
+    closedir(d); qsort(paths,(size_t)n,P,ldcmp); return n;
 }

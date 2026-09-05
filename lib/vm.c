@@ -28,13 +28,13 @@ static int cmd_vm(int argc, char **argv) {
     if(argc>2&&!strcmp(argv[2],"android")){perf_disarm();return vm_android();}
     const char*sub=argc>2?argv[2]:"run";
     /* find OS arg */
-    const char*osn="debian";
+    char*osn="debian";
     for(int i=2;i<argc;i++)for(int j=0;j<(int)NVMOS;j++)if(!strcmp(argv[i],VMOS[j].name)){osn=argv[i];break;}
     const vmos_t*os=vm_find(osn);
     char d[P],img[P],seed[P],log[P],ud[P],sd[P],md[P];
     snprintf(d,P,"%s/vm",AROOT);snprintf(img,P,"%s/%s.qcow2",d,os->name);
     snprintf(seed,P,"%s/%s-seed.iso",d,os->name);snprintf(log,P,"%s/console.log",d);
-    const char*port="2222",*pw="testvm1";
+    char*port="2222",*pw="testvm1";
     char usr[128];snprintf(usr,128,"%s@localhost",os->user);
     perf_disarm();
     if(!strcmp(sub,"kill")){char c[B];snprintf(c,B,"pkill -f hostfwd=tcp::%s",port);return system(c);}
@@ -60,13 +60,13 @@ static int cmd_vm(int argc, char **argv) {
             char c[B];snprintf(c,B,"sshpass -p %s ssh -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null -oConnectTimeout=2 -p %s %s 'echo ready' 2>/dev/null",pw,port,usr);
             if(!system(c)){clock_gettime(CLOCK_MONOTONIC,&t1);
                 double s=(double)(t1.tv_sec-t0.tv_sec)+(double)(t1.tv_nsec-t0.tv_nsec)/1e9;
-                printf("+ %.1fs\n",s);char*sv[]={argv[0],"vm","ssh",(char*)osn,NULL};return cmd_vm(4,sv);}}
+                printf("+ %.1fs\n",s);char*sv[]={argv[0],"vm","ssh",osn,NULL};return cmd_vm(4,sv);}}
         puts("x microvm timeout — check /tmp/avm.log");return 1;
     }
     if(!strcmp(sub,"test")){
         char cmd[B];
         snprintf(cmd,B,"sshpass -p '%s' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p %s %s 'echo ok' 2>/dev/null",pw,port,usr);
-        if(system(cmd)){char*rv[]={"a","vm","run",(char*)osn,NULL};if(cmd_vm(4,rv))return 1;}
+        if(system(cmd)){char*rv[]={"a","vm","run",osn,NULL};if(cmd_vm(4,rv))return 1;}
         printf("> replicating a...\n");
         snprintf(cmd,B,"a new -p %s %s:%s",pw,usr,port);system(cmd);
         printf("> installing claude (native) + applying oauth creds from host...\n");
@@ -85,7 +85,7 @@ static int cmd_vm(int argc, char **argv) {
         puts("+ done");return 0;
     }
     if(!strcmp(sub,"ssh")){
-        char*a[]={"sshpass","-p",(char*)pw,"ssh","-o","StrictHostKeyChecking=no","-o","UserKnownHostsFile=/dev/null","-o","ConnectTimeout=10","-o","ServerAliveInterval=10","-p",(char*)port,usr,NULL};
+        char*a[]={"sshpass","-p",pw,"ssh","-o","StrictHostKeyChecking=no","-o","UserKnownHostsFile=/dev/null","-o","ConnectTimeout=10","-o","ServerAliveInterval=10","-p",port,usr,NULL};
         char*a2[20];int n=0;for(int i=0;a[i];i++)a2[n++]=a[i];
         for(int i=3;i<argc&&n<19;i++)if(strcmp(argv[i],osn))a2[n++]=argv[i];
         a2[n]=NULL;execvp(a2[0],a2);return 1;}
@@ -129,10 +129,10 @@ static int cmd_vm(int argc, char **argv) {
     int tries=hassnap?10:12,wait=hassnap?1:10;
 #endif
     for(int i=0;i<tries;i++){sleep((unsigned)wait);
-        char c[B];snprintf(c,B,"sshpass -p %s ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p %s %s 'echo ready' 2>/dev/null",pw,port,usr);
+        snprintf(c,B,"sshpass -p %s ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -p %s %s 'echo ready' 2>/dev/null",pw,port,usr);
         if(!system(c)){clock_gettime(CLOCK_MONOTONIC,&t1);
             double s=(double)(t1.tv_sec-t0.tv_sec)+(double)(t1.tv_nsec-t0.tv_nsec)/1e9;
-            printf("+ %.1fs\n",s);char*sv[]={argv[0],"vm","ssh",(char*)osn,NULL};return cmd_vm(4,sv);}
+            printf("+ %.1fs\n",s);char*sv[]={argv[0],"vm","ssh",osn,NULL};return cmd_vm(4,sv);}
         printf("  waiting (%ds)...\n",(i+1)*wait);}
     printf("x timeout — check %s\n",log);return 1;
 }

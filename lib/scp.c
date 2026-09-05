@@ -1,5 +1,5 @@
 /* scp - tui pick file→host→dir, transfer */
-static char*_spk(const char*pr,char*raw){
+static char*spk(const char*pr,char*raw){
     static char*it[256];int n=0;
     for(char*p=raw;*p&&n<256;){char*nl=strchr(p,'\n');if(nl)*nl=0;if(*p)it[n++]=p;if(!nl)break;p=nl+1;}
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);tcsetattr(0,TCSANOW,&r);
@@ -20,12 +20,12 @@ static int cmd_scp(int argc,char**argv){(void)argc;(void)argv;AB;perf_disarm();
     if(!isatty(0)){puts("a scp: needs a terminal");return 1;}   /* headless took item 0 of each = blind send */
     char fb[B*4]="",hb[B*4]="",rb[B*4]="",qc[B*2];
     pcmd("ls -p|grep -v /",fb,B*4);
-    char*ff=_spk("file",fb);if(!ff)return 1;
+    char*ff=spk("file",fb);if(!ff)return 1;
     snprintf(qc,B*2,"ls %s/ssh/*.txt 2>/dev/null|sed 's|.*/||;s/.txt$//'",SROOT);pcmd(qc,hb,B*4);
-    char*hn=_spk("host",hb);if(!hn)return 1;
+    char*hn=spk("host",hb);if(!hn)return 1;
     char hf[P];snprintf(hf,P,"%s/ssh/%s.txt",SROOT,hn);
     kvs_t kv=kvfile(hf);char hp[256],port[8];ssh_parse(kvget(&kv,"Host"),hp,port);
     snprintf(qc,B*2,"ssh -p %s '%s' 'ls -d ~ ~/*/ 2>/dev/null'",port,hp);pcmd(qc,rb,B*4);
-    char*dn=_spk("remote dir",rb);if(!dn)return 1;
+    char*dn=spk("remote dir",rb);if(!dn)return 1;
     snprintf(qc,B*2,"scp -P %s '%s' '%s:%s'&&ssh -tt -p %s '%s' 'cd %s;ls;bash -l'",port,ff,hp,dn,port,hp,dn);
     execl("/bin/sh","sh","-c",qc,(char*)0);return 1;}

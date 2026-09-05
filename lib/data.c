@@ -60,7 +60,7 @@ static void load_cfg(void) {
     for (int i = 0; i < kv.n; i++) { snprintf(CF[NCF].k, 64, "%s", kv.i[i].k); snprintf(CF[NCF].v, 1024, "%s", kv.i[i].v); unesc_nl(CF[NCF].v); NCF++; }
 }
 
-static const char *cfget(const char *key) {
+static char *cfget(const char *key) {
     for (int i = 0; i < NCF; i++) if (!strcmp(CF[i].k, key)) return CF[i].v;
     return "";
 }

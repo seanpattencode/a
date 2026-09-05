@@ -45,7 +45,6 @@ static void sync_bg(void) {
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }
-static void sync_pane(const char *text){(void)text;sync_bg();}
 /* save proof. gh contents API commits to the REMOTE head directly → real url even when local trails the high-churn repo (a bare push would be rejected). then a local commit (NO push) so later pulls don't trip on the new file and the next note's PUT can't 422. no gh (e.g. phone) → bg sync + "saved ✓ syncing", never the old ~30s blocking pull/push. flock serializes; out!=0 writes line else prints. */
 static void note_url(const char*fn,const char*msg,char*out){
     const char*rel=fn;size_t sl=strlen(SROOT);if(fn&&!strncmp(fn,SROOT,sl)&&fn[sl]=='/')rel=fn+sl+1;

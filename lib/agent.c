@@ -2,12 +2,12 @@ static int cmd_review(int argc, char **argv) { (void)argc;(void)argv;
     (void)!system("gh pr list 2>/dev/null");
     char*v[]={"a","job",NULL};return cmd_jobs(2,v); }
 
-static void _doctree(const char*base,const char*rel){
+static void doctree(const char*base,const char*rel){
     char dp[P];snprintf(dp,P,"%s/%s",base,rel);DIR*d=opendir(dp);if(!d)return;
     struct dirent*e;while((e=readdir(d))){if(e->d_name[0]=='.')continue;
         char r2[P];snprintf(r2,P,"%s%s%s",rel,*rel?"/":"",e->d_name);
         char fp[P];snprintf(fp,P,"%s/%s",base,r2);struct stat st;
-        if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){printf("%s/\n",r2);_doctree(base,r2);}else puts(r2);}
+        if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){printf("%s/\n",r2);doctree(base,r2);}else puts(r2);}
     closedir(d);}
 static int cmd_docs(int argc, char **argv) {
     char dir[P]; snprintf(dir, P, "%s/adocs", SROOT); mkdirp(dir);
@@ -19,7 +19,7 @@ static int cmd_docs(int argc, char **argv) {
         execlp("e", "e", f, (char*)NULL);
         return 0;
     }
-    _doctree(dir,"");return 0;
+    doctree(dir,"");return 0;
 }
 
 static int cmd_a_default(int c,char**v){

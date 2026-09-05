@@ -75,7 +75,7 @@ static void rapid(const char *prompt, void (*fn)(const char*)) {
                 while(read(0,&c,1)==1){if(sl<7)s[sl++]=(char)c;if(c>=64&&c<127)break;}s[sl]=0;
                 if(!strcmp(s,"200~")){                                    /* bracketed paste = one note */
                     while(read(0,&c,1)==1){
-                        if(c==27){(void)!read(0,&c,1);while(read(0,&c,1)==1&&!(c>=64&&c<127));break;} /* 201~ */
+                        if(c==27){(void)!read(0,&c,1);while(read(0,&c,1)==1&&!(c>=64&&c<127)){}break;} /* 201~ */
                         RFIT;b[n++]=(char)c;}
                     {size_t ts=n>60?n-60:0;while(ts<n&&(b[ts]&0xC0)==0x80)ts++;char tl[64];size_t j=0;
                      for(size_t k=ts;k<n;k++)tl[j++]=(char)(b[k]=='\n'||b[k]=='\t'?' ':b[k]);tl[j]=0;

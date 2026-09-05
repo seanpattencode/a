@@ -62,8 +62,8 @@ static void gen_icache(void){
         if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;d4(ld,e->d_name,"cmd",ds);*dot=0;
         fprintf(f,"%s\t%s\n",e->d_name,ds);}closedir(d);}}
     /* auto-discover my + lab + repos scripts */
-    {const char*sd[]={SROOT,SDIR};const char*sl[]={"my","lab"};
-    for(int si=0;si<2;si++){char md[P];snprintf(md,P,"%s/%s",sd[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
+    {const char*sr[]={SROOT,SDIR};const char*sl[]={"my","lab"};
+    for(int si=0;si<2;si++){char md[P];snprintf(md,P,"%s/%s",sr[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
     if(d){while((e=readdir(d))){if(e->d_name[0]=='.'||e->d_name[0]=='_')continue;
         char nm[64];snprintf(nm,64,"%s",e->d_name);char*dot=strrchr(nm,'.');
         if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;
@@ -147,16 +147,16 @@ static void gen_icache(void){
             "sqlite3 $T \"$Q\" 2>/dev/null;done;"
 #endif
             "rm -f $T");
-        FILE*sp=popen(cm,"r");if(sp){char tp[P];snprintf(tp,P,"%s.tmp",fp2);FILE*wf=fopen(tp,"w");if(wf){
+        FILE*hf=popen(cm,"r");if(hf){char tp[P];snprintf(tp,P,"%s.tmp",fp2);FILE*wf=fopen(tp,"w");if(wf){
             unsigned char uh[4096]={0};char sl[1024];int nw=0;
-            while(fgets(sl,1024,sp)){sl[strcspn(sl,"\n")]=0;
+            while(fgets(sl,1024,hf)){sl[strcspn(sl,"\n")]=0;
                 char*u=sl,*t=strchr(sl,'|');if(!t)continue;*t++=0;
                 char*hu=u;{char*s=strstr(u,"://");if(s){hu=s+3;if(!strncmp(hu,"www.",4))memmove(hu,hu+4,strlen(hu+4)+1);}}
-                unsigned h=5381;for(char*p=hu;*p;p++)h=h*33+*p;h%=32768;
+                unsigned h=5381;for(char*p=hu;*p;p++)h=h*33+(unsigned char)*p;h%=32768;
                 if(uh[h/8]&(1<<(h%8)))continue;uh[h/8]|=1<<(h%8);
                 if(t[0]){fprintf(wf,"web %s\t%s · web\n",u,t);nw++;}}
             fclose(wf);if(nw)rename(tp,fp2);else unlink(tp);}  /* sticky: never wipe a good cache on a transient empty/locked query */
-            pclose(sp);}}
+            pclose(hf);}}
         _exit(0);}
 }
 
@@ -180,7 +180,7 @@ static int cmd_done(int argc,char**argv){AB;
         char ck[16];char*cc[16],*cx[16];int ncu=0;char*me=msg;
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);if(b+sizeof(t)+2>me)me=b+sizeof(t)+2;}}
-        TAG(ts,"test");TAG(dl,"diff");TAG(cu,"do");TAG(dc,"doc");   /* <doc>paths</doc>: documents for :1111/review to show (a review); stripped from the pane text like the others */
+        TAG(ts,"test")TAG(dl,"diff")TAG(cu,"do")TAG(dc,"doc")   /* <doc>paths</doc>: documents for :1111/review to show (a review); stripped from the pane text like the others */
         #undef TAG
         while(*me==' '||*me==']')me++;int fl=(int)strcspn(dl," ");
         /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */

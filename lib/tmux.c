@@ -42,8 +42,8 @@ static int tm_new(const char *w, const char *wd, const char *cmd) {
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
     return system(c);
 }
-static void tm_sk(const char*w,const char*s,int l){char t[256];tm_t(w,t); /* cancel first: scrolled pane = copy-mode, which EATS keys ('g' pops goto-line). 2 execs, not ';'-chain: chain aborts when cancel errors */
-    char*v[2][7]={{"tmux","send","-t",t,"-X","cancel",0},{"tmux","send","-t",t,l?"-l":(char*)s,l?(char*)s:0,0}};
+static void tm_sk(const char*w,char*s,int l){char t[256];tm_t(w,t); /* cancel first: scrolled pane = copy-mode, which EATS keys ('g' pops goto-line). 2 execs, not ';'-chain: chain aborts when cancel errors */
+    char*v[2][7]={{"tmux","send","-t",t,"-X","cancel",0},{"tmux","send","-t",t,l?"-l":s,l?s:0,0}};
     for(int i=0;i<2;i++){pid_t p=fork();if(p==0){execvp("tmux",v[i]);_exit(1);}if(p>0)waitpid(p,NULL,0);}}
 #define tm_send(w,s) tm_sk(w,s,1)
 #define tm_key(w,s) tm_sk(w,s,0)
@@ -170,7 +170,7 @@ static void tm_ensure_conf(void) {
     {const char*cm[]={"copy-mode","copy-mode-vi",NULL};const char*wn="#{?#{e|>:#{client_width},100},#{pane_height},3}";
     for(int i=0;cm[i];i++){ cc?fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel \"%s\"\n",cm[i],cc)
         :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);
-        fprintf(f,"bind -T %1$s PPage send -X -N '#{pane_height}' scroll-up\nbind -T %1$s NPage send -X -N '#{pane_height}' scroll-down\nbind -T %1$s WheelUpPane send -X -N '%2$s' scroll-up\nbind -T %1$s WheelDownPane send -X -N '%2$s' scroll-down\n",cm[i],wn);}}
+        static const char*K[]={"PPage","NPage","WheelUpPane","WheelDownPane"};for(int k=0;k<4;k++)fprintf(f,"bind -T %s %s send -X -N '%s' scroll-%s\n",cm[i],K[k],k<2?"#{pane_height}":wn,k&1?"down":"up");}}
     fclose(f);
     char uconf[P]; snprintf(uconf, P, "%s/.tmux.conf", HOME);
     char *uc = readf(uconf, NULL);

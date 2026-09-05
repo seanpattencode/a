@@ -5,7 +5,7 @@ static int cmd_w(int c,char**v){AB;init_paths();
     char*h=readf(f,NULL);if(!h)return 1;
     for(char*l=h;*l&&n<32;l++){char*p=strchr(l,'\n');if(p)*p=0;if(*l){char*at=strchr(l,'@');if(at){*at=0;ht[n]=at+1;}hl[n++]=l;}l=p?p:l+strlen(l);}
     char ds[12];strftime(ds,12,"%F",localtime(&(time_t){time(0)}));
-    snprintf(f+dl,P-dl,"/%s_%s.txt",ds,DEV);
+    snprintf(f+dl,(size_t)(P-dl),"/%s_%s.txt",ds,DEV);
     char*dn=readf(f,NULL);
     if(c>2&&!strcmp(v[2],"check")){perf_disarm();char wf[P];snprintf(wf,P,"%s/local/wcheck_%s.txt",AROOT,ds);char*wd=readf(wf,NULL);
         struct tm*T=localtime(&(time_t){time(0)});int now=T->tm_hour*60+T->tm_min,hh,mm;char cm[B];

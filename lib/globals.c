@@ -4,7 +4,7 @@
    SROOT/secrets/ — user-managed secrets (recovery keys, tokens, …). Plaintext OK since
    adata/git is a private remote; append your own files there as desired. */
 static char HOME[P], TMP[P], DDIR[P], AROOT[P], SROOT[P], SDIR[P], DEV[128], LOGDIR[P];
-static struct timespec _t0;   /* main() stamps _t0; each menu times its own render — cold on first paint, key→repaint after each keystroke — so a perf regression shows on sight */
+static struct timespec T0;   /* main() stamps T0; each menu times its own render — cold on first paint, key→repaint after each keystroke — so a perf regression shows on sight */
 
 typedef struct { char path[512], repo[512], gdrive[512], name[128], file[P]; int order; } proj_t;
 static proj_t PJ[MP]; static int NPJ;

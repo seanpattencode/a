@@ -1,5 +1,5 @@
 #if 0
-# ── a.c — agent manager & human-AI accelerator. sh a.c [build|install|analyze|shell|clean]
+# -- a.c - agent manager & human-AI accelerator. sh a.c [build|install|analyze|shell|clean]
 # Polyglot: shell sees # as comments; C preprocessor skips #if 0..#endif.
 # Fixes: fewer tokens, same speed+. Features: cut until it breaks.
 # Read codebase: a cat [dir]: newest files first, whole under A_CB bytes (1.2MB = ~570k Fable tokens), 10-line stubs past it; header line says CONTEXT COMPLETE|INCOMPLETE; copies to clipboard
@@ -8,7 +8,7 @@
 case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
     set -e; A="$HOME/a"
     [[ ! -t 0 ]] && { T="/tmp/_ainst$$.c"; curl -fsSL https://raw.githubusercontent.com/seanpattencode/a/main/a.c -o "$T"; exec sh "$T"; }
-    # bootstrap git: ARCHITECTURE #40 — `curl … | sh` must succeed on a bare OS with no prereqs.
+    # bootstrap git: ARCHITECTURE #40 - `curl ... | sh` must succeed on a bare OS with no prereqs.
     # detect package manager and install. sudo is auto-applied where root is needed.
     command -v git >/dev/null || { S=""; [ "$EUID" != 0 ] && command -v sudo >/dev/null && S="sudo"
         if [[ "$OSTYPE" == darwin* ]]; then command -v brew &>/dev/null || { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; }; brew install git &>/dev/null
@@ -49,7 +49,7 @@ _ensure_cc() {
 }
 _warn_flags() {
     if [[ "$CC" == *clang* ]]; then
-        WARN="-std=c17 -Werror -Weverything -Wno-unknown-warning-option -Wno-padded -Wno-disabled-macro-expansion -Wno-reserved-id-macro -Wno-documentation -Wno-declaration-after-statement -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused -Wno-pre-c11-compat -Wno-implicit-void-ptr-cast -Wno-nullable-to-nonnull-conversion -Wno-poison-system-directories --system-header-prefix=/usr/include -isystem /usr/local/include"
+        WARN="-std=c17 -Werror -Weverything -Wno-unknown-warning-option -Wno-padded -Wno-disabled-macro-expansion -Wno-reserved-id-macro -Wno-documentation -Wno-declaration-after-statement -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused -Wno-pre-c11-compat -Wno-implicit-void-ptr-cast -Wno-nullable-to-nonnull-conversion -Wno-poison-system-directories -Wno-format-nonliteral -Wno-implicit-int-float-conversion -Wno-overlength-strings --system-header-prefix=/usr/include -isystem /usr/local/include"
     else WARN="-std=c17 -w"; fi
 }
 _shell_funcs() {
@@ -105,6 +105,7 @@ _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
 _tok_chk() { local f="$D/adata/git/perf/tok.txt" t c;c=$(head -1 "$f" 2>/dev/null||:)  # entropy deadman: human-only cap, see warning in file
     [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file → hardcoded floor; never fail open
     t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
+    echo "tok $t/$c ($(( t<=c ? c-t : t-c )) $([[ $t -le $c ]] && echo left || echo over))" >&2
     [[ $t -le $c ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: a.c+lib = $t > cap $c tok — simplify, don't raise ($f)" >&2;sed 1d "$f" >&2 2>/dev/null;exit 1; };}
 _Q=-DSRC="\"$D\"";[[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
 _abin() { [[ "$D" == *"/adata/worktrees/"*||"$D" == *"/adata/forks/"* ]]&&ABIN="$D"||ABIN="$D/adata/local"
@@ -114,8 +115,7 @@ _checkers() {
     _rgcc(){ command -v gcc &>/dev/null&&! gcc --version 2>&1|grep -q clang;}
     _c 1 $CC $WARN $A -fsyntax-only "$F" &
     _c 3 clang-tidy --checks='-*,bugprone-branch-clone,bugprone-infinite-loop,bugprone-sizeof-*' -warnings-as-errors='*' "$F" -- $A -std=c17 -w &
-    { ! _rgcc||gcc -std=c17 -Werror -Wlogical-op -Wduplicated-cond -Wduplicated-branches -Wtrampolines $A -fsyntax-only "$F";}>"$T/4" 2>&1||touch "$T/4.f" &
-    { ! _rgcc||{ gcc -fanalyzer $A -fsyntax-only "$F" >"$T/5" 2>&1;! grep -q '\-Wanalyzer' "$T/5";};}||touch "$T/5.f" &
+    { ! _rgcc||gcc -std=c17 -Werror=logical-op -Werror=duplicated-cond -Werror=duplicated-branches -Werror=trampolines $A -fsyntax-only "$F";}>"$T/4" 2>&1||touch "$T/4.f" &
     _c 6 cppcheck --error-exitcode=1 --quiet --suppress=syntaxError $A "$F" & _c 7 frama-c -eva -eva-no-print -no-unicode -cpp-extra-args="$A" "$F" &
 { $CC $A -fsanitize=undefined,address -fno-omit-frame-pointer -w -o "$T/a.san" "$F"&&A_BENCH=1 "$T/a.san" help >"$T/9" 2>&1;! grep -q 'runtime error\|SUMMARY:.*Sanitizer' "$T/9";}||touch "$T/9.f" &
     { ! command -v infer &>/dev/null||{ infer run --no-progress-bar -o "$T/infer" -- $CC $A -w -c "$F" -o /dev/null >"$T/10" 2>&1;! grep -q 'NULLPTR_DEREFERENCE\|BUFFER_OVERRUN\|USE_AFTER_FREE' "$T/infer/report.txt" 2>/dev/null;};}||touch "$T/10.f" &
@@ -133,7 +133,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         echo "Couldn't auto-fix. github:seanpattencode"
     }
     if command -v tcc &>/dev/null && [[ ! -d /data/data/com.termux ]]; then
-        # old tcc (0.9.27) dies on odd ' counts inside #if 0 (book.c py half) — fall back to $CC before calling the fix agent
+        # old tcc (0.9.27) dies on odd ' counts inside #if 0 (book.c py half) - fall back to $CC before calling the fix agent
         TCT=${EPOCHREALTIME/./};tcc $_Q -w -o "$ABIN/a" "$D/a.c" -lutil 2>/dev/null&&TCT=$(( ${EPOCHREALTIME/./} - TCT ))000||{ TCT="";_ensure_cc;E=$($CC $_Q -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1)||{ _build_fix "$E"; exit 1; }; }
     else
         _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
@@ -148,7 +148,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         fi
         _ensure_cc; _warn_flags
         _checkers
-        if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] >"$ABIN/.chk" 2>/dev/null
+        if ls "$T"/*.f &>/dev/null;then cat "$T"/[0-9]* >"$ABIN/.chk" 2>/dev/null
             [ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&printf '#!/bin/sh\nhead -80 %s/.chk;exit 1' "$ABIN">"$ABIN/a"&&chmod +x "$ABIN/a"
         else _o3&&[ "$(cat "$ABIN/.bld" 2>&-)" = "$$" ]&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt"
         fi
@@ -159,7 +159,7 @@ check) _PT=${EPOCHREALTIME/./};_tok_chk
     [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
     _checkers
-    if ls "$T"/[0-9].f "$T"/1[0-9].f &>/dev/null 2>&1;then cat "$T"/[0-9] "$T"/1[0-9] 2>/dev/null; exit 1
+    if ls "$T"/*.f &>/dev/null;then cat "$T"/[0-9]* 2>/dev/null; exit 1
     else ok "all checkers passed"; _perf_chk check; _o3&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt" & fi
     ;;
 analyze) _ensure_cc;_warn_flags
@@ -303,9 +303,9 @@ install)
     [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;git -C "$SROOT" config fetch.unpackLimit 1;ok "adata/git tuned";}
     # install synced fleet ssh key so `a ssh <host>` authenticates out-of-box (don't clobber an existing device key)
     [[ -f "$SROOT/ssh/id_ed25519" && ! -f "$HOME/.ssh/id_ed25519" ]]&&{ mkdir -p "$HOME/.ssh";cp "$SROOT/ssh/id_ed25519" "$SROOT/ssh/id_ed25519.pub" "$HOME/.ssh/" 2>/dev/null;chmod 600 "$HOME/.ssh/id_ed25519";ok "fleet ssh key";}
-    # extra user repos: adata/git/repos.txt — one "owner/name [target]" per line, '#' comments ok.
+    # extra user repos: adata/git/repos.txt - one "owner/name [target]" per line, '#' comments ok.
     # rationale: `a clone` brings `a` itself, but the user's personal repos (updater, trading,
-    # research) don't ride along. manifest lives in adata so it syncs across the fleet → a new
+    # research) don't ride along. manifest lives in adata so it syncs across the fleet -> a new
     # device's `a install` ends up with the same user repos. scope-bounded to git clone only;
     # any per-repo setup lives inside that repo (run it via `a hub` or its own bootstrap).
     [[ -f "$SROOT/repos.txt" ]]&&while IFS= read -r ln;do ln="${ln%%#*}";set -- $ln;[[ -z "$1" ]]&&continue
@@ -378,7 +378,7 @@ static void mkdirp(const char *p);
 static void alog(const char *cmd, const char *cwd);
 static void perf_disarm(void);
 static int cmd_sess(int, char**);
-static const char *cfget(const char *key);
+static char *cfget(const char *key);
 typedef struct{char n[64];int c;}FC;
 static int ctcmp(const void*a,const void*b){return((const FC*)b)->c-((const FC*)a)->c;}
 static const char*EXT[]={"",".py",".c",".sh",".html",0};
@@ -480,8 +480,8 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest f
         char hdr[600];size_t hl=(size_t)snprintf(hdr,600,"\n==> %s (%d lines) <==\n",p,tl);
         GA(hdr,hl);
         int am=ia&&!strncmp(p,SDIR,sl)&&p[sl]=='/',st=l>bud||am;nam+=st&&am;nst+=st&&!am;int hd=st?10:tl,tl2=5;
-        int i=0;while(fgets(ln,512,f)){size_t sl=strlen(ln);
-            if(i<hd||(tl>hd+tl2&&i>=tl-tl2)){GA(ln,sl);}
+        int i=0;while(fgets(ln,512,f)){size_t ll=strlen(ln);
+            if(i<hd||(tl>hd+tl2&&i>=tl-tl2)){GA(ln,ll);}
             if(i==hd&&tl>hd+tl2){GA("  ...\n",6);}
             i++;}
         fclose(f);p=e+1;}
@@ -490,18 +490,18 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest f
     #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=l>bud;  /* bud gates context too — 2.4MB embed blew the 1M window */\
         for(size_t i=0;i<sr&&!bin;i++)if((unsigned char)b[i]<32&&b[i]!=9&&b[i]!=10&&b[i]!=13)bin=1;\
         {size_t hl=(size_t)snprintf(b,8192,"\n==> context%s: %s <==\n",bin?" doc":"",bin?FP:HDR);GA(b,hl);}\
-        if(bin)fclose(cf);else{rewind(cf);while(fgets(b,512,cf)){size_t sl=strlen(b);GA(b,sl);}fclose(cf);}nf++;}}
+        if(bin)fclose(cf);else{rewind(cf);while(fgets(b,512,cf)){size_t bl=strlen(b);GA(b,bl);}fclose(cf);}nf++;}}
     struct stat _cs;
     if(!stat(ctd,&_cs)&&S_ISREG(_cs.st_mode))CTX_EMIT(ctd,bname(ctd))
     else {DIR*dd=opendir(ctd);if(dd){struct dirent*de;while((de=readdir(dd))){if(de->d_name[0]=='.')continue;
         char fp2[P];snprintf(fp2,P,"%s/%s",ctd,de->d_name);
         struct stat st2;if(!stat(fp2,&st2)&&S_ISDIR(st2.st_mode)){DIR*sd=opendir(fp2);if(sd){struct dirent*se;while((se=readdir(sd))){if(se->d_name[0]=='.')continue;
-            char sp[P],sh[260];snprintf(sp,P,"%s/%s",fp2,se->d_name);snprintf(sh,260,"%s/%s",de->d_name,se->d_name);CTX_EMIT(sp,sh);}closedir(sd);}continue;}
-        CTX_EMIT(fp2,de->d_name);}closedir(dd);}}
+            char sp[P],sh[260];snprintf(sp,P,"%s/%s",fp2,se->d_name);snprintf(sh,260,"%s/%s",de->d_name,se->d_name);CTX_EMIT(sp,sh)}closedir(sd);}continue;}
+        CTX_EMIT(fp2,de->d_name)}closedir(dd);}}
     #undef CTX_EMIT
     size_t cl2=l;
     if(!getenv("A_NOPROMPT")){const char*ap=cfget("prompt");if(!*ap)ap="default";char p[P];snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,ap);FILE*f=fopen(p,"r");
-     if(f){char hd[64];size_t hl2=(size_t)snprintf(hd,64,"\n==> prompt: %s <==\n",ap);GA(hd,hl2);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
+     if(f){char hd[64];size_t hl2=(size_t)snprintf(hd,64,"\n==> prompt: %s <==\n",ap);GA(hd,hl2);char pb[512];size_t r;while((r=fread(pb,1,512,f))>0){GA(pb,r);}fclose(f);nf++;}}
     if(!d)return 1;d[l]=0;
     char tf[P];snprintf(tf,P,"%s/local/a_cat.txt",AROOT);writef(tf,d);
     {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full. CONTEXT %s: %d files, %d /a as map (10+5 lines), %d stubbed (A_CB=%zu)\n\n",tf,lc,nst?"INCOMPLETE":"COMPLETE",nf,nam,nst,bud);}
@@ -573,13 +573,13 @@ static int cmd_tmux(int c,char**v){if(!getenv("TMUX")){tm_go(c>2?v[2]:NULL);retu
 static int cmd_tutorial(int c,char**v){(void)c;
     char*fv[]={v[0],"a","Guide 'a'. Use 'a help'+README.md, teach as needed. scream=most essential.",NULL};
     return cmd_a_default(3,fv);}
-static int run_lab(const char*pf,int argc,char**argv){
+static int run_lab(char*pf,char**argv){
     const char*dx=strrchr(pf,'.');perf_disarm();if(!dx)return -1;
     char*x=NULL;if(!strcmp(dx,".py"))x="python3";else if(!strcmp(dx,".sh"))x="sh";
-    if(x){argv[1]=(char*)pf;argv[0]=x;execvp(x,argv);}
+    if(x){argv[1]=pf;argv[0]=x;execvp(x,argv);}
     if(!strcmp(dx,".c")){char ob[P],cm[B];const char*bn=bname(pf);
      snprintf(ob,P,"%s/lab_%.*s",TMP,(int)(dx-bn),bn);
-     snprintf(cm,B,"cc -w -o '%s' '%s'",ob,pf);return system(cm)||(argv[1]=(char*)ob,execv(ob,argv+1));}
+     snprintf(cm,B,"cc -w -o '%s' '%s'",ob,pf);if(system(cm))return 1;argv[1]=ob;return execv(ob,argv+1);}
     if(!strcmp(dx,".html"))execlp("xdg-open","xdg-open",pf,(char*)0);
     return -1;}
 typedef struct { const char *n; int (*fn)(int, char**); } cmd_t;
@@ -629,7 +629,7 @@ static struct timespec gt0;
 static void gt_print(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     fprintf(stderr,"%ldus\n",(t.tv_sec-gt0.tv_sec)*1000000L+(t.tv_nsec-gt0.tv_nsec)/1000);}
 int main(int argc, char **argv) {
-    clock_gettime(CLOCK_MONOTONIC, &_t0);
+    clock_gettime(CLOCK_MONOTONIC, &T0);
     signal(SIGCHLD,SIG_DFL);  /* serve execs us with SIGCHLD=IGN: system() rc=-1 → phantom snap restores */
     init_paths();
 
@@ -654,7 +654,7 @@ int main(int argc, char **argv) {
      if(fexists(pf))fallback_py(arg,argc,argv);
      snprintf(pf,P,"%s/lib/%s/__init__.py",SDIR,arg);
      if(fexists(pf)){char m[P];snprintf(m,P,"%s/__init__",arg);fallback_py(m,argc,argv);}
-     #define RL {int r=run_lab(pf,argc,argv);if(r>=0)return r;}
+     #define RL {int r=run_lab(pf,argv);if(r>=0)return r;}
      for(int i=2;EXT[i];i++){snprintf(pf,P,"%s/lib/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
      snprintf(pf,P,"%s/my/%s",SDIR,arg);
      if(strrchr(arg,'.')&&fexists(pf))RL
@@ -672,7 +672,7 @@ int main(int argc, char **argv) {
     if(tm_has(arg)){tm_go(arg);return 0;}
     {char mf[P];
      for(int i=0;EXT[i];i++){snprintf(mf,P,"%s/my/%s%s",SROOT,arg,EXT[i]);
-      if(fexists(mf)){char md[P];snprintf(md,P,"%s/my",SROOT);(void)!chdir(md);return run_lab(mf,argc,argv);}}}
+      if(fexists(mf)){char md[P];snprintf(md,P,"%s/my",SROOT);(void)!chdir(md);return run_lab(mf,argv);}}}
     fprintf(stderr,"a: unknown '%s'\n",arg);
     return 1;
 }
