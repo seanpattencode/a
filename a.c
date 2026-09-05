@@ -2,7 +2,7 @@
 # ── a.c — agent manager & human-AI accelerator. sh a.c [build|install|analyze|shell|clean]
 # Polyglot: shell sees # as comments; C preprocessor skips #if 0..#endif.
 # Fixes: fewer tokens, same speed+. Features: cut until it breaks.
-# Read codebase: a cat (1=all 3=full under A_CB bytes, default 2.4MB, then 10-line stubs; header line says CONTEXT COMPLETE|INCOMPLETE; copies to clipboard)
+# Read codebase: a cat (1=all 3=full under A_CB bytes, default 1.2MB = about 570k Fable-5.1 tokens (2.1 bytes/token for code), then 10-line stubs; header line says CONTEXT COMPLETE|INCOMPLETE; copies to clipboard)
 # Context: a c/j preloads a cat (auto mode 3) into claude's system prompt via --append-system-prompt-file
 # TERMUX: set CLAUDE_CODE_TMPDIR=$HOME/.tmp; build with clang directly.
 case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
@@ -480,7 +480,7 @@ static int cmd_cat(int c,char**v){perf_disarm();
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
     snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* primary repo first (spends the budget), cat_more repos (e.g. u), /a last as stubs */
     size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,skf=0,nst=0,nam=0;
-    size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):2400000;
+    size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):1200000;
     size_t kl=0,kcap=0;char*kd=NULL;  /* skipped-file map: silent omission reads as "covered everything" */
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
     if(fl){while((n=fread(b,1,8192,fl))>0){if(fl2+n<65536){memcpy(fb+fl2,b,n);fl2+=n;}}pclose(fl);}
