@@ -373,7 +373,7 @@ exit 0
 #define AB if(getenv("A_BENCH"))return 0
 #define CWD(w) char w[P];if(!getcwd(w,P))snprintf(w,P,"%s",HOME)
 
-/* a.c: cmd_freq,cmd_cat,cmd_j,cmd_once,cmd_tutorial,CMDS[],perf,main */
+/* a.c: cmd_freq,cmd_cat,cmd_j,cmd_tmux,cmd_tutorial,CMDS[],perf,main */
 static void mkdirp(const char *p);
 static void alog(const char *cmd, const char *cwd);
 static void perf_disarm(void);
@@ -571,122 +571,6 @@ static int cmd_j(int c,char**v){
     if(isatty(1))tm_go(sn);  /* only switch to it when interactive; web/piped dispatch just creates + reports */
     return 0;}
 static int cmd_tmux(int c,char**v){if(!getenv("TMUX")){tm_go(c>2?v[2]:NULL);return 0;}if(c>2){execvp("tmux",v+1);return 1;}setenv("A_FILT_TAG","win pane quit",1);return cmd_i(c,v);}
-#define ADBSEL "S=${ANDROID_SERIAL:-};[ -z \"$S\" ]&&{ N=$(adb devices|awk '/\\tdevice$/{print $1}');n=$(printf %s \"$N\"|grep -c .);" \
-    "case $n in 0)echo no device;exit 1;;1)S=$N;;*)printf %s \"$N\"|nl>&2;read -rp '# [1]: ' i </dev/tty||exit 130;S=$(printf %s \"$N\"|sed -n ${i:-1}p);[ -z \"$S\" ]&&{ echo invalid;exit 1;};;esac;};A=\"adb -s $S\";"
-static int cmd_adb(int c,char**v){
-    if(c>2&&!strcmp(v[2],"setup"))return system(ADBSEL
-      "p=$(cat ~/.ssh/id_*.pub 2>/dev/null|head -1);[ -z \"$p\" ]&&{ echo no pubkey;exit 1;};"
-      "t=${TMPDIR:-/tmp};[ -w \"$t\" ]||t=${PREFIX:-$HOME}/tmp;mkdir -p \"$t\";pk=$t/_pk;sc=$t/_s.sh;"
-      "echo \"$p\">\"$pk\";$A push \"$pk\" /sdcard/pk.txt >/dev/null||exit 1;rm \"$pk\";"
-      "printf 'mkdir -p ~/.ssh\\ncat /sdcard/pk.txt>~/.ssh/authorized_keys\\nchmod 600 ~/.ssh/authorized_keys\\nsshd\\necho A_OK>/sdcard/.a_ok\\n'>\"$sc\";"
-      "$A push \"$sc\" /sdcard/_a.sh >/dev/null;rm \"$sc\";"
-      "$A shell '/system/bin/device_config put activity_manager max_phantom_processes 2147483647' 2>/dev/null;"
-      "$A shell 'settings put global settings_enable_monitor_phantom_procs false' 2>/dev/null;"
-      "$A shell dumpsys deviceidle whitelist +com.termux 2>/dev/null;"  /* battery-opt exempt: survive doze/OOM when backgrounded */
-      "$A shell rm -f /sdcard/.a_ok 2>/dev/null;"  /* marker: input lands in termux's FOREGROUND session; if it's in another (e.g. ssh) the cmd misses — verify, don't assume */
-      "$A shell am start -n com.termux/.app.TermuxActivity >/dev/null;sleep 2;"
-      "$A shell input keyevent 66;sleep 1;"
-      "$A shell input text 'sh%s/sdcard/_a.sh';$A shell input keyevent 66;sleep 3;"
-      "$A shell cat /sdcard/.a_ok 2>/dev/null|grep -q A_OK&&echo '✓ sshd up, key installed'||echo '! did not reach termux (foreground in another session? e.g. ssh) — exit to termux prompt, rerun: a adb setup'");
-    if(c>2&&!strcmp(v[2],"ssh"))return system("for s in $(adb devices|awk '/\\tdevice$/{print$1}');do printf '\\033[36m→ %s\\033[0m ' \"$s\";adb -s \"$s\" shell 'am broadcast -n com.termux/.app.TermuxOpenReceiver -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH /data/data/com.termux/files/usr/bin/sshd --ez com.termux.RUN_COMMAND_BACKGROUND true' 2>&1|tail -1;done");
-    if(c>3&&!strcmp(v[2],"a")){perf_disarm();
-        char cmd[B]="";ajoin(cmd,B,c,v,3);
-        execl("/bin/sh","sh","-c",ADBSEL
-          "P=$($A shell pm path com.aios.a|sed -n 's|^package:||;s|/base.apk||p');[ -z \"$P\" ]&&{ echo x no apk;exit 1;};"
-          "N=$P/lib/arm64;F=/data/data/com.aios.a/files;"
-          "$A shell \"run-as com.aios.a sh -c 'export PATH=$F/bin:$N:/system/bin HOME=$F A_SDIR=$F TERMINFO=$F/terminfo TMUX_BIN=$N/libtmux.so TMUX_TMPDIR=$F; $N/liba.so $1'\"","a",cmd,(char*)0);_exit(127);}
-    if(c>3&&!strcmp(v[2],"cmd")){perf_disarm();
-        char cmd[B]="";ajoin(cmd,B,c,v,3);
-        execl("/bin/sh","sh","-c",ADBSEL
-          "ssh-keygen -R '[localhost]:18022' -f ~/.ssh/known_hosts >/dev/null 2>&1;"
-          "u=$($A shell cmd package list packages -U|awk '/com.termux /{sub(\".*uid:\",\"\");print;exit}');U=u0_a$((u-10000));"
-          "T(){ $A forward tcp:18022 tcp:8022 >/dev/null 2>&1;ssh -oConnectTimeout=4 -oStrictHostKeyChecking=accept-new -p 18022 $U@localhost \"$1\"; }\n"
-          "T \"$1\";r=$?;[ $r -eq 255 ]&&{ echo '! ssh failed, retrying via a adb setup' >&2;ANDROID_SERIAL=$S a adb setup >&2;T \"$1\";r=$?; }\n"
-          "$A forward --remove tcp:18022 >/dev/null 2>&1;exit $r","a",cmd,(char*)0);_exit(127);}
-    if(c>2&&!strcmp(v[2],"qr"))return system(   /* android 11+ wireless-debug pairing: QR = WIFI:T:ADB;S:name;P:pass;; then phone broadcasts _adb-tls-pairing */
-      "command -v qrencode>/dev/null||{ echo 'x need qrencode (apt install qrencode)';exit 1; };"
-      "command -v avahi-browse>/dev/null||{ echo 'x need avahi-browse (apt install avahi-utils)';exit 1; };"
-      "N=ADB_$(od -An -tx1 -N4 /dev/urandom|tr -d ' \\n');P=$(od -An -tx1 -N6 /dev/urandom|tr -d ' \\n');"
-      "echo '» phone: Developer options → Wireless debugging → Pair device with QR code';"
-      "printf 'WIFI:T:ADB;S:%s;P:%s;;' \"$N\" \"$P\"|qrencode -t ANSIUTF8;"
-      "echo \"  pairing secret: $P — NOT a wifi password (a camera app misreads this QR as a wifi network; scan it only from the pairing screen)\";"
-      "F=$(mktemp);(timeout 95 avahi-browse -rp _adb-tls-pairing._tcp >\"$F\" 2>/dev/null &);"
-      "printf '» waiting for scan';for i in $(seq 90);do L=$(awk -F';' '/^=/&&$3==\"IPv4\"{print $8\";\"$9;exit}' \"$F\");[ -n \"$L\" ]&&break;printf .;sleep 1;done;echo;"
-      "rm -f \"$F\";[ -z \"$L\" ]&&{ echo 'x no pairing service in 90s — QR screen open? same wifi?';exit 1; };"
-      "IP=${L%%;*};PT=${L##*;};echo \"+ pairing $IP:$PT\";adb pair \"$IP:$PT\" \"$P\"||exit 1;"
-      "C=$(timeout 15 avahi-browse -rpt _adb-tls-connect._tcp 2>/dev/null|awk -F';' -v ip=\"$IP\" '/^=/&&$3==\"IPv4\"&&$8==ip{print $8\":\"$9;exit}');"
-      "[ -z \"$C\" ]&&{ echo '! paired; connect service not seen — reopen wireless debugging, then: a adb';exit 0; };"
-      "adb connect \"$C\">/dev/null 2>&1;adb devices|grep -q \"$C\"&&echo \"✓ connected $C  (a adb reg to save)\"||echo \"! paired but connect to $C did not stick\"");
-    if(c>2&&!strcmp(v[2],"reg")){char sc[B];   /* register connected devices into adata/git/adb/ (like ssh/): fleet's adb pass reads these */
-        snprintf(sc,B,"d=%s/adb;mkdir -p \"$d\";adb devices 2>/dev/null|awk '/\\tdevice$/{print $1}'|while read s;do "
-          "n=$(adb -s \"$s\" shell getprop ro.product.name 2>/dev/null|tr -d '\\r\\n ');[ -n \"$n\" ]||n=$s;"
-          "case \"$s\" in *:*) w=$s;u=$(adb -s \"$s\" shell getprop ro.serialno 2>/dev/null|tr -d '\\r\\n ');;"
-          "*) w=$(grep '^Wireless:' \"$d/$n.txt\" 2>/dev/null|awk '{print $2}');u=$s;;esac;"
-          "printf 'Name: %%s\\nSerial: %%s\\nWireless: %%s\\n' \"$n\" \"${u:-$s}\" \"${w:-unknown}\">\"$d/$n.txt\";"
-          "echo \"+ $n serial=${u:-$s} wireless=${w:-unknown} (rename file to match ssh name if it differs)\";done;"
-          "flock /tmp/.a_git.lock sh -c 'cd %s&&git add adb&&git commit -qm \"adb reg\" -- adb' 2>/dev/null;:",SROOT,SROOT);
-        return system(sc);}
-    {int r=system("adb devices -l");printf("\033[90m  a adb qr(pair wifi-debug) reg setup ssh a|cmd <..>\033[0m\n");return r;}
-}
-static int cmd_run_once(int c,char**v){
-    if(c<3){puts("Usage: a once [-t secs] [claude flags] prompt words...");return 1;}
-    unsigned tl=600;int si=2;
-    if(c>3&&!strcmp(v[2],"-t")){tl=(unsigned)atoi(v[3]);si=4;}
-    perf_disarm();unsetenv("CLAUDECODE");unsetenv("CLAUDE_CODE_ENTRYPOINT");
-    char*flags[16];int nf=0;char pr[B]="";int pl=0;
-    for(int i=si;i<c;i++){
-        if(v[i][0]=='-'&&nf<14){flags[nf++]=v[i];
-            if((!strcmp(v[i],"--model")||!strcmp(v[i],"--max-budget-usd"))&&i+1<c)flags[nf++]=v[++i];
-        }else pl+=snprintf(pr+pl,(size_t)(B-pl),"%s%s",pl?" ":"",v[i]);}
-    char*a[22];int n=0;
-    a[n++]="claude";a[n++]="-p";a[n++]="--dangerously-skip-permissions";a[n++]="--model";a[n++]="opus";
-    for(int i=0;i<nf;i++)a[n++]=flags[i];
-    a[n++]=pr;a[n]=NULL;
-    pid_t ch=fork();
-    if(ch==0){execvp("claude",a);perror("claude");_exit(127);}
-    int st;
-    for(unsigned elapsed=0;elapsed<tl;elapsed++){
-        pid_t r=waitpid(ch,&st,WNOHANG);
-        if(r>0)return WIFEXITED(st)?WEXITSTATUS(st):1;
-        sleep(1);}
-    fprintf(stderr,"\n\033[31m✗ TIMEOUT\033[0m: a once >%us\n",tl);
-    kill(ch,SIGKILL);waitpid(ch,NULL,0);return 124;}
-static int cmd_my(int c,char**v){(void)c;(void)v;char d[P];snprintf(d,P,"%s/my",SROOT);
-    execlp("ls","ls","--color",d,(char*)0);return 1;}
-static int cmd_ref(int c,char**v){
-    char d[P],bd[P];snprintf(d,P,"%s/context",AROOT);snprintf(bd,P,"%s/books",AROOT);mkdirp(d);
-    char nm[64][128],pa[64][P];int n=0,nb=0;
-    {DIR*dd=opendir(d);struct dirent*e;while(dd&&(e=readdir(dd))&&n<64){if(e->d_name[0]=='.')continue;
-        snprintf(pa[n],P,"%s/%s",d,e->d_name);if(dexists(pa[n]))snprintf(nm[n++],128,"%s",e->d_name);}if(dd)closedir(dd);}
-    {DIR*dd=opendir(bd);struct dirent*e;while(dd&&(e=readdir(dd))&&n<64){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
-        char op[P];snprintf(op,P,"%s/%s/output",bd,e->d_name);DIR*od=opendir(op);int has=0;
-        if(od){struct dirent*f;while((f=readdir(od)))if(strstr(f->d_name,".txt")){has=1;break;}closedir(od);}
-        if(has){snprintf(nm[n],128,"%s",e->d_name);snprintf(pa[n],P,"%s",op);n++;}else nb++;}if(dd)closedir(dd);}
-    int pmode=0;const char*sel=NULL;char q[B]="";int ql=0;
-    for(int i=2;i<c;i++){if(!strcmp(v[i],"-p")){pmode=1;continue;}if(!strcmp(v[i],"-n")){pmode=2;continue;}if(!sel)sel=v[i];else ql+=snprintf(q+ql,(size_t)(B-ql),"%s%s",ql?" ":"",v[i]);}
-    if(!sel){for(int i=0;i<n;i++)printf("  %d. %s%s\n",i,nm[i],strstr(pa[i],"/books/")?" (book)":"");
-        if(nb)printf("  %d need: a book transcribe <name>\n",nb);
-        printf("\na ref <#|name> [-p question | -n next step]  add: mkdir %s/<name>/\n",d);
-        if(!isatty(0))return 0;
-        printf("select #: ");fflush(stdout);char ln[16];
-        if(!fgets(ln,16,stdin)||!isdigit((unsigned char)ln[0]))return 0;
-        int x=atoi(ln);if(x<0||x>=n)return 0;sel=nm[x];}
-    int si=-1;char rp[P];
-    if(strchr(sel,'/')&&realpath(sel,rp)){struct stat st;if(!stat(rp,&st)&&!S_ISDIR(st.st_mode)){char*s=strrchr(rp,'/');if(s)*s=0;}
-        setenv("A_CTX",rp,1);printf("+ %s\n",rp);
-        char*nv[]={v[0],(char*)"c",NULL};return cmd_sess(2,nv);}
-    if(isdigit(*sel)){si=atoi(sel);if(si>=n){puts("x");return 1;}}
-    else{for(int i=0;i<n;i++)if(!strcmp(nm[i],sel)){si=i;break;}}
-    if(si<0){printf("x %s\n",sel);return 1;}
-    char cf[P];snprintf(cf,P,"%s/explained.txt",pa[si]);
-    if(!fexists(cf))snprintf(cf,P,"%s/transcript.txt",pa[si]);
-    const char*ctx=fexists(cf)?cf:pa[si];setenv("A_CTX",ctx,1);printf("+ %s%s\n",nm[si],pmode==2?" (-n next step)":pmode?" (-p)":"");
-    if(pmode){char pp[P];
-        if(pmode==2)snprintf(pp,P,"echo; cat '%s/common/prompts/next.txt'",SROOT);
-        else{setenv("A_REFQ",q[0]?q:"In one paragraph, summarize the central idea.",1);snprintf(pp,P,"printf '\\n%%s\\n' \"$A_REFQ\"");}
-        char cmd[B*2];snprintf(cmd,B*2,"{ A_CTX='%s' a cat 2>/dev/null; %s; } | claude -p --dangerously-skip-permissions --model opus --effort max --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)';echo",ctx,pp);
-        return system(cmd);}
-    char*nv[]={v[0],(char*)"c",NULL};return cmd_sess(2,nv);}
 static int cmd_tutorial(int c,char**v){(void)c;
     char*fv[]={v[0],"a","Guide 'a'. Use 'a help'+README.md, teach as needed. scream=most essential.",NULL};
     return cmd_a_default(3,fv);}
@@ -703,7 +587,7 @@ typedef struct { const char *n; int (*fn)(int, char**); } cmd_t;
 static int cmd_cmp(const void*a,const void*b){return strcmp(((const cmd_t*)a)->n,((const cmd_t*)b)->n);}
 static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
-    {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},
+    {"a",cmd_a_default},{"add",cmd_add},{"agent",cmd_agent},
     {"book",cmd_book},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
@@ -711,12 +595,12 @@ static const cmd_t CMDS[] = {
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
-    {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},{"my",cmd_my},
+    {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
-    {"o",cmd_op},{"once",cmd_run_once},{"op",cmd_op},{"operator",cmd_op},
+    {"o",cmd_op},{"op",cmd_op},{"operator",cmd_op},
     {"p",cmd_push},{"pedal",cmd_pedal},{"perf",cmd_perf},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},
-    {"ref",cmd_ref},{"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
+    {"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
     {"set",cmd_set},{"settings",cmd_settings},{"setup",cmd_setup},{"snap",cmd_resume},
     {"ssh",cmd_ssh},{"sw",cmd_swarm},
@@ -734,7 +618,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|sw|adb|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|ref|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|c|l|g|co|cp|gp|done|clone|add|cmd|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|sw|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|c|l|g|co|cp|gp|done|clone|add|cmd|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);

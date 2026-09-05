@@ -1662,7 +1662,6 @@ def _rish_install(apk_path,pkg,serial=None):
     print(f"x rish: {(r.stdout or '').strip()} {(r.stderr or '').strip()}")
     return False
 
-def qr_pair():S.run(["a","adb","qr"])   # ONE QR-pairing implementation: a adb qr (a.c) — this was a drifted duplicate
 
 def _provision(serial,pkg):
     """Push this dev box's gh+rclone creds to the phone so its termux web-UI can sync. adb can't write termux's private home, so we adb-push the files to /data/local/tmp (binary sync — contents never logged, unlike intent extras) and fire --ez prov; only the apk holds termux's RUN_COMMAND grant, so it copies them into ~/.config. Then we wipe the staging copies. Returns provisioned names."""
@@ -1710,7 +1709,6 @@ def _txupdate(serial,pkg):   # pull+rebuild termux a via /api/omni, then restart
     d=f"adb -s {serial} ";S.run(["sh","-c",d+f"forward tcp:19112 tcp:1112;sleep 3;curl -sm90 localhost:19112/api/omni --data-urlencode q=update;sleep 8;"+d+"shell am force-stop com.termux;"+d+f"shell am start -n {pkg}/.M;"+d+"forward --remove tcp:19112"],capture_output=True);print("→ termux a updated + serve restarted")
 def run():
     if "pair" in sys.argv[1:]:return shizuku_pair()
-    if "pair-qr" in sys.argv[1:] or "qr" in sys.argv[1:]:return qr_pair()
     if "auth" in sys.argv[1:]:return _apk_auth(next((a for a in sys.argv[2:] if a!="auth"),None))
     auth_on="noauth" not in sys.argv[2:]
     up_on="noup" not in sys.argv[2:]   # default: bring termux a to latest + restart its serve after install
