@@ -27,13 +27,13 @@ static void tm_go(const char *w) {
     snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
 static void tm_rename(const char*n){const char*p=getenv("TMUX_PANE");char c[200];snprintf(c,200,"tmux rename-window -t '%s' '%s'",p?p:"",n);(void)!system(c);}  /* -t pane: bare rename hits session-current window (clobbered keeper on restore) */
-static void ram_park(void){                                             /* low RAM at window spawn → park LRU claude window; tmux server = the agent registry, pane child-check spots agents under any name (Sean 7/9: spawn freely, RAM never bottlenecks; parked = resumable via a feed). gate: MemAvailable, mac vm_stat free+inactive+purgeable (7/15); neither → av 0 → no-op */
+static void ram_park(void){                                             /* low RAM at window spawn → park LRU claude window; tmux server = the agent registry, pane child-check spots agents under any name (Sean 7/9: spawn freely, RAM never bottlenecks; parked = resumable via a res). gate: MemAvailable, mac vm_stat free+inactive+purgeable (7/15); neither → av 0 → no-op */
     long need=4096;{const char*e=getenv("A_RAM_MIN_MB");if(e)need=atol(e);}
     char b[192]="";pcmd("a=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null);[ -n \"$a\" ]||a=$(vm_stat 2>/dev/null|awk '/page size of/{ps=$8}/Pages (free|inactive|purgeable):/{s+=$NF}END{if(s*ps)print int(s*ps/1048576)}');printf %s \"$a\"",b,192);
     long av=atol(b);if(av<=0||av>=need)return;
     pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p 'claude|grok|codex' >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
     b[strcspn(b,"\n")]=0;
-    if(b[0])printf("\xe2\x8f\xb8 parked %s (RAM %ldM < %ldM) \xe2\x80\x94 resume: a feed\n",b,av,need);
+    if(b[0])printf("\xe2\x8f\xb8 parked %s (RAM %ldM < %ldM) \xe2\x80\x94 resume: a res\n",b,av,need);
 }
 static int tm_new(const char *w, const char *wd, const char *cmd) {
     tm_ensure_sess();if(tm_has(w))return 1;ram_park();char c[B*2],ev[P+16]="";
@@ -145,18 +145,8 @@ static void tm_ensure_conf(void) {
         "bind -n C-o " SSHIF "'send C-o' 'splitw -v -c \"#{pane_current_path}\"'\n"
         "bind -n C-w " SSHIF "'send C-w' 'selectw -n;killw -t:!'\n"
         "bind -n C-x " SSHIF "'send C-x' 'kill-pane'\n"
-        "bind -n M-p " SSHIF "'send M-p' 'selectw -n;killw -t:!;display \"\\xe2\\x8f\\xb8 parked - resume: a feed\"'\n"
-        /* C-, not C-f: C-f is find inside apps (e's i-search, less, …) — the root bind swallowed it.
-           Every common C-letter is taken (readline motion/history, e's C-g abort + C-y stop-speak);
-           C-, pairs with the C-. menu and rides the same extkeys path that already delivers C-. */
-        /* dropdown, not a window: the point is to GLANCE at what every agent is doing without leaving the pane
-           you are in. -E closes on exit, so ↵ (f_attach execs switch-client) lands you on that agent and the
-           overlay is gone. C-M-, keeps the old full window for long sessions in the feed. */
-        "bind -n C-, " SSHIF "'send C-,' {display-popup -E -w 90% -h 85% -T ' agents ' 'a feed'}\n"
-        "bind -n C-M-, " SSHIF "'send C-M-,' {run \"tmux selectw -t :feed 2>/dev/null||tmux neww -n feed 'a feed'\"}\n"
-/* the panel's ... menu; shared by the C-. key and the click case below.
-   Feed+Park demoted off the bar into here — DELETION CANDIDATES, little real use (Sean 2026-08-31); not yet: C-,/C-M-,/M-p binds live too */
-#define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills Feed 7 \"popup -E -w 90% -h 85% \\\"a feed\\\"\" Park 8 \"selectw -n;killw -t:!;display \\\"parked - resume: a feed\\\"\""
+/* the panel's ... menu; shared by the C-. key and the click case below */
+#define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills"
         "bind -n C-. " SSHIF "'send C-.' {" AMENU "}\n"
 #undef SSHIF
         "bind-key -n C-q detach\n"

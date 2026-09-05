@@ -80,11 +80,11 @@ static void gen_icache(void){
                 fprintf(f,"%.*s\t%s · repo\n",(int)(dot-se->d_name),se->d_name,re->d_name);}closedir(sd);}}closedir(d);}}}
     /* subcommands not discoverable from filenames */
     fputs("scp\tsend file to host\n"
-    "diff\ttok diff vs main\ncat\twhole codebase as text\nfreq\tusage frequency\nq\ttail/search open windows\n"
+    "diff\ttok diff vs main\ncat\twhole codebase as text\nfreq\tusage frequency\n"
     "perf\tcmd time caps\n"
     "ui\tweb dashboard\n"
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
-    "cal add\tadd event\nhub add\tadd job\nhub run\trun job\nhub rm\tdrop job\nhub log\tjob logs\n"
+    "hub add\tadd job\nhub run\trun job\nhub rm\tdrop job\nhub log\tjob logs\n"
     "note\tnotes\nnote l\tlist notes\nnote r\treview notes\nssh add\tadd host\nssh all\twindow per host\n"
     "task add\tadd task\ntask l\tlist tasks\ntask r\treview tasks\ntask rank\trank tasks\n"
     "prompt\tedit prompts\npow\tpower off/restart\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"

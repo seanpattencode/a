@@ -1662,6 +1662,6 @@ def main(argv):
     if "restart" in argv[1:]: return chrome_restart()
     paths=build()
     for p in paths: print("\u2713 "+p)
-    print("load: a extload "+paths[1]+"   |   firefox xpi: a bri deploy")
+    print("chrome: a briext install   |   firefox xpi: a bri deploy")
 
 if __name__=='__main__': main(sys.argv)   # `import briext; briext.build()` regenerates without running main

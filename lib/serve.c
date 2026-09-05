@@ -274,17 +274,6 @@ static void _ws_term(int c,const char*target){
     }
     kill(p,SIGHUP);close(m);waitpid(p,NULL,0);
 }
-static void _ws_reload(int c){ /* dev hot-reload: relay a FIFO byte -> WS "reload"; 25s heartbeat keeps the MV3 worker alive */
-    int f=open("/tmp/a_extreload.fifo",O_RDWR|O_NONBLOCK);if(f<0)return;
-    struct pollfd pf[2]={{c,POLLIN,0},{f,POLLIN,0}};char b[64];
-    while(poll(pf,2,25000)>=0){
-        if(pf[0].revents&(POLLHUP|POLLERR))break;
-        if(pf[1].revents&POLLIN){if(read(f,b,64)>0)_ws_send(c,"reload",6,0x81);}
-        else if(pf[0].revents&POLLIN){if(_ws_recv(c,b,64)<0)break;}
-        else _ws_send(c,"ping",4,0x81);
-    }
-    close(f);
-}
 static char*_phtml;static int _phlen;static time_t _pgen_t;
 static void _prompt_gen(void){ /* cached; GET /prompt regens when sources newer than cache (mtime check) */
         int pp[2];if(pipe(pp))return;pid_t ch=fork();
@@ -395,8 +384,6 @@ static void _handle(int c){
             if(qw[i]=='%'&&qw[i+1]&&qw[i+2]){char x[3]={qw[i+1],qw[i+2],0};tgt[j++]=(char)strtol(x,NULL,16);i+=2;}
             else tgt[j++]=qw[i]=='+'?' ':qw[i];}tgt[j]=0;}
         if(_ws_upgrade(c,req))_ws_term(c,tgt);return;}
-    if(!strncmp(req,"GET /extreload",14)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
-        if(_ws_upgrade(c,req))_ws_reload(c);return;}
     if(!strncmp(req,"GET /api/u-status",17)){_sresp(c,200,"application/json","{\"ok\":true}",11);return;}
     if(!strncmp(req,"GET /nw",7)&&(req[7]==' '||req[7]=='\r'||req[7]=='?')){   /* net worth: single source = u server; home-page banner reads this */
         char nb[4096];char*b=_ufwd("/nw",0,nb,4096);
@@ -934,37 +921,6 @@ static void _handle(int c){
         snprintf(src,P,"%s/git/%s/%s",AROOT,kind,name);
         snprintf(dst,P,"%s/%s",ad,name);rename(src,dst);
         _sresp(c,200,"text/plain","ok",2);return;}
-    if(!strncmp(req,"GET /feeddismiss",16)){   /* web confirm → a feed dismiss (scan for live truth, archive all parked); gate on output not rc (SIGCHLD) */
-        FILE*fp=popen("a feed dismiss 2>/dev/null|tail -1","r");char b[192];size_t n=fp?fread(b,1,191,fp):0;if(fp)pclose(fp);b[n]=0;
-        _sresp(c,200,"text/plain",n?b:"x no output",n?(int)n:11);return;}
-    if(!strncmp(req,"GET /feed",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* terminal as API: page = live `a feed` output, streamed (shell paints instantly, content lands on fleet-scan drain) */
-        static const char FH[]="HTTP/1.1 200 OK\r\nContent-Type:text/html; charset=utf-8\r\nCache-Control:no-store\r\nConnection:close\r\n\r\n"
-            "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>feed</title>"
-            "<style>body{margin:0;background:#0b0b0b;color:#ddd;font:14px/1.7 ui-monospace,monospace}h3{color:#fff;margin:0;padding:12px 14px 4px}#ms{color:#bbb;font-size:12px}pre{margin:0;padding:2px 14px 14px;white-space:pre-wrap}</style>"
-            "<h3>a feed <span id=ms>⟳ scanning fleet…</span> <span style=\"color:#555;font-size:12px\">j/k \xe2\x86\x91\xe2\x86\x93 move · \xe2\x86\xb5 open box</span>"
-            "<span id=dsm style=\"float:right;color:#e66;font-size:12px;cursor:pointer;border:1px solid #444;border-radius:6px;padding:2px 8px\">\xe2\x9c\x95 dismiss parked</span></h3>"
-            "<script>dsm.onclick=function(){if(confirm('dismiss ALL parked sessions from feed?')){ms.textContent='dismissing...';"   /* handler in the HEADER: armed from first paint — footer JS only lands after the fleet scan drains (dead-button window, Sean hit it 8/4) */
-            "fetch('/feeddismiss').then(function(r){return r.text()}).then(function(t){ms.textContent=t;setTimeout(function(){location.reload()},900)})}}</script><pre>";
-        (void)!write(c,FH,sizeof FH-1);
-        struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
-        int pp[2];if(pipe(pp))return;pid_t ch=fork();
-        if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);execlp("a","a","feed",(char*)0);_exit(1);}
-        close(pp[1]);char b[2048],eb[10240];int r;
-        while((r=(int)read(pp[0],b,sizeof b))>0){int o=0;
-            for(int i=0;i<r;i++){char k=b[i];if(k=='<'){memcpy(eb+o,"&lt;",4);o+=4;}else if(k=='&'){memcpy(eb+o,"&amp;",5);o+=5;}else eb[o++]=k;}
-            if(write(c,eb,(size_t)o)<0)break;}
-        close(pp[0]);clock_gettime(CLOCK_MONOTONIC,&t1);
-        char ft[1700];int fl=snprintf(ft,1700,"</pre><script>ms.textContent='%.4fms';"   /* rows -> divs; j/k/arrows move, Enter opens the box's tmux via /op (DEVICE col = chars 2..14) */
-            "var Pr=document.querySelector('pre'),ls=Pr.textContent.split('\\n');"
-            "Pr.innerHTML=ls.map(function(l){var e=l.replace(/&/g,'&amp;').replace(/</g,'&lt;');"
-            "if(l.lastIndexOf('\xe2\x9c\x97 not accessible',0)==0){var p=e.split(': ');return '<details style=color:#e66><summary>'+p[0]+'</summary><div style=color:#999>'+(p[1]||'')+'</div></details>'}"
-            "return '<div>'+e+'</div>'}).join('');"
-            "var rs=[].slice.call(Pr.children).filter(function(d,i){return i>1&&(d.textContent[0]=='\xe2\x97\x8f'||d.textContent[0]=='\xe2\x8f\xb8')}),s=0;"
-            "function H(){rs.forEach(function(d,i){d.style.background=i==s?'#333':''});rs[s]&&rs[s].scrollIntoView({block:'nearest'})}"
-            "onkeydown=function(e){var k=e.key;if(k=='j'||k=='ArrowDown')s=Math.min(s+1,rs.length-1);else if(k=='k'||k=='ArrowUp')s=Math.max(s-1,0);"
-            "else if(k=='Enter'&&rs[s]){location='/op?w=ssh:'+encodeURIComponent(rs[s].textContent.slice(2,16).trim());return}else return;e.preventDefault();H()};"
-            "if(rs.length)H()</script>",(double)(t1.tv_sec-t0.tv_sec)*1e3+(double)(t1.tv_nsec-t0.tv_nsec)/1e6);
-        (void)!write(c,ft,(size_t)fl);return;}
     if(!strncmp(req,"GET /dash",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){
         static const char H[]="<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{background:#000;color:#fff;font:16px system-ui;margin:16px}a{color:#fff;text-decoration:none;display:block;padding:10px;border-bottom:1px solid #222}h3{color:#888;font-weight:400;font-size:14px;margin:16px 0 4px}</style><div id=d>...</div><script>new EventSource('/dash/s').onmessage=m=>{var g={},o=[];m.data.split('|').filter(l=>l).forEach(w=>{var p=w.split('\\t');if(!g[p[0]])o.push(p[0]),g[p[0]]='';g[p[0]]+='<a href=\"/op?w='+encodeURIComponent(p[1])+'\">'+(p[2]||p[1])+'</a>'});d.innerHTML=o.map(x=>'<h3>'+x+'</h3>'+g[x]).join('')}</script>" TAPJS;
         _sresp(c,200,"text/html",H,sizeof H-1);return;}
@@ -1197,8 +1153,6 @@ static void _handle(int c){
         return;}
     _sresp(c,404,"text/plain","not found",9);
 }
-static int cmd_cam(int c,char**v){(void)c;(void)v;AB;perf_disarm();
-    (void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/cam");puts("✓ localhost:1111/cam");return 0;}
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     {const char*op=getenv("PATH");if(!op)op="";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
@@ -1214,7 +1168,6 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
     /* dashboard bridge — only the serve that actually owns the port reaches here. hooks are idempotent; the bridge is a flock singleton (was a racy `kill -0 $(cat pidfile)` TOCTOU: N serves each saw "none" and spawned N bridges, each a tight `tmux wait-for` loop that under window churn floods the server with client connects and could kill it). the 50ms coalesce caps tmux client spawns at ~20/s no matter how fast the hooks fire. flock fd auto-releases on death (no stale-pid wedge); pidfile path kept as a fallback where flock is absent (e.g. mac). */
     mkfifo("/tmp/a_dash.fifo",0644);(void)!open("/tmp/a_dash.fifo",O_RDWR|O_NONBLOCK);
-    unlink("/tmp/a_extreload.fifo");mkfifo("/tmp/a_extreload.fifo",0644); /* ext hot-reload channel; left unopened so writes only land when a worker is reading */
     (void)!system("for h in after-new-window after-rename-window after-kill-pane session-window-changed;do tmux set-hook -g $h 'wait-for -S a_dash' 2>/dev/null;done; "
         "if command -v flock >/dev/null 2>&1; then "
         "(flock -n 9||exit 0;while :;do tmux wait-for a_dash 2>/dev/null||sleep 1;echo x>/tmp/a_dash.fifo 2>&-;sleep 0.05;done) 9>/tmp/.a_dashbr.lock & "

@@ -2,6 +2,38 @@
    ssh + adb probes ALL launch at t0 and race in one poll loop (Sean 7/15: parallel, fast as possible);
    ssh keeps row priority: an adb result buffers until its ssh sibling succeeds (dropped) or fails (printed).
    TUI is the primary surface; serve's GET /fleet mirrors the cache this writes (adata/local/fleet.txt). */
+#define FWIRE 4096                                                       /* a ssh's remote-command buffer (a.c: B) — the hard ceiling on a shipped scanner */
+static int f_b64(const char *in, char *out, size_t cap) {
+    static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    int n = (int)strlen(in), o = 0;
+    out[0] = 0; if ((size_t)(n + 2) / 3 * 4 + 1 > cap) return 0;
+    for (int i = 0; i < n; i += 3) {
+        unsigned v = (unsigned)(unsigned char)in[i] << 16;
+        if (i + 1 < n) v |= (unsigned)(unsigned char)in[i + 1] << 8;
+        if (i + 2 < n) v |= (unsigned)(unsigned char)in[i + 2];
+        out[o++] = T[(v >> 18) & 63]; out[o++] = T[(v >> 12) & 63];
+        out[o++] = (i + 1 < n) ? T[(v >> 6) & 63] : '='; out[o++] = (i + 2 < n) ? T[v & 63] : '=';
+    }
+    out[o] = 0; return 1;
+}
+
+/* resolve THE session's pane: sid-bearing procs (grep '[a]bc' form never matches its own argv) + codex fd-holders (no argv sid) → climb ppids to a pane; every candidate tried (transient ghosts die mid-climb). $s = raw sid for scripts, $i = pane or empty */
+#define FSID "s=$(printf %%s '%s'|tr -d '[]');L=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null);i=;" \
+    "for p in $(grep -al '%s' /proc/[0-9]*/cmdline 2>/dev/null|cut -d/ -f3) $(for q in $(pgrep -x codex 2>/dev/null);do ls -l /proc/$q/fd 2>/dev/null|grep -q \"$s\"&&echo $q;done);do " \
+    "while [ -n \"$p\" ]&&[ \"$p\" -gt 1 ] 2>/dev/null;do i=$(echo \"$L\"|awk -v x=\"$p\" '$1==x{print $2;exit}');[ -n \"$i\" ]&&break 2;p=$(awk '{print $4}' /proc/$p/stat 2>/dev/null);done;done;"
+#define FPAT(b, x) char b[56]; snprintf(b, 56, "[%c]%s", (x)->sid[0], (x)->sid + 1)
+#define FBASH(sc) { execlp("bash", "bash", "-c", sc, (char *)0); _exit(127); }
+static int f_sh(const char *host, const char *sc) {                     /* run sc on a box (local or ssh); returns stdout fd, caller reads to EOF then reaps. setsid: detach from tty — ssh else reads /dev/tty and steals keystrokes */
+    int pf[2]; if (pipe(pf)) return -1; pid_t pid = fork(); if (pid < 0) { close(pf[0]); close(pf[1]); return -1; }
+    if (!pid) { setsid(); dup2(pf[1], 1); close(pf[0]); close(pf[1]); int dn = open("/dev/null", O_RDWR); if (dn >= 0) { dup2(dn, 0); dup2(dn, 2); if (dn > 2) close(dn); }
+        if (strcmp(host, DEV)) { static char b6[FWIRE], cm[FWIRE + 64];
+            if (!f_b64(sc, b6, FWIRE - 64)) _exit(127);
+            snprintf(cm, sizeof cm, "echo %s|base64 -d|bash", b6);
+            if (strlen(cm) >= FWIRE) _exit(127);   /* die silent-but-visible: the box lands in "✗ not accessible" instead of answering with a truncated scanner */
+            execlp("a", "a", "ssh", host, cm, (char *)0); }
+        FBASH(sc) }
+    close(pf[1]); return pf[0];
+}
 static const char *FLQ =
 "m=$(if [ -r /proc/meminfo ];then awk '/MemAvailable/{a=$2}/MemTotal/{t=$2}END{printf \"%.1f/%.1fG\",a/1048576,t/1048576}' /proc/meminfo;"
 "else echo \"$(vm_stat 2>/dev/null|awk '/Pages free|Pages inactive/{s+=$3}END{printf \"%.1f\",s*4096/1073741824}')/$(sysctl -n hw.memsize 2>/dev/null|awk '{printf \"%.1fG\",$1/1073741824}')\";fi)\n"

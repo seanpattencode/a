@@ -162,7 +162,7 @@ def main(browser='none'):
     threading.Thread(target=cmd_serve, daemon=True).start()
     s.listen(50); log(f'[*] http on :{PORT} | log: {LOG}')
     if ff: _ff_restart(hl)  # GUI serve also heals an accidental invisible-FF state (dead wayland socket)
-    else:  log('[*] no browser launched (serves Chrome + FF both). Chrome: open the browser + focus an http(s) tab to wake bri-chrome, then `a extload reload`. Firefox: `a bri serve ff` (or `a bri deploy`).')
+    else:  log('[*] no browser launched (serves Chrome + FF both). Chrome: open the browser + focus an http(s) tab to wake bri-chrome. Firefox: `a bri serve ff` (or `a bri deploy`).')
     while True:
         c,addr = s.accept()
         threading.Thread(target=handle, args=(c,addr), daemon=True).start()
@@ -565,7 +565,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per 
                      artifact, PNG is lossy + heavy + needs a vision model)
   get [sel] [out]  save what the active tab shows → ~/Downloads: largest <video>/<img> (or css sel); img fetched in-tab (its session), video via yt-dlp with the tab's cookies
   '{json}'         raw passthrough — full 9-action protocol (default-targeted too; a "to" field overrides)
-first run — Firefox: a bri serve ff then a bri deploy (serve ffh = HEADLESS FF, same profile/sign-ins, no window; serve ff switches back)   ·   Chrome: a bri serve then load bri-chrome (a extload)"""
+first run — Firefox: a bri serve ff then a bri deploy (serve ffh = HEADLESS FF, same profile/sign-ins, no window; serve ff switches back)   ·   Chrome: a bri serve + a briext install"""
 if __name__=='__main__':
     args = sys.argv[1:]
     if args and args[0] == 'bri': args = args[1:]  # `a bri …` passes cmd name as argv[1]

@@ -397,19 +397,16 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/project.c"
 #include "lib/config.c"
 #include "lib/push.c"
-#include "lib/q.c"
 #include "lib/hub.c"
 #include "lib/ls.c"
 #include "lib/note.c"
 #include "lib/book.c"
 #include "lib/ssh.c"
-#include "lib/relay.c"
 #include "lib/scp.c"
 #include "lib/net.c"
 #include "lib/cal.c"
 #include "lib/agent.c"
 #include "lib/file.c"
-#include "lib/view.c"
 #include "lib/cc.c"
 #include "lib/clone.c"
 #include "lib/cmd.c"
@@ -420,17 +417,13 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/new.c"
 #include "lib/op.c"
 #include "lib/pow.c"
-#include "lib/audio.c"
 #include "lib/serve.c"
 #include "lib/tok.c"
-#include "lib/debloat.c"
 #include "lib/m.c"
 #include "lib/h.c"
 #include "lib/handoff.c"
-#include "lib/checkin.c"
 #include "lib/pedal.c"
 #include "lib/grep.c"
-#include "lib/feed.c"
 #include "lib/fleet.c"
 
 static int cmd_freq(int c,char**v){perf_disarm();
@@ -711,10 +704,10 @@ static int cmd_cmp(const void*a,const void*b){return strcmp(((const cmd_t*)a)->n
 static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
     {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},
-    {"audio",cmd_audio},{"book",cmd_book},{"cal",cmd_cal},{"cam",cmd_cam},{"cat",cmd_cat},{"cc",cmd_cc},{"checkin",cmd_checkin},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
+    {"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
-    {"d",cmd_diff},{"debloat",cmd_debloat},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"feed",cmd_feed},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"gui",cmd_gui},{"h",cmd_h},{"handoff",cmd_handoff},
+    {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
+    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
@@ -722,8 +715,8 @@ static const cmd_t CMDS[] = {
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
     {"o",cmd_op},{"once",cmd_run_once},{"op",cmd_op},{"operator",cmd_op},
     {"p",cmd_push},{"pedal",cmd_pedal},{"perf",cmd_perf},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
-    {"pull",cmd_pull},{"push",cmd_push},{"q",cmd_q},
-    {"ref",cmd_ref},{"relay",cmd_relay},{"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
+    {"pull",cmd_pull},{"push",cmd_push},
+    {"ref",cmd_ref},{"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
     {"set",cmd_set},{"settings",cmd_settings},{"setup",cmd_setup},{"snap",cmd_resume},
     {"ssh",cmd_ssh},{"sw",cmd_swarm},

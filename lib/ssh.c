@@ -302,7 +302,7 @@ static int cmd_ssh(int argc,char**argv){
     else for(int i=0;i<nh;i++){if(cn[0]&&!strcasecmp(H[i].name,cn)){idx=i;ci=4;break;}if(idx<0&&strcasestr(H[i].name,sub))idx=i;}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
-    /* fast TCP probe; on fail switch to: explicit Fallback, else the -wan sibling of a dead -lan, else <name>-relay */
+    /* fast TCP probe; on fail switch to: explicit Fallback, else the -wan sibling of a dead -lan */
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
         snprintf(pb,B,"timeout 1 bash -c 'exec 3<>/dev/tcp/%s/%s' 2>/dev/null",ph,port);
         if(system(pb)){int f=-1;
@@ -310,7 +310,6 @@ static int cmd_ssh(int argc,char**argv){
             char*ls=strstr(H[idx].name,"-lan");size_t bl=ls&&!ls[4]?(size_t)(ls-H[idx].name):0;
             if(f<0&&bl)for(int i=0;i<nh;i++){char*ws=strstr(H[i].name,"-wan");
                 if(ws&&!ws[4]&&(size_t)(ws-H[i].name)==bl&&!strncasecmp(H[i].name,H[idx].name,bl)){f=i;break;}}
-            if(f<0){char rn[160];snprintf(rn,160,"%s-relay",H[idx].name);for(int i=0;i<nh;i++)if(!strcmp(H[i].name,rn)){f=i;break;}}
             if(f>=0){idx=f;ssh_parse(H[idx].host,hp,port);}
             else{char stem[64];snprintf(stem,64,"%s",H[idx].name);char*sd=strchr(stem,'-');if(sd)*sd=0;
                 const char*at=strchr(H[idx].host,'@');int ul=at?(int)(at-H[idx].host):0;
