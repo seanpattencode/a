@@ -1,9 +1,9 @@
-"""a sync — adata + gdrive backup; module: cloud_sync tar.zst backup of a local dir to every configured a-gdrive remote.
+"""a sync — adata + gdrive backup; module: cloud_sync tar.zst backup of a local dir to a-gdrive2 (the one cloud).
 Sole live export (imported by gdrive.py for `a gdrive sync`); `a sync` itself is C (net.c cmd_sync).
 _merge_rclone seeds ~/.config/rclone/rclone.conf from the synced login/ copy so a fresh device can ship."""
 import os, subprocess as sp
 from pathlib import Path
-from _common import SYNC_ROOT, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone, _configured_remotes
+from _common import SYNC_ROOT, RCLONE_BACKUP_PATH, DEVICE_ID, get_rclone, _backup_remotes
 
 def _merge_rclone():
     import re
@@ -23,6 +23,6 @@ def cloud_sync(local_path, name):
     tar = f'{os.getenv("TMPDIR", "/tmp")}/{name}-{DEVICE_ID}.tar.zst'
     if sp.run(f'tar -cf - -C {local_path} . 2>/dev/null | zstd -q > {tar}', shell=True).returncode > 1:
         return False, "tar failed"
-    ok = [r for r in _configured_remotes() if sp.run([rc, 'copyto', tar, f'{r}:{RCLONE_BACKUP_PATH}/backup/{DEVICE_ID}/{name}.tar.zst', '-q']).returncode == 0]
+    ok = [r for r in _backup_remotes() if sp.run([rc, 'copyto', tar, f'{r}:{RCLONE_BACKUP_PATH}/backup/{DEVICE_ID}/{name}.tar.zst', '-q']).returncode == 0]
     Path(tar).unlink(missing_ok=True)
     return bool(ok), f"{'✓'*len(ok) or 'x'} {','.join(ok) or 'fail'}"

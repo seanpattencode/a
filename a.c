@@ -314,12 +314,12 @@ install)
         { command -v gh &>/dev/null&&gh auth status &>/dev/null 2>&1&&gh repo clone "$1" "$tgt" 2>/dev/null; }||git clone "https://github.com/$1.git" "$tgt" 2>/dev/null
         [[ -d "$tgt/.git" ]]&&ok "$1"||warn "$1"
     done < "$SROOT/repos.txt"
-    if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q 'a-gdrive'; then
+    if command -v rclone &>/dev/null && rclone listremotes 2>/dev/null | grep -q '^a-gdrive2:'; then
         _DEV=$(cat "$D/adata/local/.device" 2>/dev/null || hostname)
         _BDIR="$D/adata/backup/$_DEV"; mkdir -p "$_BDIR"
         if [[ ! -f "$_BDIR/.gdrive_id" ]]; then
-            rclone mkdir "a-gdrive:/$_DEV" 2>/dev/null
-            _GID=$(rclone lsjson a-gdrive:/ --dirs-only 2>/dev/null | python3 -c "import sys,json;[print(x['ID']) for x in json.load(sys.stdin) if x['Name']=='$_DEV']" 2>/dev/null)
+            rclone mkdir "a-gdrive2:/$_DEV" 2>/dev/null
+            _GID=$(rclone lsjson a-gdrive2:/ --dirs-only 2>/dev/null | python3 -c "import sys,json;[print(x['ID']) for x in json.load(sys.stdin) if x['Name']=='$_DEV']" 2>/dev/null)
             [[ -n "$_GID" ]] && { echo "$_GID" > "$_BDIR/.gdrive_id"; ok "gdrive folder: $_DEV"; } || warn "gdrive folder setup failed"
         else ok "gdrive folder: $_DEV"; fi
     fi

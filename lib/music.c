@@ -80,7 +80,7 @@ static void term(const char*q){
     printf("x %s\n",q);exit(1);}
 int main(int ac,char**av){
     lines("rclone listremotes 2>&-");
-    for(int i=0;i<N;i++)if(strstr(L[i],"a-gdrive")){snprintf(R,80,"%smusic",L[i]);break;}
+    for(int i=0;i<N;i++)if(strstr(L[i],"a-gdrive2:")){snprintf(R,80,"%smusic",L[i]);break;}
     snprintf(C,256,"%s/a/adata/local/music",getenv("HOME"));sh("mkdir -p \"%s\"",C);
     if(isatty(0))tcgetattr(0,&T0);
     int s=(ac>1&&(!strcmp(av[1],"yt")||!strcmp(av[1],"y")||!strcmp(av[1],"get")||!strcmp(av[1],"g")||!strcmp(av[1],"pre")||!strcmp(av[1],"trim")||!strcmp(av[1],"cfg")||!strcmp(av[1],"rm")))?2:1;

@@ -1,6 +1,6 @@
 """a gdrive — Google Drive via rclone: cp/mv/get/ls/backup/migrate"""
 import sys,os,subprocess as sp,json
-from _common import cloud_login,cloud_logout,cloud_sync,_configured_remotes,RCLONE_BACKUP_PATH,DATA_DIR,SYNC_ROOT,DEVICE_ID,alog,get_rclone
+from _common import cloud_login,cloud_logout,cloud_sync,_configured_remotes,_backup_remotes,RCLONE_BACKUP_PATH,DATA_DIR,SYNC_ROOT,DEVICE_ID,alog,get_rclone
 from sync import cloud_sync as cloud_sync_tar
 _AF=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),'adata','git','gdrive_accounts.txt')
 def _accts():
@@ -84,7 +84,7 @@ def cmd_backup(a):
     import re
     rcf=os.path.expanduser('~/.config/rclone/rclone.conf')
     if not os.path.exists(rcf):print("x no rclone.conf");return
-    rem=_configured_remotes();cur=rem[0] if rem else None
+    rem=_configured_remotes();bk=_backup_remotes();cur=bk[0] if bk else None
     if not a:
         print(f"backup target → {cur or '(none)'}\n")
         for x in rem:
@@ -109,7 +109,7 @@ def cmd_migrate(a):
     print(f"→ {s}:{p} → {d}:{p}")
     print(_ok(_rc(['copy',f'{s}:{p}',f'{d}:{p}','-P','--transfers=64','--checkers=128','--fast-list','--drive-pacer-min-sleep=10ms']+fl)))
 def _pull_auth():
-    rem=_configured_remotes();rem or(print("Login first"),exit(1))
+    rem=_backup_remotes();rem or(print("Login first"),exit(1))
     for f,d in[('hosts.yml','~/.config/gh'),('rclone.conf','~/.config/rclone')]:
         os.makedirs(os.path.expanduser(d),exist_ok=True);sp.run(['rclone','copy',f'{rem[0]}:{RCLONE_BACKUP_PATH}/backup/auth/{f}',os.path.expanduser(d),'-q'])
     open(f"{DATA_DIR}/.auth_shared","w").close();os.path.exists(f"{DATA_DIR}/.auth_local")and os.remove(f"{DATA_DIR}/.auth_local");print("✓ Auth synced")

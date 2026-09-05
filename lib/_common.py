@@ -27,8 +27,10 @@ def _configured_remotes():
     if not (rc := get_rclone()): return []
     r = sp.run([rc, 'listremotes'], capture_output=True, text=True)
     return [l.rstrip(':') for l in r.stdout.splitlines() if l.rstrip(':').startswith(RCLONE_REMOTE_PREFIX)] if r.returncode == 0 else []
+RCLONE_REMOTE = 'a-gdrive2'   # the one cloud (Sean 2026-08-27): a-gdrive is over quota (every write 403), a-gdrive4/5 tokens expired
+def _backup_remotes(): return [r for r in _configured_remotes() if r == RCLONE_REMOTE]   # writers use this; _configured_remotes stays for addressing any account
 def cloud_sync(wait=False):
-    rc, remotes = get_rclone(), _configured_remotes()
+    rc, remotes = get_rclone(), _backup_remotes()
     if not rc or not remotes: return False, None
     def _sync():
         ok = True

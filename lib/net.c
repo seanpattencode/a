@@ -1,7 +1,7 @@
 static void bg_backup_jsonl(void) {
     char c[B]; snprintf(c, B, "nohup sh -c 'D=%s/backup/%s;mkdir -p $D&&"
         "find ~/.claude/projects -name \"*.jsonl\" 2>/dev/null|while read f;do [ \"$f\" -nt \"$D/$(basename \"$f\")\" ]&&cp \"$f\" $D/ 2>/dev/null;done;"  /* -nt: growing sessions re-stage (cp -n froze first-sync prefix; cp -u absent on mac) */
-        "r=$(rclone listremotes 2>/dev/null|grep \"^a-gdrive\"|head -1|tr -d \":\");"
+        "r=$(rclone listremotes 2>/dev/null|grep \"^a-gdrive2:\"|head -1|tr -d \":\");"
         "[ -n \"$r\" ]&&rclone copy $D \"$r:adata/backup/%s/\" --include \"*.jsonl\" --include \"*.log\" -q"
         "' </dev/null >/dev/null 2>&1 &", AROOT, DEV, DEV);
     (void)!system(c);
@@ -146,7 +146,7 @@ static int cmd_sync(int argc, char **argv) { AB;
         "for d in common ssh login scan notes workspace adocs tasks cal;do [ -d $d ]&&echo \"  $d: $(find $d -maxdepth 2 -name '*.txt'|wc -l) files\";done",SROOT);
     (void)!system(c);
     bg_backup_jsonl();
-    {char rc[64];pcmd("rclone listremotes 2>/dev/null|grep a-gdrive|head -1|tr -d ':'",rc,64);rc[strcspn(rc,"\n")]=0;
+    {char rc[64];pcmd("rclone listremotes 2>/dev/null|grep '^a-gdrive2:'|head -1|tr -d ':'",rc,64);rc[strcspn(rc,"\n")]=0;
     if(rc[0]){char cd[P],bd[P];snprintf(cd,P,"%s/context",AROOT);snprintf(bd,P,"%s/books",AROOT);mkdirp(cd);mkdirp(bd);
         snprintf(c,B,"rclone copy '%s' '%s:adata/context/' -q -L 2>/dev/null;rclone copy '%s:adata/context/' '%s' -q 2>/dev/null",cd,rc,rc,cd);(void)!system(c);
         snprintf(c,B,"cd '%s'&&ls -d .[!.]*/ 2>/dev/null|sed -e 's/[][*?{}\\\\]/\\\\&/g' -e 's|^\\.\\(.*\\)/$|- \\1/**|'>\"$TMPDIR/.bk_arc\";printf '+ */output/*.txt\\n- *\\n'>>\"$TMPDIR/.bk_arc\"",bd);(void)!system(c);
