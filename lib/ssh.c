@@ -62,14 +62,13 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
     if(k&&v&&v[0])snprintf(d+l,(size_t)(B-l),"%s: %s\n",k,v);
     writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);
     char g[B];snprintf(g,B,"flock /tmp/.a_git.lock sh -c \"cd %1$s;git add ssh/%2$s.txt&&git commit -qm ssh:%2$s&&git push -q\" 2>/dev/null &",SROOT,n);(void)!system(g);}
-static int ssh_idx(const char*a,const void*H_,int nh){
-    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}ht;const ht*H=(const ht*)H_;/* layout MUST match host_t in cmd_ssh or the stride is wrong */
+typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}host_t;
+static int ssh_idx(const char*a,const host_t*H,int nh){
     if(isdigit((unsigned char)*a))return atoi(a);
     for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,a))return i;return -1;}
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
-    typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}host_t;
     host_t H[32];int nh=0,arc=0;
     char paths[32][P];int np=listdir(dir,paths,32);
     for(int i=np-1;i>=0&&nh<32;i--){

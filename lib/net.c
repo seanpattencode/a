@@ -133,7 +133,7 @@ static int cmd_login(int argc, char **argv) {
         return system(c)?1:0;}
     puts("a login save|apply|show|slot [name]");return 0;}
 
-static int cmd_sync(int argc, char **argv) { AB;
+static int cmd_sync(int argc, char **argv) { (void)argc;(void)argv;AB;
     printf("%s\n", SROOT);
     ensure_adata();
     sync_repo();
@@ -152,11 +152,6 @@ static int cmd_sync(int argc, char **argv) { AB;
         snprintf(c,B,"cd '%s'&&ls -d .[!.]*/ 2>/dev/null|sed -e 's/[][*?{}\\\\]/\\\\&/g' -e 's|^\\.\\(.*\\)/$|- \\1/**|'>\"$TMPDIR/.bk_arc\";printf '+ */output/*.txt\\n- *\\n'>>\"$TMPDIR/.bk_arc\"",bd);(void)!system(c);
         snprintf(c,B,"rclone copy '%s' '%s:adata/books/' --filter '- .*/**' --filter '+ */output/*.txt' --filter '- *' -q -L 2>/dev/null;rclone copy '%s:adata/books/' '%s' --filter-from \"$TMPDIR/.bk_arc\" -q 2>/dev/null",bd,rc,rc,bd);(void)!system(c);
         puts("✓ context + books");}}
-    if (argc > 2 && !strcmp(argv[2], "all")) {
-        puts("\n--- Broadcasting to SSH hosts ---");
-        char bc[B]; snprintf(bc, B, "%s/lib/a.py", SDIR);
-        char cmd[B]; snprintf(cmd, B, "python3 '%s' ssh all 'a sync'", bc); (void)!system(cmd);
-    }
     return 0;
 }
 
@@ -187,7 +182,7 @@ static int cmd_update(int argc, char **argv) { AB;
     puts("✓ Updated (bg)");
     /* background: build, deps, cache, sync, rclone, backup */
     {pid_t p=fork();if(p==0){setsid();int n=open("/dev/null",O_WRONLY);dup2(n,1);dup2(n,2);close(n);
-        snprintf(c,B,"sh '%s/a.c'",SDIR);if(!system(c))init_migrate();
+        snprintf(c,B,"sh '%s/a.c'",SDIR);(void)!system(c);
         if(dc){char vp[P];snprintf(vp,P,"%s/venv/bin/pip",AROOT);
             if(!access(vp,X_OK)){snprintf(c,B,"'%s' install -q pexpect prompt_toolkit aiohttp 2>/dev/null",vp);(void)!system(c);}
             snprintf(c,B,"bash '%s/a.c' shell 2>&-;bash '%s/a.c' node 2>&-",SDIR,SDIR);(void)!system(c);

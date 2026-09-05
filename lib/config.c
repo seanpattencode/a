@@ -1,17 +1,3 @@
-static int cmd_set(int argc, char **argv) {
-    if (argc < 3) {
-        char p[P]; snprintf(p, P, "%s/n", DDIR);
-        printf("1. n [%s] commands without aio prefix\n   aio set n %s\n", fexists(p)?"on":"off", fexists(p)?"off":"on");
-        return 0;
-    }
-    if(!strcmp(argv[2],"capslock")){char cmd[P];snprintf(cmd,P,"bash %s/lib/capslock.sh %s %s",SDIR,SDIR,argc>3?argv[3]:"on");return system(cmd);}
-    char p[P]; snprintf(p, P, "%s/%s", DDIR, argv[2]);
-    if (argc > 3 && !strcmp(argv[3], "on")) { int fd = open(p, O_CREAT|O_WRONLY, 0644); if (fd>=0) close(fd); puts("✓ on"); }
-    else if (argc > 3 && !strcmp(argv[3], "off")) { unlink(p); puts("✓ off"); }
-    else printf("%s\n", fexists(p) ? "on" : "off");
-    return 0;
-}
-
 static const char*CFG_KEYS[]={"default_agent","claude_prefix","source","worktrees_dir","tmux_conf","cat_a","m_agent","m_model","m_effort","m_cmd","m_tier","i_agent","i_effort",NULL};
 static void cfg_show(void){for(const char**s=CFG_KEYS;*s;s++){const char*v=cfget(*s);
     printf("  %-16s%s\n",*s,v[0]?v:!strcmp(*s,"default_agent")?"c":"-");}}

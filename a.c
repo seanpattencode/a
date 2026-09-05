@@ -601,7 +601,7 @@ static const cmd_t CMDS[] = {
     {"pull",cmd_pull},{"push",cmd_push},
     {"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
-    {"set",cmd_set},{"settings",cmd_settings},{"setup",cmd_setup},{"snap",cmd_resume},
+    {"settings",cmd_settings},{"setup",cmd_setup},{"snap",cmd_resume},
     {"ssh",cmd_ssh},{"sw",cmd_swarm},
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
     {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},

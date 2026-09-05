@@ -370,17 +370,6 @@ def _scan(host):                                      # live agent work on one b
     return res
 
 
-def _hosts():                                         # canonical remote box names from the ssh registry (dedup lan/wan/usb/hot variants)
-    seen = set()
-    for f in glob.glob(HOST % "*"):
-        try: m = re.search(r"^Name:\s*(\S+)", open(f).read(), re.M)
-        except OSError: m = None
-        if not m: continue
-        base = re.sub(r"-(lan|wan|usb|hot|relay)$", "", m.group(1))
-        if base and base != DEV and not base.startswith(DEV): seen.add(base)
-    return sorted(seen)
-
-
 def remote(host):                                     # review one box's agent work LIVE over ssh; pick → resume(killed)/attach(live)
     rows = _scan(host)
     if not rows: print(f"(no agent transcripts on {host} — reachable?)"); return

@@ -42,36 +42,3 @@ static void init_paths(void) {
     }
     snprintf(LOGDIR, P, "%s/backup/%s", AROOT, DEV);
 }
-
-/* one-time migrations — called from install, not every invocation */
-static void init_migrate(void) {
-    struct stat mst; char mc[B];
-    /* ~/projects/ or ~/p/ → ~/ */
-    const char*od[]={"p","projects",NULL};
-    for(int i=0;od[i];i++){
-        char op[P];snprintf(op,P,"%s/%s",HOME,od[i]);
-        if(lstat(op,&mst)==0&&S_ISLNK(mst.st_mode)){unlink(op);continue;}
-        if(!lstat(op,&mst)&&S_ISDIR(mst.st_mode)){
-            snprintf(mc,B,"mv -n '%s/'* '%s/' 2>/dev/null;rm -rf '%s';sed -i 's|^_ADD=.*|_ADD=\"%s/a/adata/local\"|' '%s/.bashrc' '%s/.zshrc' 2>/dev/null",op,HOME,op,HOME,HOME,HOME);
-            (void)!system(mc);
-            snprintf(mc,B,"find '%s' -maxdepth 3 -type l 2>/dev/null|while read l;do t=$(readlink \"$l\");case \"$t\" in */%s/*)ln -sfn \"%s/${t#*/%s/}\" \"$l\";;esac;done",HOME,od[i],HOME,od[i]);
-            (void)!system(mc);
-            snprintf(mc,B,"%s/.local/bin/a",HOME);unlink(mc);
-            char lp[P];snprintf(lp,P,"%s/a/adata/local/a",HOME);symlink(lp,mc);
-            fprintf(stderr,"! migrated ~/%s → ~/\n",od[i]);}}
-    /* old sibling adata/ → inside project dir */
-    char old_sib[P]; snprintf(old_sib,P,"%.*s/adata",(int)(strlen(SDIR)-strlen("/a")),SDIR);
-    char new_dev[P]; snprintf(new_dev,P,"%s/.device",DDIR);
-    if(strcmp(old_sib,AROOT)!=0&&stat(old_sib,&mst)==0&&(stat(new_dev,&mst)!=0||stat(SROOT,&mst)!=0)){
-        snprintf(mc,B,"find '%s' -xtype l -delete 2>/dev/null;cp -rn '%s/'* '%s/' 2>/dev/null;find '%s' -xtype l -delete 2>/dev/null",AROOT,old_sib,AROOT,AROOT);
-        (void)!system(mc);}
-    /* old ~/.local/share/a/ */
-    char old_local[P]; snprintf(old_local,P,"%s/.local/share/a/.device",HOME);
-    if(stat(old_local,&mst)==0&&stat(new_dev,&mst)!=0){
-        snprintf(mc,B,"cp -rn '%s/.local/share/a/'* '%s/' 2>/dev/null",HOME,DDIR);
-        (void)!system(mc);}
-    /* README */
-    {char rm[P];snprintf(rm,P,"%s/README",AROOT);
-    if(stat(rm,&mst)!=0){FILE*f=fopen(rm,"w");if(f){fputs("adata/ - 4-tier data sync\n\n"
-        "  git/    push/pull   sync/   rclone   vault/  on-demand   backup/ upload+purge\n",f);fclose(f);}}}
-}

@@ -97,7 +97,6 @@ ProcessBuilder("$nl/libtic.so","-o",ti.absolutePath,src.absolutePath).redirectEr
 val bin=File(filesDir,"bin");bin.mkdirs();for(p in listOf("a" to "liba.so","tmux" to "libtmux.so","tic" to "libtic.so","dbclient" to "libssh.so","ssh" to "libsshwrap.so","sshpass" to "libsshwrap.so")){val l=File(bin,p.first);try{android.system.Os.remove(l.absolutePath)}catch(e:Exception){};try{android.system.Os.symlink("$nl/${p.second}",l.absolutePath)}catch(e:Exception){}}
 for(sub in listOf("ssh","workspace/projects","workspace/cmds")){val sd=File(filesDir,"adata/git/$sub");sd.mkdirs();try{for(n in assets.list("git/$sub")?:emptyArray()){assets.open("git/$sub/$n").use{i->File(sd,n).outputStream().use{o->i.copyTo(o)}}}}catch(e:Exception){}}}
 private fun spawn(){txRun(this,"a serve 1112")}  // termux serves on shared loopback :1112; WebView connects to it. onResume re-ensures serve but never reloads the page, so app-switch preserves your current box.
-private fun atlas(sz:Float):IntArray{val p=Paint().apply{textSize=sz;color=-1;isAntiAlias=true;typeface=Typeface.MONOSPACE};val cw=p.measureText("M").toInt()+1;val ch=(-p.ascent()+p.descent()).toInt()+1;val b=Bitmap.createBitmap(cw*95,ch,Bitmap.Config.ARGB_8888);Canvas(b).let{c->for(i in 0 until 95)c.drawText(((32+i).toChar()).toString(),(i*cw).toFloat(),-p.ascent(),p)};val r=IntArray(2+cw*95*ch);r[0]=cw;r[1]=ch;b.getPixels(r,2,cw*95,0,0,cw*95,ch);b.recycle();return r}
 @android.annotation.SuppressLint("ClickableViewAccessibility")
 override fun onCreate(b:Bundle?){super.onCreate(b)
 WebView.setWebContentsDebuggingEnabled(true)
