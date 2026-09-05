@@ -2,7 +2,7 @@
 /* tok-increase rule (baseline = origin/main, tok=bytes/4): new a.c|lib file <=200 tok; extending <= max(200, 5% of module); no lib/ module >50k. Fills v[] (one violation/line), returns count. No-op outside this repo (origin/main has no a.c/lib). Override at push: A_TOK_OK=1. */
 static const char *TOK_RULE_MSG =
     "If a change is vs main a new file, it cannot be more than 200 tok. If extending existing, it cannot be over 200 tok or 5% of the existing module, whichever is larger. No module is allowed over 50k tok in /lib. This forces simplicity and increases maintainability. Changes that are too large are too likely to contain error and or be too complex to maintian for the long term. Simplify the code or the problem if you hit these limits, or split into smaller modules of independent /lib components if that is impossible. This also ensures that the add drop ability to add and remove /lib should work with greater reliability, but care should be taken to ensure that they follow the pattern of independently able to do useful work but can be combined to do more useful things as the unix philosophy recommends. Try to shorten and simplify its practically always possible, and stop and ask human if it is something that cannot be resolved after that.";
-static int tok_rule(const char *cwd, char *v, int vsz) {
+static int tok_rule(const char *cwd, char *v, int vsz, const char *only) {   /* only = the files of a direct push: gated on those alone, not the whole tree; NULL = whole tree */
     v[0]=0; int vl=0,n=0; char c[B],o[64];
     const char *br="origin/main";
     snprintf(c,B,"cd '%s'&&git rev-parse --verify -q origin/main >/dev/null 2>&1&&echo y",cwd);
@@ -14,6 +14,7 @@ static int tok_rule(const char *cwd, char *v, int vsz) {
     snprintf(c,B,"cd '%s'&&cat \"$(git rev-parse --show-toplevel)/.tokrule\" 2>/dev/null",cwd);
     { char tr[512]; pcmd(c,tr,(int)sizeof(tr)); char *pl=strstr(tr,"paths="),*mc=strstr(tr,"module=");
       if(pl){ pl+=6; size_t i=0; while(pl[i]&&pl[i]!='\n'&&i<255){paths[i]=pl[i];i++;} paths[i]=0; }
+      if(only&&*only)snprintf(paths,256,"%s",only);
       if(mc) modcap=atol(mc+7);
       char *tc=strstr(tr,"total="),*rp=strstr(tr,"ramp=");   /* total= repo-wide cap (tracked bytes/4) — the entropy deadman, enforced at push too. ramp=<start> <target> <from> <to>: cap lowers an equal % per whole day from start to target, holds after (twin: ~/i lib/tokcap) */
       if(tc){ long totcap=atol(tc+6),rs,rt; int y0,m0,d0,y1,m1,d1;
@@ -43,14 +44,14 @@ static int tok_rule(const char *cwd, char *v, int vsz) {
     }
     return n;
 }
+static int gate(const char*cwd,const char*only){char v[B*2];if(getenv("A_TOK_OK")||!tok_rule(cwd,v,(int)sizeof v,only))return 0;
+    printf("\033[31m✗ TOK INCREASE RULE\033[0m\n%s\n%s\n(override: A_TOK_OK=1 a push)\n",v,TOK_RULE_MSG);return 1;}
 static int cmd_push(int argc, char **argv) { AB;
     char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
-    {char v[B*2];if(!getenv("A_TOK_OK")&&tok_rule(cwd,v,(int)sizeof(v))){
-        printf("\033[31m✗ TOK INCREASE RULE\033[0m\n%s\n%s\n(override: A_TOK_OK=1 a push)\n",v,TOK_RULE_MSG);return 1;}}
     if(argc>2&&!strcmp(argv[2],"-f")){
         char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
         if(!nl){puts("x no .commit (after a done)");free(cs);return 1;}
-        *nl=0;char*f=nl+1;f[strcspn(f,"\n")]=0;char c[B*2],vo[B];
+        *nl=0;char*f=nl+1;f[strcspn(f,"\n")]=0;char c[B*2],vo[B];if(gate(cwd,f)){free(cs);return 1;}
         snprintf(c,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -m \"%s\" -- %s; }&&" PUSHCMD,cwd,f,f,cs,f);pcmd(c,vo,B);   /* files already committed (agents commit paths-only) -> just push */
         if(strstr(vo,"PUSH_CONFLICT")){printf("✗ %s: rebase conflict with origin — aborted, tree restored (commit kept local).\n  Same lines changed by another agent. Merge by hand: git pull --rebase, resolve, a push -f\n",cs);free(cs);return 1;}
         snprintf(c,B*2,"cd '%s'&&git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo https://github.com/$u/commit/$(git rev-parse --short HEAD);}",cwd);
@@ -58,6 +59,7 @@ static int cmd_push(int argc, char **argv) { AB;
         if(vo[0]){unlink(cp);printf("✓ %s\n  github: %s\n",cs,vo);}else printf("✗ %s NOT on origin; re-push\n",cs);
         free(cs);return vo[0]?0:1;
     }
+    if(gate(cwd,NULL))return 1;
     char msg[B]="",ps[P]="";
     if(argc>2)ajoin(msg,B,argc,argv,2);
     /* no-arg tty: pick a dirty file (newest first), ↵ pushes JUST it */
@@ -255,7 +257,7 @@ static int cmd_diff(int argc, char **argv) { AB;
     if(!filt){char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
      if(nl){*nl=0;printf("\n\033[36mcommit:\033[0m %s \033[32m→ a push -f\033[0m\n",cs);}free(cs);}
     if(!fk&&!sel&&!filt) puts("\ndiff # = last #");
-    {char v[B*2];if(tok_rule(cwd,v,(int)sizeof(v)))printf("\n\033[31m✗ TOK INCREASE RULE\033[0m (will block a push):\n%s",v);}
+    {char v[B*2];if(tok_rule(cwd,v,(int)sizeof v,NULL))printf("\n\033[31m✗ TOK INCREASE RULE\033[0m (will block a push):\n%s",v);}
     return 0;
     #undef FS
     #undef DS
