@@ -300,7 +300,7 @@ install)
         else git -C "$SROOT" pull --ff-only -q 2>/dev/null&&ok "adata/git synced"||ok "adata/git"; fi
     fi
     # tame adata/git repacks: freeze >200m base pack + no reactive maintenance (HDD repack-storm fix)
-    [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;ok "adata/git tuned";}
+    [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;git -C "$SROOT" config fetch.unpackLimit 1;ok "adata/git tuned";}
     # install synced fleet ssh key so `a ssh <host>` authenticates out-of-box (don't clobber an existing device key)
     [[ -f "$SROOT/ssh/id_ed25519" && ! -f "$HOME/.ssh/id_ed25519" ]]&&{ mkdir -p "$HOME/.ssh";cp "$SROOT/ssh/id_ed25519" "$SROOT/ssh/id_ed25519.pub" "$HOME/.ssh/" 2>/dev/null;chmod 600 "$HOME/.ssh/id_ed25519";ok "fleet ssh key";}
     # extra user repos: adata/git/repos.txt — one "owner/name [target]" per line, '#' comments ok.

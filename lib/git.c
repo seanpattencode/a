@@ -37,7 +37,7 @@ static void sync_repo(void) {
         "g fetch -q origin main 2>/dev/null;b=$(g rev-list --count HEAD..origin/main 2>/dev/null);"
         "[ \"${b:-0}\" -gt 0 ]&&g branch -f rescue-$(date +%%s) HEAD;"
         "n=$(g rev-parse origin/main);o=$n;for r in $(g for-each-ref --sort=refname --format='%%(refname:short)' 'refs/heads/rescue-*');do t=$(g merge-tree --write-tree --no-messages -X ours -X no-renames $r $n)||exit;n=$(printf sync|g commit-tree $t -p $n -p $r)||exit;g branch -D $r;done;[ \"$n\" = \"$o\" ]||{ h=$(g rev-parse HEAD);g diff --no-renames --name-only -z $h $n -- . ':!activity'|g restore --source=$n --worktree --pathspec-from-file=- --pathspec-file-nul;g reset -q --soft $n;g read-tree $n;g ls-files -z activity|g update-index --skip-worktree -z --stdin;};"
-        "g pull --no-rebase --no-edit -q origin main||g merge --abort;g push -q origin main;} >/dev/null 2>&1",SROOT);
+        "g pull --no-rebase --no-edit -q origin main||g merge --abort;g push -q origin main;g gc --auto -q;} >/dev/null 2>&1",SROOT);  /* agit-gc.md prevention: threshold-gated gc inside the flock (maintenance.auto is off) */
     (void)!system(c);if(fd>=0)close(fd);
 }
 static void sync_bg(void) {
