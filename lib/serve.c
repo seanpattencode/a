@@ -650,9 +650,9 @@ static void _handle(int c){
         (void)!write(c,h,(size_t)hl);   /* body looped: source.pdf can be tens of MB, one write() may be short */
         for(size_t o=0;o<bl;){ssize_t w=write(c,b+o,bl-o);if(w<=0)break;o+=(size_t)w;}
         free(b);return;}
-    if(!strncmp(req,"GET /bookcloud",14)){char nm[128];_qn(req,nm);  /* → exact Drive file URL for a-gdrive2:books/<name>/source.* (else Drive search) */
+    if(!strncmp(req,"GET /bookcloud",14)){char nm[128];_qn(req,nm);  /* → exact Drive file URL for a-gdrive:books/<name>/source.* (else Drive search) */
         if(!nm[0]||strchr(nm,'/')||strstr(nm,"..")){_sresp(c,400,"text/plain","bad book",8);return;}
-        char path[256];snprintf(path,256,"a-gdrive2:books/%s/",nm);char id[128]="";int pp[2];
+        char path[256];snprintf(path,256,"a-gdrive:books/%s/",nm);char id[128]="";int pp[2];
         if(!pipe(pp)){pid_t ch=fork();
             if(!ch){dup2(pp[1],1);close(pp[0]);close(pp[1]);int z=open("/dev/null",O_WRONLY);if(z>=0)dup2(z,2);
                 execlp("rclone","rclone","lsf","--files-only","--format","ip","--separator",";",path,(char*)0);_exit(1);}
@@ -767,16 +767,25 @@ static void _handle(int c){
     if(!strncmp(req,"GET /review/arm?n=",18)){int N=atoi(req+18);const char*kq=strstr(req,"&k=");int K=kq?atoi(kq+3):0;char fp[P]="",msg[P]="not found";
         if(_rvpath(N,K,fp,P)&&access(fp,R_OK)==0){const char*rt=getenv("XDG_RUNTIME_DIR");char af[P];snprintf(af,P,"%s/a_pick",rt&&*rt?rt:"/tmp");FILE*f=fopen(af,"w");if(f){fprintf(f,"%s\n",fp);fclose(f);snprintf(msg,P,"armed %s",strrchr(fp,'/')?strrchr(fp,'/')+1:fp);}}
         _sresp(c,200,"text/plain; charset=utf-8",msg,(int)strlen(msg));return;}   /* a review: arm the e file picker queue with this document: the next Attach/Upload click in any browser attaches it, no navigating (Sean 2026-09-03: auto arm like resume does) */
+    if(!strncmp(req,"GET /review/go?w=",17)){int w=atoi(req+17);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}' 2>/dev/null|sort -n|tail -1","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* a review: the LOCAL terminal app (Sean 09-04): switch the most recently used attached tmux client to window INDEX w (the tasks board's go, i web.py /problems/go) and raise foot in sway */
+        char*cn=strchr(ln,'\t'),*cs=cn?strchr(cn+1,'\t'):0;if(!cs)snprintf(out,512,"no attached local terminal: tmux switch-client -t :%d",w);
+        else{*cn=0;*cs=0;char cmd[600],er[200]="";snprintf(cmd,600,"tmux switch-client -c '%s' -t '%s:%d' 2>&1 && SWAYSOCK=$(ls -t /run/user/$(id -u)/sway-ipc.* 2>/dev/null|head -1) swaymsg '[app_id=foot] focus' >/dev/null 2>&1",cn+1,cs+1,w);FILE*p2=popen(cmd,"r");if(p2){if(!fgets(er,200,p2))er[0]=0;pclose(p2);}er[strcspn(er,"\n")]=0;
+            if(er[0])snprintf(out,512,"x %s",er);else snprintf(out,512,"window %d in %s on %s",w,cs+1,cn+1);}
+        _sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
     if(!strncmp(req,"GET /review/diff?n=",19)){int N=atoi(req+19);char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL),*l=rl;for(int i=0;l&&i<N;i++){l=strchr(l,'\n');if(l)l++;}   /* a review: the <diff>files</diff> of done.log line N as the a done panel shows it: cd <dir> && a diff -- files; its 24-bit ANSI backgrounds become spans, all else is escaped text (Sean 09-04) */
         char*f[5]={0};int k=0;if(l){char*e=strchr(l,'\n');if(e)*e=0;f[k++]=l;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}}
         char*da=k==5?strstr(f[4],"<diff>"):0,*db=da?strstr(da,"</diff>"):0,fl[P]="";if(da&&db){*db=0;snprintf(fl,P,"%s",da+6);}
         int ok=fl[0]&&fl[0]!='-'&&!strstr(fl,"..")&&strspn(fl,"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./ -")==strlen(fl)&&!strchr(f[3],'\'');   /* the list comes from done.log only, path characters only: it reaches a shell */
         char cmd[B];FILE*pp=0;if(ok){snprintf(cmd,B,"cd '%s' && a diff -- %s 2>&1",f[3],fl);pp=popen(cmd,"r");}
-        size_t oc=1<<18,ol;char*o=malloc(oc);ol=(size_t)snprintf(o,oc,"<!doctype html><meta charset=utf-8><style>body{margin:0;padding:16px 16px 80px;background:#000;color:#fff;font:15px/1.4 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}</style>");
-        for(int ch;pp&&(ch=fgetc(pp))!=EOF&&ol<oc-80;){if(ch==27){char sq[32];int nq=0;while((ch=fgetc(pp))!=EOF&&ch!='m'&&nq<31)sq[nq++]=(char)ch;sq[nq]=0;int cr,cg,cb;
-                if(sscanf(sq,"[48;2;%d;%d;%d",&cr,&cg,&cb)==3)ol+=(size_t)snprintf(o+ol,oc-ol,"<span style=\"background:rgb(%d,%d,%d)\">",cr,cg,cb);else if(!strcmp(sq,"[0"))ol+=(size_t)snprintf(o+ol,oc-ol,"</span>");}
-            else if(ch=='<')ol+=(size_t)snprintf(o+ol,oc-ol,"&lt;");else if(ch=='>')ol+=(size_t)snprintf(o+ol,oc-ol,"&gt;");else if(ch=='&')ol+=(size_t)snprintf(o+ol,oc-ol,"&amp;");else o[ol++]=(char)ch;}
-        if(pp)pclose(pp);else ol+=(size_t)snprintf(o+ol,oc-ol,"no &lt;diff&gt; files on that a done");free(rl);_sresp(c,200,"text/html; charset=utf-8",o,(int)ol);free(o);return;}
+        size_t rc=1<<18,rn=0;char*raw=malloc(rc);if(pp){rn=fread(raw,1,rc-1,pp);pclose(pp);}raw[rn]=0;
+        char*nt=strstr(raw,"net:");while(nt&&nt>raw&&nt[-1]!='\n'&&nt[-1]!='m')nt=strstr(nt+4,"net:");size_t nl=nt?strcspn(nt,"\n"):0;   /* the net tok line goes at the TOP too, and stays at the bottom (Sean 09-04: both places needed to review a diff) */
+        size_t oc=(rn+nl)*8+1024,ol;char*o=malloc(oc);ol=(size_t)snprintf(o,oc,"<!doctype html><meta charset=utf-8><style>body{margin:0;padding:16px 16px 80px;background:#000;color:#fff;font:15px/1.4 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}</style>");
+        for(int pass=0;pass<2;pass++){const char*s=pass?raw:nt;size_t sn=pass?rn:nl;if(!s||!sn)continue;
+            for(size_t q=0;q<sn&&ol<oc-80;q++){int ch=(unsigned char)s[q];if(ch==27){char sq[32];int nq=0;for(q++;q<sn&&s[q]!='m'&&nq<31;q++)sq[nq++]=s[q];sq[nq]=0;int cr,cg,cb;
+                    if(sscanf(sq,"[48;2;%d;%d;%d",&cr,&cg,&cb)==3)ol+=(size_t)snprintf(o+ol,oc-ol,"<span style=\"background:rgb(%d,%d,%d)\">",cr,cg,cb);else if(!strcmp(sq,"[0"))ol+=(size_t)snprintf(o+ol,oc-ol,"</span>");}
+                else if(ch=='<')ol+=(size_t)snprintf(o+ol,oc-ol,"&lt;");else if(ch=='>')ol+=(size_t)snprintf(o+ol,oc-ol,"&gt;");else if(ch=='&')ol+=(size_t)snprintf(o+ol,oc-ol,"&amp;");else o[ol++]=(char)ch;}
+            if(!pass)ol+=(size_t)snprintf(o+ol,oc-ol,"\n\n");}
+        if(!ok)ol+=(size_t)snprintf(o+ol,oc-ol,"no &lt;diff&gt; files on that a done");free(raw);free(rl);_sresp(c,200,"text/html; charset=utf-8",o,(int)ol);free(o);return;}
     if(!strncmp(req,"GET /review/doc?n=",18)){int N=atoi(req+18);const char*kq=strstr(req,"&k=");int K=kq?atoi(kq+3):0;char fp[P]="";_rvpath(N,K,fp,P);size_t bl=0;char*b=fp[0]?readf(fp,&bl):0;if(!b){_sresp(c,404,"text/plain","no such document",16);return;}   /* only paths an a done recorded: the server is on the LAN */
         const char*dot=strrchr(fp,'.'),*ct="text/plain; charset=utf-8";if(dot){if(!strcmp(dot,".pdf"))ct="application/pdf";else if(!strcmp(dot,".html"))ct="text/html; charset=utf-8";else if(!strcmp(dot,".png"))ct="image/png";else if(!strcmp(dot,".jpg")||!strcmp(dot,".jpeg"))ct="image/jpeg";else if(!strcmp(dot,".svg"))ct="image/svg+xml";}
         if(!strncmp(ct,"text/plain",10)&&!strstr(req,"&raw=1")){size_t oc=bl*6+512;char*o=malloc(oc);int ol=snprintf(o,oc,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{margin:0;padding:16px 16px 80px;background:#000;color:#fff;font:18px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}</style>");
@@ -793,7 +802,7 @@ static void _handle(int c){
         for(size_t i=0;i<n&&hl<cap-4096;i++){long a=(long)(now-rs[i].t);char*m=strrchr(rs[i].m,']');m=m?m+1:rs[i].m;while(*m==' ')m++;for(char*q=m;*q;q++)if(*q=='<'||*q=='>')*q=' ';
             const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;char ag[32];if(a<3600)snprintf(ag,32,"%ldm",a/60);else if(a<86400)snprintf(ag,32,"%ldh%02ldm",a/3600,a%3600/60);else snprintf(ag,32,"%ldd%ldh%02ldm",a/86400,a%86400/3600,a%3600/60);   /* age to the minute (Sean 09-03) */
             char nm[64]="";{int k=0;for(const char*q=rs[i].n;*q&&k<63;q++)if(isalnum((unsigned char)*q)||strchr("-_.",*q))nm[k++]=*q;nm[k]=0;}
-            char bt[384]="";if(rs[i].w)snprintf(bt,384,"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"op(this)\" data-w=\"%s\" data-n=\"%s\">open conversation in terminal: %s</button></div>",rs[i].w,nm,nm[0]?nm:"window");   /* own line, plain words (Sean 09-03: a play icon reads as music); pull-up web terminal of the agent's tmux window */
+            char bt[640]="";if(rs[i].w)snprintf(bt,640,"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"op(this)\" data-w=\"%s\" data-n=\"%s\">web terminal: %s</button> <button class=op onpointerdown=\"go(this)\" data-w=\"%s\">local terminal: %s</button></div>",rs[i].w,nm,nm[0]?nm:"window",rs[i].w,nm[0]?nm:"window");   /* two terminals per entry (Sean 09-04): the pull-up web terminal, or the local terminal app switched to that tmux window; plain words (Sean 09-03: a play icon reads as music) */
             hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%s</span> <b>%s</b> <span style=color:#888>%s</span> %.300s%s",ag,nm[0]?nm:"(no window)",rp,m,bt);
             {char*da=strstr(rs[i].m,"<diff>"),*db=da?strstr(da,"</diff>"):0;if(da&&db){char sn[160];int z=0;for(const char*q=da+6;q<db&&z<159;q++)if(!strchr("<>\"&",*q))sn[z++]=*q;sn[z]=0;   /* <diff> files: the panel's focused diff, rendered in the same pull-up */
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"dv(this)\" data-u=\"/review/diff?n=%zu\" data-n=\"diff %s\">show diff: %s</button></div>",rs[i].i,sn,sn);}}
