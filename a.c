@@ -407,7 +407,6 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/agent.c"
 #include "lib/file.c"
 #include "lib/cc.c"
-#include "lib/clone.c"
 #include "lib/cmd.c"
 #include "lib/perf.c"
 #include "lib/work.c"
@@ -588,7 +587,7 @@ static int cmd_cmp(const void*a,const void*b){return strcmp(((const cmd_t*)a)->n
 static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
     {"a",cmd_a_default},{"add",cmd_add},{"agent",cmd_agent},
-    {"book",cmd_book},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
+    {"book",cmd_book},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_new},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},{"handoff",cmd_handoff},
