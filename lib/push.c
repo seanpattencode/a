@@ -120,7 +120,6 @@ static int cmd_push(int argc, char **argv) { AB;
     if(system(c)){snprintf(c,B,"cd '%s'&&gh repo create --private --source . --push",cwd);(void)!system(c);}
     snprintf(c,sizeof(c),"cd '%s'&&git add %s&&git commit -m '%s' --allow-empty%s 2>/dev/null&&" PUSHCMD,cwd,ps[0]?ps:"-A",msg,ps);
     char out[B];pcmd(c,out,B);
-    #undef PUSHCMD
     if(!strstr(out,"->")&&!strstr(out,"up-to-date")&&!strstr(out,"Everything")){
         printf("✗ push failed\n%s\n",out);
         if(strstr(out,"PUSH_CONFLICT"))printf("rebase conflict — aborted, tree restored. Merge by hand: git pull --rebase, resolve, a push\n");

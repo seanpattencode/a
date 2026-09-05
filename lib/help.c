@@ -169,6 +169,7 @@ static int cmd_help(int c,char**v){(void)c;(void)v;return help_p(HELP_SHORT);}
 static int cmd_hi(int c,char**v){(void)c;(void)v;for(int i=1;i<=10;i++)printf("%d\n",i);puts("hi");return 0;}
 static int cmd_help_full(int c,char**v){(void)c;(void)v;return help_p(HELP_FULL);}
 
+static const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";   /* the [p] prompt; also sent by :1111/review "tell agent: push" */
 static int cmd_done(int argc,char**argv){AB;
     char p[P],msg[B]="";snprintf(p,P,"%s/.done",DDIR);ajoin(msg,B,argc,argv,2);
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
@@ -207,7 +208,6 @@ static int cmd_done(int argc,char**argv){AB;
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking opus (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
                 if(ts[0])fprintf(nf," echo; echo '=== TEST CMD OUTPUT ==='; %s 2>&1;",ts);
                 fprintf(nf," echo; echo '=== TASK ==='; cat '%s/common/prompts/next.txt'; } | claude -p --dangerously-skip-permissions --model opus --effort \"$EF\" --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)'\necho\nexec ${SHELL:-bash}\n",SROOT);fclose(nf);}}
-            const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
             const char*KX="[ \"$k\" = %c ]&&{ tmux selectp -t $AP;tmux send -t $AP -X cancel 2>/dev/null;tmux send -t $AP -l '%s';sleep 0.4;tmux send -t $AP Enter; }\n"; /* copy-mode eats sent keys ('g'=goto-line) — cancel first */
             if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\nprintf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
@@ -217,16 +217,16 @@ static int cmd_done(int argc,char**argv){AB;
             fputs("while :;do\n",sf);
             fputs("[ -n \"$TK\" ]&&printf '%s\\n' \"$TK\"\n",sf);  /* tok line glued to actions: visible with no scroll (2026-08-30 intent kept) */
             fputs("if [ -z \"$M\" ];then printf '\\033[1;37m=== actions (key) ===\\033[0m\\n'\n",sf);
-            if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent: push (recommended)\\n'\n",sf);
+            if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent to push (it commits + pushes its own changes)\\n'\n",sf);
+            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m direct push, these files only: git add+commit -- %s && git push   (whole repo = a push)\\n'\n",dl);   /* the human's own paths-only push, first-class (Sean 09-04): distinct from telling the agent, distinct from a whole-repo a push */
             if(tp)fputs("printf '\\033[1;37m[c]\\033[0m crunch the code\\n\\033[1;37m[e]\\033[0m talk to agent\\n'\n",sf);
             fprintf(sf,"printf '\\033[1;37m[v]\\033[0m edit: %%s/%.*s\\n' \"$PWD\"\n",fl,dl);
             for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;37m[%c]\\033[0m %%s: %%s\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
             fputs("printf '\\033[1;37m[o]\\033[0m more\\n'\nelse printf '\\033[1;37m=== more (key) ===\\033[0m\\n'\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m push: git add+commit -- %s && git push\\n'\n",dl);
             if(ts[0])fputs("printf '\\033[1;37m[r]\\033[0m re-run test\\n'\n",sf);
             fputs("printf '\\033[1;37m[n]\\033[0m suggest next step (opus)\\n'\nprintf '\\033[1;37m[b]\\033[0m suggest next + book/effort\\n'\nfi\n",sf);
             fputs("printf '\\033[1;37m[s]\\033[0m bash shell here (your own testing) \\033[2m· other key=close\\033[0m '\nread -rsn1 k </dev/tty;echo\n",sf);
-            if(dl[0])fputs("[ \"$k$M\" = y1 ]&&{ A_PANE=$AP a push -f;w;}\n",sf);
+            if(dl[0])fputs("[ \"$k\" = y ]&&{ A_PANE=$AP a push -f;w;}\n",sf);
             if(dl[0]&&tp)fprintf(sf,KX,'p',PP);
             if(tp)fprintf(sf,KX,'c',CR);
             if(ts[0])fputs("[ \"$k\" = r ]&&{ printf '\\033[1;33m$ \\033[0m%s\\n' \"$TS\";eval \"$TS\" 2>&1;}\n",sf);
