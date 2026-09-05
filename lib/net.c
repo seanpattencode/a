@@ -15,32 +15,6 @@ static int cmd_email(int argc, char **argv) { AB;(void)argc;
 
 static int cmd_log(int argc, char **argv) {
     const char *sub = argc > 2 ? argv[2] : NULL;
-    if (sub && !strcmp(sub, "backup")) { perf_disarm();
-        char c[B], cnt[64], bdir[P]; snprintf(bdir, P, "%s/backup", AROOT);
-        char jdir[P]; snprintf(jdir, P, "%s/git/jobs", AROOT);
-        snprintf(c, B, "ls '%s'/*.log 2>/dev/null | wc -l", jdir);
-        pcmd(c, cnt, 64); printf("Tmux logs: %d (git-synced in adata/git/jobs/)\n\n", atoi(cnt));
-        snprintf(c, B, "ls -d '%s'/*/ 2>/dev/null", bdir);
-        char dirs[B]; pcmd(c, dirs, B); char *dp = dirs;
-        printf("%-16s %6s %6s  %s\n", "DEVICE", "LOCAL", "JSONL", "STATUS");
-        while (*dp) {
-            char *nl = strchr(dp, '\n'); if (nl) *nl = 0;
-            char dp2[P]; snprintf(dp2, P, "%s", dp); { int l=(int)strlen(dp2); if(l>1&&dp2[l-1]=='/')dp2[l-1]=0; }
-            char dn[128]; snprintf(dn, 128, "%s", bname(dp2));
-            if (!dn[0]||!strcmp(dn,".")||!strcmp(dn,"..")) { if(nl)dp=nl+1;else break;continue; }
-            snprintf(c, B, "ls '%s/%s' 2>/dev/null | wc -l", bdir, dn);
-            pcmd(c, cnt, 64); int loc = atoi(cnt);
-            if (!strcmp(dn, DEV)) { printf("%-16s %6d %6s  local (this device)\n", dn, loc, "-"); }
-            else {
-                snprintf(c, B, "'%s/a' ssh '%s' 'ls ~/a/adata/backup/%s/*.jsonl 2>/dev/null | wc -l' 2>/dev/null", DDIR, dn, dn);
-                pcmd(c, cnt, 64); int rn = atoi(cnt);
-                printf("%-16s %6d %6d  %s\n", dn, loc, rn, rn ? "remote ✓" : "remote (no JSONL)");
-            }
-            if (nl) dp = nl + 1; else break;
-        }
-        return 0;
-    }
-
     char adir[P]; snprintf(adir, P, "%s/local/activity", AROOT);
 
     if (sub && !strcmp(sub, "all")) { perf_disarm();
@@ -120,15 +94,7 @@ static int cmd_login(int argc, char **argv) {
         if(fexists(ak)){printf("\n\033[1;36m━━━ %s ━━━\033[0m\n",ak);snprintf(c,B,"cat '%s'",ak);(void)!system(c);}
         if(fexists(cc)){printf("\n\033[1;36m━━━ %s ━━━\033[0m\n",cc);snprintf(c,B,"jq . '%s' 2>/dev/null||cat '%s';echo",cc,cc);(void)!system(c);}
         return 0;}
-    if(sub&&!strcmp(sub,"slot")){char c[B*2];snprintf(c,B*2,
-        "H='%s';cd %s;A=$(cat active 2>/dev/null);N='%s';"
-        "[ \"$N\" ]||{ for f in claude_*.json;do [ -e \"$f\" ]||continue;n=${f#claude_};n=${n%%.json};[ \"$n\" = \"$A\" ]&&p='*'||p=' ';printf '%%s %%-10s %%s\\n' \"$p\" \"$n\" \"$(cat claude_$n.email 2>/dev/null)\";done;exit;};"
-        "F=claude_$N.json;if [ -f \"$F\" ];then cp \"$F\" \"$H\";chmod 600 \"$H\";echo $N>active;echo active: $N \"($(cat claude_$N.email 2>/dev/null))\";exit;fi;"
-        "[ -f \"$H\" ]||{ echo x no creds;exit 1;};cp \"$H\" \"$F\";echo $N>active;"
-        "T=$(sed -n 's/.*\"accessToken\":\"\\([^\"]*\\)\".*/\\1/p' \"$H\");E=$(curl -sSm 5 -H \"Authorization: Bearer $T\" https://api.anthropic.com/api/oauth/profile 2>/dev/null|sed -n 's/.*\"email\":\"\\([^\"]*\\)\".*/\\1/p');"
-        "[ \"$E\" ]&&echo $E>claude_$N.email;echo saved: $N \"${E:+($E)}\"",hf,ld,argc<4?"":argv[3]);
-        return system(c)?1:0;}
-    puts("a login save|apply|show|slot [name]");return 0;}
+    puts("a login save|apply|show");return 0;}
 
 static int cmd_sync(int argc, char **argv) { (void)argc;(void)argv;AB;
     printf("%s\n", SROOT);

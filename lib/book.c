@@ -736,63 +736,23 @@ if __name__ == "__main__":
         pos = _pos_r(name, pos)   # register (seconds-fresh from any device) beats col5 seed
         pos_out = f"/tmp/book_pos_{name}.txt"
         Path(pos_out).unlink(missing_ok=True)
-        if shutil.which("e"):
-            print(f">> reading {name} from offset {pos} ({txt})")
-            subprocess.run(["e", "-r", f"+{pos}", "--pos-out", pos_out, str(txt)])
-            new_pos = pos
-            try: new_pos = int(Path(pos_out).read_text().strip())
-            except Exception: pass
-            # write column 5 back, creating row if needed
-            updated = False
-            for i, l in enumerate(lines):
-                parts = l.split("\t")
-                if len(parts) >= 2 and parts[1] == name:
-                    while len(parts) < 5: parts.append("")
-                    parts[4] = str(new_pos)
-                    lines[i] = "\t".join(parts); updated = True; break
-            if updated: _idxw(IDX, lines)
-            _pos_w(name, new_pos)
-            print(f"+ position {pos} -> {new_pos} (register + col5)")
-            sys.exit(0)
-        # APK fallback: narrate via the TTS APK on Android. resumes from /sdcard/Documents/book_pos_<name>.txt
-        # large books are sent in ~150KB sessions; re-run to advance.
-        import re
-        b = resolve_book(args[2] if len(args) > 2 else None); name = b.name
-        txt = b / "output" / "explained.txt"
-        if txt.is_file(): text = txt.read_text()
-        else:
-            tx = sorted((b / "transcriptions").glob("*.txt"))
-            if not tx: print(f"no text content under {b}/output/ or {b}/transcriptions/"); sys.exit(1)
-            text = "\n\n".join(t.read_text() for t in tx)
-        on_phone = Path("/data/data/com.termux").is_dir()
-        pos_path = Path(f"/sdcard/Documents/book_pos_{name}.txt")
-        pos = 0
-        if on_phone and pos_path.is_file():
-            try: pos = int(pos_path.read_text().split("/")[0])
-            except: pos = 0
-        elif not on_phone:
-            r = subprocess.run(["adb","shell",f"cat {pos_path} 2>/dev/null"], capture_output=True, text=True)
-            try: pos = int(r.stdout.split("/")[0])
-            except: pos = 0
-        sentences = re.split(r"(?<=[.!?])\s+", text)
-        total = len(sentences)
-        if pos >= total: print(f"+ {name} fully read ({pos}/{total})"); sys.exit(0)
-        # push full text via file (debuggable APK + run-as bypasses scoped-storage); pass start=pos
-        tmp = tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False)
-        tmp.write(text); tmp.close()
-        APK_FILE = "/data/data/com.spatten.ttsdumper/files/book.txt"
-        print(f">> {name}: full text {len(text)} chars, resume from sentence {pos}/{total}")
-        if on_phone:
-            subprocess.run(["cp", tmp.name, "/data/local/tmp/book.txt"], check=False)
-        else:
-            subprocess.run(["adb","push","-q",tmp.name,"/data/local/tmp/book.txt"], check=False)
-        sh = (lambda *xs: subprocess.run(list(xs), check=False)) if on_phone else (lambda *xs: subprocess.run(["adb","shell"] + list(xs), check=False))
-        sh("run-as", "com.spatten.ttsdumper", "mkdir", "-p", "files")
-        sh("run-as", "com.spatten.ttsdumper", "cp", "/data/local/tmp/book.txt", "files/book.txt")
-        sh("am","start","-n","com.spatten.ttsdumper/.HeadlessActivity",
-            "--es","file",APK_FILE, "--es","voice","en-gb-x-gbd-network",
-            "--ef","pitch","0.48", "--es","book",name, "--ei","start",str(pos))
-        Path(tmp.name).unlink(missing_ok=True)
+        print(f">> reading {name} from offset {pos} ({txt})")
+        subprocess.run(["e", "-r", f"+{pos}", "--pos-out", pos_out, str(txt)])
+        new_pos = pos
+        try: new_pos = int(Path(pos_out).read_text().strip())
+        except Exception: pass
+        # write column 5 back, creating row if needed
+        updated = False
+        for i, l in enumerate(lines):
+            parts = l.split("\t")
+            if len(parts) >= 2 and parts[1] == name:
+                while len(parts) < 5: parts.append("")
+                parts[4] = str(new_pos)
+                lines[i] = "\t".join(parts); updated = True; break
+        if updated: _idxw(IDX, lines)
+        _pos_w(name, new_pos)
+        print(f"+ position {pos} -> {new_pos} (register + col5)")
+        sys.exit(0)
     elif cmd in ("push", "pull", "index"):
         # cross-device library: rclone <-> a-gdrive2:books/ (a-gdrive full since 08-2026, writes 403; flipped 09-02), line per book in adata/git/books/index.txt
         IDX = ADATA / "git" / "books" / "index.txt"; IDX.parent.mkdir(parents=True, exist_ok=True); IDX.touch()

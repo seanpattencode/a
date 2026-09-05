@@ -58,37 +58,6 @@ static int cmd_copy(int c,char**v){(void)c;(void)v;char o[B];int ol=0;
     else{puts("x Pipe or tmux");return 1;}
     if(ol<1){puts("x No output");return 0;}o[ol]=0;if(to_clip(o)){puts("x Needs tmux");return 1;}printf("✓ %.50s\n",o);return 0;}
 
-/* dash removed — tab bar is the dashboard */
-static void ssh_parse(const char*,char*,char*);
-static int ssh_pre(char*,int,const char*,const char*,const char*,const char*);
-
-static int cmd_send(int argc, char **argv) {
-    if (argc < 4) { puts("Usage: a send <session> <prompt> [--wait] [--no-enter]"); return 1; }
-    const char *sn = argv[2];
-    if (!tm_has(sn)) { printf("x Session %s not found\n", sn); return 1; }
-    char prompt[B]=""; int wait=0,enter=1;
-    {int pl=0;for(int i=3;i<argc;i++){
-        if(!strcmp(argv[i],"--wait"))wait=1;
-        else if(!strcmp(argv[i],"--no-enter"))enter=0;
-        else pl+=snprintf(prompt+pl,(size_t)(B-pl),"%s%s",pl?" ":"",argv[i]);}}
-    tm_send(sn, prompt);
-    if (enter) { usleep(100000); tm_key(sn, "Enter"); }
-    printf("✓ %s '%s'\n", enter?"Sent to":"Inserted into", sn);
-    if (wait) {
-        printf("Waiting..."); fflush(stdout);
-        time_t last_active = time(NULL);
-        while (1) {
-            char c[B]; snprintf(c, B, "tmux display-message -p -t '%s' '#{window_activity}' 2>/dev/null", sn);
-            char out[64]; pcmd(c, out, 64);
-            int act = atoi(out);
-            if (time(NULL) - act < 2) { last_active = time(NULL); printf("."); fflush(stdout); }
-            else if (time(NULL) - last_active > 3) { puts("\n+ Done"); break; }
-            usleep(500000);
-        }
-    }
-    return 0;
-}
-
 /* ── jobs ── active panes (local+remote) + review worktrees */
 typedef struct{char sn[64],pid[32],cmd[32],p[128],dev[32];}jpane_t;
 static int cmd_jobs(int argc, char **argv) {

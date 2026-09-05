@@ -591,7 +591,7 @@ static const cmd_t CMDS[] = {
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},{"handoff",cmd_handoff},
-    {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
+    {"help",cmd_help_full},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
     {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},
@@ -600,7 +600,7 @@ static const cmd_t CMDS[] = {
     {"p",cmd_push},{"pedal",cmd_pedal},{"perf",cmd_perf},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},
     {"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
-    {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"send",cmd_send},{"serve",cmd_serve},
+    {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"serve",cmd_serve},
     {"settings",cmd_settings},{"setup",cmd_setup},{"snap",cmd_resume},
     {"ssh",cmd_ssh},{"sw",cmd_swarm},
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
@@ -617,7 +617,7 @@ __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
-    if(strstr("|push|pull|sync|u|update|login|ssh|sw|gdrive|email|install|send|j|job|pr|hub|create|repo|move|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|c|l|g|co|cp|gp|done|clone|add|cmd|",sk))return;
+    if(strstr("|push|pull|sync|u|update|login|ssh|sw|gdrive|email|install|j|job|pr|hub|create|repo|move|e|revert|diff|d|perf|pow|scan|review|fork|kill|ls|i|deps|log|serve|c|l|g|co|cp|gp|done|clone|add|cmd|",sk))return;
     unsigned l=1000000;char pf[P];snprintf(pf,P,"%s/perf/%s.txt",SROOT,DEV);
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);

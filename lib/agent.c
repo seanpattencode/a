@@ -55,23 +55,7 @@ static int cmd_agent(int argc, char **argv) {
         create_sess(sn,wd,cmd,NULL);
         tm_go(sn);return 0;
     }
-    init_db();load_cfg();load_sess();
-    const char*wda=argv[2];sess_t*s=find_sess(wda);const char*task=s?(argc>3?argv[3]:NULL):wda;
-    if(!s)s=find_sess("g");  /* default to gemini */
-    if(!task||!task[0]){puts("Usage: a agent [g|c|l] <task>");return 1;}
-    char taskstr[B]="";ajoin(taskstr,B,argc,argv,(s&&!strcmp(wda,s->key))?3:2);
-    CWD(wd);char sn[256];snprintf(sn,256,"agent-%s-%ld",s->key,(long)time(NULL));
-    printf("Agent: %s | Task: %.50s...\n",s->key,taskstr);create_sess(sn,wd,s->cmd,NULL);
-    puts("Waiting for agent to start...");
-    for(int i=0;i<60;i++){sleep(1);char o[B];tm_read(sn,o,B);
-        if(strstr(o,"Type your message")||strstr(o,"claude")||strstr(o,"gemini"))break;}
-    char prompt[B*2];snprintf(prompt,sizeof prompt,"%s\n\nCommands: \"a agent g <task>\" spawns gemini subagent, \"a agent l <task>\" spawns claude subagent. When YOUR task is fully complete, run: a done",taskstr);
-    tm_send(sn,prompt);usleep(300000);tm_key(sn,"Enter");
-    char donef[P];snprintf(donef,P,"%s/.done",DDIR);unlink(donef);
-    puts("Waiting for completion...");
-    for(time_t t0=time(NULL);!fexists(donef)&&time(NULL)-t0<300;)sleep(1);
-    char out[B*4];tm_read(sn,out,sizeof out);printf("--- Output ---\n%s\n--- End ---\n",out);
-    return 0;
+    puts("a agent run <name> [args]");return 1;
 }
 
 static int cmd_scan(int argc, char **argv) {

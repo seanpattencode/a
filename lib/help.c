@@ -164,7 +164,6 @@ static void gen_icache(void){
 static int help_p(const char*h){char p[P];snprintf(p,P,"%s/help_list.txt",DDIR);puts(h);fflush(stdout);
     if(catf(p)<0){init_db();load_cfg();list_all(1,0);}return 0;}
 static int cmd_help(int c,char**v){(void)c;(void)v;return help_p(HELP_SHORT);}
-static int cmd_hi(int c,char**v){(void)c;(void)v;for(int i=1;i<=10;i++)printf("%d\n",i);puts("hi");return 0;}
 static int cmd_help_full(int c,char**v){(void)c;(void)v;return help_p(HELP_FULL);}
 
 static const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";   /* the [p] prompt; also sent by :1111/review "tell agent: push" */

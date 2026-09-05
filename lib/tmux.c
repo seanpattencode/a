@@ -16,7 +16,6 @@ static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
 }
-static void tm_t(const char*w,char*t){snprintf(t,256,*w=='%'?"%s":TMS":%s",w);}
 /* agent window name = <pre>-<base>-Sep4-346p: who, where, WHEN, readable on the bar (Sean 2026-09-04). taken → +seconds, still taken → +pid */
 static const char*tm_name(const char*pre,const char*base,time_t t){static char b[256];struct tm*l=localtime(&t);char m[6];strftime(m,6,"%b",l);
     int n=snprintf(b,256,"%.64s-%.64s-%s%d-%d%02d",pre,base,m,l->tm_mday,l->tm_hour%12?l->tm_hour%12:12,l->tm_min),ap=l->tm_hour<12?'a':'p';
@@ -42,13 +41,6 @@ static int tm_new(const char *w, const char *wd, const char *cmd) {
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
     return system(c);
 }
-static void tm_sk(const char*w,char*s,int l){char t[256];tm_t(w,t); /* cancel first: scrolled pane = copy-mode, which EATS keys ('g' pops goto-line). 2 execs, not ';'-chain: chain aborts when cancel errors */
-    char*v[2][7]={{"tmux","send","-t",t,"-X","cancel",0},{"tmux","send","-t",t,l?"-l":s,l?s:0,0}};
-    for(int i=0;i<2;i++){pid_t p=fork();if(p==0){execvp("tmux",v[i]);_exit(1);}if(p>0)waitpid(p,NULL,0);}}
-#define tm_send(w,s) tm_sk(w,s,1)
-#define tm_key(w,s) tm_sk(w,s,0)
-static int tm_read(const char*w,char*buf,int len){char t[256];tm_t(w,t);
-    char c[B];snprintf(c,B,"tmux capture-pane -t '%s' -p 2>/dev/null",t);return pcmd(c,buf,len);}
 /* write default prompt + tools info to file. source=off skips intro+a-cat. */
 #define SRC_ON strcmp(cfget("source"),"off")
 static void prompt_freshness(FILE*f){
