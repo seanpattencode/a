@@ -2,7 +2,7 @@
 # ── a.c — agent manager & human-AI accelerator. sh a.c [build|install|analyze|shell|clean]
 # Polyglot: shell sees # as comments; C preprocessor skips #if 0..#endif.
 # Fixes: fewer tokens, same speed+. Features: cut until it breaks.
-# Read codebase: a cat (1=all 3=full under A_CB bytes, default 1.2MB = about 570k Fable-5.1 tokens (2.1 bytes/token for code), then 10-line stubs; header line says CONTEXT COMPLETE|INCOMPLETE; copies to clipboard)
+# Read codebase: a cat [dir]: newest files first, whole under A_CB bytes (1.2MB = ~570k Fable tokens), 10-line stubs past it; header line says CONTEXT COMPLETE|INCOMPLETE; copies to clipboard
 # Context: a c/j preloads a cat (auto mode 3) into claude's system prompt via --append-system-prompt-file
 # TERMUX: set CLAUDE_CODE_TMPDIR=$HOME/.tmp; build with clang directly.
 case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
@@ -469,50 +469,34 @@ static int cmd_freq(int c,char**v){perf_disarm();
     if(tk)printf("\n%ld uses, %ldK code, %ld u/K overall\n",tu,tk,tk?tu/tk:0);
     puts("\033[33m! includes bot/auto use\033[0m");
     return 0;}
-static int cmd_cat(int c,char**v){perf_disarm();
-    char m=0;int di=2;
-    if(c>2&&v[2][0]>='1'&&v[2][0]<='3'&&!v[2][1]){m=v[2][0];di=3;}
+static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest files first, whole under A_CB bytes (default 1.2MB), 10+5-line stubs past it; the digit is ignored (old callers) */
+    int di=2;if(c>2&&v[2][0]>='1'&&v[2][0]<='3'&&!v[2][1])di=3;
     if(c>di&&chdir(v[di]))return 1;
-    if(!m){if(!isatty(1))m='3';else{puts("1 all\n3 100k index");
-        printf("> ");fflush(stdout);char ch[4];if(!fgets(ch,4,stdin))return 0;m=ch[0];}}
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
     {char cm[B];init_db();load_cfg();CWD(wc);size_t sl=strlen(SDIR);
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
-    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* primary repo first (spends the budget), cat_more repos (e.g. u), /a last as stubs */
-    size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,skf=0,nst=0,nam=0;
+    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null|tr '\\n' '\\0'|xargs -0 ls -t 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* cwd repo + cat_more repos (u) + /a (stubs when outside it), newest first so the budget goes to live files */
+    size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,nst=0,nam=0;
     size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):1200000;
-    size_t kl=0,kcap=0;char*kd=NULL;  /* skipped-file map: silent omission reads as "covered everything" */
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
     if(fl){while((n=fread(b,1,8192,fl))>0){if(fl2+n<65536){memcpy(fb+fl2,b,n);fl2+=n;}}pclose(fl);}
     fb[fl2]=0;
     if(ia){const char*am="\nYou are an agent spawned by the a agent manager. The source code is included for better understnading of the tools you can use. If you encounter issues in their use, consider fixing them and sending a pr of the fix as shorter tokens.\n";GA(am,strlen(am));}
-    for(char*p=fb;p<fb+fl2;){char*e=memchr(p,'\n',(size_t)(fb+fl2-p));if(!e)break;*e=0;
-        if(l>6*1024*1024){GA("\n(too large to continue)\n",25);skf++;break;}
-        if(m=='3'&&l>2*bud&&strchr(p,'/')){skf++;size_t pl=strlen(p);
-            if(kl+pl+2>=kcap){kcap=(kl+pl+4096)*2;kd=realloc(kd,kcap);}
-            memcpy(kd+kl,p,pl);kl+=pl;kd[kl++]='\n';p=e+1;continue;}
+    for(char*p=fb;p<fb+fl2&&l<6*1024*1024;){char*e=memchr(p,'\n',(size_t)(fb+fl2-p));if(!e)break;*e=0;
         FILE*f=fopen(p,"r");if(!f){p=e+1;continue;}
         int tl=0;char ln[512];while(fgets(ln,512,f))tl++;
         rewind(f);nf++;
         char hdr[600];size_t hl=(size_t)snprintf(hdr,600,"\n==> %s (%d lines) <==\n",p,tl);
         GA(hdr,hl);
-        int am=ia&&!strncmp(p,SDIR,sl)&&p[sl]=='/',st=m=='3'&&(l>bud||am);nam+=st&&am;nst+=st&&!am;int hd=st?10:tl,tl2=5;
+        int am=ia&&!strncmp(p,SDIR,sl)&&p[sl]=='/',st=l>bud||am;nam+=st&&am;nst+=st&&!am;int hd=st?10:tl,tl2=5;
         int i=0;while(fgets(ln,512,f)){size_t sl=strlen(ln);
             if(i<hd||(tl>hd+tl2&&i>=tl-tl2)){GA(ln,sl);}
             if(i==hd&&tl>hd+tl2){GA("  ...\n",6);}
             i++;}
         fclose(f);p=e+1;}
-    {const char*kh="\n==> not shown — read on demand: <==\n";int h=0;
-    if(kd){kd[kl]=0;GA(kh,strlen(kh));h=1;
-        if(skf>40)for(char*q=kd;*q;){size_t dl=strcspn(q,"/\n");int cn=0;char*r=q;
-            for(;*r&&!strncmp(r,q,dl+1);r+=strcspn(r,"\n")+1)cn++;
-            GA(b,(size_t)snprintf(b,96,"%.*s/ %d files\n",(int)dl,q,cn));q=r;}
-        else{GA(kd,kl);}free(kd);}
-    {FILE*uf=popen("git ls-files -o --directory 2>/dev/null|sed '41s/.*/+more/;41q'","r");if(uf){
-        while(fgets(b,512,uf)){if(!h++){GA(kh,strlen(kh));}GA(b,strlen(b));}pclose(uf);}}}
     CWD(cd);const char*actx=getenv("A_CTX");char ctd[P];
     if(actx&&actx[0]=='/')snprintf(ctd,P,"%s",actx);else snprintf(ctd,P,"%s/context/%s",AROOT,actx&&actx[0]?actx:bname(cd));
-    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=m=='3'&&l>bud;  /* bud gates context too — 2.4MB embed blew the 1M window */\
+    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=l>bud;  /* bud gates context too — 2.4MB embed blew the 1M window */\
         for(size_t i=0;i<sr&&!bin;i++)if((unsigned char)b[i]<32&&b[i]!=9&&b[i]!=10&&b[i]!=13)bin=1;\
         {size_t hl=(size_t)snprintf(b,8192,"\n==> context%s: %s <==\n",bin?" doc":"",bin?FP:HDR);GA(b,hl);}\
         if(bin)fclose(cf);else{rewind(cf);while(fgets(b,512,cf)){size_t sl=strlen(b);GA(b,sl);}fclose(cf);}nf++;}}
@@ -529,9 +513,9 @@ static int cmd_cat(int c,char**v){perf_disarm();
      if(f){char hd[64];size_t hl2=(size_t)snprintf(hd,64,"\n==> prompt: %s <==\n",ap);GA(hd,hl2);char b[512];size_t r;while((r=fread(b,1,512,f))>0){GA(b,r);}fclose(f);nf++;}}
     if(!d)return 1;d[l]=0;
     char tf[P];snprintf(tf,P,"%s/local/a_cat.txt",AROOT);writef(tf,d);
-    {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full. CONTEXT %s: %d files, %d /a as map (10+5 lines), %d stubbed, %d skipped (A_CB=%zu)\n\n",tf,lc,(nst||skf)?"INCOMPLETE":"COMPLETE",nf,nam,nst,skf,bud);}
+    {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full. CONTEXT %s: %d files, %d /a as map (10+5 lines), %d stubbed (A_CB=%zu)\n\n",tf,lc,nst?"INCOMPLETE":"COMPLETE",nf,nam,nst,bud);}
     (void)!write(1,d,l);to_clip(d);
-    fprintf(stderr,"✓ %d files %zu+%zuprompt tok%s cat %s\n  context: %s/\n",nf,cl2/4,(l-cl2)/4,skf?" (skipped)":"",tf,ctd);
+    fprintf(stderr,"✓ %d files %zu+%zuprompt tok cat %s\n  context: %s/\n",nf,cl2/4,(l-cl2)/4,tf,ctd);
     free(d);}
     #undef GA
     return 0;}
