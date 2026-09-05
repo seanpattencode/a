@@ -97,7 +97,7 @@ static int cmd_jobs(int argc, char **argv) {
         else if(!strcmp(argv[i],"watch")){perf_disarm();execlp("watch","watch","-n2","-c","a","j",(char*)0);return 0;}
         else if(strcmp(argv[i],"-r")&&strcmp(argv[i],"--running"))sel=argv[i];}
     init_db();load_cfg();
-    jpane_t A[64];int na=0;
+    jpane_t A[64]={0};int na=0;
     /* Local windows */
     char out[B*2];pcmd("tmux list-windows -a -F '#{session_name}\t#{window_id}\t#{pane_current_command}\t#{pane_current_path}' 2>/dev/null",out,B*2);
     for(char*p=out;*p&&na<64;){char*e=strchr(p,'\n');if(e)*e=0;
@@ -120,7 +120,7 @@ static int cmd_jobs(int argc, char **argv) {
     {pid_t bg=fork();if(bg==0){close(0);close(1);close(2);
         char sdir[P];snprintf(sdir,P,"%s/ssh",SROOT);
         char hp[32][P];int nh=listdir(sdir,hp,32);
-        struct{char hn[64];int fd;pid_t pid;}SP[16];int nsp=0;
+        struct{char hn[64];int fd;pid_t pid;}SP[16]={0};int nsp=0;
         for(int h=0;h<nh&&nsp<16;h++){
             kvs_t kv=kvfile(hp[h]);const char*hn=kvget(&kv,"Name");
             if(!hn||!strcmp(hn,DEV))continue;

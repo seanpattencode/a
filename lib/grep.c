@@ -28,7 +28,7 @@ static int gp_build(void){
     struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
     char tmp[512],cmd[600],path[2048],fp[2600];snprintf(tmp,512,"%s.tmp",gp_idx);
     FILE*o=fopen(tmp,"w");if(!o){perror(tmp);return 1;}
-    size_t cap=8u<<20,len=0;char*all=malloc(cap);int nf=0;
+    size_t cap=8u<<20,len=0;char*all=malloc(cap);if(!all){fclose(o);return 1;}int nf=0;
     for(int i=0;i<gp_nrepo;i++){                           /* pass 1: files first */
         snprintf(cmd,600,"git -C '%s' ls-files -z 2>/dev/null",gp_repo[i]);
         FILE*p=popen(cmd,"r");if(!p)continue;
@@ -110,7 +110,7 @@ static int gp_coll(char*m,char*mid,size_t half,const char*need0,size_t*out,int o
     for(long i=0;i<T;i++){
         th[i]=(GPTH){hay,q,(size_t)i*chunk,i==T-1?half:(size_t)(i+1)*chunk,nl,half,{0},0};
         if(i<T-1)pthread_create(&id[i],0,gp_scan,&th[i]);else gp_scan(&th[i]);}
-    size_t allv[MAXT*SHOW];int na=0,capped=0;
+    size_t allv[MAXT*SHOW]={0};int na=0,capped=0;
     for(long i=0;i<T;i++){
         if(i<T-1)pthread_join(id[i],0);
         if(th[i].n==SHOW)capped=1;
@@ -212,7 +212,7 @@ static int gp_tui(void){
     struct winsize ws={0};ioctl(1,TIOCGWINSZ,&ws);
     int rows=ws.ws_row?ws.ws_row:40,cols=ws.ws_col?ws.ws_col:120;
     if(cols>1000)cols=1000;
-    static GPRS hist[QMAX];char qb[QMAX];int ql=0,sel=0;double lms=0;
+    static GPRS hist[QMAX];char qb[QMAX]={0};int ql=0,sel=0;double lms=0;
     for(;;){
         struct timespec a,b;clock_gettime(CLOCK_MONOTONIC,&a);
         GPRS*cur=&hist[ql];

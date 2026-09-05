@@ -54,7 +54,7 @@ static void m_run(const char*sf,const char*wd){ /* agentic loop: model → last 
     (void)!system(x);
 }
 static int m_resume(char*m,size_t sz){  /* saved convos (adata/git/m/agents/) newest-first, first-msg preview; pick → m="/<name>" */
-    static char ib[24][96];const char*it[24];char ls[4096],sel[96];int n=0;
+    static char ib[24][96];const char*it[24]={0};char ls[4096],sel[96];int n=0;
     {char gc[B];snprintf(gc,B,"cd '%s/m/agents' 2>/dev/null&&ls -t|sed 's/\\.txt$//'|while read -r f;do printf '%%s\t%%.60s\n' \"$f\" \"$(sed -n 2p \"$f.txt\")\";done",SROOT);pcmd(gc,ls,sizeof ls);}
     for(char*q=ls;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
     if(!n||m_pick("resume",it,n,sel,sizeof sel)<=0)return 0;

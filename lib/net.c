@@ -7,13 +7,10 @@ static void bg_backup_jsonl(void) {
     (void)!system(c);
 }
 
-static int cmd_email(int argc, char **argv) { AB;
-    char bp[P]; snprintf(bp,P,"%s/scan/base.py",SROOT);
-    char **na=malloc(((unsigned)argc+2)*sizeof(char*));
-    na[0]="python3"; na[1]=bp;
-    for(int i=2;i<argc;i++) na[i]=argv[i];
-    na[argc]=NULL;
-    execvp("python3",na); perror("python3"); return 1;
+static int cmd_email(int argc, char **argv) { AB;(void)argc;
+    static char bp[P]; snprintf(bp,P,"%s/scan/base.py",SROOT);
+    argv[0]="python3"; argv[1]=bp;
+    execvp("python3",argv);perror("python3");return 1;
 }
 
 static int cmd_log(int argc, char **argv) {

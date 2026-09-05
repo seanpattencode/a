@@ -70,7 +70,7 @@ static int cmd_perf(int argc, char **argv) {
         const char *only = argc > 3 ? argv[3] : NULL;
         int ncmds = 0; for (const char **c = BENCH_CMDS; *c; c++) ncmds++;
         typedef struct { const char *cmd; pid_t pid; unsigned us, old_lim, new_lim; int done, pass, skip; } res_t;
-        res_t *res = calloc((size_t)ncmds, sizeof(res_t));
+        res_t res[sizeof BENCH_CMDS/sizeof*BENCH_CMDS]={0};
 
         struct timespec t0; clock_gettime(CLOCK_MONOTONIC, &t0);
         int nul = open("/dev/null", O_RDWR);
@@ -168,7 +168,7 @@ static int cmd_perf(int argc, char **argv) {
                 fclose(f);
             }
         }
-        free(data); free(res);
+        free(data);
         return 0;
     }
 

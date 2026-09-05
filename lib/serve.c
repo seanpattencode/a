@@ -10,7 +10,7 @@
 static void sha1(const unsigned char*d,size_t n,unsigned char out[20]){
     uint32_t h0=0x67452301,h1=0xEFCDAB89,h2=0x98BADCFE,h3=0x10325476,h4=0xC3D2E1F0;
     size_t pl=((56-((n+1)%64))%64),tl=n+1+pl+8;
-    unsigned char*m=calloc(tl,1);memcpy(m,d,n);m[n]=0x80;
+    unsigned char m[256]={0};memcpy(m,d,n);m[n]=0x80;
     size_t ml=n*8;for(size_t i=0;i<8;i++)m[tl-1-i]=(unsigned char)(ml>>(i*8));
     for(size_t i=0;i<tl;i+=64){
         uint32_t w[80],a=h0,b=h1,c=h2,dd2=h3,e=h4;
@@ -21,10 +21,10 @@ static void sha1(const unsigned char*d,size_t n,unsigned char out[20]){
             else if(j<60){f=(b&c)|(b&dd2)|(c&dd2);k=0x8F1BBCDC;}else{f=b^c^dd2;k=0xCA62C1D6;}
             uint32_t t=((a<<5)|(a>>27))+f+e+k+w[j];e=dd2;dd2=c;c=(b<<30)|(b>>2);b=a;a=t;}
         h0+=a;h1+=b;h2+=c;h3+=dd2;h4+=e;}
-    free(m);uint32_t hh[]={h0,h1,h2,h3,h4};
+    uint32_t hh[]={h0,h1,h2,h3,h4};
     for(int i=0;i<5;i++)for(int j=0;j<4;j++)out[i*4+j]=(unsigned char)(hh[i]>>(24-j*8));
 }
-static char*shtml;static int shlen;static time_t sgen_t;
+static char shtml[4<<20];static int shlen;static time_t sgen_t;
 static char sdr[P]; /* a serve <port> <dir> = static site only; UI (incl /ws shell) never exposed */
 static const char*mime(const char*p,const char*d){const char*e=strrchr(p,'.');e=e?e+1:"";   /* d = type for an unknown extension */
     return !strcmp(e,"html")?"text/html; charset=utf-8":!strcmp(e,"css")?"text/css":!strcmp(e,"js")?"text/javascript":
@@ -41,9 +41,9 @@ static int notes_build(char*h,int cap,const char*kind){   /* kind = "notes" or "
     char nd[P];snprintf(nd,P,"%s/git/%s",AROOT,kind);const char*arc=!strcmp(kind,"prompts")?"arcp":"arcn";
     int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
     DIR*d=opendir(nd);if(!d)return hl;struct dirent*e;
-    char(*names)[64]=NULL;int nn=0,ncp=0;  /* read ALL; static[2048] dropped newest once >2048 */
+    char(*names)[64]=NULL;int nn=0,ncp=0;  /* a static[2048] dropped the newest */
     while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt"))continue;
-        if(nn>=ncp){ncp=ncp?ncp*2:2048;names=realloc(names,(size_t)ncp*64);}
+        if(nn>=ncp){ncp=ncp?ncp*2:2048;char(*t)[64]=realloc(names,(size_t)ncp*64);if(!t)break;names=t;}
         snprintf(names[nn++],64,"%s",e->d_name);}closedir(d);
     qsort(names,(size_t)nn,64,ncmp);   /* ncmp = newest first */
     int lim=!strcmp(kind,"prompts")?24:4;   /* prompts = the daily 11+11 candidates (Sean 7/10: visible in flow); notes stay a 4-newest glimpse */
@@ -60,8 +60,8 @@ static void html_gen(void){
     char*src=readf(tf,NULL);if(!src)return;
     char*s=src;
     /* substitute placeholders */
-    int cap=131072;shtml=malloc((size_t)cap);shlen=0;
-    #define EMIT(p,n) {if(shlen+(n)>=cap){cap*=2;shtml=realloc(shtml,(size_t)cap);}memcpy(shtml+shlen,p,(size_t)(n));shlen+=(n);}
+    shlen=0;
+    #define EMIT(p,n) {if(shlen+(n)<(int)sizeof shtml){memcpy(shtml+shlen,p,(size_t)(n));shlen+=(n);}}
     for(char*p=s;*p;){
         if(*p=='_'&&p[1]=='_'){
             char*end=strstr(p+2,"__");
@@ -84,7 +84,7 @@ static void html_gen(void){
                         char o[640];int ol=!strcasecmp(dln,"homebox")&&hbr[0]
                             ?snprintf(o,640,"<option value=\"%s\">%s → %s</option>",dln,dln,hbr)
                             :snprintf(o,640,"<option>%s</option>",dln);EMIT(o,ol)}if(df)pclose(df);}
-                else if(!strcmp(tag,"NO")){char*nb=malloc(131072);int nl2=notes_build(nb,131072,"notes");EMIT(nb,nl2)free(nb);}
+                else if(!strcmp(tag,"NO")){static char nb[131072];int nl2=notes_build(nb,131072,"notes");EMIT(nb,nl2)}
                 else{EMIT(p,(int)(end+2-p))p=end+2;continue;}
                 p=end+2;continue;}}
         EMIT(p,1)p++;
@@ -274,8 +274,8 @@ static void handle(int c){
         FILE*pp=popen(cmd,"r");char out[B*2]="";size_t ol=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[ol]=0;if(tf[0])unlink(tf);sresp(c,200,"text/plain; charset=utf-8",out,(int)ol);return;}
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /term",9)){
         char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when page file newer than cache (boot-frozen bug, cf /prompt) */
-        if(shtml&&!stat(uf,&us)&&us.st_mtime>=sgen_t){free(shtml);shtml=0;html_gen();}
-        if(shtml)sresp(c,200,"text/html",shtml,shlen);else sresp(c,503,"text/plain","starting",8);return;}
+        if(shlen&&!stat(uf,&us)&&us.st_mtime>=sgen_t)html_gen();
+        if(shlen)sresp(c,200,"text/html",shtml,shlen);else sresp(c,503,"text/plain","starting",8);return;}
     if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
         char tgt[64]={0};const char*qw=strstr(req,"?w=");
         if(qw){qw+=3;int j=0;for(int i=0;qw[i]&&qw[i]!=' '&&qw[i]!='&'&&qw[i]!='\r'&&j<63;i++){
@@ -724,12 +724,12 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     if(argc>3){if(!realpath(argv[3],sdr)||!dexists(sdr)){printf("x no dir %s\n",argv[3]);return 1;}
         printf("+ site %s\n",sdr);}
     else{printf("> generating HTML...\n");html_gen();
-        if(!shtml){puts("x HTML generation failed");return 1;}
+        if(!shlen){puts("x HTML generation failed");return 1;}
         printf("+ %d bytes cached\n",shlen);}
     int fd=socket(AF_INET,SOCK_STREAM,0);fcntl(fd,F_SETFD,FD_CLOEXEC);
     setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&(int){1},4);
     struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port)};
-    if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");free(shtml);return 1;} /* lost the port race -> exit BEFORE any tmux touch, so N concurrent invokes can't stampede the dashboard bridge */
+    if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");return 1;} /* lost the port race -> exit BEFORE any tmux touch, so N concurrent invokes can't stampede the dashboard bridge */
     listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
     for(;;){int c=accept(fd,0,0);if(c<0)continue;
         struct timeval tv={2,0};setsockopt(c,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);

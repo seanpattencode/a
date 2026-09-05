@@ -2,7 +2,7 @@
 typedef struct{char p[P];time_t t;}gf_t;
 static int gf_cmp(const void*a,const void*b){return((const gf_t*)b)->t>((const gf_t*)a)->t?1:-1;}
 static int cmd_get(int c,char**v){perf_disarm();
-    char dl[P];snprintf(dl,P,"%s/Downloads",HOME);gf_t fs[512];int nf=0;struct stat st;
+    char dl[P];snprintf(dl,P,"%s/Downloads",HOME);gf_t fs[512]={0};int nf=0;struct stat st;
     DIR*d=opendir(dl);struct dirent*e;if(d){while((e=readdir(d))&&nf<512){if(e->d_name[0]=='.')continue;
         snprintf(fs[nf].p,P,"%s/%s",dl,e->d_name);if(!stat(fs[nf].p,&st)){fs[nf].t=st.st_mtime;nf++;}}closedir(d);}
     if(!nf){puts("Downloads empty");return 1;}

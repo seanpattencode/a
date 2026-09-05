@@ -6,7 +6,7 @@ static void fallback_py(const char *mod, int argc, char **argv) {
     perf_disarm();char path[P],ld[P];snprintf(ld,P,"%s/lib",SDIR);snprintf(path,P,"%s/%s.py",ld,mod);
     if(!fexists(path))strcpy(path+strlen(path)-2,"c");   /* merged polyglot module (e.g. book.c: py half in #if 0) */
     setenv("PYTHONDONTWRITEBYTECODE","1",1);setenv("PYTHONPATH",ld,1);
-    char **a = malloc(((unsigned)argc + 5) * sizeof(char *));
+    char*a[256];if(argc>250)argc=250;
     {char h[32]={0};FILE*f=fopen(path,"r");if(f){(void)!fgets(h,32,f);fclose(f);}
     if(strstr(h,"/// script")){
         a[0]="uv";a[1]="run";a[2]="--script";a[3]=path;

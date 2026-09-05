@@ -69,7 +69,7 @@ static int ssh_idx(const char*a,const host_t*H,int nh){
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
-    host_t H[32];int nh=0;
+    host_t H[32]={0};int nh=0;
     char paths[32][P];int np=listdir(dir,paths,32);
     for(int i=np-1;i>=0&&nh<32;i--){
         kvs_t kv=kvfile(paths[i]);const char*n=kvget(&kv,"Name");if(!n)continue;
@@ -285,7 +285,7 @@ static int cmd_ssh(int argc,char**argv){
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
         char cmd[B]="";ajoin(cmd,B,argc,argv,3);
         char qc[B];snprintf(qc,B," 'bash -c '\"'\"'export PATH=$HOME/.local/bin:$PATH; %s'\"'\"'' 2>&1",cmd);
-        struct{int fd;pid_t pid;char nm[128];}S[32];int ns=0;
+        struct{int fd;pid_t pid;char nm[128];}S[32]={0};int ns=0;
         for(int i=0;i<nh&&ns<32;i++){int pfd[2];if(pipe(pfd))continue;
             pid_t p=fork();if(p==0){close(pfd[0]);fcntl(pfd[1],F_SETFD,FD_CLOEXEC);alarm(20);char hp[256],port[8];ssh_parse(H[i].host,hp,port);
                 char c[B*2];int l=ssh_pre(c,(int)sizeof c,H[i].pw,"-oConnectTimeout=5 -oStrictHostKeyChecking=no",port,hp);

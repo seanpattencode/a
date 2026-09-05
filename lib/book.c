@@ -849,7 +849,7 @@ static void bk_norm(const char*a,char*o,int n){char t[12][32];int c=0;   /* alnu
 /* author w/o metadata: tail after last --- (title---author); but if the tail reads like a title (>4 words)
    the name is author---title, so use the head. Same author → same segment → merges (Chernow's mixed forms). */
 static const char* bk_auth(const char*nm){const char*f=strstr(nm,"---");if(!f)return "\xc2\xb7 unknown";
-    const char*L=0;for(const char*q=nm;(q=strstr(q,"---"));q+=3)L=q;
+    const char*L=f;for(const char*q=nm;(q=strstr(q,"---"));q+=3)L=q;
     const char*t=L+3;while(*t=='-')t++;int w=0;
     for(const char*p=t;*p;){if(*p=='-'){p++;continue;}w++;while(*p&&*p!='-')p++;}
     if(w>4){static char hd[96];int k=(int)(f-nm);if(k>95)k=95;memcpy(hd,nm,(size_t)k);hd[k]=0;return hd;}
