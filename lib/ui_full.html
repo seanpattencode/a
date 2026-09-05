@@ -9,27 +9,15 @@
 c.onclick=()=>{o=!o;p.style.display=o?'block':'none';if(o)fetch('/api/omni',{method:'POST',body:'q=profile htmlbody'}).then(r=>r.text()).then(t=>{const i=t.indexOf('<!doctype'),j=t.lastIndexOf('</pre>');p.srcdoc=i<0?t:t.slice(i,j>i?j:t.length)})}})()</script>
 <div id=v_index class=v style="align-items:center;overflow-y:auto">
   <form id=omni autocomplete=off style="margin-top:9vh;width:min(96vw,600px);background:#000;border:1px solid #333;border-radius:8px"><textarea id=qi rows=1 autofocus autocomplete=off autocapitalize=off autocorrect=off spellcheck=false placeholder="" style="width:100%;font-size:24px;padding:16px 16px 6px;text-align:center;background:none;color:#fff;border:0;outline:none;caret-color:#fff;resize:none;overflow-y:auto;max-height:50vh;box-sizing:border-box"></textarea>
-  <div style="display:flex;justify-content:center;gap:4px;padding:6px;border-top:1px solid #2a2a2a"><div class=oc><b>sends to &#9662;</b><select id=agb onchange="agsel(this.selectedIndex);qi.oninput()"><option>claude</option><option>codex</option><option>gemini</option><option>grok</option><option>note</option><option>task</option></select></div><div class=oc><b>serve from &#9662;</b><select id=sfrom onchange="if(this.value)fetch('/remote?n='+encodeURIComponent(this.value)).then(r=>{if(r.ok)location.href='/';else{qh.textContent='\\u2717 this box\\u2019s a serve has no /remote yet \\u2014 run: a update';qh.style.color='#f66';this.value=''}})"><option value="">this device</option></select></div><div class=oc><b>run on &#9662;</b><select id=dev>__DO__</select></div></div></form>
+  <div style="display:flex;justify-content:center;gap:4px;padding:6px;border-top:1px solid #2a2a2a"><div class=oc><b>sends to &#9662;</b><select id=agb onchange="agsel(this.selectedIndex);qi.oninput()"><option>claude</option><option>codex</option><option>gemini</option><option>grok</option><option>note</option><option>task</option></select></div><div class=oc><b>run on &#9662;</b><select id=dev>__DO__</select></div></div></form>
   <div style="text-align:center;margin-top:8px"><span id=qh style="color:#555;font-size:15px">tap a page · or type a command / prompt</span></div>
   <div id=qo style="width:90vw;max-width:800px;margin-top:24px"></div>
   <script src="/bm?js" defer></script>
 </div>
 <div id=v_ag class=v style="align-items:center;justify-content:center;gap:14px"></div>
 <div id=v_clock class=v style="flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#000"><div id=ckt style="font:700 15vw ui-monospace,monospace;color:#fff"></div><div id=ckd style="color:#bbb;font:26px ui-monospace,monospace"></div><div id=ckl style="color:#888;font:16px ui-monospace,monospace"></div></div><!-- clock v1 (Sean 2026-08-31): time only, AM/PM, per-tick transition ms — a-time start -->
-__MY__
 <div id=v_term class=v>
   <iframe id=tif style="flex:1;width:100%;border:0;background:#000"></iframe>
-</div>
-<div id=v_jobs class=v style="align-items:center;justify-content:center;gap:20px;color:#fff">
-  <select id=jp class=f style="width:95vw;font-size:20px;padding:12px">__PO__</select>
-  <select id=jd class=f style="width:95vw;font-size:20px;padding:12px">__DO__</select>
-  <div style="display:flex;gap:10px;width:95vw;align-items:center">
-    <input id=jc placeholder="prompt" onkeydown="if(event.key==='Enter')runjob()" class=f style="flex:1;font-size:24px;padding:16px">
-    <select id=jn class=f style="font-size:20px;padding:12px"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
-    <label style="color:#fff;font-size:18px;display:flex;align-items:center;gap:4px"><input type=checkbox id=jpr>PR</label>
-    <button class=b onclick="runjob()">run</button>
-  </div>
-  <div id=jl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px;font-family:monospace;font-size:14px;white-space:pre;color:#aaa">__JO__</div>
 </div>
 <div id=v_note class=v style="padding-top:20px;align-items:center">
   <form id=nf style="display:flex;flex-direction:column;gap:10px;width:95vw">
@@ -44,7 +32,7 @@ __MY__
   <div id=nl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px">__NO__</div>
 </div>
 <script>
-var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/ag':'v_ag','#clock':'v_clock'__MV__};
+var views={'/':'v_index','/term':'v_term','/note':'v_note','/ag':'v_ag','#clock':'v_clock'};
 // 1ms mandate: action times shown LIVE (pms corner) — keep. go() must stay <1ms; show() is DOM toggle only, no network.
 function _pm(t,l){pms.textContent=l+' '+(performance.now()-t).toFixed(3)+'ms'}
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);_pm(t,'nav '+p);}
@@ -61,12 +49,6 @@ var w=1000-Date.now()%1000;_ckTg=performance.now()+w;setTimeout(_ck,Math.max(0,w
 function show(p){for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'){if(!tif.src)tif.src='/op';setTimeout(function(){try{tif.contentWindow.focus()}catch(e){}},50);}if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='/')qi.oninput()}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 function arct(d,el){fetch('/api/task/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:d})});el.parentElement.remove();}
-function loadjobs(){Promise.all([fetch('/api/jobs').then(function(r){return r.text()}),fetch('/api/job-status').then(function(r){return r.json()})]).then(function(d){
-  var h=d[0];if(d[1].length){h+='\\n\\n--- Job PRs ---\\n';d[1].forEach(function(j){
-    h+=j.status+(j.step?' ['+j.step+']':'')+' '+j.name;
-    if(j.session)h+=' ('+j.session+')';h+='\\n';});}
-  jl.textContent=h;});}
-function runjob(){var v=jc.value.trim(),p=jp.value,n=parseInt(jn.value),d=jd.value,pr=jpr.checked;if(!v)return;fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:v,project:p,count:n,device:d,pr:pr})}).then(function(r){return r.json()}).then(function(r){jc.value='';jc.placeholder=r.command||r.error;loadjobs();});}
 window.onpopstate=function(){show(views[location.hash]?location.hash:location.pathname);}; /* hash views (#clock) reload/back clean — /clock would 404 (no C route) */
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';nc.style.height='auto';ns.innerHTML='<span style="color:#ccc">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#ccc">saved → </span><a href="'+m[0]+'" target=_blank style="color:#fff">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#fff">save FAILED</span>'});};
 // press-to-act: fire on pointerdown (mouse+touch), not lift-off — matches native depress-instant. inputs/selects keep focus; modifier-clicks pass through.
@@ -80,13 +62,13 @@ window.onfocus=function(){omni.style.borderColor='#555'};window.onblur=function(
 var _cmds=[__CMDS__],_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
-var PAGES=[['/bm','a bm'],['/review','a review'],['/p','a proj'],['/op','a op'],['/fw','a fleet'],['/dash','a dash'],['/stream','a stream'],['/cam','a cam'],['/music','a music'],['/dev','a devices'],['/jobs','a jobs'],['/note','a note'],['/tasks','a tasks'],['/flow','a flow'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs'],['/prompt','a prompt']];
+var PAGES=[['/bm','a bm'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/note','a note'],['/tasks','a tasks'],['/flow','a flow'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs']];
 /* agent/type picker: own PAGE (v_ag), not a dropdown — go('/ag') is a DOM toggle, <1ms like all nav */
 var AGO=[['c','claude'],['co','codex'],['g','gemini'],['grok','grok'],['note','note'],['task','task']],AG=0;
 try{for(var _ai=0;_ai<AGO.length;_ai++)if(AGO[_ai][0]===localStorage.agm)AG=_ai}catch(e){}
-agb.value=AGO[AG][1];for(var _oi=0;_oi<dev.options.length;_oi++)if(dev.options[_oi].value)sfrom.add(new Option(dev.options[_oi].text,dev.options[_oi].value));
+agb.value=AGO[AG][1];
 function fitsel(s){var c=fitsel.c||(fitsel.c=document.createElement('canvas').getContext('2d'));c.font='14px system-ui';s.style.width=c.measureText(s.selectedOptions[0].text).width+8+'px'}
-fitsel(sfrom);fitsel(dev);
+fitsel(dev);
 function agv(){return AGO[AG][0]}
 v_ag.innerHTML='<div style="color:#555;font-size:16px">enter sends to</div>'+AGO.map(function(a,i){return '<div class=n id=ago'+i+' onclick="agset('+i+')" style="min-width:200px;text-align:center">'+a[1]+'</div>'}).join('')+'<div style="color:#555;font-size:13px">1–'+AGO.length+' select · ↑↓ move · esc back</div>';
 function agsel(i){AG=(i+AGO.length)%AGO.length;try{localStorage.agm=agv()}catch(e){}agb.value=AGO[AG][1];for(var j=0;j<AGO.length;j++){var s=j===AG,el=window['ago'+j];el.style.background=s?'#fff':'#000';el.style.color=s?'#000':'#fff'}}
@@ -133,5 +115,4 @@ omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw;if(!v
       h=(h||'')+'<div style="padding:8px 16px;color:#bbb;font-size:14px">↳ prompt saved to adata/git/prompts.log</div>';
       if(wt)h+='<div style="padding:4px 16px;color:#777;font-size:13px">'+(dv?dv+' · ':'')+win+' — see &amp; interact below:</div><iframe src="/op?w='+encodeURIComponent(wt)+'" style="width:100%;height:320px;border:1px solid #333;border-radius:8px;margin-top:6px"></iframe>';}
     if(h)qo.innerHTML=h;else qi.oninput();qi.focus()}).catch(function(){qo.innerHTML='<div style="padding:10px 16px;color:#fff;font-size:16px">✗ request failed — server unreachable</div>'})};
-var _ek='';document.addEventListener('keydown',function(e){if(e.key.length<2)_ek=(_ek+e.key).slice(-5);if(_ek==='crush'){_ek='';(function(){var c=document.createElement('canvas'),x=c.getContext('2d'),Z=16,W=10,H=20,g=Array(W*H).fill(0),P=[[[0,0]],[[0,0],[1,0]],[[0,0],[1,0],[0,1]],[[0,0],[1,0],[2,0]],[[0,0],[1,0],[2,0],[0,1]]],K=['#ddd','#bbb','#fff','#999','#666'],p,px,py,pi,iv,fc=0,cx=4,cy=H-1,jc=0,ky={};c.width=W*Z;c.height=H*Z;c.style.cssText='position:fixed;inset:0;margin:auto;z-index:9999;border:2px solid #fff';document.body.appendChild(c);function np(){pi=Math.random()*5|0;p=P[pi].map(function(a){return a.slice()});px=Math.random()*(W-2)|0;py=0;if(ht(0,0))ov()}function ht(dx,dy){for(var i=0;i<p.length;i++){var a=p[i][0]+px+dx,b=p[i][1]+py+dy;if(a<0||a>=W||b>=H||(b>=0&&g[b*W+a]))return 1}return 0}function lk(){for(var i=0;i<p.length;i++){var a=p[i][0]+px,b=p[i][1]+py;if(b>=0)g[b*W+a]=pi+1}if(g[cy*W+cx]){ov();return}for(var y=H-1;y>=0;y--){var f=1;for(var j=0;j<W;j++)if(!g[y*W+j])f=0;if(f){g.splice(y*W,W);for(var j=0;j<W;j++)g.unshift(0);if(cy<y)cy++;y++}}}function dr(){x.fillStyle='#000';x.fillRect(0,0,c.width,c.height);for(var i=0;i<W*H;i++)if(g[i]){x.fillStyle=K[g[i]-1];x.fillRect((i%W)*Z,(i/W|0)*Z,Z-1,Z-1)}for(var i=0;i<p.length;i++){x.fillStyle=K[pi];x.fillRect((p[i][0]+px)*Z,(p[i][1]+py)*Z,Z-1,Z-1)}x.fillStyle='#fff';x.fillRect(cx*Z+2,cy*Z+2,Z-5,Z-5)}function ov(){clearInterval(iv);c.remove();document.removeEventListener('keydown',kd);document.removeEventListener('keyup',ku)}function kd(e){var k=e.key;if(k==='ArrowLeft'&&!ht(-1,0))px--;if(k==='ArrowRight'&&!ht(1,0))px++;if(k==='ArrowDown'&&!ht(0,1))py++;if(k==='ArrowUp'){var n=p.map(function(a){return[-a[1],a[0]]});var o=p;p=n;if(ht(0,0))p=o}ky[k]=1;if(k==='Escape')return ov();dr();e.preventDefault()}function ku(e){delete ky[e.key]}document.addEventListener('keydown',kd);document.addEventListener('keyup',ku);np();iv=setInterval(function(){fc++;if(fc%3===0){if(ky.a&&cx>0&&!g[cy*W+cx-1])cx--;if(ky.d&&cx<W-1&&!g[cy*W+cx+1])cx++}if(fc%4===0){if(jc>0){jc--;if(cy>0&&!g[(cy-1)*W+cx])cy--}else if(cy<H-1&&!g[(cy+1)*W+cx])cy++}if(ky.w&&(cy>=H-1||g[(cy+1)*W+cx])){jc=3;delete ky.w}if(fc%8===0){if(!ht(0,1))py++;else{lk();np()}}dr()},50)})()}});
 </script>
