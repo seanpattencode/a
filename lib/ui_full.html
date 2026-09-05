@@ -17,16 +17,6 @@ c.onclick=()=>{o=!o;p.style.display=o?'block':'none';if(o)fetch('/api/omni',{met
 <div id=v_ag class=v style="align-items:center;justify-content:center;gap:14px"></div>
 <div id=v_clock class=v style="flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#000"><div id=ckt style="font:700 15vw ui-monospace,monospace;color:#fff"></div><div id=ckd style="color:#bbb;font:26px ui-monospace,monospace"></div><div id=ckl style="color:#888;font:16px ui-monospace,monospace"></div></div><!-- clock v1 (Sean 2026-08-31): time only, AM/PM, per-tick transition ms — a-time start -->
 __MY__
-<div id=v_tasks class=v style="padding:20px;align-items:center;overflow-y:auto">
-  <form id=tf style="display:flex;gap:8px;width:95vw;max-width:900px;align-items:center">
-    <input id=tp class=f style="width:78px;font-size:18px;padding:14px;text-align:center" placeholder="P" title="priority 0–99999, lower = sooner (blank = 50000)">
-    <input id=tc placeholder="new task" class=f style="flex:1;font-size:22px;padding:14px">
-    <button class=b type=submit>add</button>
-  </form>
-  <div id=tst style="width:95vw;max-width:900px;font:15px monospace;margin-top:10px;min-height:20px;word-break:break-all"></div>
-  <div style="width:95vw;max-width:900px;margin-top:8px;color:#888;font:13px monospace">sort: <button class=sb onclick="st('pri')">priority</button><button class=sb onclick="st('new')">created</button><button class=sb onclick="st('due')">deadline</button></div>
-  <div id=tl style="width:95vw;max-width:900px;color:#fff;font-family:monospace;font-size:14px;margin-top:10px">__TO__</div>
-</div>
 <div id=v_term class=v>
   <iframe id=tif style="flex:1;width:100%;border:0;background:#000"></iframe>
 </div>
@@ -54,7 +44,7 @@ __MY__
   <div id=nl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px">__NO__</div>
 </div>
 <script>
-var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/tasks':'v_tasks','/ag':'v_ag','#clock':'v_clock'__MV__};
+var views={'/':'v_index','/jobs':'v_jobs','/term':'v_term','/note':'v_note','/ag':'v_ag','#clock':'v_clock'__MV__};
 // 1ms mandate: action times shown LIVE (pms corner) — keep. go() must stay <1ms; show() is DOM toggle only, no network.
 function _pm(t,l){pms.textContent=l+' '+(performance.now()-t).toFixed(3)+'ms'}
 function go(p){var t=performance.now();history.pushState(null,'',p);show(p);_pm(t,'nav '+p);}
@@ -78,13 +68,6 @@ function loadjobs(){Promise.all([fetch('/api/jobs').then(function(r){return r.te
   jl.textContent=h;});}
 function runjob(){var v=jc.value.trim(),p=jp.value,n=parseInt(jn.value),d=jd.value,pr=jpr.checked;if(!v)return;fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:v,project:p,count:n,device:d,pr:pr})}).then(function(r){return r.json()}).then(function(r){jc.value='';jc.placeholder=r.command||r.error;loadjobs();});}
 window.onpopstate=function(){show(views[location.hash]?location.hash:location.pathname);}; /* hash views (#clock) reload/back clean — /clock would 404 (no C route) */
-tf.onsubmit=function(e){e.preventDefault();var t=tc.value.trim();if(!t)return;var p=tp.value.trim(),q='task add -u '+(/^\d{1,5}$/.test(p)?p.padStart(5,'0')+' ':'')+t;
-  tst.style.color='#ccc';tst.textContent='saving…';
-  fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(q)}).then(function(r){return r.text()}).then(function(h){
-    var u=(h.match(/https?:\/\/[^\s<]+/)||[''])[0];tst.style.color='#bbb';
-    tst.innerHTML=u?'✓ saved → <a href="'+u+'" target=_blank style="color:#fff">'+u+'</a>':'✓ '+(h.replace(/<[^>]*>/g,'').trim()||'saved');
-    tc.value='';tp.value='';fetch('/api/tasks').then(function(r){return r.text()}).then(function(x){tl.innerHTML=x})});};
-function st(s){fetch('/api/tasks?sort='+s).then(function(r){return r.text()}).then(function(x){tl.innerHTML=x})}
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';nc.style.height='auto';ns.innerHTML='<span style="color:#ccc">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#ccc">saved → </span><a href="'+m[0]+'" target=_blank style="color:#fff">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#fff">save FAILED</span>'});};
 // press-to-act: fire on pointerdown (mouse+touch), not lift-off — matches native depress-instant. inputs/selects keep focus; modifier-clicks pass through.
 var _act='[data-go],.pg,button,a[href],[onclick]',_in='input,select,textarea';

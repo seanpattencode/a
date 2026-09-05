@@ -341,6 +341,7 @@ static int _rvpath(int N,int K,char*fp,int n){   /* a review: K-th <doc> path of
     char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);int i=0,ok=0;fp[0]=0;
     for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l),i++){nl=strchr(l,'\n');if(nl)*nl=0;if(i!=N)continue;char*f[5]={l,0,0,0,0};int k=1;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}if(k==5)ok=_rvdoc(f[4],f[3],K,fp,n);break;}
     free(rl);return ok;}
+static void _ud(const char*s,char*o,size_t n){size_t k=0;for(;*s&&*s!='&'&&k<n-1;s++){if(*s=='%'&&isxdigit((unsigned char)s[1])&&isxdigit((unsigned char)s[2])){char h[3]={s[1],s[2],0};o[k++]=(char)strtol(h,0,16);s+=2;}else o[k++]=*s=='+'?' ':*s;}o[k]=0;}   /* one urlencoded form value, stops at & */
 static void _handle(int c){
     static char req[262144];int n=0;
     while(n<262143){int r=(int)read(c,req+n,262143-n);if(r<=0)break;n+=r;req[n]=0;if(strstr(req,"\r\n\r\n"))break;}
@@ -376,7 +377,15 @@ static void _handle(int c){
         if(!fd2){_sresp(c,404,"text/plain","not found",9);return;}
         _sresph(c,200,_mime(fp),fd2,(int)fl,"no-cache");free(fd2);return;}
     /* new full-page route? add a GET handler below + one nav link in ui_full.html line 9 (<div id=wm>). docs auto-list via /docs. */
-    if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /tasks",10)||!strncmp(req,"GET /term",9)){
+    if(!strncmp(req,"GET /tasks",10)&&(req[10]==' '||req[10]=='?')){char cmd[P];snprintf(cmd,P,"python3 '%s/lib/task.py' page",SDIR);FILE*pp=popen(cmd,"r");size_t oc=1<<22,ol=0;char*o=malloc(oc);if(pp){ol=fread(o,1,oc-1,pp);pclose(pp);}o[ol]=0;_sdoc(c,o,(int)ol);free(o);return;}   /* the task board = lib/task.py page(), served here, no bridge to i (Sean 2026-09-05) */
+    if(!strncmp(req,"POST /tasks/",12)||!strncmp(req,"GET /tasks/spawn?n=",19)||!strncmp(req,"GET /tasks/resume?n=",20)){   /* board actions, all a-side: run <cmd> | set N <text> -> lib/task.py web|set on stdin · spawn N | resume N */
+        char*bd=strstr(req,"\r\n\r\n");bd=bd?bd+4:(char*)"";char v[B*4]="",cmd[P],tf[P]="",*p;int n=0;
+        if(req[0]=='G'){n=atoi(strchr(req,'=')+1);snprintf(cmd,P,"python3 '%s/lib/task.py' %s %d",SDIR,req[11]=='s'?"spawn":"resume",n);}
+        else{int set=req[12]=='s';if((p=strstr(bd,set?"b=":"c=")))_ud(p+2,v,sizeof v);if(set&&(p=strstr(bd,"n=")))n=atoi(p+2);
+            snprintf(tf,P,"%s/tasks_in_%d.txt",TMP,(int)getpid());FILE*f=fopen(tf,"w");if(f){fputs(v,f);fclose(f);}
+            if(set)snprintf(cmd,P,"python3 '%s/lib/task.py' set %d <'%s'",SDIR,n,tf);else snprintf(cmd,P,"python3 '%s/lib/task.py' web <'%s'",SDIR,tf);}
+        FILE*pp=popen(cmd,"r");char out[B*2]="";size_t ol=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[ol]=0;if(tf[0])unlink(tf);_sresp(c,200,"text/plain; charset=utf-8",out,(int)ol);return;}
+    if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /jobs",9)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /term",9)){
         char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when page file newer than cache (boot-frozen bug, cf /prompt) */
         if(_shtml&&!stat(uf,&us)&&us.st_mtime>=_sgen_t){free(_shtml);_shtml=0;_html_gen();}
         if(_shtml)_sresp(c,200,"text/html",_shtml,_shlen);else _sresp(c,503,"text/plain","starting",8);return;}
@@ -780,7 +789,7 @@ static void _handle(int c){
     if(!strncmp(req,"GET /review/tell?w=",19)){int w=atoi(req+19);char cmd[B],out[128];snprintf(cmd,B,"tmux send -t a:%d -X cancel 2>/dev/null;tmux send -t a:%d -l '%s'&&sleep 0.4&&tmux send -t a:%d Enter",w,w,PP,w);   /* a review: the panel's [p], typed into that agent's window (copy-mode cancelled first, as the panel does) */
         strncat(cmd,"&&echo SENT",B-strlen(cmd)-1);FILE*pp=popen(cmd,"r");char r[16]="";if(pp){if(!fgets(r,16,pp))r[0]=0;pclose(pp);}   /* popen + marker, not system(): serve ignores SIGCHLD so system() returns -1 even on success (a.c snap trap) */
         snprintf(out,128,strstr(r,"SENT")?"told window %d: push just these changes":"x tmux window %d not reachable",w);_sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
-    if(!strncmp(req,"GET /review/go?w=",17)){int w=atoi(req+17);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}' 2>/dev/null|sort -n|tail -1","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* a review: the LOCAL terminal app (Sean 09-04): switch the most recently used attached tmux client to window INDEX w (the tasks board's go, i web.py /problems/go) and raise foot in sway */
+    if(!strncmp(req,"GET /review/go?w=",17)||!strncmp(req,"GET /problems/go?w=",19)){int w=atoi(strchr(req,'=')+1);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}' 2>/dev/null|sort -n|tail -1","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* a review: the LOCAL terminal app (Sean 09-04): switch the most recently used attached tmux client to window INDEX w (the tasks board's go, i web.py /problems/go) and raise foot in sway */
         char*cn=strchr(ln,'\t'),*cs=cn?strchr(cn+1,'\t'):0;if(!cs)snprintf(out,512,"no attached local terminal: tmux switch-client -t :%d",w);
         else{*cn=0;*cs=0;char cmd[600],er[200]="";snprintf(cmd,600,"tmux switch-client -c '%s' -t '%s:%d' 2>&1 && SWAYSOCK=$(ls -t /run/user/$(id -u)/sway-ipc.* 2>/dev/null|head -1) swaymsg '[app_id=foot] focus' >/dev/null 2>&1",cn+1,cs+1,w);FILE*p2=popen(cmd,"r");if(p2){if(!fgets(er,200,p2))er[0]=0;pclose(p2);}er[strcspn(er,"\n")]=0;
             if(er[0])snprintf(out,512,"x %s",er);else snprintf(out,512,"window %d in %s on %s",w,cs+1,cn+1);}
@@ -889,11 +898,6 @@ static void _handle(int c){
     if(!strncmp(req,"GET /note-list",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
         int hl=_notes_build(html,cap,"notes");_sresp(c,200,"text/html",html,hl);free(html);return;}
-    if(!strncmp(req,"GET /api/tasks",14)){
-        int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
-        const char*sort="pri";char*q=strstr(req,"sort="),*eol=strchr(req,'\n');
-        if(q&&(!eol||q<eol)){q+=5;if(!strncmp(q,"new",3))sort="new";else if(!strncmp(q,"due",3))sort="due";}
-        int hl=_tasks_build(html,cap,sort);_sresp(c,200,"text/html",html,hl);free(html);return;}
     if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* structured review surface: notes + tasks + prompts, full text, per-row archive/edit, add + suggest */
         int cap=1<<19;char*buf=malloc((size_t)cap);if(!buf){_sresp(c,500,"text/plain","oom",3);return;}
         const char*sort="pri";char*q=strstr(req,"sort="),*eol=strchr(req,'\n');

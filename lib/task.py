@@ -73,6 +73,24 @@ def setblock(n,t): # replace block n with the editor's text (first line = title;
  if not L:return'x empty'
  if not L[0].startswith('== '):L[0]=f'== {L[0].strip("= ").strip()} =='
  ls[hi[n-1]:hi[n]]=L+[''];open(F,'w').write('\n'.join(ls)+'\n');threading.Thread(target=os.system,args=(SYNC,),daemon=True).start();return'✓'
+TA="You are the agent for board task __N__ (localhost:1111/tasks); your tmux window = __LABEL__. WORKCYCLE MODE, not autonomous: gather context as needed (the block below; ~/a adata/git; ~/i docs; transcripts: ls -t ~/a/adata/transcripts|head), then reply with CONTEXT (<=6 lines, what is true NOW) and STARTER: the ONE smallest trivial step toward finishing it, one sentence + the exact command. Anything needed from Sean only if essential. STOP and wait for his word. Append what you learn: python3 ~/a/lib/task.py ctx __N__ \"[LLM <model> <date>] ...\"\n== TASK ==\n__ENTRY__" # override: adata/git/common/prompts/task-agent.txt
+def spawn(n): # board task n -> a j with the task-agent prompt, label the window, tag [a:label] + resume line (i web.py _spawn ported a-side: no bridge, Sean 2026-09-05)
+ ls,hi=blocks()
+ if not 0<n<len(hi):return'x bad task'
+ h=ls[hi[n-1]].strip('= ').strip()
+ if'[a:'in h:return'x already owned: '+h[:60]
+ lab=('t%d-'%n+re.sub(r'[^a-z0-9]+','-',h.lower())[:14].strip('-'))[:20].rstrip('-');tp=D+'/common/prompts/task-agent.txt'
+ pr=(open(tp).read()if os.path.exists(tp)else TA).replace('__LABEL__',lab).replace('__N__',str(n)).replace('__ENTRY__','\n'.join(ls[hi[n-1]:hi[n]]))
+ if os.environ.get('TASK_DRY'):return'dry: label %s, prompt %d chars'%(lab,len(pr))
+ r=subprocess.run(['a','j',pr],capture_output=True,text=True,timeout=60);m=re.search(r'\bj-[\w.-]+',r.stdout+r.stderr)
+ if not m:return'x spawn: '+(r.stdout+r.stderr).strip()[-160:]
+ subprocess.run(['sh',os.path.expanduser('~/a/lib/label.sh'),lab,m[0]],timeout=10);return'spawned %s ← %s · '%(lab,m[0])+run(['agent',str(n),lab],True)
+def resume(n): # RESUMABLE -> LIVE: run the block's resume: line in a window carrying its label
+ ls,hi=blocks()
+ if not 0<n<len(hi):return'x bad task'
+ m=re.search(TAG,ls[hi[n-1]]);r=next((l[8:].strip()for l in ls[hi[n-1]+1:hi[n]]if l.startswith('resume: ')),'')
+ if not(m and r):return'x no [a:label] + resume: line'
+ subprocess.run(['tmux','new-window','-d','-n',m[1],'sh','-c',r+'; exec bash'],timeout=20);return'resumed → tmux window '+m[1]
 def page(): # one-at-a-time is client-side (rows stay in the DOM, prev/next toggle: sub-ms, no navigation) # /tasks[?by=date] — the file rendered; rank view = file order (instant local moves); date view = dated first, soonest first (actions reload)
  W={};[W.setdefault(p[0],p[1:])for p in(l.split('\t')for l in tm('#{window_name}\t#{session_name}:#{window_index}\t#{pane_current_command}'))if len(p)==3];S=live()
  B=lambda v,t,x='',_K={'archive':'e','done':'e','down':'d','rank':'r','agent':'a','spawn':'g','resume':'g','go':'g'}:(lambda k=_K.get(v):f'<button class=bb'+(f' data-k={k}' if k else '')+f' onpointerdown="tq(\'{v}\',this,\'{x}\')">{t}'+(f' ({k})' if k else '')+'</button>')();e=html.escape;LM=lambda t:re.sub(r'(?m)^(\[LLM.*)',r'<i style=color:#666>\1</i>',e(t));ls,hi=blocks();R=lambda k,t:f'<b style="color:{k}">{t}</b> ';O=range(len(hi)-1)
@@ -115,5 +133,10 @@ def page(): # one-at-a-time is client-side (rows stay in the DOM, prev/next togg
 if __name__=='__main__':
  t=time.perf_counter_ns();a=sys.argv[1:];ls,hi=blocks();n=len(hi)-1
  if a and a[0].isdigit():print('\n'.join(ls[hi[int(a[0])-1]:hi[int(a[0])]]))
+ elif a==['page']:print(page())
+ elif a==['web']:print(run(sys.stdin.readline().split(),True)) # :1111 POST /tasks/run, the command line on stdin
+ elif a[:1]==['set']:print(setblock(int(a[1]),sys.stdin.read())) # :1111 POST /tasks/set, block text on stdin
+ elif a[:1]==['spawn']:print(spawn(int(a[1])))
+ elif a[:1]==['resume']:print(resume(int(a[1])))
  elif a:print(run(a,True))
  else:print(*(f'{j+1:3} {re.sub(TAG,"",ls[hi[j]]).strip("= ").strip()}{" ["+m[1]+"]"if(m:=re.search(TAG,ls[hi[j]]))else""}'for j in range(n)),f'{n} · {(time.perf_counter_ns()-t)/1e6:.4f}ms',sep='\n')
