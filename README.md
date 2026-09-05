@@ -32,7 +32,6 @@ a                # Menu of everything — type to filter, enter to run
 a c              # New tmux window running Claude (co=codex, g=gemini, a=default)
 a j "prompt"     # Job: own worktree + agent, runs in the background
 a <#>            # cd to project by number
-a f              # Triage: notes/tasks/prompts → agents
 a n "text"       # Write a note
 a push           # Checkpoint: commit + push
 a diff           # Token diff vs main (also the gate `a push` enforces)

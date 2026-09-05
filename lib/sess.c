@@ -278,8 +278,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             sscanf(fm[sel],"%15s %31s",fld,val);snprintf(ck,24,"i_%s",fld);cfset(ck,val);load_cfg();
             buf[0]=0;blen=0;sel=0;continue;}
         if(do_pick&&!cfgmode&&!prefix[0]&&blen&&sel<vo){  /* prompt-action row picked (no match → clamp keeps sel<vo): 0=agent win 1=note 2=task 3=web */
-            if(sel==1||sel==2){char nd[P];snprintf(nd,P,"%s/%s",SROOT,sel==1?"notes":"tasks");mkdirp(nd);
-                snprintf(lastnote,P,"%s",sel==1?note_save(nd,buf):task_add(nd,buf,50000));sync_bg();SNIP;
+            if(sel==1||sel==2){char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);
+                if(sel==1)snprintf(lastnote,P,"%s",note_save(nd,buf));else{task_py("add",buf);snprintf(lastnote,P,"%s/tasks.txt",SROOT);}sync_bg();SNIP;
                 snprintf(jstat,sizeof jstat,"✓ %s saved",sel==1?"note":"task");
                 lastwin[0]=0;buf[0]=0;blen=0;sel=-1;continue;}  /* stay in loop: rapid capture; receipt row below replaces the fired-win tail (last action wins), one ↓ selects it */
             if(sel==3){char u[B*3];int l=snprintf(u,sizeof u,"https://google.com/search?q=");  /* same engine as a search; %%-encode so any typed/pasted bytes form a valid query */

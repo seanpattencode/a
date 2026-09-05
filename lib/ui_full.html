@@ -48,7 +48,6 @@ ckl.textContent='transition +'+late.toFixed(3)+'ms · clock step '+_ckQ.toFixed(
 var w=1000-Date.now()%1000;_ckTg=performance.now()+w;setTimeout(_ck,Math.max(0,w-8));}_ck();
 function show(p){for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'){if(!tif.src)tif.src='/op';setTimeout(function(){try{tif.contentWindow.focus()}catch(e){}},50);}if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='/')qi.oninput()}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
-function arct(d,el){fetch('/api/task/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({d:d})});el.parentElement.remove();}
 window.onpopstate=function(){show(views[location.hash]?location.hash:location.pathname);}; /* hash views (#clock) reload/back clean — /clock would 404 (no C route) */
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';nc.style.height='auto';ns.innerHTML='<span style="color:#ccc">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#ccc">saved → </span><a href="'+m[0]+'" target=_blank style="color:#fff">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#fff">save FAILED</span>'});};
 // press-to-act: fire on pointerdown (mouse+touch), not lift-off — matches native depress-instant. inputs/selects keep focus; modifier-clicks pass through.
@@ -62,7 +61,7 @@ window.onfocus=function(){omni.style.borderColor='#555'};window.onblur=function(
 var _cmds=[__CMDS__],_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
-var PAGES=[['/bm','a bm'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/note','a note'],['/tasks','a tasks'],['/flow','a flow'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs']];
+var PAGES=[['/bm','a bm'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/note','a note'],['/tasks','a tasks'],['/flow','flow'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs']];
 /* agent/type picker: own PAGE (v_ag), not a dropdown — go('/ag') is a DOM toggle, <1ms like all nav */
 var AGO=[['c','claude'],['co','codex'],['g','gemini'],['grok','grok'],['note','note'],['task','task']],AG=0;
 try{for(var _ai=0;_ai<AGO.length;_ai++)if(AGO[_ai][0]===localStorage.agm)AG=_ai}catch(e){}

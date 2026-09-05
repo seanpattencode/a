@@ -1,7 +1,7 @@
 """a-side task engine, CANONICAL (ported from i 2026-08-31 per the 08-27 plan; i task = stub calling this).
 Data ~/a/adata/git/tasks.txt + tasks-archive.txt · ordinal = block order, no rank numbers · block form: `== [date] title [a:window] ==` + context lines.
 CLI: task.py [N|add <title>|ctx N <line>|down N|archive N (done=alias, github-url receipt)|agent N [window|self]|date N [ts]|rank N K]
-Old 607-dir adata/git/tasks/ + note.c cmd_task = stale twin pending archive/rework.
+a task / a t -> here (note.c shim); free text = add; add --by <model> = LLM-entered task (by: line); sync = a sync. The adata/git/tasks/ dir engine is gone (2026-09-05).
 """
 import html,os,re,subprocess,sys,threading,time
 D=os.environ['HOME']+'/a/adata/git';F=D+'/tasks.txt';TAG=r' ?\[a:([^\]\s]*)\]';DT=r'^== (\d{4}-\d\d-\d\d(?: \d\d:\d\d:\d\d)?|\d\d-\d\d) ' # date prefix on the title, to the second; MM-DD (days.txt form) still read
@@ -39,7 +39,7 @@ def live(): # {session-id: (window, session:index, command)} for every agent und
  return o
 def run(a,cli=False): # THE mutation path — CLI and the web bridge both call it; returns the reply text
  ls,hi=blocks();n=len(hi)-1;blk=lambda k:slice(hi[k],hi[k+1])
- if a[:1]==['add']and a[1:]:ls[0:0]=['== '+' '.join(a[1:])+' ==','']
+ if a[:1]==['add']and a[1:]:by=a[2]if a[1]=='--by'and a[3:]else'';ls[0:0]=['== '+' '.join(a[3:]if by else a[1:])+' ==']+([f'by: {by}']if by else[])+[''] # --by <model>: provenance line for an LLM-entered task (default.txt LLM-TAGGED TASKS)
  elif a[:1]==['ctx']and a[2:]:ls.insert(hi[int(a[1])],' '.join(a[2:]))
  elif a[:1]==['down']:k=int(a[1])-1;j=min(k+10,n-1);ls[hi[k]:hi[j+1]]=ls[hi[k+1]:hi[j+1]]+ls[blk(k)] # rank down 10 places (Sean 08-27: one is too close)
  elif a[:1]in(['archive'],['done']):k=int(a[1])-1;open(D+'/tasks-archive.txt','a').write(time.strftime('%F ')+'\n'.join(ls[blk(k)])+'\n');del ls[blk(k)];arch=1
@@ -132,7 +132,11 @@ def page(): # one-at-a-time is client-side (rows stay in the DOM, prev/next togg
  'requestAnimationFrame(()=>requestAnimationFrame(()=>{var pt=performance.now()-t0;fetch(u,{method:"POST",body:bd,headers:{"content-type":"application/x-www-form-urlencoded"}}).then(q=>q.text()).then(t=>{'
  'tr0.textContent=c+" · op "+op.toFixed(3)+"ms · painted "+pt.toFixed(2)+"ms · "+t.trim()+" · round trip "+(performance.now()-t0).toFixed(1)+"ms";if(v=="archive"){var uu=(t.match(/https\\S+/)||[])[0];if(uu){tar.textContent="\u2713 archived \u201c"+tt+"\u201d \u2014 saved to ";var A=document.createElement("a");A.href=uu;A.target="_blank";A.style.color="#8ac";A.textContent=uu;tar.appendChild(A)}else tar.textContent="\u26a0 "+t.trim()+" \u2014 \u201c"+tt+"\u201d"}if(t[0]=="x"||!local)setTimeout(()=>location.reload(),600)}).catch(function(){tr0.textContent="\u2717 "+c+" did not reach the server \u2014 RELOAD this page (stale tab or server was restarting)";if(v=="archive")tar.textContent=tr0.textContent})}))}document.addEventListener("keydown",function(ev){if(ev.ctrlKey||ev.metaKey||ev.altKey)return;if(/INPUT|TEXTAREA|SELECT/.test((document.activeElement||{}).tagName||""))return;var q=ev.key;if(q=="j")return step(1);if(q=="k")return step(-1);if(q=="s")return tsort();if(q=="c"){ev.preventDefault();tn.focus();return}var R=rows(),r=R[ORD?ORD[K]:K],b=r&&r.querySelector("[data-k="+q+"]");if(b)b.dispatchEvent(new PointerEvent("pointerdown",{bubbles:true}))});</script>')
 if __name__=='__main__':
- t=time.perf_counter_ns();a=sys.argv[1:];ls,hi=blocks();n=len(hi)-1
+ t=time.perf_counter_ns();a=sys.argv[1:]
+ if a[:1]in(['task'],['t']):a=a[1:] # via `a task` / `a t`: the command name rides argv
+ if a[:1]==['sync']:os.execvp('a',['a','sync']) # hub job `a task sync` = adata/git sync
+ if a and not a[0].isdigit()and a[0]not in('add','ctx','down','archive','done','rank','date','agent','page','web','set','spawn','resume'):a=['add']+a # free text = add (a task <text>, phone Cap)
+ ls,hi=blocks();n=len(hi)-1
  if a and a[0].isdigit():print('\n'.join(ls[hi[int(a[0])-1]:hi[int(a[0])]]))
  elif a==['page']:print(page())
  elif a==['web']:print(run(sys.stdin.readline().split(),True)) # :1111 POST /tasks/run, the command line on stdin

@@ -404,7 +404,6 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/ssh.c"
 #include "lib/scp.c"
 #include "lib/net.c"
-#include "lib/cal.c"
 #include "lib/agent.c"
 #include "lib/file.c"
 #include "lib/cc.c"
@@ -452,7 +451,7 @@ static int cmd_freq(int c,char**v){perf_disarm();
     long tu=0,tk=0;
     printf("%6s %5s %5s %s\n","USES","FILE","USE/K","CMD");
     for(int i=0;i<n;i++){struct stat st;char sf[P];long kb=0;
-        const char*cn=ct[i].n;static const char*AL[]={"task","note","t","note","n","note","i","ls","diff","push","d","push","kill","ls","j","sess","jobs","sess",0};
+        const char*cn=ct[i].n;static const char*AL[]={"t","task","n","note","i","ls","diff","push","d","push","kill","ls","j","sess","jobs","sess",0};
         for(int a=0;AL[a];a+=2)if(!strcmp(cn,AL[a])){cn=AL[a+1];break;}
         static const char*X[]={".c",".py",NULL};
         for(int x=0;X[x];x++){snprintf(sf,P,"%s/lib/%s%s",SDIR,cn,X[x]);if(!stat(sf,&st)){kb=(st.st_size+512)/1024;break;}}
@@ -526,8 +525,9 @@ static int cmd_j(int c,char**v){
         {char nd[P];FILE*f=fopen(cf,"w");if(f){
             snprintf(nd,P,"%s/notes",SROOT);int nn=load_notes(nd,NULL);
             for(int i=0;i<nn;i++)fprintf(f,"%d. %s\n",i+1,gn[i].t);
-            fputs("\n",f);snprintf(nd,P,"%s/tasks",SROOT);int nt=load_tasks(nd);
-            for(int i=0;i<nt;i++)fprintf(f,"%d. P%s %s\n",i+1,T[i].p,T[i].t);fclose(f);}}
+            fputs("\n",f);snprintf(nd,P,"%s/tasks.txt",SROOT);char*tt=readf(nd,NULL);int k=0;   /* task board headers (lib/task.py) */
+            for(char*l=tt;l&&*l;){int L=(int)strcspn(l,"\n");if(!strncmp(l,"== ",3))fprintf(f,"%d. %.*s\n",++k,L,l);l+=L+(l[L]=='\n');}
+            free(tt);fclose(f);}}
         snprintf(pr,B,"%s/common/prompts/job.txt",SROOT);
         char*ap=readf(pr,NULL);snprintf(pr,B,"%s\nContext: cat %s",ap?ap:"Ask what to work on. cat a.c for source.",cf);if(ap)free(ap);
         {char ctxf[P];snprintf(ctxf,P,"%s/a_ctx_%d.txt",TMP,(int)getpid());
@@ -704,10 +704,10 @@ static int cmd_cmp(const void*a,const void*b){return strcmp(((const cmd_t*)a)->n
 static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
     {"a",cmd_a_default},{"adb",cmd_adb},{"add",cmd_add},{"agent",cmd_agent},
-    {"book",cmd_book},{"cal",cmd_cal},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
+    {"book",cmd_book},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_clone},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"f",cmd_flow},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"flow",cmd_flow},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},{"handoff",cmd_handoff},
+    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"hi",cmd_hi},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},

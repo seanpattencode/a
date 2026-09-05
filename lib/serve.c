@@ -52,46 +52,6 @@ static int _notes_build(char*h,int cap,const char*kind){   /* kind = "notes" or 
             hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"%s('%s',this)\" class=nx>x</button><span style=\"color:#888;display:inline-block;width:104px\">%s</span><span style=\"flex:1\">%s</span><a href=\"/doc?f=%s/%s\" style=\"color:#888;margin-left:8px;text-decoration:none\">edit</a></div>",arc,names[i],hu,ln+6,kind,names[i]);got=1;break;}}
         fclose(f);shown+=got;}free(names);return hl;
 }
-static int _tasks_build(char*h,int cap,const char*sort){
-    char td[P];snprintf(td,P,"%s/git/tasks",AROOT);
-    DIR*d=opendir(td);if(!d)return snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
-    struct dirent*e;struct{char pri[8];char txt[1024];char name[256];char dl[20];}rows[512];int nr=0;
-    while((e=readdir(d))&&nr<512){if(e->d_name[0]=='.')continue;
-        int hp=strlen(e->d_name)>5&&e->d_name[5]=='-';
-        for(int i=0;hp&&i<5;i++)if(!isdigit((unsigned char)e->d_name[i]))hp=0;
-        snprintf(rows[nr].pri,8,"%s",hp?(char[6]){e->d_name[0],e->d_name[1],e->d_name[2],e->d_name[3],e->d_name[4],0}:"50000");
-        snprintf(rows[nr].name,256,"%s",e->d_name);
-        char slug[256];snprintf(slug,256,"%s",hp?e->d_name+6:e->d_name);
-        for(char*u=strchr(slug,'_');u;u=strchr(u,'_'))*u=0;
-        for(char*u=slug;*u;u++)if(*u=='-')*u=' ';
-        rows[nr].txt[0]=0;
-        char fp[P];snprintf(fp,P,"%s/%s",td,e->d_name);struct stat st;
-        const char*probes[]={fp,NULL};char sp[P];if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){snprintf(sp,P,"%s/task",fp);probes[0]=dexists(sp)?sp:fp;}
-        DIR*sd=opendir(probes[0]);
-        if(sd){struct dirent*se;while((se=readdir(sd))){if(!strstr(se->d_name,".txt"))continue;
-            char sfp[P];snprintf(sfp,P,"%s/%s",probes[0],se->d_name);FILE*sf=fopen(sfp,"r");if(!sf)continue;
-            char ln[1024];while(fgets(ln,1024,sf))if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;snprintf(rows[nr].txt,1024,"%s",ln+6);break;}
-            fclose(sf);if(rows[nr].txt[0])break;}closedir(sd);}
-        if(!rows[nr].txt[0])snprintf(rows[nr].txt,1024,"%s",slug);
-        rows[nr].dl[0]=0;{char dlf[P];snprintf(dlf,P,"%s/%s/deadline.txt",td,e->d_name);FILE*df=fopen(dlf,"r");
-            if(df){if(fgets(rows[nr].dl,20,df))rows[nr].dl[strcspn(rows[nr].dl,"\n")]=0;fclose(df);}}
-        nr++;}
-    closedir(d);
-    int md=sort&&!strcmp(sort,"new")?1:sort&&!strcmp(sort,"due")?2:0;  /* 0=pri 1=created 2=deadline */
-    for(int i=1;i<nr;i++){__typeof__(rows[0]) k=rows[i];int j=i-1;const char*kk=k.dl[0]?k.dl:"~";
-        while(j>=0){int bf=md==1?strcmp(k.name,rows[j].name)>0:md==2?strcmp(kk,rows[j].dl[0]?rows[j].dl:"~")<0:strcmp(rows[j].pri,k.pri)>0;
-            if(!bf)break;rows[j+1]=rows[j];j--;}rows[j+1]=k;}
-    int hl=snprintf(h,(size_t)cap,SYNC_HTML "<div class=ni style=\"color:#888;border-bottom:1px solid #444;margin-top:10px\"><span class=nx style=\"visibility:hidden\">x</span><span style=\"display:inline-block;width:124px\">WHEN</span><span style=\"display:inline-block;width:54px\">PRI</span>TASK <span style=\"color:#555\">— ⚑=deadline else created · red P≤1000</span></div>",sync_age());
-    for(int i=0;i<nr&&i<4&&hl<cap-512;i++){   /* top 4 */
-        const char*c=strcmp(rows[i].pri,"01000")<=0?"#fff":strcmp(rows[i].pri,"10000")<=0?"#ccc":"#aaa";
-        char fr[40];{int y,mo,dd,h=0,mi=0;struct tm t={0};
-            if(rows[i].dl[0]&&sscanf(rows[i].dl,"%d-%d-%d %d:%d",&y,&mo,&dd,&h,&mi)>=3){t.tm_year=y-1900;t.tm_mon=mo-1;t.tm_mday=dd;mktime(&t);
-                char b[32];int bl2=(int)strftime(b,32,"%b %-d",&t);int h12=h%12;if(!h12)h12=12;snprintf(b+bl2,32-(size_t)bl2," %d:%02d%s",h12,mi,h>=12?"pm":"am");snprintf(fr,40,"⚑%s",b);}
-            else{const char*u=strrchr(rows[i].name,'_');char ts[16]="";if(u)snprintf(ts,16,"%.15s",u+1);ts_date(u?ts:NULL,fr,40);}}
-        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arct('%s',this)\" class=nx>x</button><span style=\"color:#fff;display:inline-block;width:124px\">%s</span><span style=\"color:%s;display:inline-block;width:54px\">P%s</span>%s</div>",rows[i].name,fr,c,rows[i].pri,rows[i].txt);}
-    if(!hl)hl=snprintf(h,(size_t)cap,"<div style=\"color:#888\">No tasks</div>");
-    return hl;
-}
 static void _html_gen(void){
     char tf[P];snprintf(tf,P,"%s/lib/ui_full.html",SDIR);_sgen_t=time(NULL);
     char*src=readf(tf,NULL);if(!src)return;
@@ -122,7 +82,6 @@ static void _html_gen(void){
                             ?snprintf(o,640,"<option value=\"%s\">%s → %s</option>",dln,dln,hbr)
                             :snprintf(o,640,"<option>%s</option>",dln);EMIT(o,ol);}if(df)pclose(df);}
                 else if(!strcmp(tag,"NO")){char*nb=malloc(131072);int nl2=_notes_build(nb,131072,"notes");EMIT(nb,nl2);free(nb);}
-                else if(!strcmp(tag,"TO")){char*tb=malloc(131072);int tl2=_tasks_build(tb,131072,"pri");EMIT(tb,tl2);free(tb);}
                 else{EMIT(p,(int)(end+2-p));p=end+2;continue;}
                 p=end+2;continue;}}
         EMIT(p,1);p++;
@@ -732,20 +691,16 @@ static void _handle(int c){
         int hl=_notes_build(html,cap,"notes");_sresp(c,200,"text/html",html,hl);free(html);return;}
     if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* structured review surface: notes + tasks + prompts, full text, per-row archive/edit, add + suggest */
         int cap=1<<19;char*buf=malloc((size_t)cap);if(!buf){_sresp(c,500,"text/plain","oom",3);return;}
-        const char*sort="pri";char*q=strstr(req,"sort="),*eol=strchr(req,'\n');
-        if(q&&(!eol||q<eol)){q+=5;if(!strncmp(q,"new",3))sort="new";else if(!strncmp(q,"due",3))sort="due";}
         int bl=snprintf(buf,3200,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>flow</title><style>body{background:#111;color:#ddd;font:14px/1.5 ui-monospace,monospace;margin:0;padding:8px 12px 9em}h3{color:#fff;margin:16px 0 4px;font-size:15px}.ni{display:flex;align-items:flex-start;padding:6px 0;border-bottom:1px solid #1c1c1c;word-break:break-word}.nx{background:none;border:1px solid #555;color:#999;padding:5px 10px;margin-right:9px;border-radius:4px;cursor:pointer;flex:none}button{background:#111;color:#fff;border:1px solid #444;border-radius:6px;padding:6px 11px;margin:0 2px;cursor:pointer;font:13px monospace}a{color:#fff}</style><body><h3>NOTES <button onclick=\"fadd('note','note')\">+</button></h3>");
         bl+=_notes_build(buf+bl,cap-bl,"notes");
-        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>TASKS <button onclick=\"fadd('task add -u','task')\">+</button> <span style=\"color:#555;font-size:12px\">sort: <a href=/flow?sort=pri>pri</a> <a href=/flow?sort=new>created</a> <a href=/flow?sort=due>deadline</a></span></h3>");
-        bl+=_tasks_build(buf+bl,cap-bl,sort);
         bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>PROMPT CANDIDATES <button onclick=\"fadd('prompt c','prompt')\">+</button></h3>");
         bl+=_notes_build(buf+bl,cap-bl,"prompts");
-        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<div style=\"position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #333;padding:.6em;text-align:center\"><button onclick=fgen()>\342\234\246 suggest (book \342\206\222 claude)</button> <a href=\"/doc?f=common/prompts/propose.txt\">edit lens</a> <span id=fs style=color:#bbb></span></div><script>function omni(c){fs.textContent='\342\200\246';fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(c)}).then(function(r){return r.text()}).then(function(){location.reload()})}function fadd(c,k){var v=prompt('new '+k);if(v)omni(c+' '+v)}function arc(u,key,f){var b={};b[key]=f;fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(){location.reload()})}function arcn(f){arc('/api/note/archive','f',f)}function arct(d){arc('/api/task/archive','d',d)}function arcp(f){arc('/api/prompt/archive','f',f)}function fgen(){var s=prompt('seed idea');if(!s)return;var b=prompt('book name as full context (blank=none)')||'-';omni('flow gen '+b+' '+s)}</script>");
+        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<div style=\"position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #333;padding:.6em;text-align:center\"><span id=fs style=color:#bbb></span></div><script>function omni(c){fs.textContent='\342\200\246';fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(c)}).then(function(r){return r.text()}).then(function(){location.reload()})}function fadd(c,k){var v=prompt('new '+k);if(v)omni(c+' '+v)}function arc(u,key,f){var b={};b[key]=f;fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(){location.reload()})}function arcn(f){arc('/api/note/archive','f',f)}function arcp(f){arc('/api/prompt/archive','f',f)}</script>");
         _sdoc(c,buf,bl);free(buf);return;}
-    if(!strncmp(req,"POST /api/note/archive",22)||!strncmp(req,"POST /api/task/archive",22)||!strncmp(req,"POST /api/prompt/archive",24)){
-        char kc=req[10];const char*kind=kc=='t'?"tasks":kc=='p'?"prompts":"notes";  /* n=notes t=tasks p=prompts */
+    if(!strncmp(req,"POST /api/note/archive",22)||!strncmp(req,"POST /api/prompt/archive",24)){
+        char kc=req[10];const char*kind=kc=='p'?"prompts":"notes";  /* n=notes p=prompts */
         char*body=strstr(req,"\r\n\r\n");if(!body){_sresp(c,400,"text/plain","bad",3);return;}
-        char*k=strstr(body+4,kc=='t'?"\"d\":\"":"\"f\":\"");if(!k){_sresp(c,400,"text/plain","no name",7);return;}
+        char*k=strstr(body+4,"\"f\":\"");if(!k){_sresp(c,400,"text/plain","no name",7);return;}
         k+=5;char name[256];int ni=0;while(k[ni]&&k[ni]!='"'&&ni<255){name[ni]=k[ni];ni++;}name[ni]=0;
         for(char*p=name;*p;p++)if(*p=='/'){_sresp(c,400,"text/plain","bad name",8);return;}
         char src[P],dst[P],ad[P];

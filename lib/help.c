@@ -1,6 +1,5 @@
 /* help */
 static const char *HELP_SHORT =
-    "\033[1;33ma f\033[0m|flow        Triage: notes/tasks/prompts \xe2\x86\x92 agents\n"   /* highlighted: flow is the home loop */
     "a j \"prompt\"     Job: worktree + agent\n"
     "a a|c|co|g      Default/claude/codex/gemini\n"
     "a <#>           Open project by number\n"
@@ -12,7 +11,7 @@ static const char *HELP_FULL =
     "AGENTS  a c|co|g  a <key>++  a agent\n"
     "PROJ    a <#>  a add/remove/move/scan  a create <name>\n"
     "GIT     a push [msg]  a pr [title]  a pull/diff/revert\n"
-    "NOTES   a n \"text\"  a task  a flow\n"
+    "NOTES   a n \"text\"  a task\n"
     "REMOTE  a ssh [<#>]  a run <#> \"task\"\n"
     "CODE    a cat [1|3]  (3=100k index)\n"
     "SYSTEM  a ls/kill  a hub  a config/sync/update/perf";
@@ -86,7 +85,6 @@ static void gen_icache(void){
     "web status\tLLM login status\nweb signin\tLLM auto sign-in\nweb log\tmanual sign-in mode\n"
     "hub add\tadd job\nhub run\trun job\nhub rm\tdrop job\nhub log\tjob logs\n"
     "note\tnotes\nnote l\tlist notes\nnote r\treview notes\nssh add\tadd host\nssh all\twindow per host\n"
-    "task add\tadd task\ntask l\tlist tasks\ntask r\treview tasks\ntask rank\trank tasks\n"
     "prompt\tedit prompts\npow\tpower off/restart\npow o\tpower off\npow r\trestart\npow s\tsuspend\npow h\thibernate\n"
     "tutorial\tguided intro\noperator\tenglish → command\n",f);
     char sd[P];snprintf(sd,P,"%s/ssh",SROOT);
