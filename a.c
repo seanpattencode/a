@@ -121,7 +121,7 @@ _checkers() {
     { ! command -v infer &>/dev/null||{ infer run --no-progress-bar -o "$T/infer" -- $CC $A -w -c "$F" -o /dev/null >"$T/10" 2>&1;! grep -q 'NULLPTR_DEREFERENCE\|BUFFER_OVERRUN\|USE_AFTER_FREE' "$T/infer/report.txt" 2>/dev/null;};}||touch "$T/10.f" &
     wait
 }
-_o3(){ $CC $A -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -flto -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -flto -w -o "$ABIN/a.opt" "$F" -lutil;}  # glibc-static first: SIMD str*/stdio = 2.1x faster i render than musl (measured 7/5); musl fallback
+_o3(){ $CC $A -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -w -o "$ABIN/a.opt" "$F" -lutil;}  # glibc-static first: SIMD str*/stdio = 2.1x faster i render than musl (measured 7/5); musl fallback
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
 build) _PT=${EPOCHREALTIME/./};_tok_chk
