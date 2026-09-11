@@ -57,6 +57,7 @@ addEventListener('pointerdown',function(e){if(e.button||e.metaKey||e.ctrlKey||e.
   e.preventDefault();var g=t.closest('[data-go],[data-p]');g?navpage(g.dataset.go||g.dataset.p,e.timeStamp):t.click();},true);
 addEventListener('click',function(e){if(!e.isTrusted)return;if(e.target.closest(_act)&&!e.target.closest(_in)){e.stopImmediatePropagation();e.preventDefault();}},true);
 qi.onblur=function(){setTimeout(function(){if(document.activeElement===document.body)qi.focus()},0)};
+addEventListener('pageshow',function(){if(document.activeElement===document.body)qi.focus()});document.addEventListener('keydown',function(e){if(e.target===document.body&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&e.key.length===1&&e.key!==' '&&!v_ag.classList.contains('on'))qi.focus()}); // refresh/lost-focus net (google-style, Sean 2026-09-11): pageshow refocus + a stray printable key lands in qi
 window.onfocus=function(){omni.style.borderColor='#555'};window.onblur=function(){omni.style.borderColor='#333'};
 var _cmds=[__CMDS__],_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
