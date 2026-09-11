@@ -8,9 +8,9 @@
 Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini/grok windows resume their session
 (claude's launch id goes stale on compaction); `a ssh` host windows reconnect; all others reopen as a
 shell in cwd. Restore fires on session-create (tm_ensure_sess). A_SNAP_SESSION overrides the session.
-GUI layer (sway): foot/firefox windows are snapshotted (workspace, output, tmux-under-foot) and
-reopened onto their saved workspace on restore — foots reattach tmux, firefox uses its own session
-restore; every reopen (or "all already open") is printed. No sway → gui skipped, tmux still restores.
+GUI layer (sway): foot/firefox windows are snapshotted; restore opens AT MOST ONE of each, never
+the saved count (5 saved foots re-tiled onto ws1 at the 2026-09-11 boot and squashed it). Foot
+reattaches tmux, firefox session-restores itself. No sway → gui skipped, tmux still restores.
 """
 import sys, os, json, glob, re, socket, subprocess, time
 
@@ -145,47 +145,35 @@ def _sway(*args):                                     # swaymsg passthrough (soc
 
 GAPPS = {"foot", "firefox"}                           # gui apps we snapshot/reopen (sway app_ids)
 
-def _gwalk(n, ws, out, acc):                          # collect (app_id, ws, output, rect|None, pid) from a sway tree
+def _gwalk(n, ws, acc):                               # collect (app family, workspace, pid); firefox-nightly counts as firefox
     if n.get("type") == "workspace": ws = n.get("name", ws)
-    if n.get("type") == "output": out = n.get("name", out)
-    app = n.get("app_id") or ""
+    app = (n.get("app_id") or "").split("-")[0]
     if app in GAPPS and n.get("pid"):
-        acc.append({"app": app, "ws": ws, "out": out, "pid": n["pid"],
-                    "rect": [n["rect"][k] for k in ("x", "y", "width", "height")] if n.get("type") == "floating_con" else None})
-    for c in n.get("nodes", []) + n.get("floating_nodes", []): _gwalk(c, ws, out, acc)
+        acc.append({"app": app, "ws": ws, "pid": n["pid"]})
+    for c in n.get("nodes", []) + n.get("floating_nodes", []): _gwalk(c, ws, acc)
 
 
-def gui_save():                                       # sway gui windows worth reviving; tmux flag = foot was showing tmux
+def gui_save():                                       # sway gui windows on record; restore caps at one of each
     t = _sway("-t", "get_tree")
     if not t: return []
     acc = []
-    _gwalk(json.loads(t), "", "", acc)
-    for g in acc:
-        g["tmux"] = g["app"] == "foot" and any("tmux" in _cmdline(c) for c in tree(g.pop("pid")))
-        g.pop("pid", None)
+    _gwalk(json.loads(t), "", acc)
+    for g in acc: g.pop("pid", None)
     return acc
 
 
-def gui_restore(gui, dry=False):                      # reopen foot/firefox onto their saved workspaces, say so
-    if not gui: return
+def gui_restore(gui, dry=False):                      # AT MOST ONE foot + one firefox, never the saved count (Sean 2026-09-11:
+    if not gui: return                                # the 7:00 snapshot held 5 foots, boot re-tiled them all onto ws1)
     t = _sway("-t", "get_tree")
     if t is None: print("(no sway — gui skipped)"); return
     have = []
-    _gwalk(json.loads(t), "", "", have)
-    n_foot = sum(1 for h in have if h["app"] == "foot")
-    if n_foot >= sum(1 for g in gui if g["app"] == "foot") and \
-       (any(h["app"] == "firefox" for h in have) or not any(g["app"] == "firefox" for g in gui)):
-        print(f"  gui: all {len(gui)} already open"); return
-    for g in [x for x in gui if x["app"] == "foot"][n_foot:]:     # only the missing ones (current terminal counts)
-        cmd = f'workspace {g["ws"]}; exec foot{" tmux attach -t " + TMS if g["tmux"] else ""}'
-        print(f'  {"[dry] " if dry else ""}↻ foot → ws {g["ws"]}/{g["out"]}{" (tmux)" if g["tmux"] else ""}')
-        if not dry: _sway(cmd)
-    ff = [x for x in gui if x["app"] == "firefox"]
-    if ff and not any(h["app"] == "firefox" for h in have):
-        ws = ff[0]["ws"] if len({x["ws"] for x in ff}) == 1 else None
-        print(f'  {"[dry] " if dry else ""}↻ firefox → own session restore' + (f" (ws {ws})" if ws else " (multiple ws, left as-is)"))
-        if not dry:
-            _sway(f'workspace {ws}; exec firefox' if ws else 'exec firefox')
+    _gwalk(json.loads(t), "", have)
+    for app, run in (("foot", "foot tmux attach -t " + TMS), ("firefox", "firefox")):
+        g = next((x for x in gui if x["app"] == app), None)
+        if not g: continue
+        if any(h["app"] == app for h in have): print(f"  gui: {app} already open"); continue
+        print(f'  {"[dry] " if dry else ""}↻ {app} → ws {g["ws"]} (one only)')
+        if not dry: _sway(f'workspace {g["ws"]}; exec {run}')
 
 
 def _pane_tail(wid):                                  # last non-blank visible line of a window → identifies shells
