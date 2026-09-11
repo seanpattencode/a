@@ -17,7 +17,7 @@ import sys, os, json, glob, re, socket, subprocess, time
 DEV = socket.gethostname()
 TMS = os.environ.get("A_SNAP_SESSION", "a")          # a's tmux session (overridable for testing)
 GIT = os.path.expanduser("~/a/adata/git")
-SNAPDIR = f"{GIT}/sessions"
+SNAPDIR = os.path.expanduser("~/a/adata/local/sessions")  # machine-rewritten state: local, never git (Sean 2026-09-11); .prev = undo
 SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
 ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # session id on a claude cmdline
@@ -125,6 +125,7 @@ def save():
     if not gui:                                       # sway down mid-save — keep last known gui (don't clobber with emptiness)
         try: gui = json.load(open(SNAP)).get("gui", [])
         except (OSError, ValueError): gui = []
+    if os.path.exists(SNAP): os.replace(SNAP, SNAP + ".prev")   # rotation, not git: one-step undo for rewritten state
     json.dump({"host": DEV, "session": TMS, "jobs": jobs, "gui": gui}, open(SNAP, "w"), indent=1)
     print(f"✓ snapshot {len(jobs)} window(s) + {len(gui)} gui · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
     for m, j in zip(here, jobs):
@@ -201,7 +202,7 @@ def _live():                                         # names of currently-open l
     return set(r.stdout.split())
 
 
-def show(flt=""):                                     # aggregate EVERY device's saved windows — snapshots sync via git
+def show(flt=""):                                     # saved windows per device file (local since 2026-09-11; live remote view: a res <host>)
     files = sorted(glob.glob(f"{SNAPDIR}/*.json"), key=os.path.getmtime, reverse=True)
     if not files: print("(no snapshots — run `a res save` on a device)"); return
     live, n = _live(), 0
