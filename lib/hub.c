@@ -142,18 +142,22 @@ static int hub_list(int all,const char*q){
         if(m)printf("%-2d%-9s%-10s%s %s\n",i,j->n,lr[0]?lr:"-",on?"✓":" ",cp);
         else printf("%-2d%-11s%-7s%-13s%-8s%s %s\n",i,j->n,j->s,lr[0]?lr:"-",j->d,on?"✓":" ",cp);}
     if(q)printf("\n%d/%d match '%s'\n",sh,NJ,q);
-    else printf(NJ-sh?"\n%d jobs (+%d disabled, a hub all)\n":"\n%d jobs\n",sh,NJ-sh);
-    printf("a hub <#>       run now\na hub on/off #  toggle\na hub add|rm    create/delete\na hub log [#]   journalctl\na hub sync      re-register this device\na hub all       show disabled\n");
+    else printf(NJ-sh?"\n%d jobs (+%d disabled, a cron all)\n":"\n%d jobs\n",sh,NJ-sh);
+    printf("a cron <#>      run now\na cron on/off # toggle\na cron add|rm   create/delete (sched = systemd OnCalendar, not crontab 5-field)\na cron log [#]  journalctl\na cron sync     re-register this device\na cron all      show disabled\n");
     return 0;}
 
+/* a cron — the fleet scheduler (cron, but fleet-wide: per-device jobs, table, logs, boot jobs). Named cron because
+   that's what it is; `a hub` is a TRANSITIONAL alias — "hub" is ambiguous, "cron" says scheduler — recommended for
+   all future work; hub support will drop eventually (Sean 2026-09-11). */
 static int cmd_hub(int argc, char **argv) {
+    if(!strcmp(argv[1],"hub"))fprintf(stderr,"\033[2mnote: a hub -> a cron (transitional alias, will drop; use a cron)\033[0m\n");
     init_db(); hub_load();
     const char *sub=argc>2?argv[2]:NULL;
 
     if(!sub||!strcmp(sub,"all"))return hub_list(sub&&!strcmp(sub,"all"),NULL);
 
     if(!strcmp(sub,"add")) {
-        if(argc<6) { fprintf(stderr,"Usage: a hub add <name> <sched|boot> <cmd...>\n"); return 1; }
+        if(argc<6) { fprintf(stderr,"Usage: a cron add <name> <sched|boot> <cmd...>\n"); return 1; }
         hub_t j={.en=1}; snprintf(j.n,64,"%s",argv[3]); snprintf(j.s,32,"%s",argv[4]);
         char cmd[B]=""; ajoin(cmd,B,argc,argv,5);
         snprintf(j.p,512,"%s",cmd); snprintf(j.d,64,"%s",DEV);
@@ -189,7 +193,7 @@ static int cmd_hub(int argc, char **argv) {
 #else
         {char c[B];snprintf(c,B,
             "systemctl --user list-unit-files --type=timer --no-legend 2>/dev/null|awk '/^(a|aio)-/{print $1}'|xargs -r systemctl --user disable --now >/dev/null 2>&1;"
-            "cd %s/.config/systemd/user&&ls a-*.timer a-*.service aio-*.timer aio-*.service 2>/dev/null|grep -v '^a-ui\\.'|xargs -r rm -f;"  /* a-ui.service = `a ui on`'s unit, not a hub job */
+            "cd %s/.config/systemd/user&&ls a-*.timer a-*.service aio-*.timer aio-*.service 2>/dev/null|grep -v '^a-ui\\.'|xargs -r rm -f;"  /* a-ui.service = `a ui on`'s unit, not a cron job */
             "systemctl --user daemon-reload",HOME);(void)!system(c);}
 #endif
         int m=0; for(int i=0;i<NJ;i++) if(!strcmp(HJ[i].d,DEV)&&HJ[i].en) { hub_timer(&HJ[i],1); m++; }

@@ -307,7 +307,7 @@ install)
     # rationale: `a clone` brings `a` itself, but the user's personal repos (updater, trading,
     # research) don't ride along. manifest lives in adata so it syncs across the fleet -> a new
     # device's `a install` ends up with the same user repos. scope-bounded to git clone only;
-    # any per-repo setup lives inside that repo (run it via `a hub` or its own bootstrap).
+    # any per-repo setup lives inside that repo (run it via `a cron` or its own bootstrap).
     [[ -f "$SROOT/repos.txt" ]]&&while IFS= read -r ln;do ln="${ln%%#*}";set -- $ln;[[ -z "$1" ]]&&continue
         tgt="${2:-$HOME/${1##*/}}";tgt="${tgt/#\~/$HOME}";[[ -d "$tgt/.git" ]]&&continue
         info "clone $1 -> $tgt"
@@ -588,7 +588,7 @@ static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
     {"a",cmd_a_default},{"add",cmd_add},{"agent",cmd_agent},
     {"book",cmd_book},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_new},{"cmd",cmd_cmd},{"config",cmd_config},
-    {"copy",cmd_copy},{"create",cmd_create},
+    {"copy",cmd_copy},{"create",cmd_create},{"cron",cmd_hub},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},{"handoff",cmd_handoff},
     {"help",cmd_help_full},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
