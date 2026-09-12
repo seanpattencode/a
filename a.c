@@ -220,28 +220,23 @@ install)
     case $OS in
         mac)
             _brew_ensure
-            brew tap hudochenkov/sshpass 2>/dev/null; brew install git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null||brew upgrade git llvm tmux node gh sshpass rclone cppcheck gcc python cliclick &>/dev/null
-            /opt/homebrew/bin/python3 -m pip install -q --break-system-packages pyobjc-framework-Quartz 2>/dev/null
+            brew tap hudochenkov/sshpass 2>/dev/null; brew install git llvm tmux node gh sshpass rclone cppcheck gcc python &>/dev/null||brew upgrade git llvm tmux node gh sshpass rclone cppcheck gcc python &>/dev/null
             command -v clang &>/dev/null || { xcode-select --install 2>/dev/null; warn "Run 'xcode-select --install' then retry"; }
             sh "$D/lib/keys.c" on 2>/dev/null || :
             ok "tmux + node + gh + rclone" ;;
         debian)
             if [[ -n "$SUDO" ]]; then export DEBIAN_FRONTEND=noninteractive
-                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone rsync tcc gcc cppcheck adb 2>/dev/null; $SUDO apt install -yqq cbmc frama-c-base 2>/dev/null || true
+                $SUDO apt update -qq && $SUDO apt install -yqq clang libclang-rt-dev tmux git curl python3-pip sshpass rclone rsync tcc gcc cppcheck adb 2>/dev/null; $SUDO apt install -yqq frama-c-base 2>/dev/null || true
                 command -v gh &>/dev/null||{ curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg|$SUDO tee /etc/apt/keyrings/gh.gpg>/dev/null&&echo "deb [signed-by=/etc/apt/keyrings/gh.gpg] https://cli.github.com/packages stable main"|$SUDO tee /etc/apt/sources.list.d/gh.list>/dev/null&&$SUDO apt update -qq&&$SUDO apt install -yqq gh;}||true; ok "pkgs"
                 command -v infer &>/dev/null||{ V="v1.2.0";curl -sSL "https://github.com/facebook/infer/releases/download/$V/infer-linux-x86_64-$V.tar.xz"|tar -xJ -C /tmp/&&$SUDO mv "/tmp/infer-linux-x86_64-$V" /usr/local/lib/infer&&$SUDO ln -sf /usr/local/lib/infer/bin/infer /usr/local/bin/infer&&ok "infer"||warn "infer";}
             fi; install_node; [[ -z "$SUDO" ]] && { command -v tmux &>/dev/null || warn "tmux needs: sudo apt install tmux"; } ;;
         arch)
-            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone rsync github-cli tcc gcc cppcheck cbmc frama-c android-tools 2>/dev/null && ok "pkgs"
+            if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone rsync github-cli tcc gcc cppcheck frama-c android-tools 2>/dev/null && ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi ;;
         fedora)
-            # Two-step install: core (must succeed) then optional analyzers (best-effort).
-            # cbmc/frama-c on Fedora pull in 500+ pkgs (Coq/OCaml/etc) and OOM small VMs;
-            # tcc isn't in default Fedora repos. --skip-unavailable + --setopt=install_weak_deps=False
-            # keeps the optional step bounded. Without splitting, one missing pkg aborted the
-            # whole transaction and left node/zstd uninstalled.
+            # core first (must succeed), analyzers best-effort: frama-c pulls 500+ pkgs (OOMs small VMs), tcc not in default repos; unsplit, one missing pkg aborted node/zstd
             if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd android-tools 2>/dev/null && ok "pkgs"
-                $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone rsync tcc cppcheck cbmc frama-c 2>/dev/null || :
+                $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone rsync tcc cppcheck frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
         termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone rsync cronie termux-services android-tools ffmpeg && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
@@ -252,7 +247,9 @@ install)
     [[ -f "$E/e.c" ]] || git clone https://github.com/seanpattencode/e "$E" 2>/dev/null || :
     [[ -f "$E/e.c" ]] && sh "$E/e.c" install || :
     _shell_funcs
-    [[ "$OS" == debian || "$OS" == arch || "$OS" == fedora ]] && { mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps; printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12"/><text x="32" y="50" font-family="monospace" font-size="52" fill="#fff" text-anchor="middle">a</text></svg>' >~/.local/share/icons/hicolor/scalable/apps/a.svg; printf '[Desktop Entry]\nType=Application\nName=a\nComment=agent manager\nExec=a\nTerminal=true\nIcon=a\nCategories=Development;\n' >~/.local/share/applications/a.desktop; ok "app icon"; }  # launcher icon so users SEE a exists (Sean 2026-08-23); mac/windows next
+    _SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12"/><text x="32" y="50" font-family="monospace" font-size="52" fill="#fff" text-anchor="middle">a</text></svg>'  # launcher icon so users SEE a exists (Sean 2026-08-23); windows next
+    [[ "$OS" == debian || "$OS" == arch || "$OS" == fedora ]] && { mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps; printf %s "$_SVG" >~/.local/share/icons/hicolor/scalable/apps/a.svg; printf '[Desktop Entry]\nType=Application\nName=a\nComment=agent manager\nExec=a\nTerminal=true\nIcon=a\nCategories=Development;\n' >~/.local/share/applications/a.desktop; ok "app icon"; }
+    [[ "$OS" == mac ]] && { AP=~/Applications/a.app;IS=$(mktemp -d);mkdir -p "$AP/Contents/MacOS" "$AP/Contents/Resources" "$IS/a.iconset";printf %s "$_SVG" >"$IS/a.svg";qlmanage -t -s 1024 -o "$IS" "$IS/a.svg" &>/dev/null&&mv "$IS/a.svg.png" "$IS/a.iconset/icon_512x512@2x.png"&&iconutil -c icns "$IS/a.iconset" -o "$AP/Contents/Resources/a.icns"||:;printf '<plist version="1.0"><dict><key>CFBundleExecutable</key><string>a</string><key>CFBundleIconFile</key><string>a</string><key>CFBundleIdentifier</key><string>com.seanpatten.a</string><key>CFBundleName</key><string>a</string></dict></plist>' >"$AP/Contents/Info.plist";printf %s 'import Cocoa;import WebKit;let a=NSApplication.shared;a.setActivationPolicy(.regular);let w=NSWindow(contentRect:.init(x:0,y:0,width:1280,height:820),styleMask:.init(rawValue:15),backing:.buffered,defer:false);w.title="a";w.center();w.appearance=NSAppearance(named:.darkAqua);w.titlebarAppearsTransparent=true;w.backgroundColor=NSColor.black;let v=WKWebView(frame:w.contentView!.bounds);v.autoresizingMask=[.width,.height];v.load(URLRequest(url:URL(string:"http://localhost:1111")!));w.contentView!.addSubview(v);NotificationCenter.default.addObserver(forName:NSWindow.willCloseNotification,object:w,queue:nil){_ in exit(0)};try? Process.run(URL(fileURLWithPath:"/usr/bin/osascript"),arguments:["-e","tell app \"Terminal\" to do script \"a\""]);w.makeKeyAndOrderFront(nil);a.activate(ignoringOtherApps:true);a.run()' >"$IS/a.swift";swiftc "$IS/a.swift" -o "$AP/Contents/MacOS/a" 2>/dev/null||:;rm -rf "$IS";/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$AP" 2>/dev/null||:;ok "a.app"; }  # own window (Sean 9/1); Mach-O req'd or Spotlight hides it (avocado ablation)
     install_cli() {
         local pkg="$1" cmd="$2" p=$(command -v "$cmd" 2>/dev/null)
         [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && "$cmd" --version &>/dev/null && { ok "$cmd"; return; }
@@ -268,21 +265,11 @@ install)
         _cok&&ok "claude"||warn "claude failed";}
     python3 -c 'import json,os;p=os.path.expanduser("~/.claude/settings.json");os.makedirs(os.path.dirname(p),exist_ok=True);d=json.load(open(p)) if os.path.exists(p) else {};d["effortLevel"]="xhigh";json.dump(d,open(p,"w"),indent=2)' 2>/dev/null && ok "effort=xhigh"
     install_cli "$([[ $OS == termux ]] && echo @mmmbuto/codex-cli-termux || echo @openai/codex)" "codex"
-    install_cli "@google/gemini-cli" "gemini" scripts
+    install_cli "@google/gemini-cli" "gemini"
     [[ "$OS" == termux ]] && info "Gemini auth: NO_BROWSER=true gemini"
     command -v uv &>/dev/null&&ok "uv"||{ info "Installing uv...";curl -LsSf https://astral.sh/uv/install.sh|sh&&export PATH="$HOME/.local/bin:$PATH"&&ok "uv"||warn "uv failed";}
-    if ! command -v uv &>/dev/null; then
-        _best_py(){ for v in python3.14 python3.13 python3.12 python3.11 python3;do command -v $v &>/dev/null&&$v -c 'import venv' 2>/dev/null&&echo $v&&return;done;}
-        VENV="$D/adata/venv";PY=$(_best_py)
-        [[ -n "$PY" ]]&&{ [[ -f "$VENV/bin/python" ]]&&ok "venv"||{ $PY -m venv "$VENV"&&ok "venv"||warn "venv failed";}
-        [[ -f "$VENV/bin/pip" ]]&&$VENV/bin/pip install -q pexpect prompt_toolkit aiohttp 2>/dev/null&&ok "python deps"||warn "pip failed";}
-    fi
-    if ! python3 -c "from playwright.sync_api import sync_playwright;sync_playwright().start().chromium.launch(headless=True).close()" 2>/dev/null; then
-        info "Installing playwright browser deps..."
-        if command -v pacman &>/dev/null; then sudo pacman -S --noconfirm --needed libxcomposite gtk3 alsa-lib nss 2>/dev/null && ok "playwright deps" || warn "playwright deps"
-        elif command -v apt-get &>/dev/null; then sudo apt-get install -y libxcomposite1 libgtk-3-0t64 libasound2t64 libnss3 2>/dev/null && ok "playwright deps" || warn "playwright deps"; fi
-    else ok "playwright deps"; fi
     command -v ollama &>/dev/null&&ok "ollama"||{ [[ -n "$SUDO" || $EUID -eq 0 ]]&&{ info "Installing ollama...";curl -fsSL https://ollama.com/install.sh|sh&&ok "ollama"||warn "ollama failed";}||warn "ollama needs sudo";}
+    command -v yt-dlp &>/dev/null&&ok "yt-dlp"||{ info "Installing yt-dlp...";[[ "$OS" == termux ]]&&pkg install -y yt-dlp||{ Y_=macos;[[ "$OSTYPE" != darwin* ]]&&{ Y_=linux;[[ $(uname -m) == aarch64 ]]&&Y_=linux_aarch64;};curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_$Y_" -o "$BIN/yt-dlp"&&chmod +x "$BIN/yt-dlp";};command -v yt-dlp &>/dev/null&&ok "yt-dlp"||warn "yt-dlp failed";}  # a music dies SILENTLY without it (child's output is /dev/null) — brew bottle was broken on macOS 27, so: standalone binary (Sean "mozart not playing" 9/11)
     command -v gh &>/dev/null&&ok "gh"||[[ "$OS" == termux ]]||{ info "Installing gh...";A_=$(uname -m);[[ "$A_" == x86_64 ]]&&A_=amd64;[[ "$A_" == aarch64||"$A_" == arm64 ]]&&A_=arm64;O_=linux;[[ "$OSTYPE" == darwin* ]]&&O_=macOS;V_=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest 2>/dev/null|grep -m1 tag_name|cut -d\" -f4|tr -d v);[[ -z "$V_" ]]&&V_=2.63.2;T_=$(mktemp -d);curl -fsSL "https://github.com/cli/cli/releases/download/v$V_/gh_${V_}_${O_}_${A_}.tar.gz"|tar -xzf - -C "$T_"&&mv "$T_"/*/bin/gh "$HOME/.local/bin/gh" 2>/dev/null&&ok "gh $V_"||warn "gh failed";rm -rf "$T_";}
     "$BIN/a" ui on 2>/dev/null && ok "UI service (localhost:1111)" || :
     [[ ! -s "$HOME/.tmux.conf" ]] && "$BIN/a" config tmux_conf y 2>/dev/null && ok "tmux config (mouse enabled)" || :
@@ -622,7 +609,7 @@ static void perf_arm(const char *cmd) {
     {char*d=readf(pf,NULL);unsigned pl=perf_limit(d,cmd);if(pl>=500)l=pl;free(d);}
     snprintf(perf_msg,B,"\n\033[31m✗ PERF KILL\033[0m: 'a %s' >%.1fms (%s)\n  %s\n",cmd,l/1000.0,DEV,pf);
     signal(SIGALRM,perf_alarm);
-    struct itimerval tv={{0,0},{(long)(l/1000000),(long)(l%1000000)}};setitimer(ITIMER_REAL,&tv,NULL);
+    struct itimerval tv={{0,0},{(long)(l/1000000),(int)(l%1000000)}};setitimer(ITIMER_REAL,&tv,NULL);
 }
 static void perf_disarm(void) { alarm(0);signal(SIGALRM,SIG_DFL); }
 static struct timespec gt0;

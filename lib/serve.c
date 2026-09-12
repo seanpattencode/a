@@ -690,17 +690,17 @@ static void handle(int c){
             snprintf(cm,32,"a music %s \"$K\"",req[10]=='c'?"cfg":req[10]=='t'?"trim":"rm");
             FILE*p=popen(cm,"r");size_t n=p?fread(b,1,255,p):0;if(p)pclose(p);
             sresp(c,200,"text/plain",b,(int)n);return;}
-        if(req[10]=='g'||req[10]=='f'){char id[32]={0};struct stat st;   /* ONE streamer, cached + growing file: WebKit (a.app webview) refuses media without 206+total — and no more readf of 100MB tracks into RAM */
+        if(req[10]=='g'||req[10]=='f'){char id[32]={0};struct stat st;   /* ONE streamer, cached+growing: WebKit needs 206+total */
             if(req[10]=='f')docrel(req,rel);
             else{qp(req,"?f=",id,32);setenv("I",id,1);
                 #define RES {FILE*ip=popen("sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q","r");if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}}
-                RES}   /* the 10s head prefetch recorded the name */
-            if(fork())return;   /* stream child; worker logs+exits */
+                RES}   /* head recorded the name */
+            if(fork())return;   /* stream child */
             char fl[P+300],pt[P+308],h[300];
             #define FLP snprintf(fl,sizeof fl,"%s/%s",mc,rel),snprintf(pt,sizeof pt,"%s.part",fl)
             FLP;
-            if(id[0]&&(!rel[0]||access(fl,F_OK))){   /* incomplete: kick download, stream as it grows (blocking = dead air, Sean 09-01) */
-                if(!rel[0]){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}   /* head: writes .index row + .sz clen AFTER its 160KB curl (no .part race) */
+            if(id[0]&&(!rel[0]||access(fl,F_OK))){   /* kick download, stream as it grows */
+                if(!rel[0]){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}   /* head writes row+.sz after its curl */
                     for(int w=0;w<600&&!rel[0];w++){usleep(100000);RES}
                     if(!rel[0])_exit(0);
                     FLP;}
@@ -709,7 +709,7 @@ static void handle(int c){
             #undef FLP
             if(!rel[0])_exit(0);
             long long T=0;if(!stat(fl,&st))T=st.st_size;
-            else if(id[0]){snprintf(h,300,"%s/.sz%s",mc,id);FILE*z=fopen(h,"r");if(z){(void)!fscanf(z,"%lld",&T);fclose(z);}}   /* growing: final size = clen off the head's URL; no .sz (old row) = length-less 200 until complete */
+            else if(id[0]){snprintf(h,300,"%s/.sz%s",mc,id);FILE*z=fopen(h,"r");if(z){(void)!fscanf(z,"%lld",&T);fclose(z);}}   /* growing: total=clen; no .sz = 200 */
             char*rg=strstr(req,"Range: bytes=");long long s0=0,e0=T?T-1:-1,off;
             if(rg){s0=atoll(rg+13);char*dh=strchr(rg+13,'-');if(dh&&isdigit((unsigned char)dh[1]))e0=atoll(dh+1);if(T&&e0>=T)e0=T-1;}
             int hl=snprintf(h,300,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nAccept-Ranges:bytes\r\nConnection:close\r\n",rg&&T?206:200,strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm");
@@ -717,16 +717,19 @@ static void handle(int c){
             else if(T)hl+=snprintf(h+hl,300-(size_t)hl,"Content-Length:%lld\r\n\r\n",T);
             else hl+=snprintf(h+hl,300-(size_t)hl,"Cache-Control:no-store\r\n\r\n");
             if(write(c,h,(size_t)hl)!=hl)_exit(0);
+            if(rg&&T&&id[0]&&access(fl,F_OK)&&(stat(pt,&st)||s0>(long long)st.st_size)){char pc[176];   /* range past .part: proxy upstream — players demand tail cues before starting */
+                snprintf(pc,176,"exec curl -s -r %lld-%lld \"$(cat \"$MC/.url$I\" 2>&-)\"",s0,e0);
+                dup2(c,1);execl("/bin/sh","sh","-c",pc,(char*)0);_exit(0);}
             off=s0;
             for(int idle=0;idle<600;idle++){int fd=open(access(fl,F_OK)?pt:fl,O_RDONLY);
                 if(fd>=0){char bu[65536];ssize_t r;
                     if(!fstat(fd,&st)&&st.st_size>off&&lseek(fd,(off_t)off,SEEK_SET)>=0)
                         while((r=read(fd,bu,65536))>0){
-                            if(e0>=0&&off+r>e0+1)r=(ssize_t)(e0+1-off);   /* never 0: off>e0 exited */
+                            if(e0>=0&&off+r>e0+1)r=(ssize_t)(e0+1-off);
                             if(write(c,bu,(size_t)r)!=r)_exit(0);off+=r;idle=0;
-                            if(e0>=0&&off>e0)_exit(0);}   /* budget served (probe=2B) */
+                            if(e0>=0&&off>e0)_exit(0);}
                     close(fd);}
-                if((e0>=0&&off>e0)||(!stat(fl,&st)&&off>=st.st_size))_exit(0);   /* complete + fully sent */
+                if((e0>=0&&off>e0)||(!stat(fl,&st)&&off>=st.st_size))_exit(0);
                 usleep(100000);}
             _exit(0);}
         else{char tf[P];snprintf(tf,P,"%s/common/music.html",SROOT);size_t tl=0;char*th=readf(tf,&tl);if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","x",1);return;}}
