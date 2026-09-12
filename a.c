@@ -102,7 +102,12 @@ _perf_lim() { local f="$D/adata/git/perf/$(cat "$D/adata/local/.device" 2>/dev/n
 _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
     [[ $l -gt 0 && $e -gt $l ]] && { echo -e "\033[31m✗ PERF KILL\033[0m: sh a.c $1 ${e}us > ${l}us" >&2; exit 1; }
     echo -e "${e}us" >&2;}
-_tok_chk() { local f="$D/adata/git/perf/tok.txt" t c;c=$(head -1 "$f" 2>/dev/null||:)  # entropy deadman: human-only cap, see warning in file
+_tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen, caps human-only: ramped whole-repo fable-equiv cap (.tokrule; read: i tokcap ~/a) + static a.c+lib cap (tok.txt)
+    r=$(python3 "$HOME/i/lib/tokcap/tokcap.py" cap "$D" 2>/dev/null||:)  # no ~/i (public box) → ramp check skips, static cap below still guards
+    if [[ "$r" =~ ^[0-9]+$ ]]; then t=$(( $(git -C "$D" ls-files -z 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
+        echo "tok repo $t/$r b/4 ($(( t<=r ? r-t : t-r )) $([[ $t -le $r ]] && echo left || echo over) · ramp: i tokcap $D)" >&2
+        [[ $t -le $r ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: repo $t > cap $r b/4 — simplify, don't raise (.tokrule)" >&2;sed 1d "$D/.tokrule" >&2 2>/dev/null;exit 1; }; fi
+    c=$(head -1 "$f" 2>/dev/null||:)
     [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file → hardcoded floor; never fail open
     t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
     echo "tok $t/$c ($(( t<=c ? c-t : t-c )) $([[ $t -le $c ]] && echo left || echo over))" >&2
