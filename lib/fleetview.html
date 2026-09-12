@@ -9,9 +9,9 @@ html,body{margin:0;height:100%}
 body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:column;overflow:hidden}
 #top{padding:6px 10px;border-bottom:1px solid #222;display:flex;gap:14px;align-items:center;font-size:13px;color:#888;white-space:nowrap;overflow:hidden}
 #top b{color:#fff;font-weight:600}#ms{color:#6c6;font-variant-numeric:tabular-nums}
-#main{flex:1;display:flex;flex-direction:column;min-height:0}   /* list at BOTTOM (thumb reach, Sean 8/30) */
-#s{height:36vh;overflow-y:auto;border-top:1px solid #222;background:#0a0a0a}
-#tw{flex:1;position:relative;background:#000}
+#main{flex:1;position:relative}   /* #s overlays #tw (bottom = thumb reach): toggle never resizes the terminal */
+#s{position:absolute;left:0;right:0;bottom:0;height:36vh;overflow-y:auto;border-top:1px solid #222;background:#0a0a0a}
+#tw{height:100%;position:relative;background:#000}
 .tf{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;visibility:hidden}   /* hidden-not-display:none: full size, so prerendered terminals fit to the REAL cols/rows */
 .tf.on{visibility:visible}
 .g{color:#6cf;padding:9px 10px 3px;font-size:14px;position:sticky;top:0;background:#0a0a0a}
@@ -122,7 +122,7 @@ function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('
 hook(window);
 pv.onpointerdown=e=>{e.preventDefault();move(-1);};   /* act on press, and don't steal focus */
 nx.onpointerdown=e=>{e.preventDefault();move(1);};
-function setlist(on){localStorage.fwlist=on?'1':'0';filt();}   /* ☰ = list collapsed (all tmux), persisted; small screens start collapsed; a live find shows it */
+function setlist(on){localStorage.fwlist=on?'1':'0';filt();}   /* ☰ toggle, persisted; small screens start collapsed; find forces the list open — so ☰ mid-find clears q too */
 setlist(localStorage.fwlist?localStorage.fwlist==='1':innerWidth>640);
-tg.onpointerdown=e=>{e.preventDefault();Q.value='';setlist(S.hidden);};   /* ☰ mid-find = clear + close (q forces the list open, so it must go) */
+tg.onpointerdown=e=>{e.preventDefault();Q.value='';setlist(S.hidden);};
 </script>
