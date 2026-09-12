@@ -119,14 +119,14 @@ static hub_t *hub_find(const char *s) {
 }
 
 /* MM-DD HH:MM of last trigger, local jobs only (systemctl is local) */
-static void hub_last(hub_t*j,char*out,int sz){out[0]=0;
+static void hub_last(hub_t*j,char*out){out[0]=0;
     if(strcmp(j->d,DEV))return;
 #if !defined(__ANDROID__) && !defined(__APPLE__)
     char c[B],r[256];snprintf(c,B,"systemctl --user show a-%s.timer -p LastTriggerUSec --value 2>/dev/null",j->n);
     pcmd(c,r,256);r[strcspn(r,"\n")]=0;
     int yr,mo,da,hr,mn;char wk[16];
     if(sscanf(r,"%15s %d-%d-%d %d:%d",wk,&yr,&mo,&da,&hr,&mn)==6)
-        snprintf(out,(size_t)sz,"%02d-%02d %02d:%02d",mo,da,hr,mn);
+        snprintf(out,32,"%02d-%02d %02d:%02d",mo,da,hr,mn);
 #endif
 }
 
@@ -137,7 +137,7 @@ static int hub_list(int all,const char*q){
     for(int i=0;i<NJ;i++){hub_t*j=&HJ[i];
         if(!all&&!q&&!j->en)continue;
         if(q&&!strcasestr(j->n,q)&&!strcasestr(j->p,q)&&!strcasestr(j->d,q))continue;
-        int on=hub_on(j);char cp[512],lr[32];hub_trunc(cp,512,j->p,cw);hub_last(j,lr,32);
+        int on=hub_on(j);char cp[512],lr[32];hub_trunc(cp,512,j->p,cw);hub_last(j,lr);
         sh++;
         if(m)printf("%-2d%-9s%-10s%s %s\n",i,j->n,lr[0]?lr:"-",on?"✓":" ",cp);
         else printf("%-2d%-11s%-7s%-13s%-8s%s %s\n",i,j->n,j->s,lr[0]?lr:"-",j->d,on?"✓":" ",cp);}

@@ -61,6 +61,7 @@ var _cmds=[__CMDS__],_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
 var PAGES=[['/bm','a bm'],['#profile','a profile'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/music','a music'],['/note','a note'],['/tasks','a tasks'],['/flow','flow'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs']];
+try{if(window.A&&A.native)PAGES=PAGES.concat([['native:setup','a setup'],['native:native','a native term'],['native:read','a read'],['native:rec','a rec']])}catch(e){}   // Android apk only: native OS pages (set launcher/keyboard/permissions, terminal, reader, recorder) in the same menu, opened via the A.native bridge
 /* agent/type picker: own PAGE (v_ag), not a dropdown — go('/ag') is a DOM toggle, <1ms like all nav */
 var AGO=[['c','claude'],['co','codex'],['g','gemini'],['grok','grok'],['note','note'],['task','task']],AG=0;
 try{for(var _ai=0;_ai<AGO.length;_ai++)if(AGO[_ai][0]===localStorage.agm)AG=_ai}catch(e){}
@@ -76,7 +77,7 @@ function gsearch(){var q=qi.value.trim();if(q)window.open('https://www.google.co
 function sav(k,t){qi.value='';qi.style.height='auto';qo.innerHTML='<div style="padding:10px 16px;color:#ccc;font-size:17px">⟳ '+k+'… '+t.slice(0,120).replace(/</g,'&lt;')+'</div>';
   fetch(k=='note'?'/note':'/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:k=='note'?'c='+encodeURIComponent(t):'q='+encodeURIComponent('task add '+t)}).then(function(r){return r.text()}).then(function(x){var m=x.match(/https?:\/\/[^\s<]+/);qo.innerHTML='<div style="padding:10px 16px;color:#ccc;font-size:17px">✓ '+k+' saved'+(m?' → <a href="'+m[0]+'" target=_blank style=color:#fff>'+m[0]+'</a>':'')+'</div>';qi.focus()}).catch(function(){qo.innerHTML='<div style="padding:10px 16px;color:#fff;font-size:16px">✗ '+k+' failed</div>'})}
 function pfreq(r){try{return +(localStorage['pf'+r]||0)}catch(e){return 0}}
-function navpage(r,t){try{localStorage['pf'+r]=pfreq(r)+1}catch(e){}if(views[r])go(r,t);else location.href=r}
+function navpage(r,t){if(r.slice(0,7)=='native:'){try{A.native(r.slice(7))}catch(e){}return}try{localStorage['pf'+r]=pfreq(r)+1}catch(e){}if(views[r])go(r,t);else location.href=r}
 function _sg(){return qo.querySelectorAll('[data-p],[data-c],[data-a],[data-g],[data-n]')}
 function hl(){var it=_sg();it.forEach(function(el,i){var s=i===_cs;el.style.background=s?'#fff':'';el.style.color=s?'#000':el.dataset.c?'#555':el.dataset.a?'#fff':el.dataset.g?'#aaa':el.dataset.n?'#999':''})}
 qi.oninput=function(){var _t=performance.now(),v=qi.value.toLowerCase();_cs=0;qi.style.height='auto';qi.style.height=qi.scrollHeight+'px';

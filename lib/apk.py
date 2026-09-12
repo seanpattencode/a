@@ -50,6 +50,7 @@ private val wsExec=java.util.concurrent.Executors.newSingleThreadExecutor()
 private fun pg(s:String)=w.loadDataWithBaseURL(null,"<body style='font:18px monospace;padding:20px;background:#000;color:#0f0'>$s","text/html","utf-8",null)
 private fun jsEval(s:String)=h.post{w.evaluateJavascript(s,null)}
 @JavascriptInterface fun retry(){h.post{spawn();n=0;w.loadUrl(cur)}}
+@JavascriptInterface fun native(name:String){h.post{nav?.invoke(name)}}   // web home menu -> a native view (setup/native/read/rec); localhost menu lists these when window.A exists
 @JavascriptInterface fun wsOpen(url:String){wsExec.submit{try{val s=Socket("127.0.0.1",1112);wsOut=s.getOutputStream()
 val k=android.util.Base64.encodeToString(ByteArray(16).also{java.security.SecureRandom().nextBytes(it)},android.util.Base64.NO_WRAP)
 wsOut!!.write("GET /ws HTTP/1.1\r\nHost: 127.0.0.1:1112\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $k\r\nSec-WebSocket-Version: 13\r\n\r\n".toByteArray())
@@ -108,61 +109,8 @@ override fun doUpdateVisitedHistory(v:WebView,url:String?,re:Boolean){if(url!=nu
 override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
 val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE}
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
-// ONE page nav = the web UI's own home omnibox. This selector holds only what HTML can't reach on-device (two menus both listing pages was confusing — Sean 2026-08-23). Shortcuts / adb --es nav <page> route into the web page.
-val items=listOf<Pair<String,()->Unit>>("a" to {show(1)},"Native" to {show(0)},"Setup" to {show(2)},"Read" to {show(3)},"Rec" to {show(4)},"Termux" to {startActivity((packageManager.getLaunchIntentForPackage("com.termux")?:Intent().setClassName("com.termux","com.termux.app.TermuxActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))},"homebox" to {startActivity(Intent(this,Cap::class.java))})
-val mb=S(this,items,{fr.visibility=View.INVISIBLE},{fr.visibility=View.VISIBLE})
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
-root.addView(fr,LinearLayout.LayoutParams(-1,0,1f));root.addView(mb,LinearLayout.LayoutParams(-1,-2));setContentView(root);mb.navTo("a");getSharedPreferences("nav",0).getString("cur",null)?.let{cur=it;n=0;w.loadUrl(cur)};nv.onMenu={mb.open()};openMenu={mb.open()};mb.onLeave={vs.firstOrNull{it.visibility==View.VISIBLE}?.requestFocus()};nav={nm->if(!mb.navTo(nm)){show(1);val r=when(nm){"home"->"/";"task"->"/tasks";"job"->"/jobs";else->"/$nm"};if(loaded)w.evaluateJavascript("navpage('$r')",null) else {cur="$BASE$r";n=0;w.loadUrl(cur)}}};backB={if(mb.o)moveTaskToBack(true) else mb.open()};if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(0,{goMenu()});applyNav(intent)}}   // Android 15+/17 predictive dispatch skips onBackPressed for gesture back — both paths -> goMenu
-// nav selector = the launcher keyboard (launcher.c), translated: bare white letters on pure black, 5-row layout (num row + qwerty + fn keys), keyboard = bottom 52%. Results render BOTTOM-UP so the most-used (navfreq prefs) sits right above the keys; tap a row or type to filter, '>' picks the top match. Closed = a ≡ bar; tap to reopen.
-class S(val a:Activity,val it:List<Pair<String,()->Unit>>,val onOp:()->Unit={},val onCl:()->Unit={}):FrameLayout(a){
-var i=0;var o=false;var q="";var onLeave:(()->Unit)?=null;var so=0f;var dy=0f;var mv=false;private val slop=android.view.ViewConfiguration.get(a).scaledTouchSlop
-private val sp=a.getSharedPreferences("navfreq",0)
-private val cnt=HashMap<String,Int>().also{m->for(pr in it)m[pr.first]=sp.getInt(pr.first,0)}
-private val KR=listOf("1234567890","qwertyuiop","asdfghjkl","\u0002zxcvbnm\b","\u0001 \n")
-private val dens=a.resources.displayMetrics.density
-private val fb=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=68f;textAlign=Paint.Align.CENTER}
-private val fk=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=46f;textAlign=Paint.Align.CENTER}
-private val fq=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=52f;color=0xFFFFFF00.toInt()}
-private val fd=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=34f;textAlign=Paint.Align.CENTER}
-private val desc=mapOf("a" to "web ui","native" to "native terminal","setup" to "setup & permissions","read" to "speed reader","rec" to "audio recorder","termux" to "open termux","homebox" to "ssh homebox")
-fun open(){o=true;q="";so=0f;onOp();v.isFocusableInTouchMode=true;v.requestFocus();requestLayout();v.invalidate()}
-private fun cl(){o=false;q="";onCl();requestLayout();v.invalidate()}
-private fun flt():List<Int>{val ql=q.lowercase();val s=it.indices.sortedByDescending{j->cnt[it[j].first]?:0};return if(ql.isEmpty())s else s.filter{j->it[j].first.lowercase().contains(ql)}}
-private fun choose(idx:Int){i=idx;val k=it[idx].first;val nc=(cnt[k]?:0)+1;cnt[k]=nc;sp.edit().putInt(k,nc).apply();it[idx].second();cl();onLeave?.invoke()}
-fun navTo(name:String):Boolean{val j=it.indexOfFirst{pr->pr.first.equals(name,true)||pr.first.equals("a $name",true)};if(j<0)return false;i=j;it[j].second();if(o)cl();return true}
-private val v=object:android.view.View(a){
-private fun kbh()=height*0.52f
-private fun ky()=height-kbh()
-private fun kw()=width/10f
-private fun keyAt(x:Float,y:Float):Char?{val k=ky();if(y<k)return null;val r=((y-k)/(kbh()/5)).toInt().coerceIn(0,4);val row=KR[r];val w=kw()
-when(r){0,1->{val j=(x/w).toInt();return if(j in row.indices)row[j] else null}
-2->{val j=((x-w*0.5f)/w).toInt();return if(j in row.indices)row[j] else null}
-3->{if(x<w*1.5f)return row[0];if(x>=w*8.5f)return row[row.length-1];val j=1+((x-w*1.5f)/w).toInt();return if(j in 1 until row.length-1)row[j] else null}
-else->{if(x<w*1.5f)return row[0];if(x>=w*8f)return row[2];return row[1]}}}
-private fun keyCx(r:Int,j:Int,n:Int):Float{val w=kw();return when(r){0,1->j*w+w/2f;2->w*0.5f+j*w+w/2f;3->if(j==0)w*0.75f else if(j==n-1)(w*8.5f+width)/2f else w*1.5f+(j-1)*w+w/2f;else->if(j==0)w*0.75f else if(j==1)w*4.75f else (w*8f+width)/2f}}
-override fun onKeyDown(k:Int,e:android.view.KeyEvent):Boolean{if(!o)return super.onKeyDown(k,e);when(k){android.view.KeyEvent.KEYCODE_DEL->if(q.isNotEmpty())q=q.dropLast(1);android.view.KeyEvent.KEYCODE_ENTER,android.view.KeyEvent.KEYCODE_DPAD_CENTER->{flt().firstOrNull()?.let{choose(it)};return true};android.view.KeyEvent.KEYCODE_BACK->{cl();onLeave?.invoke();return true};else->{val ch=e.unicodeChar;if(ch in 32..126)q+=ch.toChar() else return super.onKeyDown(k,e)}};invalidate();return true}
-override fun onDraw(c:Canvas){c.drawColor(0xFF000000.toInt())
-if(!o){fb.color=-1;c.drawText("≡  "+it[i].first,width/2f,height*0.6f,fb);return}
-val ky=ky();val lh=ky-70f;val rh=120f;val bo=(fb.ascent()+fb.descent())/2f
-if(q.isNotEmpty()){fq.textAlign=Paint.Align.LEFT;c.drawText(q,32f,ky-22f,fq)}
-val m=flt()
-so=so.coerceIn(0f,maxOf(0f,m.size*rh-lh))
-for((r,idx) in m.withIndex()){val y=lh-rh*(r+1)+so;if(y<-rh||y>lh)continue
-if(r==0){fb.color=-1;c.drawRect(0f,maxOf(0f,y),width.toFloat(),y+rh,fb)};fb.color=if(r==0)0xFF000000.toInt() else -1;c.drawText(it[idx].first,width/2f,y+rh/2f-bo-16f,fb)
-fd.color=if(r==0)0xFF444444.toInt() else 0xFF888888.toInt();desc[it[idx].first.lowercase().removePrefix("a ")]?.let{d->c.drawText(d,width/2f,y+rh/2f+34f,fd)}}
-val rk=kbh()/5;val bk=(fk.ascent()+fk.descent())/2f
-for(r in 0..4){val row=KR[r];val yy=ky+r*rk
-for(j in row.indices){val ch=row[j];if(ch==' ')continue;val lbl=when(ch){'\b'->"<";'\n'->">";'\u0001'->"*";'\u0002'->"i";else->ch.toString()};fk.color=-1;c.drawText(lbl,keyCx(r,j,row.length),yy+rk/2f-bk,fk)}}}
-override fun onTouchEvent(e:MotionEvent):Boolean{
-if(!o){if(e.action==MotionEvent.ACTION_DOWN)open();return true}
-val k=ky()
-if(e.action==MotionEvent.ACTION_DOWN&&e.y>=k){val ch=keyAt(e.x,e.y);if(ch!=null){when(ch){'\b'->if(q.isNotEmpty())q=q.dropLast(1);'\n'->flt().firstOrNull()?.let{choose(it)};' '->q+=" ";'\u0001'->{};'\u0002'->{};else->q+=ch};so=0f;invalidate()};return true}
-when(e.action){MotionEvent.ACTION_DOWN->{dy=e.y;mv=false}
-MotionEvent.ACTION_MOVE->{if(!mv&&Math.abs(e.y-dy)>slop)mv=true;if(mv){so+=e.y-dy;dy=e.y;invalidate()}}
-MotionEvent.ACTION_UP->if(!mv&&e.y<k){val lh=k-70f;val r=((lh-e.y+so)/120f).toInt();val m=flt();if(r in m.indices)choose(m[r])}}
-return true}}
-init{addView(v,FrameLayout.LayoutParams(-1,-1))}
-override fun onMeasure(ws:Int,hs:Int){val sz=MeasureSpec.getSize(hs);val h=if(o&&sz>0)sz else (56f*dens).toInt();super.onMeasure(ws,MeasureSpec.makeMeasureSpec(h,MeasureSpec.EXACTLY))}}
+root.addView(fr,LinearLayout.LayoutParams(-1,-1));setContentView(root);show(1);getSharedPreferences("nav",0).getString("cur",null)?.let{cur=it;n=0;w.loadUrl(cur)};nv.onMenu={show(1)};openMenu={};nav={nm->val ni=listOf("native","a","setup","read","rec").indexOf(nm.lowercase());if(ni>=0)show(ni) else {show(1);val r=when(nm){"home"->"/";"task"->"/tasks";else->"/$nm"};if(loaded)w.evaluateJavascript("navpage('$r')",null) else {cur="$BASE$r";n=0;w.loadUrl(cur)}}};backB={if(w.visibility!=View.VISIBLE)show(1) else if(w.canGoBack())w.goBack() else if(w.url=="$BASE/")moveTaskToBack(true) else w.loadUrl("$BASE/")};if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(0,{goMenu()});applyNav(intent)}}   // WebView full-screen; native ☰ selector removed (Sean 2026-09-11), web omnibox is the only nav; nav()/shortcuts still reach native views + web pages
 // homebox = the user's primary ssh device — the main box they work on. Generic alias, not a specific host: each user points "homebox" at their default machine via an ssh entry named homebox. Cap fires captured thoughts to it (a sw homebox) and the button attaches (a ssh homebox).
 class Cap:Activity(){
 private val ACT="com.aios.a.CAP_RESULT"
@@ -1498,11 +1446,11 @@ MXML=r'''<?xml version="1.0" encoding="utf-8"?>
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"/>
 '''
 CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options(-O3 -flto)\nadd_link_options(-flto -Wl,-z,max-page-size=16384)\nadd_library(anative SHARED native.c)\ntarget_link_libraries(anative log android)\nadd_library(launcher SHARED launcher.c)\ntarget_link_libraries(launcher log android m)\nadd_library(keyboard SHARED keyboard.c)\ntarget_link_libraries(keyboard log)\nadd_library(reader SHARED reader.c)\ntarget_link_libraries(reader log)\n'
-MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a apk"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:launchMode="singleTop" android:taskAffinity="com.aios.a.m" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:label="a kb" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><service android:name=".VoiceLineService" android:label="a voice line" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><activity android:name=".Cap" android:exported="true" android:launchMode="singleTask" android:taskAffinity="com.aios.a.cap" android:excludeFromRecents="true" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"><intent-filter><action android:name="android.intent.action.ASSIST"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".Wd" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="serve"/></service><service android:name=".Ms" android:exported="false" android:foregroundServiceType="mediaPlayback"/><receiver android:name=".Boot" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver></application></manifest>'
-if SELF:MF=MF.replace('android:label="a apk"','android:label="a (self)"').replace('com.aios.a.shizuku','com.aios.a.self.shizuku')   # unique label + provider authority (duplicate authority = INSTALL_FAILED_CONFLICTING_PROVIDER, blocks side-by-side)
+MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a app"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:launchMode="singleTop" android:taskAffinity="com.aios.a.m" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:label="a kb" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><service android:name=".VoiceLineService" android:label="a voice line" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><activity android:name=".Cap" android:exported="true" android:launchMode="singleTask" android:taskAffinity="com.aios.a.cap" android:excludeFromRecents="true" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"><intent-filter><action android:name="android.intent.action.ASSIST"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".Wd" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="serve"/></service><service android:name=".Ms" android:exported="false" android:foregroundServiceType="mediaPlayback"/><receiver android:name=".Boot" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver></application></manifest>'
+if SELF:MF=MF.replace('android:label="a app"','android:label="a (self)"').replace('com.aios.a.shizuku','com.aios.a.self.shizuku')   # unique label + provider authority (duplicate authority = INSTALL_FAILED_CONFLICTING_PROVIDER, blocks side-by-side)
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
 # launcher deep-links: each web box = manifest shortcut "a <box>" -> .M --es nav <box> (sync with KT `web`); a-Home + Pixel launcher search both surface these
-BOX="note task term home proj op dash stream job book docs cloud prompt".split()
+BOX="note task term home op music book docs".split()
 SC='<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">'+''.join(f'<shortcut android:shortcutId="{b}" android:shortcutShortLabel="@string/s_{b}"><intent android:action="android.intent.action.MAIN" android:targetPackage="{P}" android:targetClass="com.aios.a.M"><extra android:name="nav" android:value="{b}"/></intent></shortcut>' for b in BOX)+'</shortcuts>'
 STR='<resources>'+''.join(f'<string name="s_{b}">a {b}</string>' for b in BOX)+'</resources>'
 GS='pluginManagement{repositories{google();mavenCentral()};plugins{id("com.android.application") version "8.2.0";id("org.jetbrains.kotlin.android") version "1.9.22"}}\ndependencyResolutionManagement{repositories{google();mavenCentral()}}\ninclude(":app")\n'
@@ -1636,6 +1584,12 @@ def _st_push(serial,pkg):   # ALWAYS push after install: snapshot is seconds-fre
         f=_stf(serial,pkg,nm)
         if os.path.exists(f):n+=_stq(serial,"shell","-T","run-as",pkg,"sh","-c","'"+scr+"'",stdin=open(f,"rb")).returncode==0
     if n:_stq(serial,"shell","am","force-stop",pkg);print(f"→ app state pushed from snapshot ({n} archives: freq/★/localStorage)")
+def _roles(serial,pkg):   # Android clears the default launcher(HOME) + keyboard(IME) on every -r reinstall by design; re-assert both via adb so you never re-enable by hand
+    if not pkg:return
+    kb=pkg+"/.InstantNdkService"
+    adb("shell","cmd","package","set-home-activity",pkg+"/.Home",serial=serial)
+    adb("shell","ime","enable",kb,serial=serial); adb("shell","ime","set",kb,serial=serial)
+    print("+ default launcher + keyboard kept")
 def _txupdate(serial,pkg):   # pull+rebuild termux a via /api/omni, then restart serve so the new binary is live (a update doesn't reload the running serve); force-stops com.termux. skip: noup
     d=f"adb -s {serial} ";S.run(["sh","-c",d+f"forward tcp:19112 tcp:1112;sleep 3;curl -sm90 localhost:19112/api/omni --data-urlencode q=update;sleep 8;"+d+"shell am force-stop com.termux;"+d+f"shell am start -n {pkg}/.M;"+d+"forward --remove tcp:19112"],capture_output=True);print("→ termux a updated + serve restarted")
 def run():
@@ -1684,7 +1638,19 @@ def run():
         gp="android.useAndroidX=true\norg.gradle.jvmargs=-Xmx2g\nkotlin.compiler.execution.strategy=in-process\n"   # one 2g JVM, kotlinc inside it — two 4g JVMs got earlyoom/OOM-killed on a RAM-tight box; ample for this single-module app
         if os.environ.get("JAVA_HOME"):gp+="org.gradle.java.home="+os.environ["JAVA_HOME"]+"\n"   # pin the build JVM: system java 25 poisons stale daemons (kotlin-dsl JavaVersion.parse("25.0.3") crash, 2026-08-02)
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
-        w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",MF);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC);w(D+"/app/src/main/res/xml/shortcuts.xml",SC);w(D+"/app/src/main/res/values/strings.xml",STR)
+        # white-on-black 'a' launcher icon from the one glyph (lib/logo.py). adaptive: a solid-black background LAYER so the launcher's mask (circle/squircle) fills black — never the default white plate — with the white a foreground on top. skip silently if no rasterizer, MF then keeps the default icon
+        _res=D+"/app/src/main/res";_ico=''
+        try:
+            sys.path.insert(0,R+"/lib");import logo as _lg
+            _fg=_lg.SVG.replace('<rect width="108" height="108" rx="20"/>','')   # foreground = same a, no rect (black comes from the bg layer)
+            for _d,_s in(("mdpi",48),("hdpi",72),("xhdpi",96),("xxhdpi",144),("xxxhdpi",192)):
+                os.makedirs(f"{_res}/mipmap-{_d}",exist_ok=True);_lg.png(_s,f"{_res}/mipmap-{_d}/ic_launcher.png");_lg.png(_s*9//4,f"{_res}/mipmap-{_d}/ic_fg.png",_fg)
+            os.makedirs(f"{_res}/mipmap-anydpi-v26",exist_ok=True)
+            open(f"{_res}/mipmap-anydpi-v26/ic_launcher.xml","w").write('<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"><background android:drawable="@android:color/black"/><foreground android:drawable="@mipmap/ic_fg"/></adaptive-icon>')
+            _ico=' android:icon="@mipmap/ic_launcher"'
+        except Exception as _e:print("! icon skipped:",_e)
+        mf=MF.replace('android:label="a app"','android:label="a app"'+_ico).replace('android:label="a (self)"','android:label="a (self)"'+_ico)
+        w(D+"/gradle.properties",gp);w(D+"/app/src/main/AndroidManifest.xml",mf);w(D+"/app/src/main/java/com/aios/a/M.kt",KT);w(D+"/app/src/main/res/xml/nsc.xml",NSC);w(D+"/app/src/main/res/xml/shortcuts.xml",SC);w(D+"/app/src/main/res/values/strings.xml",STR)
         w(D+"/app/src/main/java/com/aios/a/Home.kt",HKT);w(D+"/app/src/main/res/values/styles.xml",TXML)
         w(D+"/app/src/main/java/com/aios/a/InstantNdkService.kt",IKT);w(D+"/app/src/main/res/xml/method.xml",MXML)
         NLIBS=[("native.c",NC,"anative",""),("launcher.c",LC,"launcher","-lm "),("keyboard.c",KC,"keyboard",""),("reader.c",RDR_C,"reader","")]
@@ -1751,14 +1717,14 @@ def run():
             serial=pick(ds)
         _st_pull(serial,pkg)   # freq/★ snapshot before ANY install path can wipe
         if _rish_install(apk,pkg,serial=serial):
-            _st_push(serial,pkg)
+            _st_push(serial,pkg); _roles(serial,pkg)
             names=_provision(serial,pkg) if auth_on else []
             if pkg and up_on:_txupdate(serial,pkg)
             elif not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
             print("✓ "+(pkg or os.path.basename(apk))+" (rish)"+(" + creds: "+", ".join(names) if names else ""));return
         r=_adb_install(apk,pkg,serial)
         if r.returncode:print(r.stderr);sys.exit(1)
-        _st_push(serial,pkg)
+        _st_push(serial,pkg); _roles(serial,pkg)
         names=_provision(serial,pkg) if auth_on else []
         if pkg and up_on:_txupdate(serial,pkg)
         elif not names and pkg:adb("shell","am","start","-n",pkg+"/.M",serial=serial)
