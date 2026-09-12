@@ -6,7 +6,7 @@
 <span id=pf data-go="#profile" style="position:fixed;top:22px;right:6px;z-index:9997;font:13px monospace;color:#fff;background:#000;border:1px solid #333;border-radius:6px;padding:4px 10px">profile</span>
 <div id=v_index class=v style="align-items:center;overflow-y:auto">
   <form id=omni autocomplete=off style="margin-top:9vh;width:min(96vw,600px);background:#000;border:1px solid #333;border-radius:8px"><textarea id=qi rows=1 autofocus autocomplete=off autocapitalize=off autocorrect=off spellcheck=false placeholder="" style="width:100%;font-size:24px;padding:16px 16px 6px;text-align:center;background:none;color:#fff;border:0;outline:none;caret-color:#fff;resize:none;overflow-y:auto;max-height:50vh;box-sizing:border-box"></textarea>
-  <div style="display:flex;justify-content:center;gap:4px;padding:6px;border-top:1px solid #2a2a2a"><div class=oc><b>sends to &#9662;</b><select id=agb onchange="agsel(this.selectedIndex);qi.oninput()"><option>claude</option><option>codex</option><option>agy</option><option>grok</option><option>note</option><option>task</option></select></div><div class=oc><b>run on &#9662;</b><select id=dev>__DO__</select></div></div></form>
+  <div style="display:flex;justify-content:center;gap:4px;padding:6px;border-top:1px solid #2a2a2a"><div class=oc><b>sends to &#9662;</b><select id=agb onchange="agsel(this.selectedIndex);qi.oninput()"></select></div><div class=oc><b>run on &#9662;</b><select id=dev>__DO__</select></div></div></form>
   <div style="text-align:center;margin-top:8px"><span id=qh style="color:#555;font-size:15px">tap a page · or type a command / prompt</span></div>
   <div id=qo style="width:90vw;max-width:800px;margin-top:24px"></div>
   <script src="/bm?js" defer></script>
@@ -63,9 +63,9 @@ _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0
 var PAGES=[['/bm','a bm'],['#profile','a profile'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/music','a music'],['/note','a note'],['/tasks','a tasks'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs'],['/datamap','a datamap']];
 try{if(window.A&&A.native)PAGES=PAGES.concat([['native:setup','a setup'],['native:native','a native term'],['native:read','a read'],['native:rec','a rec']])}catch(e){}   // apk only: native pages via the A.native bridge
 /* agent picker = own page (DOM toggle, <1ms) */
-var AGO=[['c','claude'],['co','codex'],['g','agy'],['grok','grok'],['note','note'],['task','task']],AG=0;
+var AGO=[['c','claude'],['co','codex'],['g','agy'],['grok','grok'],['note','note'],['task','task'],['google','google']],AG=0;
 try{for(var _ai=0;_ai<AGO.length;_ai++)if(AGO[_ai][0]===localStorage.agm)AG=_ai}catch(e){}
-agb.value=AGO[AG][1];
+agb.innerHTML=AGO.map(function(a){return'<option>'+a[1]}).join('');agb.value=AGO[AG][1];
 function fitsel(s){var c=fitsel.c||(fitsel.c=document.createElement('canvas').getContext('2d'));c.font='14px system-ui';s.style.width=c.measureText(s.selectedOptions[0].text).width+8+'px'}
 fitsel(dev);
 function agv(){return AGO[AG][0]}
@@ -96,7 +96,7 @@ qi.onkeydown=function(e){if(v_ag.classList.contains('on'))return;if(e.ctrlKey&&(
 omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw,sh=_sg()[_cs];if(!v){if(sh&&sh.dataset.p)navpage(sh.dataset.p);return}
   if(sh&&sh.dataset.n){sav(sh.dataset.n,raw);return}if(sh&&sh.dataset.g){gsearch();return}
   var pm=PAGES.filter(function(p){return p[1]===v||p[0]===v||p[0]==='/'+v||p[0]==='#'+v});if(pm.length){qi.value='';navpage(pm[0][0]);return} 
-  if((!sh||sh.dataset.a)&&(agv()=='note'||agv()=='task')){sav(agv(),raw);return}
+  if((!sh||sh.dataset.a)&&/note|task|google/.test(agv())){agv()=='google'?gsearch():sav(agv(),raw);return}
   if(views['/'+v]){go('/'+v);qi.value='';return}
   /* Enter = the highlighted suggestion: what you see is what runs */
   if(sh&&!/^\d+$/.test(v)&&!_cmds.some(function(c){return c[0]===v.split(' ')[0]})){
