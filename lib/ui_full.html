@@ -3,10 +3,7 @@
 <style>*{font-family:system-ui}[data-go]{touch-action:manipulation;cursor:pointer}.b{padding:16px 24px;font-size:24px;background:#000;color:#fff;border:2px solid #fff;border-radius:8px;cursor:pointer}.n{font-size:28px;color:#fff;cursor:pointer;padding:20px 40px;border:2px solid #fff;border-radius:12px}.f{appearance:none;background:#000;color:#fff;border:1px solid #333;border-radius:8px}.ni{padding:6px 0;color:#aaa;border-bottom:1px solid #222;display:flex;align-items:center}.nx{background:none;border:1px solid #555;color:#888;padding:12px 20px;margin-right:10px;border-radius:4px;cursor:pointer;font-size:16px}.sb{background:#111;color:#fff;border:1px solid #444;border-radius:6px;padding:6px 12px;margin-right:6px;cursor:pointer;font:13px monospace}.pg{display:block;margin:8px 0;padding:16px 26px;font-size:21px;color:#fff;background:#000;border:1px solid #fff;border-radius:12px;cursor:pointer;touch-action:manipulation}.pg:active{background:#222}.v{position:absolute;inset:0;height:100vh;display:flex;flex-direction:column;visibility:hidden}.v.on{visibility:visible}.oc{display:flex;flex-direction:column;align-items:center;justify-content:center;height:46px;box-sizing:border-box;padding:2px 8px;border:1px solid #2a2a2a;border-radius:6px;min-width:0}.oc b{font-size:10px;font-weight:400;color:#777;white-space:nowrap}.oc select{appearance:none;background:#000;border:0;color:#fff;font-size:14px;text-align:center;min-width:0;max-width:100%;text-overflow:ellipsis;outline:none}option{font-size:16px;background:#000;color:#fff}</style>
 <body style="margin:0;height:100vh;background:#000;overflow:hidden">
 <span id=pms style="position:fixed;top:2px;right:6px;font:12px monospace;color:#fff;background:#000a;padding:2px 6px;z-index:9998;pointer-events:none"></span>
-<span id=pf style="position:fixed;top:22px;right:6px;z-index:9997;font:13px monospace;color:#fff;background:#000;border:1px solid #333;border-radius:6px;padding:4px 10px;cursor:pointer;touch-action:manipulation">profile</span>
-<iframe id=pfp style="position:fixed;top:52px;right:6px;width:min(440px,94vw);height:70vh;background:#000;border:1px solid #333;border-radius:8px;z-index:9997;display:none"></iframe>
-<script>(()=>{let o=0;const c=document.getElementById('pf'),p=document.getElementById('pfp');
-c.onclick=()=>{o=!o;p.style.display=o?'block':'none';if(o)fetch('/api/omni',{method:'POST',body:'q=profile htmlbody'}).then(r=>r.text()).then(t=>{const i=t.indexOf('<!doctype'),j=t.lastIndexOf('</pre>');p.srcdoc=i<0?t:t.slice(i,j>i?j:t.length)})}})()</script>
+<span id=pf data-go="#profile" style="position:fixed;top:22px;right:6px;z-index:9997;font:13px monospace;color:#fff;background:#000;border:1px solid #333;border-radius:6px;padding:4px 10px">profile</span><!-- people expect profile here -->
 <div id=v_index class=v style="align-items:center;overflow-y:auto">
   <form id=omni autocomplete=off style="margin-top:9vh;width:min(96vw,600px);background:#000;border:1px solid #333;border-radius:8px"><textarea id=qi rows=1 autofocus autocomplete=off autocapitalize=off autocorrect=off spellcheck=false placeholder="" style="width:100%;font-size:24px;padding:16px 16px 6px;text-align:center;background:none;color:#fff;border:0;outline:none;caret-color:#fff;resize:none;overflow-y:auto;max-height:50vh;box-sizing:border-box"></textarea>
   <div style="display:flex;justify-content:center;gap:4px;padding:6px;border-top:1px solid #2a2a2a"><div class=oc><b>sends to &#9662;</b><select id=agb onchange="agsel(this.selectedIndex);qi.oninput()"><option>claude</option><option>codex</option><option>gemini</option><option>grok</option><option>note</option><option>task</option></select></div><div class=oc><b>run on &#9662;</b><select id=dev>__DO__</select></div></div></form>
@@ -20,6 +17,7 @@ c.onclick=()=>{o=!o;p.style.display=o?'block':'none';if(o)fetch('/api/omni',{met
   <iframe id=tif style="flex:1;width:100%;border:0;background:#000"></iframe>
 </div>
 <iframe id=v_tasks class=v style="width:100%;border:0"></iframe>
+<iframe id=v_profile class=v style="width:100%;border:0;background:#000"></iframe><!-- hash route like #clock: reload survives with no C route -->
 <div id=v_note class=v style="padding-top:20px;align-items:center">
   <form id=nf style="display:flex;flex-direction:column;gap:10px;width:95vw">
     <textarea id=nc autofocus rows=1 placeholder="note — type, enter to save (shift-enter newline)" class=f style="width:100%;font-size:16px;padding:22px;box-sizing:border-box;resize:none;overflow:hidden" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();nf.requestSubmit()}"></textarea>
@@ -33,7 +31,7 @@ c.onclick=()=>{o=!o;p.style.display=o?'block':'none';if(o)fetch('/api/omni',{met
   <div id=nl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px">__NO__</div>
 </div>
 <script>
-var views={'/':'v_index','/term':'v_term','/note':'v_note','/tasks':'v_tasks','/ag':'v_ag','#clock':'v_clock'};
+var views={'/':'v_index','/term':'v_term','/note':'v_note','/tasks':'v_tasks','/ag':'v_ag','#clock':'v_clock','#profile':'v_profile'};
 function _pm(t,l){pms.textContent=l+' DOM '+(performance.now()-t).toFixed(3)+'ms'}
 function go(p,t=performance.now()){history.pushState(null,'',p);show(p);_pm(t,'nav '+p)}
 /* clock: wake 8ms early + spin to the boundary (jitter < quantum; only while view on + tab visible — hidden throttles → 'bg untimed'); quantum = browser clamp, measured, shown */
@@ -46,7 +44,7 @@ ckt.textContent=(h%12||12)+':'+_ckP(d.getMinutes())+':'+_ckP(d.getSeconds())+' '
 ckd.textContent=d.toDateString().slice(0,3)+' '+d.getFullYear()+'-'+_ckP(d.getMonth()+1)+'-'+_ckP(d.getDate());
 ckl.textContent='transition +'+late.toFixed(3)+'ms · clock step '+_ckQ.toFixed(3)+'ms'+(on?'':' · bg untimed');
 var w=1000-Date.now()%1000;_ckTg=performance.now()+w;setTimeout(_ck,Math.max(0,w-8));}_ck();
-function show(p){for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'){if(!tif.src)tif.src='/op';setTimeout(function(){try{tif.contentWindow.focus()}catch(e){}},50);}if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='/'){qi.oninput();v_tasks.src='/tasks'}}
+function show(p){pf.hidden=p==='#profile';for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'){if(!tif.src)tif.src='/op';setTimeout(function(){try{tif.contentWindow.focus()}catch(e){}},50);}if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='#profile')fetch('/api/omni',{method:'POST',body:'q=profile htmlbody'}).then(r=>r.text()).then(t=>{const i=t.indexOf('<!doctype'),j=t.lastIndexOf('</pre>');v_profile.srcdoc=i<0?t:t.slice(i,j>i?j:t.length)});if(p==='/'){qi.oninput();v_tasks.src='/tasks'}}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 window.onpopstate=function(){show(views[location.hash]?location.hash:location.pathname);}; /* hash views (#clock) reload/back clean — /clock would 404 (no C route) */
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';nc.style.height='auto';ns.innerHTML='<span style="color:#ccc">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#ccc">saved → </span><a href="'+m[0]+'" target=_blank style="color:#fff">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#fff">save FAILED</span>'});};
@@ -62,7 +60,7 @@ window.onfocus=function(){omni.style.borderColor='#555'};window.onblur=function(
 var _cmds=[__CMDS__],_cs=0;
 _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0}return h(b)-h(a)});
 // web interfaces = the primary launchables: prepopulated (freq-sorted) by default, favored on type
-var PAGES=[['/bm','a bm'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/music','a music'],['/note','a note'],['/tasks','a tasks'],['/flow','flow'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs']];
+var PAGES=[['/bm','a bm'],['#profile','a profile'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/music','a music'],['/note','a note'],['/tasks','a tasks'],['/flow','flow'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs']];
 /* agent/type picker: own PAGE (v_ag), not a dropdown — go('/ag') is a DOM toggle, <1ms like all nav */
 var AGO=[['c','claude'],['co','codex'],['g','gemini'],['grok','grok'],['note','note'],['task','task']],AG=0;
 try{for(var _ai=0;_ai<AGO.length;_ai++)if(AGO[_ai][0]===localStorage.agm)AG=_ai}catch(e){}
@@ -96,8 +94,8 @@ document.addEventListener('keydown',function(e){if(!v_ag.classList.contains('on'
 qi.onkeydown=function(e){if(v_ag.classList.contains('on'))return;if(e.ctrlKey&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();agsel(AG+(e.key==='ArrowUp'?-1:1));qi.oninput();return}if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();omni.requestSubmit();return}var it=_sg();if(!it.length)return;if(e.key==='ArrowDown'){e.preventDefault();_cs=Math.min(_cs+1,it.length-1)}else if(e.key==='ArrowUp'){e.preventDefault();_cs=Math.max(_cs-1,0)}else if(e.key==='Tab'&&it[_cs]){e.preventDefault();qi.value=it[_cs].dataset.c||it[_cs].textContent;qi.oninput();return}else return;hl()};
 omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw;if(!v){var s0=_sg()[_cs];if(s0&&s0.dataset.p)navpage(s0.dataset.p);return}
   var sh=_sg()[_cs];if(sh&&sh.dataset.n){sav(sh.dataset.n,raw);return}if(sh&&sh.dataset.g){gsearch();return}
+  var pm=PAGES.filter(function(p){return p[1]===v||p[0]===v||p[0]==='/'+v||p[0]==='#'+v});if(pm.length){qi.value='';navpage(pm[0][0]);return} /* exact page name beats note/task send-mode */
   if(agv()=='note'||agv()=='task'){sav(agv(),raw);return}
-  var pm=PAGES.filter(function(p){return p[1]===v||p[0]===v||p[0]==='/'+v});if(pm.length){qi.value='';navpage(pm[0][0]);return}
   if(views['/'+v]){go('/'+v);qi.value='';return}
   /* Enter takes the HIGHLIGHTED suggestion (pages first in DOM = first by default) — what you see is what runs */
   var sg=_sg();
