@@ -95,7 +95,7 @@ function filt(){var t0=performance.now(),q=Q.value.toLowerCase(),h;rows=[];
 function mark(){rows.forEach((r,i)=>r.classList.toggle('sel',i===ci));if(rows[ci])rows[ci].scrollIntoView({block:'nearest'});}
 Q.oninput=filt;
 function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);}
-open_(localStorage.fwsel||'@');   /* attach BEFORE the fleet scan: last window, else bare local tmux — a live shell at t=0 */
+open_(new URLSearchParams(location.search).get('w')||localStorage.fwsel||'@');   /* ?w=<target> preselects (tasks-board stream press); else last window, else bare local tmux — a live shell at t=0 */
 function poll(){fetch('/fwins').then(r=>r.text()).then(render).catch(()=>{});}
 poll();setInterval(poll,4000);
 document.addEventListener('keydown',e=>{var k=e.key,d={j:1,ArrowDown:1,k:-1,ArrowUp:-1}[k],inq=e.target===Q;
