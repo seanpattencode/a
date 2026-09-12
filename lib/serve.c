@@ -690,43 +690,46 @@ static void handle(int c){
             snprintf(cm,32,"a music %s \"$K\"",req[10]=='c'?"cfg":req[10]=='t'?"trim":"rm");
             FILE*p=popen(cm,"r");size_t n=p?fread(b,1,255,p):0;if(p)pclose(p);
             sresp(c,200,"text/plain",b,(int)n);return;}
-        if(req[10]=='g'){char id[32];qp(req,"?f=",id,32);setenv("I",id,1);
-            #define MIDX "sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q"
-            FILE*ip=popen(MIDX,"r");   /* the 10s head prefetch recorded the name */
-            if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}
-            char fl[P+300],pt[P+308];snprintf(fl,sizeof fl,"%s/%s",mc,rel);snprintf(pt,sizeof pt,"%s.part",fl);
-            if(!rel[0]||access(fl,F_OK)){   /* not complete on disk: stream as it downloads — was a blocking whole-file get when no .part (1hr track = minutes of dead air, Sean 2026-09-01) */
-                pid_t sf=fork();if(sf)return;
-                if(!rel[0]){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}   /* head: resolves name -> .index row (written AFTER its 160KB curl, so get can't race the .part) */
-                    for(int w=0;w<600&&!rel[0];w++){usleep(100000);FILE*p2=popen(MIDX,"r");if(p2){if(fgets(rel,P,p2))rel[strcspn(rel,"\n")]=0;pclose(p2);}}
+        if(req[10]=='g'||req[10]=='f'){char id[32]={0};struct stat st;   /* ONE streamer, cached + growing file: WebKit (a.app webview) refuses media without 206+total — and no more readf of 100MB tracks into RAM */
+            if(req[10]=='f')docrel(req,rel);
+            else{qp(req,"?f=",id,32);setenv("I",id,1);
+                #define RES {FILE*ip=popen("sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q","r");if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}}
+                RES}   /* the 10s head prefetch recorded the name */
+            if(fork())return;   /* stream child; worker logs+exits */
+            char fl[P+300],pt[P+308],h[300];
+            #define FLP snprintf(fl,sizeof fl,"%s/%s",mc,rel),snprintf(pt,sizeof pt,"%s.part",fl)
+            FLP;
+            if(id[0]&&(!rel[0]||access(fl,F_OK))){   /* incomplete: kick download, stream as it grows (blocking = dead air, Sean 09-01) */
+                if(!rel[0]){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}   /* head: writes .index row + .sz clen AFTER its 160KB curl (no .part race) */
+                    for(int w=0;w<600&&!rel[0];w++){usleep(100000);RES}
                     if(!rel[0])_exit(0);
-                    snprintf(fl,sizeof fl,"%s/%s",mc,rel);snprintf(pt,sizeof pt,"%s.part",fl);}
-                if(!fork()){execlp("a","a","music","get",id,(char*)0);_exit(0);}
-                char h[200];int hl=snprintf(h,200,"HTTP/1.1 200 OK\r\nContent-Type:%s\r\nConnection:close\r\nCache-Control:no-store\r\n\r\n",strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm");
-                if(write(c,h,(size_t)hl)!=hl)_exit(0);
-                off_t off=0;struct stat st;
-                for(int idle=0;idle<600;idle++){int fd=open(access(fl,F_OK)?pt:fl,O_RDONLY);
-                    if(fd>=0){char bu[65536];ssize_t r;
-                        if(!fstat(fd,&st)&&st.st_size>off&&lseek(fd,off,SEEK_SET)>=0)
-                            while((r=read(fd,bu,65536))>0){if(write(c,bu,(size_t)r)!=r)_exit(0);off+=r;idle=0;}
-                        close(fd);}
-                    if(!stat(fl,&st)&&off>=st.st_size)_exit(0);   /* renamed by yt-dlp + fully sent = done */
-                    usleep(100000);}
-                _exit(0);}
-            #undef MIDX
-            }
-        else if(req[10]=='f')docrel(req,rel);
-        else{char tf[P];snprintf(tf,P,"%s/common/music.html",SROOT);size_t tl=0;char*th=readf(tf,&tl);if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","x",1);return;}
-        char fp[P];snprintf(fp,P,"%s/%s",mc,rel);size_t n=0;char*d=readf(fp,&n);
-        if(d){const char*mt=strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm";   /* Range support: without Accept-Ranges/206 Chrome marks audio unseekable (seekable=0-0) — trim skip and the seek bar both clamp to 0 */
-            char*rg=strstr(req,"Range: bytes=");size_t s0=0,e0=n?n-1:0;
-            if(rg){s0=(size_t)atoll(rg+13);char*dh=strchr(rg+13,'-');if(dh&&isdigit((unsigned char)dh[1])){e0=(size_t)atoll(dh+1);if(e0>=n)e0=n?n-1:0;}}
-            char h[256];int hl;
-            if(rg&&s0<n){hl=snprintf(h,256,"HTTP/1.1 206 OK\r\nContent-Type:%s\r\nAccept-Ranges:bytes\r\nContent-Range:bytes %zu-%zu/%zu\r\nContent-Length:%zu\r\nConnection:close\r\n\r\n",mt,s0,e0,n,e0-s0+1);
-                if(write(c,h,(size_t)hl)==hl)(void)!write(c,d+s0,e0-s0+1);}
-            else{hl=snprintf(h,256,"HTTP/1.1 200 OK\r\nContent-Type:%s\r\nAccept-Ranges:bytes\r\nContent-Length:%zu\r\nConnection:close\r\n\r\n",mt,n);
-                if(write(c,h,(size_t)hl)==hl)(void)!write(c,d,n);}
-            free(d);}else sresp(c,404,"text/plain","x",1);return;}
+                    FLP;}
+                if(!fork()){execlp("a","a","music","get",id,(char*)0);_exit(0);}}
+            #undef RES
+            #undef FLP
+            if(!rel[0])_exit(0);
+            long long T=0;if(!stat(fl,&st))T=st.st_size;
+            else if(id[0]){snprintf(h,300,"%s/.sz%s",mc,id);FILE*z=fopen(h,"r");if(z){(void)!fscanf(z,"%lld",&T);fclose(z);}}   /* growing: final size = clen off the head's URL; no .sz (old row) = length-less 200 until complete */
+            char*rg=strstr(req,"Range: bytes=");long long s0=0,e0=T?T-1:-1,off;
+            if(rg){s0=atoll(rg+13);char*dh=strchr(rg+13,'-');if(dh&&isdigit((unsigned char)dh[1]))e0=atoll(dh+1);if(T&&e0>=T)e0=T-1;}
+            int hl=snprintf(h,300,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nAccept-Ranges:bytes\r\nConnection:close\r\n",rg&&T?206:200,strstr(rel,".m4a")?"audio/mp4":strstr(rel,".opus")?"audio/ogg":"audio/webm");
+            if(rg&&T)hl+=snprintf(h+hl,300-(size_t)hl,"Content-Range:bytes %lld-%lld/%lld\r\nContent-Length:%lld\r\n\r\n",s0,e0,T,e0-s0+1);
+            else if(T)hl+=snprintf(h+hl,300-(size_t)hl,"Content-Length:%lld\r\n\r\n",T);
+            else hl+=snprintf(h+hl,300-(size_t)hl,"Cache-Control:no-store\r\n\r\n");
+            if(write(c,h,(size_t)hl)!=hl)_exit(0);
+            off=s0;
+            for(int idle=0;idle<600;idle++){int fd=open(access(fl,F_OK)?pt:fl,O_RDONLY);
+                if(fd>=0){char bu[65536];ssize_t r;
+                    if(!fstat(fd,&st)&&st.st_size>off&&lseek(fd,(off_t)off,SEEK_SET)>=0)
+                        while((r=read(fd,bu,65536))>0){
+                            if(e0>=0&&off+r>e0+1)r=(ssize_t)(e0+1-off);   /* never 0: off>e0 exited */
+                            if(write(c,bu,(size_t)r)!=r)_exit(0);off+=r;idle=0;
+                            if(e0>=0&&off>e0)_exit(0);}   /* budget served (probe=2B) */
+                    close(fd);}
+                if((e0>=0&&off>e0)||(!stat(fl,&st)&&off>=st.st_size))_exit(0);   /* complete + fully sent */
+                usleep(100000);}
+            _exit(0);}
+        else{char tf[P];snprintf(tf,P,"%s/common/music.html",SROOT);size_t tl=0;char*th=readf(tf,&tl);if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","x",1);return;}}
     if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* unified fleet tmux view: all devices' windows in one list, one inline terminal that re-points */
         char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
         if(th){siso(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","no fleetview.html",16);return;}
