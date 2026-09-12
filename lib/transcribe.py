@@ -1,4 +1,5 @@
-"""a transcribe <file|folder|log|watch|on|off|status> — audio file → text (faster-whisper + VAD); on/off/status/watch = trwatch.service, gdrive EVR -> parakeet -> transcripts. Manual file specification is brittle: filename date != upload date, mod times drift, glob patterns over rclone listings produce surprising matches. Pass exact paths only."""
+"""a transcribe <file|folder|recent|new|log|watch|on|off|status> — audio -> text (faster-whisper+VAD; watch service = parakeet, gdrive EVR -> transcripts).
+Pass exact paths only: filename date != upload date, mod times drift, globs over rclone listings surprise."""
 import sys, os, subprocess as sp, time, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _common import ADATA_ROOT

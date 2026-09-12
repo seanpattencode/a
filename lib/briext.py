@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-"""a briext — build both browser extensions, one script (Firefox MV2 + Chrome MV3)
-into adata/local/ext/ on demand. Mirrors `a apk`: single source file, makes the folder tree.
-Icons are defined ONCE here so the two cannot drift.
-  a briext           generate -> adata/local/ext/{bri-ext,bri-chrome}, print load paths
-Edit this file to change either extension; rerun to redeploy. Firefox xpi: a bri deploy."""
+"""a briext — build BOTH browser extensions (FF MV2 + Chrome MV3) from this one file into adata/local/ext/;
+icons defined once so they can't drift. Edit here, rerun to redeploy; FF xpi: a bri deploy; chrome: a briext install."""
 import os,sys,base64
 ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT=os.path.join(ROOT,"adata/local/ext")
@@ -49,26 +46,15 @@ FF={
     }
   ]
 }''',
-"background.js": r'''// a-bridge background — owns the SINGLE poll connection to the bridge. Previously every
-// content-script frame polled independently; two failures forced this redesign:
-//   1) Firefox caps persistent connections per server at 6. On Google sites every frame's
-//      poll is CSP-routed through here as a held connection, so >6 frames (Gmail main +
-//      its many subframes + other Google tabs) saturate the 6 slots — the target frame's
-//      poll never registers, so it can POST a hello but never RECEIVE a command. ONE
-//      background-owned poll = one connection, no saturation.
-//   2) Firefox throttles timers in background/unfocused tabs, starving a content-script
-//      poll loop. The persistent background page is NOT tab-throttled.
-// Flow: background long-polls; each command is fanned out to every frame of every tab via
-// tabs.sendMessage (message handlers fire even in throttled tabs); each frame's reply is
-// POSTed to /resp with the command id. open/screenshot are handled HERE (no fan-out).
+"background.js": r'''// background owns the SINGLE poll: FF caps 6 held conns/server (Gmail's frames saturated it — a frame could POST but never RECEIVE)
+// and throttles bg-tab timers; the persistent background page is neither. Commands fan out per-frame via tabs.sendMessage
+// (fires even in throttled tabs), replies POST /resp with the cmd id; privileged actions (open/screenshot/navigate/tabs) run HERE.
 const POLL = 'http://127.0.0.1:1234/poll', RESP = 'http://127.0.0.1:1234/resp';
 let BRI_CHAN = 'firefox';   // exact channel — UA is frozen ('Firefox/152.0') and hides Nightly; getBrowserInfo isn't
 try { browser.runtime.getBrowserInfo().then(i => { let c = /a\d/.test(i.version)?'nightly':/b\d/.test(i.version)?'beta':(i.buildID||'').startsWith('2010')?'release':'build'; BRI_CHAN = 'firefox-'+c+'/'+i.version; }).catch(()=>{}); } catch(e) {}
 const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({chan:BRI_CHAN, ...d})}).catch(()=>{});
 
-// open+focus a tab — deduped so a broadcast opens ONE tab (or focuses an existing one).
-// Match by NORMALIZED url (origin+path, no trailing slash / query / hash): real pages mutate their
-// URL (Yahoo /quote/ACN → /quote/ACN/, ?p=…), and exact-match would miss the prefetched tab → dupes.
+// openTab deduped by NORMALIZED url (origin+path): pages mutate their URLs, exact-match dupes
 const _opening = new Map();
 const _norm = u => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/,''); }
                      catch (e) { return u.split(/[?#]/)[0].replace(/\/+$/,''); } };
@@ -86,15 +72,13 @@ function openTab(url, bg, fresh) {     // dedup by origin+path; hit → navigate
             : p.then(async id => { const t = await browser.tabs.get(id); await browser.tabs.update(id, t.url === url ? {active:true} : {url, active:true}); await browser.windows.update(t.windowId, {focused:true}); return {id, focused:true}; });  // same url = FOCUS only, no reload (a streaming answer survives; Sean 2026-09-03); else land on the EXACT url (SERP re-search), per-call not cached
 }
 
-// user.js loadDivertedInBackground (wiki-feed appends) backgrounds even hand-clicked target=_blank links; a click on a
-// localhost dashboard must focus like Chrome. Human click = opener tab active+localhost; automation opens have no/bg opener.
+// loadDivertedInBackground backgrounds hand-clicked _blank links too: focus when opener = active localhost tab
 browser.tabs.onCreated.addListener(async t => {
   if (t.active || !t.openerTabId) return;
   try { const o = await browser.tabs.get(t.openerTabId);
     if (o.active && /^https?:\/\/(localhost|127\.0\.0\.1):/.test(o.url)) browser.tabs.update(t.id, {active:true}); } catch (e) {}
 });
 
-// execute one command: open/screenshot run here; everything else fans out to all frames.
 async function run(cmd) {
   const id = cmd.id;
   if (cmd.action === 'open') {
@@ -105,7 +89,7 @@ async function run(cmd) {
     try { return post({id, src:'background', ok:true, value: await browser.tabs.captureVisibleTab(null, {format: cmd.format||'png'})}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
-  if (cmd.action === 'navigate') {   // ACTIVE tab only (or the cmd.match tab). Must live here: the content-script path runs in EVERY frame of EVERY tab, so a bare `a bri <url>` BROADCAST-navigated every open tab — one command converted 4 live tabs, and for a query-by-URL site each hijacked tab started its own search (2026-08-08 perplexity storm; it also ate sibling providers' tabs mid-answer). Chrome's SW already scopes to active tabs; Firefox did not.
+  if (cmd.action === 'navigate') {   // ACTIVE (or match) tab only, HERE: the per-frame path once broadcast-navigated every open tab (2026-08-08 storm)
     try { const ts = await browser.tabs.query(cmd.match ? {} : {active:true, currentWindow:true});
       const t = cmd.match ? ts.find(x => (x.url||'').includes(cmd.match)) : ts[0];
       if (t) await browser.tabs.update(t.id, {url: cmd.url});
@@ -171,11 +155,7 @@ browser.runtime.onMessage.addListener(async (msg) => {
     return browser.tabs.captureVisibleTab(null, {format: msg.format || 'png'});
 });
 ''',
-"content.js": r'''// a-bridge content script — runs in EVERY frame (all_frames). It no longer polls; the
-// SINGLE poll connection lives in background.js (see why there). This script just executes
-// one dispatched command in ITS OWN frame and returns the result to the background, which
-// POSTs it. Receiving a runtime message fires even in throttled/background tabs, so this
-// path works where a content-script poll loop would be starved.
+"content.js": r'''// content script: NO polling (background owns it); executes one dispatched command in ITS frame, returns the result
 (() => {
   const $ = s => document.querySelector(s);
   const dispatch = async (m) => {
@@ -220,17 +200,13 @@ browser.runtime.onMessage.addListener(async (msg) => {
       }
     } catch (e) { return {error:String(e)}; }
   };
-  // Background fans each command here as {__bri_cmd}. Return the tagged result; background POSTs it.
   browser.runtime.onMessage.addListener((msg) => {
     if (msg && msg.__bri_cmd) return dispatch(msg.__bri_cmd).then(out => ({src: location.href, ...out}));
     // not ours → return undefined so other listeners (preload-debug etc.) still see it
   });
 })();
 ''',
-"api.js": r'''// bri-ext apiScript — exposes bridge_fetch to each registered userscript.
-// Routes HTTP through background (CSP-exempt) so the userscript can talk to
-// 127.0.0.1:1234 even when page CSP's connect-src would block window.fetch.
-// This is the GM_xmlhttpRequest equivalent, simplified to one call.
+"api.js": r'''// apiScript: bridge_fetch for userscripts — HTTP via background, CSP-exempt (GM_xmlhttpRequest equivalent)
 browser.userScripts.onBeforeScript.addListener((script) => {
   script.defineGlobals({
     bridge_fetch: async (url, opts) =>
@@ -239,8 +215,7 @@ browser.userScripts.onBeforeScript.addListener((script) => {
 });
 ''',
 "newtab.html": r'''<!doctype html><style>html,body{margin:0;height:100vh;background:#000}</style><script src="newtab.js"></script>''',
-"newtab.js": r'''// Ctrl+T pins keyboard focus to the urlbar no matter what the page does (bugzilla 1411465);
-// a tabs.CREATEd tab focuses content. NTO's trick: spawn the real tab, remove this shell.
+"newtab.js": r'''// Ctrl+T pins focus to the urlbar (bugzilla 1411465); spawn the real tab, remove this shell
 browser.tabs.getCurrent().then(t => {
   browser.tabs.create({url: 'http://localhost:1111/', index: t.index + 1});
   browser.tabs.remove(t.id);
@@ -262,20 +237,14 @@ CH={
   ]
 }
 ''',
-"sw.js": r'''// bri-chrome service worker — privileged half of the bridge, works while Chrome is UNFOCUSED.
-// MV3 SWs are killed (~30s) and CANNOT hold a long-poll, so the persistent poll lives in an OFFSCREEN
-// DOCUMENT (offscreen.js — a real page, not tab-throttled, not SW-lifetime-capped). The offscreen relays
-// each command here; the SW runs it in the target tab via chrome.scripting.executeScript (ISOLATED world,
-// no "Allow user scripts" toggle) and POSTs the result to /resp. wake.js (content script) + onStartup/
-// onInstalled/alarms re-create the offscreen doc if Chrome ever closes it — self-healing.
+"sw.js": r'''// MV3 SW dies (~30s), can't hold a long-poll: the OFFSCREEN DOCUMENT polls (not throttled, not capped), relays cmds here;
+// SW runs them via chrome.scripting (ISOLATED world, no toggle) + POSTs /resp. wake.js + onStartup/onInstalled/alarms re-create the doc.
 const RESP='http://127.0.0.1:1234/resp';
-// keepalive:true lets the POST finish even if the SW is torn down the instant after (fire-and-forget from a
-// dying worker otherwise aborts — this is why every earlier diagnostic vanished). Learned from claude-in-chrome.
+// keepalive:true: POSTs from a dying SW otherwise abort (ate every earlier diagnostic)
 const post=d=>fetch(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chan:'chrome',...d}),keepalive:true}).catch(()=>{});
 post({sw:'top',off:typeof chrome.offscreen});  // DIAG: SW ran + can reach :1234; reports if chrome.offscreen exists
 
-// DISPATCH runs IN the target tab (ISOLATED world) via executeScript(func,args): pure fn of the command,
-// returns the /resp payload. Must be self-contained (serialized standalone) — no outer refs. Edit = repack.
+// DISPATCH runs IN the tab via executeScript: self-contained (serialized), no outer refs
 function DISPATCH(m){
   const $=s=>document.querySelector(s);
   if(m.vis&&document.hidden)return {skip:'hidden'};   // only the visible tab acts (Flutter ignores input when hidden)
@@ -338,8 +307,7 @@ async function execCmd(cmd){
   }catch(e){}}));
 }
 
-// create the offscreen poller if absent. Called from every SW wake path so a closed doc self-heals.
-let offP=null;   // single-flight: createDocument throws if called twice concurrently or if a doc already exists (claude-in-chrome pattern)
+let offP=null;   // single-flight: concurrent createDocument throws
 function ensureOffscreen(){
   if(offP)return offP;
   offP=(async()=>{
@@ -354,8 +322,7 @@ function ensureOffscreen(){
 }
 chrome.runtime.onMessage.addListener((msg,_s,reply)=>{
   if(msg&&msg.bri==='cmd'){execCmd(msg.cmd).then(()=>{try{reply({ok:1})}catch(e){}});return true;}  // await keeps the SW alive through exec
-  // wake.js page-load ping → (re)create the offscreen poller. MUST return true + reply after awaiting, else
-  // the SW dies before createDocument finishes (async work started from a listener needs the channel held open).
+  // MUST return true + reply after await: the SW dies before createDocument otherwise
   (async()=>{try{await ensureOffscreen();post({sw:'offscreen-ok'});}catch(e){post({sw:'offscreen-err',e:String(e)});}try{reply({ok:1})}catch(e){}})();
   return true;
 });
@@ -366,14 +333,10 @@ chrome.alarms.onAlarm.addListener(ensureOffscreen);
 ensureOffscreen();
 ''',
 "offscreen.html": r'''<!doctype html><meta charset=utf-8><title>bri poller</title><script src="offscreen.js"></script>''',
-"offscreen.js": r'''// bri-chrome persistent poller — runs in an offscreen document (NOT killed like the SW, NOT tab-throttled),
-// so it holds the :1234 long-poll while Chrome is unfocused. Each command is relayed to the SW, which has the
-// privileged chrome.scripting/tabs APIs to run it in the target tab and POST the result. This is the piece
-// that made background driving work: the SW alone can't stay alive to poll.
+"offscreen.js": r'''// offscreen doc = the persistent poller (not SW-killed, not tab-throttled); relays cmds to the SW
 const POLL='http://127.0.0.1:1234/poll', RESP='http://127.0.0.1:1234/resp';
 fetch(RESP,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({hello:'offscreen-boot'}),keepalive:true}).catch(()=>{});
-// keepalive: a message from the offscreen doc every <30s resets the SW idle timer, so the SW stays warm to
-// relay commands into tabs (Chrome 109+ documented pattern). The offscreen doc itself never dies.
+// 20s ping resets the SW idle timer (documented pattern); the doc itself never dies
 setInterval(()=>chrome.runtime.sendMessage({bri:'ka'}).catch(()=>{}),20000);
 async function loop(){
   for(;;){
@@ -385,10 +348,7 @@ loop();
 ''',
 "wake.js": r'''chrome.runtime.sendMessage({bri:'wake'}).catch(()=>{});  // page-load ping wakes the SW → it (re)creates the offscreen poller''',
 "newtab.html": r'''<!doctype html><meta charset=utf-8>
-<!-- New tab = the a-server :1111 page, embedded. No redirect, no service worker, no extra permissions
-     — those three were what kept breaking (NTP self-redirect blocked; new perms need a hard reload).
-     a-server sends no X-Frame-Options/CSP so it frames fine. FROZEN file: change the new tab by editing
-     the :1111 page server-side, never here. -->
+<!-- new tab = :1111 embedded; no redirect/SW/perms (each kept breaking). FROZEN: change the :1111 page, never this file -->
 <style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{display:block;border:0;width:100vw;height:100vh}</style>
 <iframe src="http://localhost:1111/" allow="clipboard-read; clipboard-write"></iframe>
 <script>addEventListener('load',()=>{var f=document.querySelector('iframe');f.focus();})</script>
@@ -404,9 +364,7 @@ def build():
     return [os.path.join(OUT,n) for n in tg]
 
 def chrome_install(chrome='google-chrome-unstable'):
-    # zero-drag Chrome install: pack a signed crx and force-install it via enterprise policy off a local
-    # file:// update manifest (Chrome blocks http extension downloads; file:// is trusted; --load-extension
-    # is DEAD in branded builds \u2014 silently ignored). Reuses the key \u2192 stable ID.
+    # pack signed crx + force-install via enterprise policy off a file:// update manifest (http blocked; --load-extension DEAD in branded builds); key reuse = stable ID
     import subprocess,hashlib,json,time
     build()
     ext=os.path.join(OUT,'bri-chrome'); pem=os.path.join(OUT,'bri-chrome.pem'); crx=os.path.join(OUT,'bri-chrome.crx')
@@ -434,9 +392,7 @@ def chrome_uninstall():
     print("\u2713 removed force-install policy (restart Chrome to drop the extension)")
 
 def chrome_restart(chrome='google-chrome-canary'):
-    # Chrome can't be restarted from inside the extension (scripts can't open chrome://restart; chrome.runtime.restart is ChromeOS-only),
-    # so do it from the terminal: SIGTERM the MAIN browser process (the one with no --type=) for a clean shutdown, then relaunch w/ session restore.
-    # pgrep ^-anchored to argv0: vmtouch pins the binary path in ITS argv — unanchored never sees it exit.
+    # restart from the terminal (extensions can't): SIGTERM the main proc (no --type=), relaunch with restore; pgrep ^-anchored (vmtouch carries the path in argv)
     import subprocess,time
     for pid in subprocess.run(['pgrep','-f','^/opt/google/chrome-canary/chrome'],capture_output=True,text=True).stdout.split():
         try: cl=open('/proc/%s/cmdline'%pid,'rb').read().split(b'\0')

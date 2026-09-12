@@ -1,4 +1,4 @@
-/* a serve [port] — pure C HTTP server for UI. no python dependency. */
+/* a serve [port] — C HTTP server for the UI */
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
@@ -30,15 +30,15 @@ static const char*mime(const char*p,const char*d){const char*e=strrchr(p,'.');e=
     return !strcmp(e,"html")?"text/html; charset=utf-8":!strcmp(e,"css")?"text/css":!strcmp(e,"js")?"text/javascript":
         !strcmp(e,"png")?"image/png":!strcmp(e,"svg")?"image/svg+xml":!strcmp(e,"jpg")||!strcmp(e,"jpeg")?"image/jpeg":
         !strcmp(e,"ico")?"image/x-icon":!strcmp(e,"json")?"application/json":!strcmp(e,"pdf")?"application/pdf":!strcmp(e,"epub")?"application/epub+zip":!strcmp(e,"txt")?"text/plain; charset=utf-8":d;}
-static void sfile(int c,const char*ct,const char*b,size_t bl,const char*cache){   /* whole file, body looped: source.pdf can be tens of MB, one write() may be short */
+static void sfile(int c,const char*ct,const char*b,size_t bl,const char*cache){   /* body looped: one write() may be short */
     char h[224];int hl=snprintf(h,224,"HTTP/1.1 200 OK\r\nContent-Type:%s\r\nContent-Length:%zu\r\nConnection:close\r\nCache-Control:%s\r\n\r\n",ct,bl,cache);
     (void)!write(c,h,(size_t)hl);for(size_t o=0;o<bl;){ssize_t w=write(c,b+o,bl-o);if(w<=0)break;o+=(size_t)w;}}
 #define SYNC_HTML "<span style=color:#888>sync <span class=sa>%s</span></span> <button style=\"background:#000;color:#888;border:1px solid #333;padding:0 6px;font:inherit;cursor:pointer\" onclick=\"fetch('/api/sync',{method:'POST'});let p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{document.querySelectorAll('.sa').forEach(s=>s.textContent=t);if(t!='syncing')clearInterval(p)}),1000)\">sync</button>"
-/* ARCH #32: list pages navigate on finger/mouse DOWN, not lift-off. delegated so it covers links added later (e.g. /dash EventSource). skips #/onclick links. */
+/* ARCH #32: navigate on pointerdown; delegated; skips #/onclick */
 #define TAPJS "<script>addEventListener('pointerdown',function(e){var a=e.target.closest('a[href]');if(a&&!a.onclick&&a.getAttribute('href')[0]!='#'){e.preventDefault();a.click()}},true)</script>"
 static int ncmp(const void*a,const void*b){const char*x=strrchr((const char*)a,'_'),*y=strrchr((const char*)b,'_');return strcmp(y?y:"",x?x:"");}
-static int notes_build(char*h,int cap,const char*kind){   /* kind = "notes" or "prompts" */
-    char nd[P];snprintf(nd,P,"%s/git/%s",AROOT,kind);const char*arc=!strcmp(kind,"prompts")?"arcp":"arcn";
+static int notes_build(char*h,int cap){
+    char nd[P];snprintf(nd,P,"%s/git/notes",AROOT);
     int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
     DIR*d=opendir(nd);if(!d)return hl;struct dirent*e;
     char(*names)[64]=NULL;int nn=0,ncp=0;  /* a static[2048] dropped the newest */
@@ -46,20 +46,19 @@ static int notes_build(char*h,int cap,const char*kind){   /* kind = "notes" or "
         if(nn>=ncp){ncp=ncp?ncp*2:2048;char(*t)[64]=realloc(names,(size_t)ncp*64);if(!t)break;names=t;}
         snprintf(names[nn++],64,"%s",e->d_name);}closedir(d);
     qsort(names,(size_t)nn,64,ncmp);   /* ncmp = newest first */
-    int lim=!strcmp(kind,"prompts")?24:4;   /* prompts = the daily 11+11 candidates (Sean 7/10: visible in flow); notes stay a 4-newest glimpse */
-    for(int i=0,shown=0;i<nn&&shown<lim&&hl<cap-4096;i++){   /* newest first with text (skip malformed) */
+    for(int i=0,shown=0;i<nn&&shown<4&&hl<cap-4096;i++){   /* 4 newest with text (skip malformed) */
         char fp[P];snprintf(fp,P,"%s/%s",nd,names[i]);
         FILE*f=fopen(fp,"r");if(!f)continue;char ln[4096];int got=0;
         while(fgets(ln,4096,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
             const char*u=strrchr(names[i],'_');char hu[48]="";if(u){char ts[16];snprintf(ts,16,"%.15s",u+1);ts_human(ts,hu,48);}
-            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"%s('%s',this)\" class=nx>x</button><span style=\"color:#888;display:inline-block;width:104px\">%s</span><span style=\"flex:1\">%s</span><a href=\"/doc?f=%s/%s\" style=\"color:#888;margin-left:8px;text-decoration:none\">edit</a></div>",arc,names[i],hu,ln+6,kind,names[i]);got=1;break;}}
+            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span style=\"color:#888;display:inline-block;width:104px\">%s</span><span style=\"flex:1\">%s</span><a href=\"/doc?f=notes/%s\" style=\"color:#888;margin-left:8px;text-decoration:none\">edit</a></div>",names[i],hu,ln+6,names[i]);got=1;break;}}
         fclose(f);shown+=got;}free(names);return hl;
 }
 static void html_gen(void){
     char tf[P];snprintf(tf,P,"%s/lib/ui_full.html",SDIR);sgen_t=time(NULL);
     char*src=readf(tf,NULL);if(!src)return;
     char*s=src;
-    /* substitute placeholders */
+
     shlen=0;
     #define EMIT(p,n) {if(shlen+(n)<(int)sizeof shtml){memcpy(shtml+shlen,p,(size_t)(n));shlen+=(n);}}
     for(char*p=s;*p;){
@@ -67,16 +66,17 @@ static void html_gen(void){
             char*end=strstr(p+2,"__");
             if(end&&(end-p)<16){
                 char tag[16];memcpy(tag,p+2,(size_t)(end-p-2));tag[end-p-2]=0;
-                if(!strcmp(tag,"CMDS")){FILE*f=popen("a i","r");char l[16384],e[16400];   /* ["name","desc"], per `a i` line, unbounded (64K buffers cut it mid-string = blank page); " and \ neutered — one raw " kills the router script; JS ignores the trailing comma */
+                if(!strcmp(tag,"CMDS")){FILE*f=popen("a i","r");char l[16384],e[16400]; /* escape for script + HTML */
                     while(f&&fgets(l,16384,f)){l[strcspn(l,"\n")]=0;for(char*q=l;*q;q++)if(*q=='"')*q='\'';else if(*q=='\\')*q='/';
-                        char*t=strchr(l,'\t');if(t)*t=0;if(*l){int el=snprintf(e,16400,"[\"%s\",\"%s\"],",l,t?t+1:"");EMIT(e,el)}}
+                        char*t=strchr(l,'\t');if(t)*t=0;if(*l){snprintf(e,16400,"[\"%s\",\"%s\"],",l,t?t+1:"");
+                            for(char*q=e;*q;q++)EMIT(*q=='<'?"&lt;":q,*q=='<'?4:1)}}
                     if(f)pclose(f);}
                 else if(!strcmp(tag,"DO")){char h[64]="";gethostname(h,64);char lo[128];int ll=snprintf(lo,128,"<option value=\"\">local: %s</option>",h);EMIT(lo,ll)
-                    char hbr[300]="";/* homebox is a role pointer (ssh.c hb): label it with the real entry sharing its Host so the picker says which box it is */
+                    char hbr[300]="";/* homebox = role pointer: label with the real entry sharing its Host */
                     {char ddir[P];snprintf(ddir,P,"%s/ssh",SROOT);char paths[64][P];int m=listdir(ddir,paths,64);char hbh[512]="";
                         for(int i=0;i<m&&!hbh[0];i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
                             if(nm&&ho&&!strcasecmp(nm,"homebox"))snprintf(hbh,512,"%s",ho);}
-                        if(hbh[0]){snprintf(hbr,300,"%s",hbh); /* no named sibling -> show the raw user@host */
+                        if(hbh[0]){snprintf(hbr,300,"%s",hbh); /* no named sibling: raw user@host */
                             for(int i=0;i<m;i++){kvs_t kv=kvfile(paths[i]);const char*nm=kvget(&kv,"Name"),*ho=kvget(&kv,"Host");
                                 if(nm&&ho&&strcasecmp(nm,"homebox")&&!strcmp(ho,hbh)){snprintf(hbr,300,"%s",nm);break;}}}}
                     char gc[B];snprintf(gc,B,"grep -h '^Name:' '%s/ssh/'*.txt 2>/dev/null|sed 's/Name: //'|sort -u",SROOT);
@@ -84,7 +84,7 @@ static void html_gen(void){
                         char o[640];int ol=!strcasecmp(dln,"homebox")&&hbr[0]
                             ?snprintf(o,640,"<option value=\"%s\">%s → %s</option>",dln,dln,hbr)
                             :snprintf(o,640,"<option>%s</option>",dln);EMIT(o,ol)}if(df)pclose(df);}
-                else if(!strcmp(tag,"NO")){static char nb[131072];int nl2=notes_build(nb,131072,"notes");EMIT(nb,nl2)}
+                else if(!strcmp(tag,"NO")){static char nb[131072];int nl2=notes_build(nb,131072);EMIT(nb,nl2)}
                 else{EMIT(p,(int)(end+2-p))p=end+2;continue;}
                 p=end+2;continue;}}
         EMIT(p,1)p++;
@@ -96,11 +96,9 @@ static void sresph(int c,int code,const char*ct,const char*body,int bl,const cha
     char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:%s\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl,cache);
     (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
 }
-/* static doc pages: NOT no-store, so the browser back/forward cache restores them instantly (0ms, no refetch) */
+/* no-cache (not no-store): bfcache restores instantly */
 static void sresp(int c,int code,const char*ct,const char*body,int bl){sresph(c,code,ct,body,bl,"no-store");}
-/* latency surfaces (/op /fw): COOP+COEP => crossOriginIsolated => performance.now() at 5us instead of 100us —
-   without this the sub-ms meters quantize to .x0. Scoped here, NOT global: COEP would break pages that load
-   cross-origin subresources. Both pages are fully self-contained; /op iframes stay same-origin. */
+/* /op,/fw only: COOP+COEP -> crossOriginIsolated -> perf.now() 5us not 100us; never global (COEP breaks cross-origin subresources) */
 static void siso(int c,const char*body,int bl){
     char h[320];int hl=snprintf(h,320,"HTTP/1.1 200 OK\r\nContent-Type:text/html\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-store\r\nCross-Origin-Opener-Policy:same-origin\r\nCross-Origin-Embedder-Policy:require-corp\r\n\r\n",bl);
     (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
@@ -110,14 +108,14 @@ static int scmp(const void*a,const void*b){return strcmp((const char*)a,(const c
 static const int*g_bc;   /* /book freq sort: serve.log opens desc, tie=alpha */
 static int g_bccmp(const void*a,const void*b){int x=*(const int*)a,y=*(const int*)b,d=g_bc[y]-g_bc[x];return d?d:x-y;}
 static void qn(const char*req,char*nm){nm[0]=0;const char*q=strstr(req,"?n=");if(!q)return;q+=3;int i=0;for(;q[i]&&q[i]!='&'&&q[i]!=' '&&i<127;i++)nm[i]=q[i];nm[i]=0;}
-static int bkok(const char*nm){return nm[0]&&!strchr(nm,'/')&&!strstr(nm,"..");}   /* a book name from the query: non-empty, stays inside adata/books */
+static int bkok(const char*nm){return nm[0]&&!strchr(nm,'/')&&!strstr(nm,"..");}   /* book name: non-empty, no / or .. */
 static void qp(const char*req,const char*k,char*d,int n){d[0]=0;const char*q=strstr(req,k);if(!q)return;q+=strlen(k);int i=0;for(;q[i]&&q[i]!=' '&&q[i]!='&'&&i<n-1&&(isalnum((unsigned char)q[i])||q[i]=='-'||q[i]=='_'||q[i]=='.');i++)d[i]=q[i];d[i]=0;}
 static void redir(int c,const char*url){char h[768];int hl=snprintf(h,768,"HTTP/1.1 302 Found\r\nLocation: %s\r\nContent-Length:0\r\nConnection:close\r\n\r\n",url);(void)!write(c,h,(size_t)hl);}
 /* ?f=<path> → rel (urldecoded). returns 1 if valid (non-empty, no ..) */
 static int docrel(const char*req,char*rel){rel[0]=0;const char*q=strstr(req,"?f=");if(!q)q=strstr(req,"&f=");if(!q)return 0;q+=3;
     int j=0;for(;*q&&*q!=' '&&*q!='&'&&j<P-1;q++){if(*q=='%'&&q[1]&&q[2]){char x[3]={q[1],q[2],0};rel[j++]=(char)strtol(x,0,16);q+=2;}else rel[j++]=*q=='+'?' ':*q;}rel[j]=0;
     return rel[0]&&!strstr(rel,"..");}
-/* editor page: form POST + save button + escaped textarea + optional saved-banner (zero JS) */
+/* editor page: plain form POST, zero JS */
 static int bkcol(const char*nm,int col,char*o,int osz){int r=-1;char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);  /* tab-col text of row nm; -1 = no row */
     size_t il=0;char*ix=readf(ip,&il);if(!ix)return -1;size_t nl=strlen(nm);o[0]=0;
     for(char*l=ix;l<ix+il;){char*e=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e?e:ix+il;
@@ -129,10 +127,10 @@ static int bkcol(const char*nm,int col,char*o,int osz){int r=-1;char ip[P];snpri
         if(e)l=e+1;else break;}
     free(ix);return r;}
 static long bkpos(const char*nm){char b[24];return bkcol(nm,5,b,24)<0?-1:atol(b);}  /* col5 saved offset; -1 = no row */
-static void bkfile(const char*nm,char*tf){  /* reading text resolution order, shared by reader + say */
+static void bkfile(const char*nm,char*tf){  /* text resolution order (reader + say) */
     snprintf(tf,P,"%s/books/%s/output/explained.txt",AROOT,nm);
     if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/%s.txt",AROOT,nm,nm);
-    if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/transcript.txt",AROOT,nm);  /* canonical elsewhere: help.c chat context, sync filter */
+    if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/output/transcript.txt",AROOT,nm);
     if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/source.txt",AROOT,nm);}
 static void docpage(int c,const char*rel,const char*body,size_t bl,const char*saved,const char*ds){
     char*h=malloc(bl*6+2048);if(!h){sresp(c,500,"text/plain","oom",3);return;}
@@ -143,7 +141,7 @@ static void docpage(int c,const char*rel,const char*body,size_t bl,const char*sa
         else h[hl++]=k;}
     memcpy(h+hl,"</textarea></form>",18);hl+=18;
     sdoc(c,h,hl);free(h);}
-/* recursive doc lister: one <a> per file, descends folders; display strips the section prefix (off) */
+/* recursive lister; display strips prefix len off */
 static int docls(char*h,int hl,const char*rel,int off){
     char dp[P];snprintf(dp,P,"%s/%s",SROOT,rel);DIR*d=opendir(dp);if(!d)return hl;
     struct dirent*e;char nm[256][96];int n=0;
@@ -191,8 +189,8 @@ static void ws_term(int c,const char*target){
     char cty[64];{const char*tn=ttyname(s);snprintf(cty,64,"%s",tn?tn:"");}
     pid_t p=fork();
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
-        setenv("TERM","xterm-256color",0);
-        unsetenv("TMUX");unsetenv("TMUX_PANE");  /* serve may live in a pane; inherited TMUX would make `a tmux` switch the real client instead of grouped-attaching this pty */
+        setenv("TERM","xterm-256color",1);
+        unsetenv("TMUX");unsetenv("TMUX_PANE");  /* inherited TMUX would switch the real client, not this pty */
         if(target&&!strncmp(target,"ssh:",4)){char d2[160];snprintf(d2,160,"%s",target+4);char*cl=strchr(d2,':');
             if(cl){*cl=0;char ses[192];snprintf(ses,192,"a:%s",cl+1);setenv("A_TMUX_SESSION",ses,1);}
             execlp("a","a","ssh",d2,(char*)0);}
@@ -207,7 +205,7 @@ static void ws_term(int c,const char*target){
         if(pf[0].revents&POLLIN){int n=ws_recv(c,buf,4096);if(n<0)break;
             if(buf[0]=='{'){char*co=strstr(buf,"\"cols\":");char*ro=strstr(buf,"\"rows\":");
                 if(co&&ro){struct winsize w={.ws_row=(unsigned short)atoi(ro+7),.ws_col=(unsigned short)atoi(co+7)};ioctl(m,TIOCSWINSZ,&w);continue;}
-                /* claim (/fw): switch-client onto itself re-takes window-size latest hidden — never resize-window, it manual-locks (def3b2ee); non-tmux pty no-ops */
+                /* /fw claim: switch-client re-takes size; resize-window manual-locks (def3b2ee) */
                 if(strstr(buf,"\"claim\"")){char cc[300];snprintf(cc,300,"s=$(tmux lsc -f '#{==:#{client_tty},%s}' -F '#{session_name}' 2>/dev/null);[ -n \"$s\" ]&&tmux switch-client -c %s -t \"$s\" 2>/dev/null",cty,cty);(void)!system(cc);continue;}}
             (void)!write(m,buf,(size_t)n);}
         if(pf[0].revents&(POLLHUP|POLLERR)||pf[1].revents&(POLLHUP|POLLERR))break;
@@ -263,8 +261,8 @@ static void handle(int c){
         if(!fd2){snprintf(fp,P*2,"%s/%s/index.html",sdr,rel);fd2=readf(fp,&fl);} /* /x -> /x/index.html */
         if(!fd2){sresp(c,404,"text/plain","not found",9);return;}
         sresph(c,200,mime(fp,"text/plain"),fd2,(int)fl,"no-cache");free(fd2);return;}
-    /* new full-page route? add a GET handler below + one nav link in ui_full.html line 9 (<div id=wm>). docs auto-list via /docs. */
-    if(!strncmp(req,"GET /tasks",10)&&(req[10]==' '||req[10]=='?')){char cmd[P];snprintf(cmd,P,"python3 '%s/lib/task.py' page",SDIR);FILE*pp=popen(cmd,"r");size_t oc=1<<22,ol=0;char*o=malloc(oc);if(pp){ol=fread(o,1,oc-1,pp);pclose(pp);}o[ol]=0;sdoc(c,o,(int)ol);free(o);return;}   /* the task board = lib/task.py page(), served here, no bridge to i (Sean 2026-09-05) */
+    /* new page = GET handler here + nav link in ui_full.html */
+    if(!strncmp(req,"GET /tasks",10)&&(req[10]==' '||req[10]=='?')){char cmd[P];snprintf(cmd,P,"python3 '%s/lib/task.py' page",SDIR);FILE*pp=popen(cmd,"r");size_t oc=1<<22,ol=0;char*o=malloc(oc);if(pp){ol=fread(o,1,oc-1,pp);pclose(pp);}o[ol]=0;sdoc(c,o,(int)ol);free(o);return;}   /* task board = lib/task.py page() */
     if(!strncmp(req,"POST /tasks/",12)||!strncmp(req,"GET /tasks/spawn?n=",19)||!strncmp(req,"GET /tasks/resume?n=",20)){   /* board actions, all a-side: run <cmd> | set N <text> -> lib/task.py web|set on stdin · spawn N | resume N */
         char*bd=strstr(req,"\r\n\r\n");bd=bd?bd+4:(char*)"";char v[B*4]="",cmd[P],tf[P]="",*p;int n=0;
         if(req[0]=='G'){n=atoi(strchr(req,'=')+1);snprintf(cmd,P,"python3 '%s/lib/task.py' %s %d",SDIR,req[11]=='s'?"spawn":"resume",n);}
@@ -273,7 +271,7 @@ static void handle(int c){
             if(set)snprintf(cmd,P,"python3 '%s/lib/task.py' set %d <'%s'",SDIR,n,tf);else snprintf(cmd,P,"python3 '%s/lib/task.py' web <'%s'",SDIR,tf);}
         FILE*pp=popen(cmd,"r");char out[B*2]="";size_t ol=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[ol]=0;if(tf[0])unlink(tf);sresp(c,200,"text/plain; charset=utf-8",out,(int)ol);return;}
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /term",9)){
-        char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when page file newer than cache (boot-frozen bug, cf /prompt) */
+        char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when page newer than cache (boot-freeze bug) */
         if(shlen&&!stat(uf,&us)&&us.st_mtime>=sgen_t)html_gen();
         if(shlen)sresp(c,200,"text/html",shtml,shlen);else sresp(c,503,"text/plain","starting",8);return;}
     if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
@@ -361,14 +359,14 @@ static void handle(int c){
         free(ix);free(out);flock(lf,LOCK_UN);close(lf);
         if(!ok){sresp(c,500,"text/plain","x",1);return;}
         sresp(c,200,"text/plain",csv,cv);return;}
-    if(!strncmp(req,"GET /booksay",12)){char nm[128];qn(req,nm);  /* speak from pos via `a say` (edge ryan); one group at a time, new play or stop=1 kills it */
+    if(!strncmp(req,"GET /booksay",12)){char nm[128];qn(req,nm);  /* speak from pos via a say; one group, new play/stop kills it */
         if(!bkok(nm)){sresp(c,400,"text/plain","x",1);return;}
-        char sf2[P];snprintf(sf2,P,"%s/local/.booksay.pid",AROOT);   /* fork-per-conn: say-group pid must survive the request child */
+        char sf2[P];snprintf(sf2,P,"%s/local/.booksay.pid",AROOT);   /* pid file: say-group must survive the request child */
         {size_t pl=0;char*ps=readf(sf2,&pl);
          if(ps){pid_t op=(pid_t)atol(ps);free(ps);
-            if(op>1){char cp[64],cb[256];snprintf(cp,64,"/proc/%d/cmdline",op);   /* direct read: procfs st_size=0 so readf returns empty */
+            if(op>1){char cp[64],cb[256];snprintf(cp,64,"/proc/%d/cmdline",op);   /* direct read: procfs st_size=0 */
                 int cf=open(cp,O_RDONLY);ssize_t cn=cf<0?-1:read(cf,cb,255);if(cf>=0)close(cf);
-                if((cn>3&&memmem(cb,(size_t)cn,"say",3))||(cn<0&&!kill(-op,0)))kill(-op,SIGTERM);}   /* leader = exec-chained bash lib/say.sh (substring, reuse-guarded), or leader gone but group (uvx/ffplay) lives — ours by construction, reap */
+                if((cn>3&&memmem(cb,(size_t)cn,"say",3))||(cn<0&&!kill(-op,0)))kill(-op,SIGTERM);}   /* leader = say.sh, or dead leader + live group — ours, reap */
             unlink(sf2);}}
         char*pq=strstr(req,"pos=");
         if(!pq||strstr(req,"stop=")){sresp(c,200,"text/plain","off",3);return;}
@@ -385,7 +383,7 @@ static void handle(int c){
         free(ch);
         if(k>0){char pb[24];int pn=snprintf(pb,24,"%d",k);int pfd=open(sf2,O_WRONLY|O_CREAT|O_TRUNC,0644);if(pfd>=0){(void)!write(pfd,pb,(size_t)pn);close(pfd);}}
         sresp(c,200,"text/plain","on",2);return;}
-    if(!strncmp(req,"GET /bookarchive",16)){char nm[128];qn(req,nm);  /* dot-prefix rename = archive; restore: a book archive <substr> */
+    if(!strncmp(req,"GET /bookarchive",16)){char nm[128];qn(req,nm);  /* dot-prefix = archive; restore: a book archive <substr> */
         if(!bkok(nm)||nm[0]=='.'){sresp(c,400,"text/plain","bad book",8);return;}
         char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
         if(rename(fr,to)){sresp(c,404,"text/plain","x",1);return;}sresp(c,200,"text/plain","ok",2);return;}
@@ -446,7 +444,7 @@ static void handle(int c){
                 if(!has){snprintf(tf,P,"%s/%s/output/%s.txt",bd,names[i],names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/output/transcript.txt",bd,names[i]);has=!access(tf,R_OK);}
                 if(!has){snprintf(tf,P,"%s/%s/source.txt",bd,names[i]);has=!access(tf,R_OK);}
-                char xt[512]="";int xl=0;   /* every source.* becomes a clickable badge (was: first ext, dead text) */
+                char xt[512]="";int xl=0;   /* every source.* = clickable badge */
                 for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);
                     if(!access(tf,R_OK))xl+=snprintf(xt+xl,(size_t)(512-xl),"<a href=\"/bookfile?n=%s&f=source.%s\">%s</a> ",names[i],ex[k],ex[k]);}
                 char lb[360];snprintf(lb,360,"%s",names[i]);bk_mid(lb,96);
@@ -462,54 +460,47 @@ static void handle(int c){
                 sdoc(c,b,bl);return;}
             sresp(c,404,"text/plain","no text — a book transcribe first",34);return;}
         long pos=bkpos(nm);if(pos<0)pos=0;
-        char*esc=malloc(tl*5+1);size_t el=0;  /* escape &<> so text node==exact file chars → caret offset==file offset */
+        char*esc=malloc(tl*5+1);size_t el=0;  /* escape &<>: text node==file chars, caret offset==file offset */
         for(size_t i=0;i<tl;i++){char ch=txt[i];
             if(ch=='&'){memcpy(esc+el,"&amp;",5);el+=5;}
             else if(ch=='<'){memcpy(esc+el,"&lt;",4);el+=4;}
             else if(ch=='>'){memcpy(esc+el,"&gt;",4);el+=4;}
             else esc[el++]=ch;}
         free(txt);
-        size_t cap=el+16384;char*pg=malloc(cap);int hl=snprintf(pg,cap,   /* head+tail JS ~6KB and growing; 4096 truncated the script (snprintf returns would-be len → heap garbage served) */
+        size_t cap=el+16384;char*pg=malloc(cap);int hl=snprintf(pg,cap,   /* small cap once truncated the script: snprintf would-be len -> heap garbage served */
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
             "<style>html,body{margin:0;background:#0b0b0b;overflow:hidden;height:100%%;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}"
-            /* true pagination: bk is a fixed full-screen clipped box; flipping sets bk.scrollTop by whole screens, body never scrolls */
-            "#bk{position:fixed;top:0;bottom:0;left:0;right:0;max-width:760px;margin:0 auto;overflow:hidden;scrollbar-width:none;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:18px/1.75 Georgia,serif;padding:0 18px;box-sizing:border-box}"
-            /* one top-right line: marks controls + hud share #tr so nothing stacks (Sean: only take one line) */
-            "#tr{position:fixed;top:0;right:0;display:flex;align-items:center;background:#000;opacity:.85;z-index:9}"
-            "#tr a{color:#fff;text-decoration:none;padding:5px 10px;font:14px ui-monospace,monospace}"
-            "#hud{color:#fff;font:12px ui-monospace,monospace;padding:4px 8px 4px 0}"
-            "#mp{display:none;position:fixed;top:28px;right:0;max-width:88vw;max-height:60vh;overflow:auto;background:#000;color:#fff;font:13px ui-monospace,monospace;z-index:9}"
-            "#mp div{padding:9px 10px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 8px}</style>"
+            /* #bk = the reading area; floor(clientHeight/lh) lines, scrollTop steps land on line boundaries */
+            "#bk{position:fixed;top:40px;bottom:24px;left:0;right:0;max-width:680px;margin:0 auto;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:21px/1.85 Georgia,serif;padding:0 32px;box-sizing:border-box}"
+            "#tr{position:fixed;top:0;left:0;right:0;height:34px;display:flex;align-items:center;background:#000;z-index:9}"
+            "#tr a{color:#fff;text-decoration:none;padding:7px 13px;font:15px ui-monospace,monospace}"
+            "#hud{margin-left:auto;color:#999;font:12px ui-monospace,monospace;padding:0 12px}"
+            "#mp{display:none;position:fixed;top:34px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:14px ui-monospace,monospace;z-index:9}"
+            "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}</style>"
             "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
-            "</pre><script>var N=\"%s\",P=%ld,K=bk,H=hud,ns=[].slice.call(K.childNodes),T=0,bs=[],co=P;"
+            "</pre><script>var N=\"%s\",P=%ld,K=bk,ns=[].slice.call(K.childNodes),T=0,bs=[];"
             "for(var i=0;i<ns.length;i++){bs.push(T);T+=ns[i].length||0;}"
             "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
-            "function O(){var r=K.getBoundingClientRect(),x=r.left+18,o;for(var y=2;y<120;y+=8){o=C(x,r.top+y);if(o!=null)return o;}return co;}"
+            "function O(){var r=K.getBoundingClientRect(),o;for(var y=2;y<120;y+=8){o=C(r.left+32,r.top+y);if(o!=null)return o;}return P;}"
             "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.round(K.scrollTop/ph());}"
-            /* sync truth by readback: POST, then after uv settles GET /bookpos and compare. Steady '✓' while verified
-               (load counts: pos came from the index), '✗sync' while a save can't be confirmed (10s re-save loop) —
-               absence would be ambiguous with the feature being broken, so healthy has a mark that never changes */
-            /* time inline: T/D and most single letters are taken by the pager vars — a helper name here broke the whole script once */
-            "var sx=' \xc2\xb7 \xe2\x9c\x93'+new Date().toTimeString().slice(0,5),sq=0,rt;function U(b){H.textContent=(b||'pg '+(pg+1)+'/'+(NP()+1))+sx;}"
-            "function M(ok){clearTimeout(rt);if(!ok)rt=setTimeout(S,10000);var s=ok?' \xc2\xb7 \xe2\x9c\x93'+new Date().toTimeString().slice(0,5):' \xc2\xb7 \xe2\x9c\x97sync';if(s!=sx){sx=s;U();}}"
-            "function V(v,q){fetch('/bookpos?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(function(t){if(q==sq)M(parseInt(t)===v)},function(){if(q==sq)M(0)})}"
-            "function S(){co=O();var q=++sq,v=co,b='pos='+v,u='/book?n='+encodeURIComponent(N);fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b}).then(function(r){if(q!=sq)return;if(r.ok)setTimeout(function(){V(v,q)},2000);else M(0)},function(){if(q==sq)M(0)})}"
-            "function B(){var b='pos='+O();if(navigator.sendBeacon)navigator.sendBeacon('/book?n='+encodeURIComponent(N),new Blob([b],{type:'application/x-www-form-urlencoded'}))}"
-            /* true pagination: whole-screen pages via bk.scrollTop (body can't scroll); flip on pointer DOWN (depress, not lift)/wheel/keys — scrollTop is sync = sub-ms, paints next vsync */
-            "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,fm=0,st;"
+            /* save = debounced beacon; hud = page count */
+            "function U(){hud.textContent='pg '+(pg+1)+'/'+(NP()+1);}"
+            "function save(){var b='pos='+O(),u='/book?n='+encodeURIComponent(N);navigator.sendBeacon?navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'})):fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
+            /* whole-screen pages via scrollTop (sync, sub-ms); flip on pointerdown/wheel/keys */
+            "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,st;"
+            "function fit(){K.style.bottom='24px';K.style.bottom=(24+K.clientHeight%%lh)+'px';}"   /* whole-line snap (%% = JS modulo in this fmt) */
             "function ph(){return Math.max(lh,Math.floor(K.clientHeight/lh)*lh);}"
             "function NP(){return Math.max(0,Math.ceil((K.scrollHeight-K.clientHeight)/ph()));}"
-            "function G(p){p=Math.max(0,Math.min(p,NP()));var t=performance.now();K.scrollTop=p*ph();pg=p;fm=performance.now()-t;U('pg '+(pg+1)+'/'+(NP()+1)+' · '+fm.toFixed(2)+'ms');clearTimeout(st);st=setTimeout(S,400);}"
+            "function G(p){p=Math.max(0,Math.min(p,NP()));K.scrollTop=p*ph();pg=p;U();clearTimeout(st);st=setTimeout(save,500);}"
             "addEventListener('pointerdown',function(e){G(pg+(e.clientX<innerWidth/3?-1:1));e.preventDefault();});"
             "addEventListener('wheel',function(e){G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
             "addEventListener('keydown',function(e){var k=e.key;if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
-            "addEventListener('resize',function(){G(pg);});"
-            "requestAnimationFrame(function(){if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
-            "addEventListener('pagehide',B);addEventListener('visibilitychange',function(){if(document.hidden)B();});"
-            /* marks: col6 csv offsets, server reply is the authoritative list; rows self-label from the text at the offset.
-               controls stopPropagation so the global pointerdown pager doesn't flip; TX = unescaped text, offsets == file offsets */
+            "addEventListener('resize',function(){fit();G(pg);});"
+            "requestAnimationFrame(function(){fit();if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
+            "addEventListener('pagehide',save);addEventListener('visibilitychange',function(){if(document.hidden)save();});"
+            /* marks: col6 csv, server reply authoritative; stopPropagation vs the pager; TX offsets == file offsets */
             "var TX=K.textContent,mks=[];"
             "function EH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}"
             "function MR(t){mks=t?t.split(',').filter(Boolean).map(Number):[];mt.textContent='\xe2\x9a\x91'+(mks.length||'');"
@@ -518,9 +509,9 @@ static void handle(int c){
             "ma.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();MW('add='+O())});"
             "mt.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();mp.style.display=mp.style.display=='block'?'none':'block'});"
             "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
-            "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(S,400);mp.style.display='none'}});"
+            "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
-            /* ▶ = speak from here via server-side `a say`; server owns the single say-group, reply is the state */
+            /* speak via server-side a say; reply = state */
             "var sp=0;ms.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();"
             "fetch('/booksay?n='+encodeURIComponent(N)+(sp?'&stop=1':'&pos='+O())).then(function(r){return r.text()}).then(function(t){sp=t=='on'?1:0;ms.textContent=sp?'\\u25a0':'\\u25b6'},function(){sp=0;ms.textContent='\\u25b6'})});"
             "</script>",nm,pos);
@@ -545,7 +536,7 @@ static void handle(int c){
         else{char q[256];int j=0;for(int i=0;nm[i]&&j<250;i++){char d=((nm[i]>='a'&&nm[i]<='z')||(nm[i]>='0'&&nm[i]<='9'))?nm[i]:'+';if(d=='+'&&j&&q[j-1]=='+')continue;q[j++]=d;}q[j]=0;
             snprintf(url,600,"https://drive.google.com/drive/search?q=%s",q);}
         redir(c,url);return;}
-    if(!strncmp(req,"GET /bookdir",12)){char nm[128];qn(req,nm);  /* open the book's folder in the OS file manager — shows every version (epub/txt/…) */
+    if(!strncmp(req,"GET /bookdir",12)){char nm[128];qn(req,nm);  /* open the book folder in the OS file manager */
         if(!bkok(nm)){sresp(c,400,"text/plain","bad book",8);return;}
         char dir[P];snprintf(dir,P,"%s/books/%s",AROOT,nm);
         if(access(dir,X_OK)){sresp(c,404,"text/plain","no such book",12);return;}
@@ -556,9 +547,9 @@ static void handle(int c){
             if(wl[0])setenv("WAYLAND_DISPLAY",wl,1);
             int z=open("/dev/null",O_RDWR);if(z>=0){dup2(z,0);dup2(z,1);dup2(z,2);}
             execlp("nautilus","nautilus",dir,(char*)0);_exit(1);}
-        sresp(c,204,"text/plain","",0);return;}  /* 204 → browser stays put; the file-manager window pops up */
+        sresp(c,204,"text/plain","",0);return;}  /* 204: browser stays put */
     if(!strncmp(req,"GET /docs",9)){
-        /* auto-list: every file under these dirs links to /doc?f= — drop a file in, it appears, no menu upkeep */
+        /* auto-list mem/ + adocs/ -> /doc?f= links */
         char*h=malloc(1<<18);if(!h){sresp(c,500,"text/plain","oom",3);return;}
         int hl=snprintf(h,1<<18,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>docs</title><style>body{background:#0b0b0b;color:#ddd;margin:24px 9vw;overflow-wrap:anywhere;font:22px/1.6 ui-monospace,monospace}h3{color:#fff;padding:12px 16px 4px;margin:0}a{display:block;color:#fff;text-decoration:none;padding:4px 16px}a:hover{background:#161616}</style><a href=# onclick=\"var n=prompt('new adoc filename');if(n)location='/doc?f=adocs/'+n;return false\">+ new adoc</a> <a href=# onclick=\"var n=prompt('new folder name');if(n)fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q=docs mkdir '+encodeURIComponent(n)}).then(function(){location.reload()});return false\">+ new folder</a>" TAPJS);
         char*ar=strstr(req,"arch=1"),*eol=strstr(req,"\r\n");int arch=ar&&eol&&ar<eol;
@@ -578,7 +569,7 @@ static void handle(int c){
     if(!strncmp(req,"POST /api/omni",14)||!strncmp(req,"POST /note",10)){
         char*body=strstr(req,"\r\n\r\n");if(!body){sresp(c,400,"text/plain","bad",3);return;}
         body+=4;
-        /* POST /note: extract c= param, run a note */
+
         int isnote=!strncmp(req,"POST /note",10);
         char*q=strstr(body,isnote?"c=":"q=");if(!q){sresp(c,400,"text/plain","no param",8);return;}
         q+=2;char*cmd=q,*w=q;   /* in-place: decoded ≤ encoded */
@@ -587,11 +578,11 @@ static void handle(int c){
             else if(*q=='%'&&q[1]&&q[2]){char h[3]={q[1],q[2],0};*w++=(char)strtol(h,NULL,16);q+=2;}
             else *w++=*q;}*w=0;
         if(isnote){char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);char*nf=note_save(nd,cmd);
-            char m[256]="";note_url(nf,"note",m); /* gh PUT → real url (works even when local trails); no fork, no 30s freeze */
+            char m[256]="";note_url(nf,"note",m); /* gh PUT -> real url even when local trails */
             sresp(c,200,"text/plain",m,(int)strlen(m));return;}
         int pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){close(pp[0]);dup2(pp[1],1);dup2(pp[1],2);close(pp[1]);
-            signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL); /* SIG_DFL so child's git can waitpid (serve sets SIG_IGN) */
+            signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL); /* SIG_DFL: child git must waitpid */
             char*args[32]={"a"};int ac=1;char*p2=cmd;
             while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(*p2)*p2++=0;}
             args[ac]=NULL;execvp("a",args);
@@ -613,37 +604,35 @@ static void handle(int c){
     if(!strncmp(req,"POST /api/sync",14)){sync_bg();sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /fwins",10)){   /* fleet-wide tmux window list: serve cache instantly, refresh via lib/fwins.sh in bg (mirrors /fleet) */
         char fp[P];snprintf(fp,P,"%s/fleetwins.txt",DDIR);size_t fn=0;char*fb=readf(fp,&fn);struct stat ws;
-        /* RATE LIMIT: a scan is an ssh fanout to the whole fleet + a tmux client per box. The page polls every 4s;
-           refiring the scan on every poll ran 175 scans in 11min and kept N boxes + this tmux server under constant
-           load. Cache age gates it — polls stay a 0.2ms file read and cost the fleet nothing. */
+        /* RATE LIMIT: scan = fleet ssh fanout; 4s polls once refired it 175x/11min — cache age gates the refire */
         if(stat(fp,&ws)||time(0)-ws.st_mtime>=20){
             if(!fork()){close(c);char sh[P];snprintf(sh,P,"%s/lib/fwins.sh",SDIR);execl("/bin/sh","sh",sh,DEV,DDIR,(char*)0);_exit(0);}}
         sresp(c,200,"text/plain",fb&&fn?fb:"",fb&&fn?(int)fn:0);if(fb)free(fb);return;}
     if(!strncmp(req,"GET /review/armed",17)){const char*rt=getenv("XDG_RUNTIME_DIR");char af[P];snprintf(af,P,"%s/a_pick",rt&&*rt?rt:"/tmp");char*q=readf(af,NULL);char out[P]="";
         for(char*l=q,*nl;l&&*l;l=nl?nl+1:l+strlen(l)){nl=strchr(l,'\n');if(nl)*nl=0;if(*l&&access(l,R_OK)==0){snprintf(out,P,"%s",strrchr(l,'/')?strrchr(l,'/')+1:l);break;}}
-        free(q);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}   /* a review: what the e picker queue will attach next (i pick arm), for the banner */
+        free(q);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}   /* review banner: next e-picker attach */
     if(!strncmp(req,"GET /review/arm?n=",18)){int N=atoi(req+18);const char*kq=strstr(req,"&k=");int K=kq?atoi(kq+3):0;char fp[P]="",msg[P]="not found";
         if(rvpath(N,K,fp,P)&&access(fp,R_OK)==0){const char*rt=getenv("XDG_RUNTIME_DIR");char af[P];snprintf(af,P,"%s/a_pick",rt&&*rt?rt:"/tmp");FILE*f=fopen(af,"w");if(f){fprintf(f,"%s\n",fp);fclose(f);snprintf(msg,P,"armed %s",strrchr(fp,'/')?strrchr(fp,'/')+1:fp);}}
-        sresp(c,200,"text/plain; charset=utf-8",msg,(int)strlen(msg));return;}   /* a review: arm the e file picker queue with this document: the next Attach/Upload click in any browser attaches it, no navigating (Sean 2026-09-03: auto arm like resume does) */
-    if(!strncmp(req,"GET /review/push?n=",19)){char*f[5],fl[P],out[B*2]="";char*rl=rvline(atoi(req+19),f);   /* a review: the HUMAN's direct paths-only push of done.log line N (Sean 09-04): git add+commit -- <diff files> && push in that dir, message = the a done sentence; same shape as `a push -f`, same tok gate */
+        sresp(c,200,"text/plain; charset=utf-8",msg,(int)strlen(msg));return;}   /* arm the e picker: next Attach click in any browser attaches this file */
+    if(!strncmp(req,"GET /review/push?n=",19)){char*f[5],fl[P],out[B*2]="";char*rl=rvline(atoi(req+19),f);   /* review [y]: paths-only add+commit+push of line N's <diff> files; msg = the done sentence; same tok gate */
         if(!rl||!rvfl(f,fl))snprintf(out,B*2,"x no <diff> files on that a done");
         else{char v[B*2];if(tok_rule(f[3],v,(int)sizeof v,fl))snprintf(out,B*2,"x TOK INCREASE RULE\n%s",v);
-            else{char*m=strrchr(f[4],']');m=m?m+1:f[4];while(*m==' ')m++;char mf[P];snprintf(mf,P,"%s/review_msg_%d.txt",DDIR,(int)getpid());FILE*mfp=fopen(mf,"w");if(mfp){fputs(*m?m:"a done",mfp);fclose(mfp);}   /* commit message = the done sentence, via -F: it is agent text, never a shell word */
+            else{char*m=strrchr(f[4],']');m=m?m+1:f[4];while(*m==' ')m++;char mf[P];snprintf(mf,P,"%s/review_msg_%d.txt",DDIR,(int)getpid());FILE*mfp=fopen(mf,"w");if(mfp){fputs(*m?m:"a done",mfp);fclose(mfp);}   /* msg via -F: agent text, never a shell word */
                 char cmd[B*2];snprintf(cmd,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -F '%s' -- %s; }&&" PUSHCMD "&&{ git fetch -q origin 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&echo PUSHED_OK $(git rev-parse --short HEAD); }",f[3],fl,fl,mf,fl);
                 FILE*pp=popen(cmd,"r");size_t n=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[n]=0;unlink(mf);}}
         free(rl);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
-    if(!strncmp(req,"GET /review/tell?w=",19)){int w=atoi(req+19);char cmd[B],out[128];snprintf(cmd,B,"tmux send -t a:%d -X cancel 2>/dev/null;tmux send -t a:%d -l '%s'&&sleep 0.4&&tmux send -t a:%d Enter",w,w,PP,w);   /* a review: the panel's [p], typed into that agent's window (copy-mode cancelled first, as the panel does) */
-        strncat(cmd,"&&echo SENT",B-strlen(cmd)-1);FILE*pp=popen(cmd,"r");char r[16]="";if(pp){if(!fgets(r,16,pp))r[0]=0;pclose(pp);}   /* popen + marker, not system(): serve ignores SIGCHLD so system() returns -1 even on success (a.c snap trap) */
+    if(!strncmp(req,"GET /review/tell?w=",19)){int w=atoi(req+19);char cmd[B],out[128];snprintf(cmd,B,"tmux send -t a:%d -X cancel 2>/dev/null;tmux send -t a:%d -l '%s'&&sleep 0.4&&tmux send -t a:%d Enter",w,w,PP,w);   /* review [p] typed into the agent window (cancel copy-mode first) */
+        strncat(cmd,"&&echo SENT",B-strlen(cmd)-1);FILE*pp=popen(cmd,"r");char r[16]="";if(pp){if(!fgets(r,16,pp))r[0]=0;pclose(pp);}   /* popen+marker: SIGCHLD=IGN makes system() rc -1 even on success */
         snprintf(out,128,strstr(r,"SENT")?"told window %d: push just these changes":"x tmux window %d not reachable",w);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
-    if(!strncmp(req,"GET /review/go?w=",17)||!strncmp(req,"GET /problems/go?w=",19)){int w=atoi(strchr(req,'=')+1);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}' 2>/dev/null|sort -n|tail -1","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* a review: the LOCAL terminal app (Sean 09-04): switch the most recently used attached tmux client to window INDEX w (the tasks board's go, i web.py /problems/go) and raise foot in sway */
+    if(!strncmp(req,"GET /review/go?w=",17)||!strncmp(req,"GET /problems/go?w=",19)){int w=atoi(strchr(req,'=')+1);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}' 2>/dev/null|sort -n|tail -1","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* switch newest attached tmux client to window INDEX w + raise foot */
         char*cn=strchr(ln,'\t'),*cs=cn?strchr(cn+1,'\t'):0;if(!cs)snprintf(out,512,"no attached local terminal: tmux switch-client -t :%d",w);
         else{*cn=0;*cs=0;char cmd[600],er[200]="";snprintf(cmd,600,"tmux switch-client -c '%s' -t '%s:%d' 2>&1 && SWAYSOCK=$(ls -t /run/user/$(id -u)/sway-ipc.* 2>/dev/null|head -1) swaymsg '[app_id=foot] focus' >/dev/null 2>&1",cn+1,cs+1,w);FILE*p2=popen(cmd,"r");if(p2){if(!fgets(er,200,p2))er[0]=0;pclose(p2);}er[strcspn(er,"\n")]=0;
             if(er[0])snprintf(out,512,"x %s",er);else snprintf(out,512,"window %d in %s on %s",w,cs+1,cn+1);}
         sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
-    if(!strncmp(req,"GET /review/diff?n=",19)){char*f[5],fl[P];char*rl=rvline(atoi(req+19),f);int ok=rl&&rvfl(f,fl);   /* a review: the <diff>files</diff> of done.log line N as the a done panel shows it: cd <dir> && a diff -- files; its 24-bit ANSI backgrounds become spans, all else is escaped text (Sean 09-04) */
+    if(!strncmp(req,"GET /review/diff?n=",19)){char*f[5],fl[P];char*rl=rvline(atoi(req+19),f);int ok=rl&&rvfl(f,fl);   /* review diff: a diff -- <files> of line N; 24-bit ANSI bg -> spans, rest escaped */
         char cmd[B];FILE*pp=0;if(ok){snprintf(cmd,B,"cd '%s' && a diff -- %s 2>&1",f[3],fl);pp=popen(cmd,"r");}
         size_t rc=1<<18,rz=0;char*raw=malloc(rc);if(pp){rz=fread(raw,1,rc-1,pp);pclose(pp);}raw[rz]=0;
-        char*nt=strstr(raw,"net:");while(nt&&nt>raw&&nt[-1]!='\n'&&nt[-1]!='m')nt=strstr(nt+4,"net:");size_t nl=nt?strcspn(nt,"\n"):0;   /* the net tok line goes at the TOP too, and stays at the bottom (Sean 09-04: both places needed to review a diff) */
+        char*nt=strstr(raw,"net:");while(nt&&nt>raw&&nt[-1]!='\n'&&nt[-1]!='m')nt=strstr(nt+4,"net:");size_t nl=nt?strcspn(nt,"\n"):0;   /* net tok line shown top AND bottom */
         size_t oc=(rz+nl)*8+1024,ol;char*o=malloc(oc);ol=(size_t)snprintf(o,oc,"<!doctype html><meta charset=utf-8><style>body{margin:0;padding:16px 16px 80px;background:#000;color:#fff;font:15px/1.4 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}</style>");
         for(int pass=0;pass<2;pass++){const char*s=pass?raw:nt;size_t sn=pass?rz:nl;if(!s||!sn)continue;
             for(size_t q=0;q<sn&&ol<oc-80;q++){int ch=(unsigned char)s[q];if(ch==27){char sq[32];int nq=0;for(q++;q<sn&&s[q]!='m'&&nq<31;q++)sq[nq++]=s[q];sq[nq]=0;int cr,cg,cb;
@@ -655,19 +644,19 @@ static void handle(int c){
         const char*ct=mime(fp,"text/plain; charset=utf-8");
         if(!strncmp(ct,"text/plain",10)&&!strstr(req,"&raw=1")){size_t oc=bl*6+512;char*o=malloc(oc);int ol=snprintf(o,oc,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{margin:0;padding:16px 16px 80px;background:#000;color:#fff;font:18px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}</style>");
             for(size_t q=0;q<bl&&ol<(int)oc-8;q++){char ch=b[q];if(ch=='<')ol+=snprintf(o+ol,oc-(size_t)ol,"&lt;");else if(ch=='>')ol+=snprintf(o+ol,oc-(size_t)ol,"&gt;");else if(ch=='&')ol+=snprintf(o+ol,oc-(size_t)ol,"&amp;");else o[ol++]=ch;}
-            free(b);b=o;bl=(size_t)ol;ct="text/html; charset=utf-8";}   /* a text file in the black frame has a transparent body: black on black (Sean 09-03, "literally cant see text"). Wrap it dark, white, wrapping */
+            free(b);b=o;bl=(size_t)ol;ct="text/html; charset=utf-8";}   /* wrap text files dark: transparent body was black-on-black */
         sfile(c,ct,b,bl,"no-cache");free(b);return;}
-    if(!strncmp(req,"GET /review/wsz?w=",18)){int w=atoi(req+18);char tc[160],sz[32]="";snprintf(tc,160,"tmux display-message -p -t a:%d '#{window_width} #{window_height}' 2>/dev/null",w);FILE*pp=popen(tc,"r");if(pp){if(fgets(sz,32,pp))sz[strcspn(sz,"\n")]=0;pclose(pp);}sresp(c,200,"text/plain",sz,(int)strlen(sz));return;}   /* host tmux window size, for the pull-up's fit-width scaling (a review) */
-    if(!strncmp(req,"GET /review",11)){   /* a review: GUI review queue (Sean 2026-09-02), DDIR/done.log, one line per `a done` (ts\tidx\tname\tdir\tmsg, written by cmd_done), newest first; per AGENT (Sean 09-03); shell = lib/review.html */
+    if(!strncmp(req,"GET /review/wsz?w=",18)){int w=atoi(req+18);char tc[160],sz[32]="";snprintf(tc,160,"tmux display-message -p -t a:%d '#{window_width} #{window_height}' 2>/dev/null",w);FILE*pp=popen(tc,"r");if(pp){if(fgets(sz,32,pp))sz[strcspn(sz,"\n")]=0;pclose(pp);}sresp(c,200,"text/plain",sz,(int)strlen(sz));return;}   /* host window size for the pull-up's fit-width */
+    if(!strncmp(req,"GET /review",11)){   /* a review: done.log rows (ts\tidx\tname\tdir\tmsg) newest first, per agent; shell = lib/review.html */
         char tf[P];snprintf(tf,P,"%s/lib/review.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(!th){sresp(c,404,"text/plain","no review.html",14);return;}
         char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;
         size_t li=0;for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l),li++){nl=strchr(l,'\n');if(nl)*nl=0;char*f[5]={l,0,0,0,0};int k=1;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}if(k<5)continue;
             if(n>=nc){nc=nc?nc*2:64;rs=realloc(rs,nc*sizeof*rs);}rs[n].t=atol(f[0]);rs[n].w=f[1][0]&&strspn(f[1],"0123456789")==strlen(f[1])?f[1]:0;rs[n].n=f[2];rs[n].p=f[3];rs[n].i=li;rs[n++].m=f[4];}
         qsort(rs,n,sizeof*rs,rvcmp);int cap=1<<18;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
         for(size_t i=0;i<n&&hl<cap-4096;i++){long a=(long)(now-rs[i].t);char*m=strrchr(rs[i].m,']');m=m?m+1:rs[i].m;while(*m==' ')m++;for(char*q=m;*q;q++)if(*q=='<'||*q=='>')*q=' ';
-            const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;char ag[32];if(a<3600)snprintf(ag,32,"%ldm",a/60);else if(a<86400)snprintf(ag,32,"%ldh%02ldm",a/3600,a%3600/60);else snprintf(ag,32,"%ldd%ldh%02ldm",a/86400,a%86400/3600,a%3600/60);   /* age to the minute (Sean 09-03) */
+            const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;char ag[32];if(a<3600)snprintf(ag,32,"%ldm",a/60);else if(a<86400)snprintf(ag,32,"%ldh%02ldm",a/3600,a%3600/60);else snprintf(ag,32,"%ldd%ldh%02ldm",a/86400,a%86400/3600,a%3600/60);
             char nm[64]="";{int k=0;for(const char*q=rs[i].n;*q&&k<63;q++)if(isalnum((unsigned char)*q)||strchr("-_.",*q))nm[k++]=*q;nm[k]=0;}
-            char bt[1280]="";if(rs[i].w)snprintf(bt,1280,"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"op(this)\" data-w=\"%s\" data-n=\"%s\">web terminal: %s</button> <button class=op onpointerdown=\"go(this)\" data-w=\"%s\">local terminal: %s</button> <button class=op onpointerdown=\"tl(this)\" data-w=\"%s\">tell agent: push</button></div>",rs[i].w,nm,nm[0]?nm:"window",rs[i].w,nm[0]?nm:"window",rs[i].w);   /* three per entry: web terminal, local terminal, and the agent-push prompt; the human's own direct push is the button under the diff files below */   /* two terminals per entry (Sean 09-04): the pull-up web terminal, or the local terminal app switched to that tmux window; plain words (Sean 09-03: a play icon reads as music) */
+            char bt[1280]="";if(rs[i].w)snprintf(bt,1280,"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"op(this)\" data-w=\"%s\" data-n=\"%s\">web terminal: %s</button> <button class=op onpointerdown=\"go(this)\" data-w=\"%s\">local terminal: %s</button> <button class=op onpointerdown=\"tl(this)\" data-w=\"%s\">tell agent: push</button></div>",rs[i].w,nm,nm[0]?nm:"window",rs[i].w,nm[0]?nm:"window",rs[i].w);   /* per entry: web terminal, local terminal, tell-agent-push; plain words, not icons */
             hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%s</span> <b>%s</b> <span style=color:#888>%s</span> %.300s%s",ag,nm[0]?nm:"(no window)",rp,m,bt);
             {char*da=strstr(rs[i].m,"<diff>"),*db=da?strstr(da,"</diff>"):0;if(da&&db){char sn[160];int z=0;for(const char*q=da+6;q<db&&z<159;q++)if(!strchr("<>\"&",*q))sn[z++]=*q;sn[z]=0;   /* <diff> files: the panel's focused diff, rendered in the same pull-up */
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"dv(this)\" data-u=\"/review/diff?n=%zu\" data-n=\"diff %s\">show diff: %s</button> <button class=op onpointerdown=\"pu(this)\" data-n=\"%zu\" data-l=\"direct push, these files only: %s\">direct push, these files only: %s</button></div>",rs[i].i,sn,sn,rs[i].i,sn,sn);}}
@@ -675,22 +664,22 @@ static void handle(int c){
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"dv(this)\" data-u=\"/review/doc?n=%zu&amp;k=%d\" data-n=\"%s\">view document: %s</button></div>",rs[i].i,k,sn,sn);}
             hl+=snprintf(h+hl,(size_t)(cap-hl),"</div>");}
         free(rs);free(rl);sdoc(c,h,hl);free(h);return;}
-    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web (page: adata/git/common/music.html, cli: adata/git/my/music.c — restored from the 5ad00bca cut, Sean 2026-09-10): /music page · /musics?f=q rows (empty q = cache) · /musicf?f=name stream · /musicg?f=id = a music get → stream */
-        if(req[10]=='s'){docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache matches, then 5 YouTube hits via ONE InnerTube call (0.45s; yt-dlp ytsearch was 9s) */
+    if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web (page common/music.html, cli lib/music.c): /musics?f=q rows · /musicf?f=name stream · /musicg?f=id get+stream */
+        if(req[10]=='s'){docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache rows + 5 hits via one InnerTube call (0.45s; yt-dlp was 9s) */
             FILE*p=popen(rel[0]?"ls \"$MC\"|grep -v '\\.part$'|grep -iF -- \"$Q\";jq -cn --arg q \"$Q\" '{context:{client:{clientName:\"WEB\",clientVersion:\"2.20250101.00.00\"}},query:$q,params:\"EgIQAQ%3D%3D\"}'|curl -s -m6 -d @- -H content-type:application/json 'https://www.youtube.com/youtubei/v1/search?prettyPrint=false'|jq -r '[..|.videoRenderer?|select(.)|\"\\(.videoId)\\t\\(.title.runs[0].text) \\(.lengthText.simpleText//\"\")\"]|.[:5][]'":"ls \"$MC\"|grep -v '\\.part$'","r");
             size_t n=p?fread(b,1,8191,p):0;if(p)pclose(p);sresp(c,200,"text/plain; charset=utf-8",b,(int)n);b[n]=0;
-            char*ar[16];int an=0;ar[an++]="a";ar[an++]="music";ar[an++]="pre";   /* prefetch every hit at once (first first) so a tap plays instantly; ids come off the network → argv, never a shell, and only [A-Za-z0-9_-] */
+            char*ar[16];int an=0;ar[an++]="a";ar[an++]="music";ar[an++]="pre";   /* prefetch all hits; net ids -> argv only, [A-Za-z0-9_-] gated */
             for(char*ln=b;*ln&&an<15;){char*e=strchr(ln,'\n'),*t=strchr(ln,'\t');
                 if(t&&(!e||t<e)&&t-ln<16){int ok=1;for(char*z=ln;z<t;z++)if(!isalnum((unsigned char)*z)&&*z!='-'&&*z!='_')ok=0;
                     if(ok){*t=0;ar[an++]=ln;}}
                 if(!e)break;ln=e+1;}
             ar[an]=0;if(an>3&&!fork()){close(c);execvp("a",ar);_exit(0);}
             return;}
-        if(req[10]&&strchr("ctr",req[10])){docrel(req,rel);setenv("K",rel,1);char b[256],cm[32];   /* one shape, three subs — c=cfg "<cap-GB> <clip> <MB-now>" (?f=cap-8/trim-0 sets) · t=trim "<skip-in> <stop-at>" · r=rm one track's local bytes (.index keeps the how-to-get) */
+        if(req[10]&&strchr("ctr",req[10])){docrel(req,rel);setenv("K",rel,1);char b[256],cm[32];   /* c=cfg "<cap> <clip> <MB>" · t=trim "<in> <out>" · r=rm local bytes (.index keeps how-to-get) */
             snprintf(cm,32,"a music %s \"$K\"",req[10]=='c'?"cfg":req[10]=='t'?"trim":"rm");
             FILE*p=popen(cm,"r");size_t n=p?fread(b,1,255,p):0;if(p)pclose(p);
             sresp(c,200,"text/plain",b,(int)n);return;}
-        if(req[10]=='g'||req[10]=='f'){char id[32]={0};struct stat st;   /* ONE streamer, cached+growing: WebKit needs 206+total */
+        if(req[10]=='g'||req[10]=='f'){char id[32]={0};struct stat st;   /* one streamer, cached+growing: WebKit needs 206+total */
             if(req[10]=='f')docrel(req,rel);
             else{qp(req,"?f=",id,32);setenv("I",id,1);
                 #define RES {FILE*ip=popen("sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q","r");if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}}
@@ -699,7 +688,7 @@ static void handle(int c){
             char fl[P+300],pt[P+308],h[300];
             #define FLP snprintf(fl,sizeof fl,"%s/%s",mc,rel),snprintf(pt,sizeof pt,"%s.part",fl)
             FLP;
-            if(id[0]&&(!rel[0]||access(fl,F_OK))){   /* kick download, stream as it grows */
+            if(id[0]&&(!rel[0]||access(fl,F_OK))){   /* download + stream as it grows */
                 if(!rel[0]){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}   /* head writes row+.sz after its curl */
                     for(int w=0;w<600&&!rel[0];w++){usleep(100000);RES}
                     if(!rel[0])_exit(0);
@@ -733,7 +722,9 @@ static void handle(int c){
                 usleep(100000);}
             _exit(0);}
         else{char tf[P];snprintf(tf,P,"%s/common/music.html",SROOT);size_t tl=0;char*th=readf(tf,&tl);if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","x",1);return;}}
-    if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* unified fleet tmux view: all devices' windows in one list, one inline terminal that re-points */
+    if(!strncmp(req,"GET /datamap",12)){char tf[P];snprintf(tf,P,"%s/lib/datamap.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);   /* datamap page over `a datamap` via /api/omni */
+        if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","no datamap.html",15);return;}
+    if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* fleet tmux view: all windows, one re-pointing terminal */
         char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
         if(th){siso(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","no fleetview.html",16);return;}
     if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
@@ -741,36 +732,27 @@ static void handle(int c){
         const char*r=busy?"syncing":sync_age();sresp(c,200,"text/plain",r,(int)strlen(r));return;}
     if(!strncmp(req,"GET /note-list",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
-        int hl=notes_build(html,cap,"notes");sresp(c,200,"text/html",html,hl);free(html);return;}
-    if(!strncmp(req,"GET /flow",9)&&(req[9]==' '||req[9]=='?'||req[9]=='\r')){   /* structured review surface: notes + tasks + prompts, full text, per-row archive/edit, add + suggest */
-        int cap=1<<19;char*buf=malloc((size_t)cap);if(!buf){sresp(c,500,"text/plain","oom",3);return;}
-        int bl=snprintf(buf,3200,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>flow</title><style>body{background:#111;color:#ddd;font:14px/1.5 ui-monospace,monospace;margin:0;padding:8px 12px 9em}h3{color:#fff;margin:16px 0 4px;font-size:15px}.ni{display:flex;align-items:flex-start;padding:6px 0;border-bottom:1px solid #1c1c1c;word-break:break-word}.nx{background:none;border:1px solid #555;color:#999;padding:5px 10px;margin-right:9px;border-radius:4px;cursor:pointer;flex:none}button{background:#111;color:#fff;border:1px solid #444;border-radius:6px;padding:6px 11px;margin:0 2px;cursor:pointer;font:13px monospace}a{color:#fff}</style><body><h3>NOTES <button onclick=\"fadd('note','note')\">+</button></h3>");
-        bl+=notes_build(buf+bl,cap-bl,"notes");
-        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<h3>PROMPT CANDIDATES <button onclick=\"fadd('prompt c','prompt')\">+</button></h3>");
-        bl+=notes_build(buf+bl,cap-bl,"prompts");
-        bl+=snprintf(buf+bl,(size_t)(cap-bl),"<div style=\"position:fixed;left:0;right:0;bottom:0;background:#111;border-top:1px solid #333;padding:.6em;text-align:center\"><span id=fs style=color:#bbb></span></div><script>function omni(c){fs.textContent='\342\200\246';fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(c)}).then(function(r){return r.text()}).then(function(){location.reload()})}function fadd(c,k){var v=prompt('new '+k);if(v)omni(c+' '+v)}function arc(u,key,f){var b={};b[key]=f;fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}).then(function(){location.reload()})}function arcn(f){arc('/api/note/archive','f',f)}function arcp(f){arc('/api/prompt/archive','f',f)}</script>");
-        sdoc(c,buf,bl);free(buf);return;}
-    if(!strncmp(req,"POST /api/note/archive",22)||!strncmp(req,"POST /api/prompt/archive",24)){
-        char kc=req[10];const char*kind=kc=='p'?"prompts":"notes";  /* n=notes p=prompts */
+        int hl=notes_build(html,cap);sresp(c,200,"text/html",html,hl);free(html);return;}
+    if(!strncmp(req,"POST /api/note/archive",22)){
         char*body=strstr(req,"\r\n\r\n");if(!body){sresp(c,400,"text/plain","bad",3);return;}
         char*k=strstr(body+4,"\"f\":\"");if(!k){sresp(c,400,"text/plain","no name",7);return;}
         k+=5;char name[256];int ni=0;while(k[ni]&&k[ni]!='"'&&ni<255){name[ni]=k[ni];ni++;}name[ni]=0;
         for(char*p=name;*p;p++)if(*p=='/'){sresp(c,400,"text/plain","bad name",8);return;}
         char src[P],dst[P],ad[P];
-        snprintf(ad,P,"%s/git/%s/.archive",AROOT,kind);mkdir(ad,0755);
-        snprintf(src,P,"%s/git/%s/%s",AROOT,kind,name);
+        snprintf(ad,P,"%s/git/notes/.archive",AROOT);mkdir(ad,0755);
+        snprintf(src,P,"%s/git/notes/%s",AROOT,name);
         snprintf(dst,P,"%s/%s",ad,name);rename(src,dst);
         sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
-        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3])&&!strstr(req,"&all"))?atoi(qw+3):-1;   /* &all = fleet view: skip agent-only gate, show any window */
+        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3])&&!strstr(req,"&all"))?atoi(qw+3):-1;   /* &all: skip the agent-only gate */
         if(idx>=0){char tc[256];
             snprintf(tc,256,"p=$(tmux display-message -t a:%d -p '#{pane_pid}' 2>/dev/null);c=$(cat /proc/$p/task/$p/children 2>/dev/null|cut -d' ' -f1);[ -n \"$c\" ]&&cat /proc/$c/comm 2>/dev/null",idx);
             FILE*pp=popen(tc,"r");char nm[64]={0};
             if(pp){if(fgets(nm,64,pp))nm[strcspn(nm,"\n")]=0;pclose(pp);}
-            if(strcmp(nm,"claude")&&strcmp(nm,"codex")&&strcmp(nm,"gemini")&&strcmp(nm,"aider")){
+            if(strcmp(nm,"claude")&&strcmp(nm,"codex")&&strcmp(nm,"agy")&&strcmp(nm,"aider")){
                 static const char NO[]="<!doctype html><style>body{background:#000;color:#fff;font:16px system-ui;text-align:center;padding-top:40vh}a{color:#fff}</style>no agent<br><br><a href=/review>← review</a>";
                 sresp(c,200,"text/html",NO,sizeof NO-1);return;}}
-        char tf[P];snprintf(tf,P,"%s/lib/term.html",SDIR);size_t tl=0;char*th=readf(tf,&tl); /* direct-DOM terminal page (replaced xterm.js CDN 7/10) */
+        char tf[P];snprintf(tf,P,"%s/lib/term.html",SDIR);size_t tl=0;char*th=readf(tf,&tl); /* direct-DOM terminal page */
         if(th){siso(c,th,(int)tl);free(th);}
         else sresp(c,404,"text/plain","no term.html",12);
         return;}
@@ -787,7 +769,7 @@ static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);
     int fd=socket(AF_INET,SOCK_STREAM,0);fcntl(fd,F_SETFD,FD_CLOEXEC);
     setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&(int){1},4);
     struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port)};
-    if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");return 1;} /* lost the port race -> exit BEFORE any tmux touch, so N concurrent invokes can't stampede the dashboard bridge */
+    if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");return 1;} /* port race lost -> exit before any tmux touch */
     listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
     for(;;){int c=accept(fd,0,0);if(c<0)continue;
         struct timeval tv={2,0};setsockopt(c,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);

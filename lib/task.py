@@ -1,8 +1,5 @@
-"""a-side task engine, CANONICAL (ported from i 2026-08-31 per the 08-27 plan; i task = stub calling this).
-Data ~/a/adata/git/tasks.txt + tasks-archive.txt · ordinal = block order, no rank numbers · block form: `== [date] title [a:window] ==` + context lines.
-CLI: task.py [N|add <title>|ctx N <line>|down N|archive N (done=alias, github-url receipt)|agent N [window|self]|date N [ts]|rank N K]
-a task / a t -> here (note.c shim); free text = add; add --by <model> = LLM-entered task (by: line); sync = a sync. The adata/git/tasks/ dir engine is gone (2026-09-05).
-"""
+"""a-side task engine, CANONICAL (i task = stub). Data adata/git/tasks.txt + tasks-archive.txt; ordinal = block order; block = `== [date] title [a:window] ==` + context lines.
+CLI: task.py [N|add <t>|ctx N <l>|down N|archive N (github-url receipt)|agent N [window|self]|date N [ts]|rank N K]; free text = add; add --by <model> = LLM task; sync = a sync."""
 import html,os,re,subprocess,sys,threading,time
 D=os.environ['HOME']+'/a/adata/git';F=D+'/tasks.txt';TAG=r' ?\[a:([^\]\s]*)\]';DT=r'^== (\d{4}-\d\d-\d\d(?: \d\d:\d\d:\d\d)?|\d\d-\d\d) ' # date prefix on the title, to the second; MM-DD (days.txt form) still read
 _c=os.path.expanduser('~/a/adata/git/workspace/config.txt');_cfg=open(_c).read()if os.path.exists(_c)else''

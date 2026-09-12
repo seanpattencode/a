@@ -1,5 +1,5 @@
-/* a grep [term] — indexed all-repo code+notes+commit-log search. tty+no-args = live TUI (type/backspace, ↑↓ sel, ⏎ = e at hit line / cd for dirs+⎇log); args = one-shot; a grep index = rebuild. repos: SROOT/my/grep.repos.
-   idx = [orig][\2][lowercase] byte-identical halves; "\1path\n"+content per file; "\1⎇ repo\n"+log LAST. ORDER RULE: display order = blob order — zero search-time ranking. Scan = rarest-byte memchr, threaded; TUI appends filter prev full set in µs. */
+/* a grep [term] — indexed all-repo search; tty bare = live TUI (⏎ = e at hit / cd), args = one-shot, `index` rebuilds; repos: my/grep.repos.
+   idx = [orig][\2][lowercase]; "\1path\n"+content, ⎇ logs LAST; display order = blob order (zero ranking); rarest-byte memchr, threaded. */
 #include <pthread.h>
 #include <termios.h>
 #include <dirent.h>
@@ -86,7 +86,7 @@ static void gp_stale(void){
 }
 
 typedef struct{const char*hay,*q;size_t s,e,nl,half;size_t hit[SHOW];int n;}GPTH;
-static unsigned char gp_rb;static size_t gp_rj;            /* rarest needle byte+offset */
+static unsigned char gp_rb;static size_t gp_rj;            
 static void*gp_scan(void*a){GPTH*t=a;
     size_t off=t->s+gp_rj,hi=t->e+gp_rj;if(hi>t->half)hi=t->half;
     while(t->n<SHOW&&off<hi){
@@ -125,7 +125,7 @@ static size_t gp_dec(const char*m,size_t half,size_t ho,size_t hl,GPHIT*h){
     const char*o=m+ho,*ls=o;
     while(ls>m&&ls[-1]!='\n')ls--;
     const char*le=memchr(o,'\n',half-ho);if(!le)le=m+half;
-    const char*hd=0;for(const char*p=m+ho;p>m;)if(*--p==1){hd=p;break;}  /* memrchr: no BSD/macOS libc */
+    const char*hd=0;for(const char*p=m+ho;p>m;)if(*--p==1){hd=p;break;}  /* no memrchr on mac */
     const char*hp=hd?hd+1:m;
     const char*he=memchr(hp,'\n',(size_t)(m+half-hp));if(!he)he=m+half;
     h->fp=hp;h->fpl=(int)(he-hp);
@@ -147,7 +147,7 @@ static int gp_omap(char**mp,char**midp,size_t*halfp){
     if(fd<0){fprintf(stderr,"first run: building index…\n");if(gp_build())return -1;fd=open(gp_idx,O_RDONLY);if(fd<0)return -1;}
     struct stat st;fstat(fd,&st);
     char*m=mmap(0,(size_t)st.st_size,PROT_READ,MAP_PRIVATE,fd,0);if(m==MAP_FAILED)return -1;
-    char*mid=m+(st.st_size-1)/2;                           /* midpoint arithmetic */
+    char*mid=m+(st.st_size-1)/2;                           
     if(*mid!=2){mid=memchr(m,2,(size_t)st.st_size);if(!mid)return -1;}
     *mp=m;*midp=mid;*halfp=(size_t)(mid-m);return fd;
 }
@@ -178,7 +178,7 @@ static int gp_srch(const char*need0){
 typedef struct{int ok,n,na,capped,full,ci;size_t off[HKEEP];}GPRS;
 static struct termios gp_tsav;static int gp_traw=0;
 static void gp_trest(void){if(gp_traw){tcsetattr(0,TCSANOW,&gp_tsav);(void)!write(1,"\033[?1049l\033[?25h",14);gp_traw=0;}}
-static void gp_cdt(const char*d){                          /* a() wrapper consumes cd_target */
+static void gp_cdt(const char*d){                          
     char ct[P];snprintf(ct,P,"%s/cd_target",DDIR);writef(ct,d);
     gp_trest();printf("→ %s\n",d);}
 static int gp_eo(const char*p,size_t off){
@@ -186,13 +186,13 @@ static int gp_eo(const char*p,size_t off){
     if(off){char ob[32];snprintf(ob,32,"+%zu",off);printf("e %s %s\n",ob,p);execlp("e","e",ob,p,(char*)0);}
     else{printf("e %s\n",p);execlp("e","e",p,(char*)0);}
     perror("e");return 1;}
-static int gp_nls;static char gp_lsn[512][256];            /* [255] = isdir flag */
+static int gp_nls;static char gp_lsn[512][256];            
 static int gp_lcmp(const void*a,const void*b){const char*x=a,*y=b;return x[255]!=y[255]?y[255]-x[255]:strcmp(x,y);}
 static int gp_tui(void){
     char*m,*mid;size_t half;if(gp_omap(&m,&mid,&half)<0)return 1;
     size_t hl=strlen(HOME);
     gp_stale();
-    char rcwd[1024],crumb[1100];                           /* cwd = user shell's (CMDS dispatch never chdirs) */
+    char rcwd[1024],crumb[1100];                           
     if(!getcwd(rcwd,1024))snprintf(rcwd,1024,"%s",HOME);
     int uh=!strncmp(rcwd,HOME,hl)&&(rcwd[hl]=='/'||!rcwd[hl]);
     snprintf(crumb,1100,"%s%s",uh?"~":"",uh?rcwd+hl:rcwd);
@@ -220,7 +220,7 @@ static int gp_tui(void){
             qb[ql]=0;
             int newci=1;for(int i=0;i<ql;i++)if(isupper((unsigned char)qb[i]))newci=0;
             GPRS*pv=&hist[ql-1];
-            if(ql>1&&pv->ok&&pv->full&&pv->ci==newci){     /* append filter */
+            if(ql>1&&pv->ok&&pv->full&&pv->ci==newci){     
                 const char*hay=newci?mid+1:m;
                 char qc=newci?(char)tolower((unsigned char)qb[ql-1]):qb[ql-1];
                 cur->n=0;

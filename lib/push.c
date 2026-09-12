@@ -1,23 +1,23 @@
 #define PUSHCMD "{ git push -u origin HEAD 2>&1||{ git pull --rebase --autostash origin HEAD 2>&1&&git push -u origin HEAD 2>&1||{ git rebase --abort 2>/dev/null;echo PUSH_CONFLICT;};}; }"
-/* tok-increase rule (baseline = origin/main, tok=bytes/4): new a.c|lib file <=200 tok; extending <= max(200, 5% of module); no lib/ module >50k. Fills v[] (one violation/line), returns count. No-op outside this repo (origin/main has no a.c/lib). Override at push: A_TOK_OK=1. */
+/* tok rule vs origin/main (b/4): new file <=200; extend <= max(200,5%); module <=50k. Fills v[], returns count. Override: A_TOK_OK=1 */
 static const char *TOK_RULE_MSG =
     "If a change is vs main a new file, it cannot be more than 200 tok. If extending existing, it cannot be over 200 tok or 5% of the existing module, whichever is larger. No module is allowed over 50k tok in /lib. This forces simplicity and increases maintainability. Changes that are too large are too likely to contain error and or be too complex to maintian for the long term. Simplify the code or the problem if you hit these limits, or split into smaller modules of independent /lib components if that is impossible. This also ensures that the add drop ability to add and remove /lib should work with greater reliability, but care should be taken to ensure that they follow the pattern of independently able to do useful work but can be combined to do more useful things as the unix philosophy recommends. Try to shorten and simplify its practically always possible, and stop and ask human if it is something that cannot be resolved after that.";
-static int tok_rule(const char *cwd, char *v, int vsz, const char *only) {   /* only = the files of a direct push: gated on those alone, not the whole tree; NULL = whole tree */
+static int tok_rule(const char *cwd, char *v, int vsz, const char *only) {   /* only = a direct push's files; NULL = whole tree */
     v[0]=0; int vl=0,n=0; char c[B],o[64];
     const char *br="origin/main";
     snprintf(c,B,"cd '%s'&&git rev-parse --verify -q origin/main >/dev/null 2>&1&&echo y",cwd);
     pcmd(c,o,64);
     if(o[0]!='y'){ br="origin/master";
         snprintf(c,B,"cd '%s'&&git rev-parse --verify -q origin/master >/dev/null 2>&1&&echo y",cwd);
-        pcmd(c,o,64); if(o[0]!='y') return 0; }   /* only enforce where a baseline branch exists */
-    char paths[256]="a.c lib"; long modcap=50000;   /* per-repo override: .tokrule at repo top — "paths=..." "module=N" */
+        pcmd(c,o,64); if(o[0]!='y') return 0; }   
+    char paths[256]="a.c lib"; long modcap=50000;   /* .tokrule overrides: paths= module= */
     snprintf(c,B,"cd '%s'&&cat \"$(git rev-parse --show-toplevel)/.tokrule\" 2>/dev/null",cwd);
     { char tr[512]; pcmd(c,tr,(int)sizeof(tr)); char *pl=strstr(tr,"paths="),*mc=strstr(tr,"module=");
       if(pl){ pl+=6; size_t i=0; while(pl[i]&&pl[i]!='\n'&&i<255){paths[i]=pl[i];i++;} paths[i]=0; }
       if(only&&*only)snprintf(paths,256,"%s",only);
       if(mc) modcap=atol(mc+7);
-      char *tc=strstr(tr,"total="),*rp=strstr(tr,"ramp=");   /* total= repo-wide cap (tracked bytes/4) — the entropy deadman, enforced at push too. ramp=<start> <target> <from> <to>: cap lowers an equal % per whole day from start to target, holds after (twin: ~/i lib/tokcap) */
-      double ff=0,fk=1;char *fb=strstr(tr,"fable=");if(fb&&sscanf(fb+6,"%lf %lf",&ff,&fk)<2)fb=0;   /* fable=<fixed> <k>: the cap is in served-context Fable tokens; repo bytes/4 -> fixed + k*bytes/4 before comparing (i/.tokrule 2026-09-05) */
+      char *tc=strstr(tr,"total="),*rp=strstr(tr,"ramp=");   /* total= repo cap; ramp=<start> <target> <from> <to> lowers an equal % per day (twin: i tokcap) */
+      double ff=0,fk=1;char *fb=strstr(tr,"fable=");if(fb&&sscanf(fb+6,"%lf %lf",&ff,&fk)<2)fb=0;   /* fable=<fixed> <k>: cap in served Fable tokens = fixed + k*b/4 */
       if(tc){ long totcap=atol(tc+6),rs,rt; int y0,m0,d0,y1,m1,d1;
         if(rp&&sscanf(rp+5,"%ld %ld %d-%d-%d %d-%d-%d",&rs,&rt,&y0,&m0,&d0,&y1,&m1,&d1)==8){
           struct tm ta={0},tb={0}; ta.tm_year=y0-1900;ta.tm_mon=m0-1;ta.tm_mday=d0;ta.tm_isdst=-1;tb.tm_year=y1-1900;tb.tm_mon=m1-1;tb.tm_mday=d1;tb.tm_isdst=-1;
@@ -53,7 +53,7 @@ static int cmd_push(int argc, char **argv) { AB;
         char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
         if(!nl){puts("x no .commit (after a done)");free(cs);return 1;}
         *nl=0;char*f=nl+1;f[strcspn(f,"\n")]=0;char c[B*2],vo[B];if(gate(cwd,f)){free(cs);return 1;}
-        snprintf(c,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -m \"%s\" -- %s; }&&" PUSHCMD,cwd,f,f,cs,f);pcmd(c,vo,B);   /* files already committed (agents commit paths-only) -> just push */
+        snprintf(c,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -m \"%s\" -- %s; }&&" PUSHCMD,cwd,f,f,cs,f);pcmd(c,vo,B);   /* already committed -> just push */
         if(strstr(vo,"PUSH_CONFLICT")){printf("✗ %s: rebase conflict with origin — aborted, tree restored (commit kept local).\n  Same lines changed by another agent. Merge by hand: git pull --rebase, resolve, a push -f\n",cs);free(cs);return 1;}
         snprintf(c,B*2,"cd '%s'&&git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo https://github.com/$u/commit/$(git rev-parse --short HEAD);}",cwd);
         pcmd(c,vo,B);vo[strcspn(vo,"\n")]=0;
@@ -63,7 +63,7 @@ static int cmd_push(int argc, char **argv) { AB;
     if(gate(cwd,NULL))return 1;
     char msg[B]="",ps[P]="";
     if(argc>2)ajoin(msg,B,argc,argv,2);
-    /* no-arg tty: pick a dirty file (newest first), ↵ pushes JUST it */
+    /* no-arg tty: pick a dirty file, push just it */
     else if(isatty(0)&&isatty(1)&&git_in_repo(cwd)){
         char ls[B*2],out[128];const char*fn[32];long mt[32];int nf=0;struct stat st;
         pcmd("git status --porcelain",ls,sizeof(ls));
@@ -78,7 +78,7 @@ static int cmd_push(int argc, char **argv) { AB;
     if(!msg[0])snprintf(msg, B, "Update %s", bname(cwd));
 
     if (!git_in_repo(cwd)) {
-        /* Fork without .git: init, commit, push branch to upstream */
+        /* fork without .git: init+commit+push branch */
         if(in_fork(cwd)){char c[B],br[128],rf[P];
             snprintf(rf,P,"%s/.fork_remote",cwd);char*remote=readf(rf,NULL);
             if(!remote||!*remote){free(remote);puts("x No .fork_remote");return 1;}
@@ -89,7 +89,7 @@ static int cmd_push(int argc, char **argv) { AB;
             if(strstr(out,"->")||strstr(out,"new branch"))printf("✓ pushed branch %s\n",br);
             else printf("x %s\n",out);
             return 0;}
-        /* Check for sub-repos */
+        
         DIR *d = opendir(cwd); struct dirent *e; int nsub = 0;
         char subs[32][256];
         if (d) { while ((e = readdir(d)) && nsub < 32) { if(e->d_name[0]=='.')continue; char gp[P]; snprintf(gp,P,"%s/%s/.git",cwd,e->d_name); if (dexists(gp)) snprintf(subs[nsub++],256,"%s",e->d_name); } closedir(d); }
@@ -131,7 +131,7 @@ static int cmd_push(int argc, char **argv) { AB;
     mkdirp(DDIR);snprintf(c,B,"%s/logs",DDIR);mkdirp(c);
     {int fd=open(ok,O_CREAT|O_WRONLY|O_TRUNC,0644);if(fd>=0)close(fd);}
     printf("%s %s%s\n",tag,msg,strstr(out,"rebase")?" (rebased)":"");
-    /* verify push: check our diff actually landed on origin */
+    /* verify: our diff landed on origin */
     {snprintf(c,B,"cd '%s'&&git fetch origin -q 2>/dev/null&&git diff HEAD origin/HEAD --name-only 2>/dev/null",cwd);
     char vf[B];pcmd(c,vf,B);if(vf[0]){printf("✗ WARN: push succeeded but origin differs:\n%s  Another agent may have overwritten. Re-run: a push\n",vf);
     system("a done 'push verify FAILED — changes lost on origin, re-push needed'");}}
@@ -180,7 +180,7 @@ static int cmd_diff(int argc, char **argv) { AB;
     const char *sel = (argc>2&&strcmp(argv[2],"--"))?argv[2]:NULL;
     char ps[B]="";for(int i=2;i<argc;i++)if(!strcmp(argv[i],"--")){int pl=snprintf(ps,B," --");for(int j=i+1;j<argc;j++)pl+=snprintf(ps+pl,(size_t)(B-pl)," '%s'",argv[j]);break;}
     int filt=ps[0]!=0;
-    /* Token history mode */
+    
     if (sel && sel[0] >= '0' && sel[0] <= '9') {
         int n = atoi(sel); char c[256]; snprintf(c, 256, "git log -%d --pretty=%%H\\ %%cd\\ %%s --date=format:%%I:%%M%%p", n);
         FILE *fp = popen(c, "r"); if (!fp) return 1;
@@ -203,7 +203,7 @@ static int cmd_diff(int argc, char **argv) { AB;
         }
         pclose(fp); printf("\nTotal: %+d tokens\n", total); return 0;
     }
-    /* Full diff — colored + stats */
+    
     char cwd[P]; if(!getcwd(cwd,P)) snprintf(cwd,P,".");
     struct{char name[256];int al,dl,ab,db,sb;}fs[256]; int nf=0,cf=-1; long ws=0;
     #define FS(fn) do{cf=-1;for(int _i=0;_i<nf;_i++)if(!strcmp(fs[_i].name,fn)){cf=_i;break;} \

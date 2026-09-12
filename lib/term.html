@@ -1,7 +1,6 @@
 <!doctype html>
-<!-- term.html: direct-DOM terminal for a's /ws (tmux-backed), served at /op; /term = iframe. Runs positioned at col*cw,
-     wide/odd glyphs clipped to exact cells = alignment by construction; tmux owns scrollback/selection. Zero deps.
-     ?w=<win> ?fs=<px> ?host=<h:p> · verify: adata/git/my/term/test.py · out of scope until screamed (unk counter shows):
+<!-- direct-DOM terminal for /ws (tmux-backed), served at /op. Runs at col*cw, glyphs clipped to cells = alignment by
+     construction; zero deps. ?w= ?fs= ?host= · verify: adata/git/my/term/test.py · out of scope until screamed (unk counts):
      F-keys, combining marks, DECOM, 47/1047/1048, SO/SI G1 -->
 <meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -31,7 +30,7 @@ const W2=[[0x1100,0x115f],[0x2e80,0x303e],[0x3041,0x33ff],[0x3400,0x9fff],[0xa00
 const W0=[[0x300,0x36f],[0x483,0x489],[0x591,0x5c7],[0x610,0x61a],[0x64b,0x65f],[0x6d6,0x6dc],[0x730,0x74a],[0x1ab0,0x1aff],[0x1dc0,0x1dff],[0x200b,0x200f],[0x20d0,0x20f0],[0xfe00,0xfe0f],[0xfe20,0xfe2f],[0xe0100,0xe01ef]];
 const wcw=c=>c<32?0:c<0x7f?1:W0.some(([a,b])=>c>=a&&c<=b)?0:W2.some(([a,b])=>c>=a&&c<=b)?2:1;
 const ACS={'`':'◆','a':'▒','f':'°','g':'±','h':'░','i':'#','j':'┘','k':'┐','l':'┌','m':'└','n':'┼','o':'⎺','p':'⎻','q':'─','r':'⎼','s':'⎽','t':'├','u':'┤','v':'┴','w':'┬','x':'│','y':'≤','z':'≥','{':'π','|':'≠','}':'£','~':'·'};
-/* fl bits: 1 bold 2 dim 4 italic 8 underline 16 reverse 32 invisible 64 strike | 128 WIDE 512 CONT */
+/* fl: 1 bold 2 dim 4 ital 8 ul 16 rev 32 inv 64 strike | 128 WIDE 512 CONT */
 let cols=0,rows=0,cw=9,chh=LH,G=[],RE=[],MAIN=null;
 const DEF={x:0,y:0,fg:-1,bg:-1,fl:0,top:0,bot:0,wrap:true,ckm:false,vis:true,mouse:0,sgrm:false,paste:false,alt:false,pw:false,cs0:false,last:' ',lw:1,save:null};
 const S=Object.assign({},DEF);
@@ -78,12 +77,12 @@ function put(ch,w){
   S.x+=w;
   if(S.x>=cols){S.x=cols-1;S.pw=true;}
 }
-/* parser: GROUND 0, ESC 1, CSI 2, STR 3 (OSC/DCS/APC swallowed), CHARSET 5 */
+/* states: GROUND 0 ESC 1 CSI 2 STR 3 CHARSET 5 */
 let st=0,pb='',ob='',cstgt=0;
 const DEC=new TextDecoder();
 function feed(d){
   const t0=performance.now();
-  if(kt){kr=t0-kt;kt=0;}   /* r-meter: keystroke->first-echo RTT (web-vs-foot feel lives here + rAF) */
+  if(kt){kr=t0-kt;kt=0;}   /* r = key->first-echo RTT */
   if(typeof d!=='string')d=DEC.decode(d,{stream:true});
   for(const ch of d){
     const c=ch.codePointAt(0);
@@ -103,10 +102,10 @@ function feed(d){
     else if(c!==0x7f)put(S.cs0&&ACS[ch]?ACS[ch]:ch,wcw(c));
   }
   pt=performance.now()-t0;
-  if(pd){if(S.y===py0&&S.x>=px0&&S.x<=px0+pd.length){const a=S.x-px0;if(a>0){gc+=a;gl=kr;pcf+=a;pd=pd.slice(a);px0=S.x;}}else{pd='';pcf=0;}}else pcf=0; /* reconcile: drop confirmed prefix; zone-left OR output-while-idle => disarm (password-safe) */
+  if(pd){if(S.y===py0&&S.x>=px0&&S.x<=px0+pd.length){const a=S.x-px0;if(a>0){gc+=a;gl=kr;pcf+=a;pd=pd.slice(a);px0=S.x;}}else{pd='';pcf=0;}}else pcf=0; /* reconcile: drop confirmed prefix; drift => disarm (password-safe) */
   if(!raf)raf=requestAnimationFrame(paint);
 }
-function title(){ /* OSC 0/2 "#S:#W" -> pin reconnects to the viewed window; OSC 52 -> browser clipboard (tmux copy auto-copies here) */
+function title(){ /* OSC 0/2 -> window pin; OSC 52 -> clipboard */
   const m=ob.match(/^[02];(?:[^:]*:)?(.*)$/);
   if(m){wn=m[1];document.title=m[1];return;}
   const c=ob.match(/^52;[^;]*;([A-Za-z0-9+/=]+)$/);
@@ -134,7 +133,7 @@ function escC(ch){
 }
 function csiC(ch,c){
   if(c>=0x30&&c<=0x3f)pb+=ch;
-  else if(c>=0x20&&c<=0x2f);   /* intermediates: none we act on */
+  else if(c>=0x20&&c<=0x2f);   
   else if(c>=0x40&&c<=0x7e){st=0;csi(pb,ch);}
   else st=0;
 }
@@ -155,7 +154,7 @@ function csi(p,f){
     else clr(S.y,m===2?0:S.x,cols-1);
     if(f==='J')for(let y=m===0?S.y+1:0;y<=(m===1?S.y-1:rows-1);y++)if(y!==S.y)clr(y,0,cols-1);
   }
-  else if(f==='L'||f==='M'){ /* IL/DL */
+  else if(f==='L'||f==='M'){ 
     if(S.y>=S.top&&S.y<=S.bot){
       const ot=S.top;
       S.top=S.y;
@@ -163,7 +162,7 @@ function csi(p,f){
       S.top=ot;S.x=0;
     }
   }
-  else if(f==='@'||f==='P'){ /* ICH/DCH */
+  else if(f==='@'||f==='P'){ 
     const r=G[S.y],k=Math.min(n1(0),cols-S.x);
     for(const q of['t','f','b','l']){
       const fill=q==='t'?' ':q==='b'?S.bg:q==='f'?-1:0;
@@ -185,14 +184,14 @@ function csi(p,f){
   else if(f==='h'||f==='l'){
     for(const s of a)mode(priv,parseInt(s)||0,f==='h');
   }
-  else if(f==='m'){if(!priv)sgr(a);} /* CSI > 4;2 m = modifyOtherKeys, not colors */
+  else if(f==='m'){if(!priv)sgr(a);} /* >4;2m = modifyOtherKeys */
   else if(f==='n'&&n0(0)===6)tx('\x1b['+(S.y+1)+';'+(S.x+1)+'R');
   else if(f==='c')tx(p[0]==='>'?'\x1b[>1;10;0c':'\x1b[?6c');
   else if(f!=='t'&&f!=='q'&&f!=='n')unk++;
 }
 const MODES={1:'ckm',7:'wrap',25:'vis',1006:'sgrm',2004:'paste'};
 function mode(priv,v,on){
-  if(!priv){if(v!==34)unk++;return;} /* 34 = cursor-blink (tmux-256color cnorm) */
+  if(!priv){if(v!==34)unk++;return;} /* 34 = cursor-blink */
   if(MODES[v]){
     S[MODES[v]]=on;
     if(v===25)drow(S.y);
@@ -238,7 +237,7 @@ const col=v=>v<256?PAL[v]:'#'+(v&0xffffff|0x1000000).toString(16).slice(1);
 const flow=t=>{const c=t.codePointAt(0);return c<0x80||(c>=0x2500&&c<=0x25ff);};
 function style(x,f,b,l,w){
   let fg=f,bg=b;
-  if(l&16){fg=b<0?0x1000000:b;bg=f<0?0x1cccccc:f;} /* reverse w/ default colors */
+  if(l&16){fg=b<0?0x1000000:b;bg=f<0?0x1cccccc:f;} 
   let s='left:'+(x*cw).toFixed(2)+'px';
   if(w)s+=';display:inline-block;overflow:hidden;width:'+(w*cw).toFixed(2)+'px';
   if(fg>=0)s+=';color:'+col(fg);
@@ -254,7 +253,7 @@ function rowhtml(r){
   while(i<cols){
     const f=r.f[i],b=r.b[i],l=r.l[i];
     if(l&512){i++;continue;}
-    if(l&128||!flow(r.t[i]||' ')){ /* wide or not-monospace-trusted: own clipped span */
+    if(l&128||!flow(r.t[i]||' ')){ /* wide/untrusted: own clipped span */
       h+='<span style="'+style(i,f,b,l,l&128?2:1)+'">'+esc(r.t[i])+'</span>';
       i+=l&128?2:1;
       continue;
@@ -273,14 +272,14 @@ function paint(){
   dirty.clear();
   const pon=pcf>=1&&pd,px=Math.min(cols-1,pon?px0+pd.length:S.x),r=G[S.y],w=r&&r.l[px]&128?2:1;
   const ph=pon?[...pd].map((c,i)=>'<span style="position:absolute;left:'+((px0+i)*cw).toFixed(2)+'px;top:'+py0*chh+'px">'+(c==='<'?'&lt;':c==='&'?'&amp;':c)+'</span>').join(''):'';
-  if(ph!==polast){po.innerHTML=ph;polast=ph;} /* only-on-change: no reflow on output frames / unchanged predictions */
-  if(kf&&(pon||!kt)){sm=performance.now()-ks;kf=0;} /* s-meter: key -> char visible, via predicted overlay OR echo (whichever painted first) */
+  if(ph!==polast){po.innerHTML=ph;polast=ph;} /* only-on-change: no reflow */
+  if(kf&&(pon||!kt)){sm=performance.now()-ks;kf=0;} /* s = key->visible */
   const cs='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
   if(cs!==curlast){cur.style.cssText=cs;curlast=cs;}
   dt=performance.now()-t0;
   stat();
 }
-function stat(){ /* 1ms mandate: p=parse d=draw s=key→shown r=key→echo(worked) */
+function stat(){ /* p=parse d=draw s=key->shown r=echo */
   sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(pd?' P'+pd.length:'')+(gc?' g'+gc+'@'+gl.toFixed(1):'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
@@ -295,7 +294,7 @@ function fit(){
   scr.style.font=FS+'px/'+LH+'px '+FONT;
   po.style.cssText='position:absolute;left:0;top:0;color:#ccc;pointer-events:none;font:'+FS+'px/'+LH+'px '+FONT;
   scr.appendChild(e);
-  cw=e.getBoundingClientRect().width/100; /* measure == render font */
+  cw=e.getBoundingClientRect().width/100; 
   e.remove();
   const vw=visualViewport?visualViewport.width:innerWidth,vh=visualViewport?visualViewport.height:innerHeight;
   sizeTo(Math.max(20,Math.floor(vw/cw)),Math.max(5,Math.floor(vh/chh)));
@@ -326,13 +325,13 @@ function connect(){
   W.binaryType='arraybuffer';
   W.onopen=()=>{wsOk=true;ct=performance.now();W.send(JSON.stringify({cols,rows}));stat();};
   W.onmessage=e=>feed(typeof e.data==='string'?e.data:new Uint8Array(e.data));
-  W.onclose=W.onerror=()=>{wsOk=false;stat();if(ct&&performance.now()-ct<1500)wn=Q.get('w')||'';setTimeout(connect,1000);}; /* no blank flash; dead pin -> fall back */
+  W.onclose=W.onerror=()=>{wsOk=false;stat();if(ct&&performance.now()-ct<1500)wn=Q.get('w')||'';setTimeout(connect,1000);}; 
 }
 function tx(s){
   if(Q.get('test')){T.sent.push(s);return;}
   if(!W||W.readyState!==1)return;
   let i=0;
-  while(i<s.length){ /* frame cap 4095B; keep surrogates whole */
+  while(i<s.length){ /* 4095B frames; whole surrogates */
     let j=Math.min(i+512,s.length);
     if(j<s.length&&s.charCodeAt(j-1)>=0xd800&&s.charCodeAt(j-1)<0xdc00)j++;
     W.send(s.slice(i,j));
@@ -352,7 +351,7 @@ function key(e){
   else if(k==='Tab')s=e.shiftKey?'\x1b[Z':'\t';
   else if(k==='Escape')s='\x1b';
   else if(k.length===1&&!e.metaKey){
-    if(e.ctrlKey&&e.shiftKey)return; /* browser copy/paste/devtools stay native */
+    if(e.ctrlKey&&e.shiftKey)return; 
     if(e.ctrlKey){
       const c=k.toUpperCase().charCodeAt(0);
       if(k===' ')s='\x00';
@@ -367,13 +366,11 @@ function key(e){
   tx(s);
   if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);else{pcf=0;if(pd){pd='';if(!raf)raf=requestAnimationFrame(paint);}}
 }
-/* local echo (Sean 2026-08-28 rewrite): pd=typed-but-unechoed chars anchored at (px0,py0). feed() reconciles by how
-   far the REAL cursor advanced — no per-char match, no timeout — so it's smooth on high-RTT links (qsim/Japan). pcf>=1
-   gate never shows before an echo confirms (password-safe); pd clears on redraw/Enter/non-printable. grid authoritative. */
+/* local echo: pd = typed-unechoed anchored at (px0,py0); reconcile by real cursor advance; pcf>=1 gate = password-safe; grid authoritative */
 function pred(k){if(pd===''){px0=S.x;py0=S.y;}if(px0+pd.length>=cols)return;pd+=k;
-  if(pcf>=1){cancelAnimationFrame(raf);raf=0;paint();}} /* SYNCHRONOUS: char in the DOM this turn, not next frame (1ms mandate) */
+  if(pcf>=1){cancelAnimationFrame(raf);raf=0;paint();}} /* SYNCHRONOUS: char in DOM this turn */
 addEventListener('keydown',key);
-kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); /* IME/swipe path; keydown covers the rest */
+kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); 
 kb.addEventListener('paste',e=>{
   e.preventDefault();
   const t=e.clipboardData.getData('text');
@@ -390,12 +387,12 @@ scr.addEventListener('pointerdown',e=>{
   if(e.pointerType!=='touch'&&mev(e.button===2?2:e.button,e.clientX,e.clientY,false))e.preventDefault();
 });
 scr.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')mev(e.button===2?2:e.button,e.clientX,e.clientY,true);});
-scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);}); /* drag motion -> tmux starts/extends selection; release above ends it = copy */
+scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);}); /* drag -> tmux selection; release = copy */
 scr.addEventListener('contextmenu',e=>{if(S.mouse)e.preventDefault();});
-/* scroll gestures target the CURSOR row: never the status bar, where wheel = selectw (window jumps) */
+/* scroll at the CURSOR row, never the status bar (wheel there = selectw) */
 addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,(S.y+.5)*chh,false))e.preventDefault();},{passive:false});
 scr.addEventListener('touchstart',e=>ty=e.touches[0].clientY,{passive:true});
-scr.addEventListener('touchmove',e=>{ /* drag = wheel rows */
+scr.addEventListener('touchmove',e=>{ 
   const t=e.touches[0],n=Math.trunc((t.clientY-ty)/chh);
   if(!n)return;
   for(let i=Math.abs(n);i--;)mev(n>0?64:65,t.clientX,(S.y+.5)*chh,false);
@@ -403,7 +400,7 @@ scr.addEventListener('touchmove',e=>{ /* drag = wheel rows */
 },{passive:true});
 const refit=()=>{clearTimeout(rt);rt=setTimeout(fit,150);};
 (visualViewport||window).addEventListener('resize',refit);
-function claim(){if(W&&W.readyState===1)W.send('{"claim":1}');} /* /fw: re-take my window while hidden */
+function claim(){if(W&&W.readyState===1)W.send('{"claim":1}');} 
 const T={sizeTo,S,sent:[],
   feed:d=>{feed(d);paint();},
   dump:()=>G.map(r=>r.t.join('').replace(/\s+$/,'')).join('\n'),

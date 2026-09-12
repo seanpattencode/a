@@ -1,4 +1,4 @@
-/* a new [-p pw] <host|user@host[:port]> (alias: a clone) — replicate a onto a device. Registry name -> a ssh (its auth + fallbacks); raw target -> ssh (-p pw = sshpass). Remote: install from main (curl|sh), then this box's gh hosts.yml + git identity, then adata/git re-cloned sparse without the activity tree (a-git push pathology). new.c+clone.c merged 2026-09-05 (Sean). */
+/* a new [-p pw] <host|user@host[:port]> (alias a clone) — replicate a onto a device: curl|sh install, this box's gh+git identity, adata/git sparse-cloned without activity/ */
 static int cmd_new(int argc,char**argv){
     perf_disarm();int ai=2;const char*pw=NULL;
     if(argc>3&&!strcmp(argv[2],"-p")){pw=argv[3];ai=4;}

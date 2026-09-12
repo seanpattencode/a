@@ -1,18 +1,16 @@
 <!doctype html><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>a fleet</title>
-<!-- Unified fleet tmux view: every device's tmux windows in one list (from /fwins), one inline terminal (/op) that
-     re-points on click/j-k — like one giant tmux session across all reachable devices. Pieces reused: term.html(/op),
-     ssh window attach (w=ssh:dev:idx), fleet.txt reachability. Enumerator: lib/fwins.sh. -->
+<!-- fleet tmux view: all devices' windows (/fwins via lib/fwins.sh), one re-pointing /op terminal -->
 <style>
 html,body{margin:0;height:100%}
 body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:column;overflow:hidden}
 #top{padding:6px 10px;border-bottom:1px solid #222;display:flex;gap:14px;align-items:center;font-size:13px;color:#888;white-space:nowrap;overflow:hidden}
 #top b{color:#fff;font-weight:600}#ms{color:#6c6;font-variant-numeric:tabular-nums}
-#main{flex:1;position:relative}   /* #s overlays #tw (bottom = thumb reach): toggle never resizes the terminal */
+#main{flex:1;position:relative}   /* #s overlays #tw: toggle never resizes the terminal */
 #s{position:absolute;left:0;right:0;bottom:0;height:36vh;overflow-y:auto;border-top:1px solid #222;background:#0a0a0a}
 #tw{height:100%;position:relative;background:#000}
-.tf{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;visibility:hidden}   /* hidden-not-display:none: full size, so prerendered terminals fit to the REAL cols/rows */
+.tf{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000;visibility:hidden}   /* hidden not display:none: prerender at REAL size */
 .tf.on{visibility:visible}
 .g{color:#6cf;padding:9px 10px 3px;font-size:14px;position:sticky;top:0;background:#0a0a0a}
 .w{display:block;color:#ccc;text-decoration:none;padding:5px 10px;font-size:16px;cursor:pointer;border-left:2px solid #0000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -31,25 +29,25 @@ body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:
 <div id=nav><button class=nb id=tg>☰</button><input id=q placeholder="find any session"><button class=nb id=pv>◀</button><button class=nb id=nx>▶</button></div>
 <script>
 var S=document.getElementById('s'),Q=document.getElementById('q'),BAG={},lq='',fms='',TW=document.getElementById('tw'),MS=document.getElementById('ms');
-var cur='',sel='',rows=[],ci=0;   /* cur = what's SHOWN (starts empty so the boot open_ actually attaches) · sel = list highlight */
-/* prerender +4 ahead +1 behind as hidden full-size iframes so switching is as instant as possible — a visibility swap, not a reconnect */
+var cur='',sel='',rows=[],ci=0;   /* cur = shown (empty at boot) · sel = highlight */
+/* prerender +4/-1 hidden iframes: switch = visibility swap */
 var FR={},V=null;
 function frameFor(tg){if(FR[tg])return FR[tg];
   var f=document.createElement('iframe');f.className='tf';
-  f.src='/op?w='+(tg==='@'?'':encodeURIComponent(tg))+'&all';   /* '@' = bare local attach: empty w execs plain `a tmux` (active window; bash if none) */
+  f.src='/op?w='+(tg==='@'?'':encodeURIComponent(tg))+'&all';   /* '@' = bare local attach */
   f.onload=()=>{hook(f.contentWindow);if(document.activeElement!==Q&&(f===V||document.activeElement===f))foc();};
   TW.appendChild(f);FR[tg]=f;return f;}
 function foc(){try{V.contentWindow.focus();V.contentDocument.getElementById('kb').focus({preventScroll:true});}catch(e){}}
 function ensure(){if(!rows.length)return;var want={},n=rows.length;
-  for(var d of[0,1,2,3,4,-1])want[rows[((ci+d)%n+n)%n].dataset.t]=1;   /* ahead first for fast shifts */
+  for(var d of[0,1,2,3,4,-1])want[rows[((ci+d)%n+n)%n].dataset.t]=1;   
   Object.keys(FR).forEach(k=>{if(!want[k]&&k!==cur){FR[k].remove();delete FR[k];}});
   var i=0;Object.keys(want).forEach(k=>{if(!FR[k]){var mk=()=>frameFor(k);k===cur?mk():setTimeout(mk,200+180*i++);}});claimAll();}
-/* claim: hidden frames re-take windows drifted by other clients/tabs, so the resize reflow runs unwatched, never on arrival — move/attention-driven, no polling */
+/* claim: hidden frames re-take drifted windows so reflow runs unwatched */
 var clt=0;
 function claimAll(){var t=Date.now();if(t-clt<250)return;clt=t;
   for(var k in FR)if(FR[k]!==V)try{FR[k].contentWindow.claim()}catch(e){}}
 onfocus=claimAll;document.onvisibilitychange=()=>{document.hidden||claimAll()};
-var swms='',inms='',rtms='',wn2=0,krt=0;   /* header meters: sw=switch · in=keypress delivery lag · rtt=key echo round-trip */
+var swms='',inms='',rtms='',wn2=0,krt=0;   /* meters: sw=switch in=key lag rtt=echo */
 function hdr(){MS.textContent=(wn2?wn2+' win':'')+(fms?' · find '+fms:'')+(swms?' · sw '+swms:'')+(inms?' · in '+inms:'')+(rtms?' · rtt '+rtms:'')+'ms';}
 function readr(){try{var m=V.contentDocument.getElementById('sb').textContent.match(/r([\d.]+)/);if(m){rtms=m[1];hdr();}}catch(e){}}
 function open_(tg){var t0=performance.now();
@@ -60,18 +58,16 @@ function setsel(tg){sel=localStorage.fwsel=tg;hl();}
 function hl(){rows.forEach((r,i)=>{var s=r.dataset.t===sel;r.classList.toggle('sel',s);
   if(s){ci=i;var g=r.previousElementSibling;while(g&&g.className!=='g')g=g.previousElementSibling;
     document.getElementById('cur').textContent=(g?g.textContent+' · ':'')+r.firstChild.textContent;}});}
-/* window switched INSIDE the terminal (C-j/C-k, M-←/→, C-PgUp/PgDn): the highlighted "3:name" status cell says which (the `a fl` marker). Re-key the frame to it — filed as 1 while showing 0, ▶ hit the frame already on screen = no-op (Sean 2026-09-09, a app) */
+/* window switched INSIDE the terminal: the highlighted status cell says which — re-key the frame to it */
 function sync(){var ae=document.activeElement;
-  if(ae&&ae.className==='tf')foc();   /* focus drifted to a hidden frame: reclaim */
+  if(ae&&ae.className==='tf')foc();   
   try{var d=V&&V.contentDocument;if(!d)return;var rs=d.querySelectorAll('#scr>div');
   for(var i=rs.length-1;i>=0&&i>=rs.length-2;i--){var sp=rs[i].children;
     for(var j=0;j<sp.length;j++){var bg=sp[j].style.background,m=sp[j].textContent.match(/^\s*(\d+):/);
       if(m&&bg&&bg!=='rgb(0, 0, 0)'){var p=cur.match(/^(ssh:[^:]+:)/),tg=(p?p[1]:'')+m[1];
         if(tg!==cur){if(FR[tg])FR[tg].remove();delete FR[cur];FR[cur=tg]=V;setsel(tg);ensure();}return;}}}}catch(e){}}
 setInterval(sync,600);
-/* claude code pane bottoms are UI chrome, not content: cut at the LAST footer-mode phrase + trim its
-   dangling ⏵⏵/⏸ marker (box chars appear in real content — unsafe anchor), collapse ─── input-box rules
-   and pane-width space padding. The ❯-prompt text is kept: the last thing typed is glance gold. */
+/* pane bottoms are chrome: cut at the last footer phrase, keep the ❯-prompt text (glance gold) */
 function chrome(t){var k=-1;for(var m of['⏵⏵','bypass permissions on','plan mode on','accept edits on'])k=Math.max(k,t.lastIndexOf(m));
   if(k>0)t=t.slice(0,k);return t.replace(/─{8,}/g,' ').replace(/\s+/g,' ').replace(/[ ⏵⏸]+$/,'');}
 var last=null;
@@ -79,16 +75,16 @@ function render(txt){var g='',dev='',n=0;
   txt.split('\n').forEach(l=>{var p=l.split('\t');if(p.length<3)return;n++;BAG[p[1]]=chrome(p[3]||'');
     if(p[0]!==dev){dev=p[0];g+='<div class=g>'+esc(dev)+'</div>';}
     g+='<a class=w data-t="'+esc(p[1])+'">'+esc(p[2]||p[1])+'<i></i></a>';});
-  var nu=g!==last;if(nu){last=g;S.innerHTML=g||'<div class=g>no windows — reachable?</div>';}   /* same list = no rebuild (rebuilding every 4s made rows flicker under the cursor); pane text lives in BAG */
-  filt();if(nu&&rows.length&&cur!=='@'&&!rows.some(r=>r.dataset.t===sel))open_(rows[0].dataset.t);   /* '@': sync() names the live window instead — a list arrival must not yank the working shell */
+  var nu=g!==last;if(nu){last=g;S.innerHTML=g||'<div class=g>no windows — reachable?</div>';}   /* same list = no rebuild (4s rebuilds flickered); text in BAG */
+  filt();if(nu&&rows.length&&cur!=='@'&&!rows.some(r=>r.dataset.t===sel))open_(rows[0].dataset.t);   /* '@': never yank the working shell */
   wn2=n;hdr();}
 S.onclick=e=>{var r=e.target.closest('.w');if(r)open_(r.dataset.t);};
-/* find = substring over label + pane text of every session on every device, all local: a keystroke filters in <1ms (header find) */
+/* find = local substring over label+pane text, <1ms */
 function filt(){var t0=performance.now(),q=Q.value.toLowerCase(),h;rows=[];
   S.hidden=!q&&localStorage.fwlist!=='1';
   for(var e of S.children){if(e.className==='g'){h=e;h.hidden=q;continue;}
     var bg=(BAG[e.dataset.t]||'').trim(),b=e.firstChild.textContent+' '+bg,i=q?b.toLowerCase().indexOf(q):-1;
-    e.hidden=q&&i<0;e.lastChild.textContent=q?i<0?'':'…'+b.substr(i>24?i-24:0,90):bg.slice(-(innerWidth/6|0));   /* idle rows tail their pane = what's in it at a glance */
+    e.hidden=q&&i<0;e.lastChild.textContent=q?i<0?'':'…'+b.substr(i>24?i-24:0,90):bg.slice(-(innerWidth/6|0));   /* idle rows tail their pane */
     if(!e.hidden){rows.push(e);h.hidden=0;}}
   if(q!==lq){lq=q;ci=0;}ci=Math.min(ci,rows.length-1);
   q?mark():hl();fms=(performance.now()-t0).toFixed(2);hdr();}
@@ -103,26 +99,24 @@ document.addEventListener('keydown',e=>{var k=e.key,d={j:1,ArrowDown:1,k:-1,Arro
   if(!rows.length||inq&&k!=='Enter'&&k[0]!=='A')return;   /* letters typed in the box stay in the box */
   if(k==='Enter')return open_(rows[ci].dataset.t);
   if(d){e.preventDefault();ci=Math.max(0,Math.min(ci+d,rows.length-1));mark();}});
-/* bare Shift tap = find box; held combos (Shift+A…) stay untouched — any key between down and up disarms the tap.
-   Bare Ctrl is INERT (Sean 2026-08-31: raw ctrl must do nothing — an aborted Ctrl+combo, ctrl+click or ctrl+zoom
-   read as a clean tap and jumped the window). Hooked into the /op iframe too (same-origin), so it works mid-typing. */
+/* bare Shift tap = find; any key between down/up disarms. Bare Ctrl INERT (aborted combos read as taps). Hooked into the iframe too */
 function move(d){if(!rows.length)return;ci=(ci+d+rows.length)%rows.length;open_(rows[ci].dataset.t);mark();}
 var armed=0,dirty=0;
 function tap(e){var c=e.code;
-  /* keystrokes must NEVER reach a HIDDEN pool frame (focus can drift there on load): swallow + refocus visible */
+  /* keys must never reach a hidden frame: swallow + refocus */
   try{var fe=e.view.frameElement;if(fe&&!fe.classList.contains('on')){e.stopImmediatePropagation();e.preventDefault();foc();return;}}catch(x){}
   if(e.type==='keydown'){
     if(/^Shift(Left|Right)$/.test(c)){if(!armed){armed=c;dirty=0;claimAll();}}
     else{if(armed)dirty=1;
-      /* per-keypress meters (e.view's clock — iframe events carry their own time origin) */
+      /* per-keypress meters (e.view's clock) */
       try{inms=Math.max(0,e.view.performance.now()-e.timeStamp).toFixed(2);clearTimeout(krt);krt=setTimeout(readr,130);hdr();}catch(x){}}
   }else if(c===armed){armed=0;
     if(!dirty){e.preventDefault();e.stopImmediatePropagation();Q.focus();Q.select();}}}
 function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('keyup',tap,true);}catch(e){}}
 hook(window);
-pv.onpointerdown=e=>{e.preventDefault();move(-1);};   /* act on press, and don't steal focus */
+pv.onpointerdown=e=>{e.preventDefault();move(-1);};   
 nx.onpointerdown=e=>{e.preventDefault();move(1);};
-function setlist(on){localStorage.fwlist=on?'1':'0';filt();}   /* ☰ toggle, persisted; small screens start collapsed; find forces the list open — so ☰ mid-find clears q too */
+function setlist(on){localStorage.fwlist=on?'1':'0';filt();}   /* ☰ toggle persisted; find forces the list open */
 setlist(localStorage.fwlist?localStorage.fwlist==='1':innerWidth>640);
 tg.onpointerdown=e=>{e.preventDefault();Q.value='';setlist(S.hidden);};
 </script>

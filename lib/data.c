@@ -1,6 +1,6 @@
 /* data */
 static const char *dprompt(void) {
-    static char b[B*64]; const char*a=cfget("prompt");if(!*a)a="default";  /* SILENTLY truncates default.txt past sizeof(b) — bit THRICE (16KB cut greats mid-name; 64KB cut tail at 67KB, 2026-07; 128KB cut tail at 148KB, 2026-09-02): keep ~2x file-size headroom */
+    static char b[B*64]; const char*a=cfget("prompt");if(!*a)a="default";  /* SILENTLY truncates default.txt past sizeof(b) — bit THRICE: keep ~2x headroom */
     char p[P]; snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,a);
     char *d=readf(p,NULL); b[0]=0; if(d){snprintf(b,sizeof(b),"%s ",d);free(d);} return b;
 }
@@ -36,19 +36,20 @@ static void init_db(void) {
     }
     snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
     if (!fexists(p)) {
-        /* c/claude pin the EXACT id claude-fable-5 max: Fable 5.1 = regression in real use (confirmed 2026-09-09), and the bare 'fable' alias now resolves to 5.1 — never alias, always exact. l/o stay plain = follow the claude default. */
+        /* c/claude pin EXACT claude-fable-5 max: 5.1 = regression, bare alias -> 5.1; never alias. l/o follow default */
         const char *C = "claude --dangerously-skip-permissions";
         const char *CM = "claude --dangerously-skip-permissions --model claude-fable-5 --effort max";
-        const char *X = "codex --dangerously-bypass-approvals-and-sandbox"; /* ~/.codex/config.toml owns model/effort — pins here go stale */
+        const char *X = "codex --dangerously-bypass-approvals-and-sandbox"; /* codex config.toml owns model/effort */
+        const char *G = "agy --dangerously-skip-permissions"; /* gemini-cli tier dead; agy = Antigravity */
         char buf[B*4]; snprintf(buf, sizeof(buf),
-            "g|gemini|gemini --yolo\ngemini|gemini|gemini --yolo\n"
+            "g|agy|%s\nagy|agy|%s\n"
             "c|claude|%s\nclaude|claude|%s\nl|claude|%s\no|claude|%s\n"
             "co|codex|%s\ncodex|codex|%s\n"
             "grok|grok|grok --always-approve\n"
             "a|aider|OLLAMA_API_BASE=http://127.0.0.1:11434 aider --model ollama_chat/mistral\n"
             "cp|claude-p|%s \"{CLAUDE_PROMPT}\"\nlp|claude-p|%s \"{CLAUDE_PROMPT}\"\n"
-            "gp|gemini-p|gemini --yolo \"{GEMINI_PROMPT}\"\n"
-            "cop|codex-p|%s \"{CODEX_PROMPT}\"\n", CM, CM, C, C, X, X, C, C, X);
+            "gp|agy-p|%s \"{AGY_PROMPT}\"\n"
+            "cop|codex-p|%s \"{CODEX_PROMPT}\"\n", G, G, CM, CM, C, C, X, X, C, C, G, X);
         writef(p, buf);
     }
 }
@@ -121,8 +122,8 @@ static void load_sess(void) {
             snprintf(SE[NSE].key, 16, "%s", line);
             snprintf(SE[NSE].name, 64, "%s", d1 + 1);
             char expanded[1024]; snprintf(expanded, 1024, "%s", d2 + 1);
-            const char *keys[] = {"claude_prompt","codex_prompt","gemini_prompt"};
-            const char *tags[] = {"{CLAUDE_PROMPT}","{CODEX_PROMPT}","{GEMINI_PROMPT}"};
+            const char *keys[] = {"claude_prompt","codex_prompt","agy_prompt"};
+            const char *tags[] = {"{CLAUDE_PROMPT}","{CODEX_PROMPT}","{AGY_PROMPT}"};
             for (int j = 0; j < 3; j++) {
                 char *pos = strstr(expanded, tags[j]);
                 if (pos) {

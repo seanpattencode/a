@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
-"""a kil [query] — kill an APP in one glance. Rows are programs, not processes.
-
-  a kil          every app, biggest-RAM first
-  a kil chrome   jump straight to it
-  a kil -9 …     SIGKILL instead of the default clean SIGTERM
-One row per program = total RAM + process count + PIDs. You never read a
-renderer/zygote/crashpad line again — pick the app, the whole tree dies at once.
-Enter SIGTERMs every PID in the chosen app (clean shutdown, lets it save);
-Esc / no selection = nothing happens.
-"""
+"""a kil [query] [-9] — kill an APP in one glance: one row per program (total RAM + procs + pids), Enter SIGTERMs
+the whole tree (-9 = SIGKILL), Esc = nothing. You never read a renderer/zygote line again."""
 import os, sys, signal, subprocess
 from collections import defaultdict
 

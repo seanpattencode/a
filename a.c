@@ -102,13 +102,13 @@ _perf_lim() { local f="$D/adata/git/perf/$(cat "$D/adata/local/.device" 2>/dev/n
 _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
     [[ $l -gt 0 && $e -gt $l ]] && { echo -e "\033[31m✗ PERF KILL\033[0m: sh a.c $1 ${e}us > ${l}us" >&2; exit 1; }
     echo -e "${e}us" >&2;}
-_tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen, caps human-only: ramped whole-repo fable-equiv cap (.tokrule; read: i tokcap ~/a) + static a.c+lib cap (tok.txt)
-    r=$(python3 "$HOME/i/lib/tokcap/tokcap.py" cap "$D" 2>/dev/null||:)  # no ~/i (public box) → ramp check skips, static cap below still guards
+_tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen (human-only caps): .tokrule ramp + tok.txt static
+    r=$(python3 "$HOME/i/lib/tokcap/tokcap.py" cap "$D" 2>/dev/null||:)  # no ~/i -> ramp skips, static still guards
     if [[ "$r" =~ ^[0-9]+$ ]]; then t=$(( $(git -C "$D" ls-files -z 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
         echo "tok repo $t/$r b/4 ($(( t<=r ? r-t : t-r )) $([[ $t -le $r ]] && echo left || echo over) · ramp: i tokcap $D)" >&2
         [[ $t -le $r ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: repo $t > cap $r b/4 — simplify, don't raise (.tokrule)" >&2;sed 1d "$D/.tokrule" >&2 2>/dev/null;exit 1; }; fi
     c=$(head -1 "$f" 2>/dev/null||:)
-    [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file → hardcoded floor; never fail open
+    [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file -> floor; never fail open
     t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
     echo "tok $t/$c ($(( t<=c ? c-t : t-c )) $([[ $t -le $c ]] && echo left || echo over))" >&2
     [[ $t -le $c ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: a.c+lib = $t > cap $c tok — simplify, don't raise ($f)" >&2;sed 1d "$f" >&2 2>/dev/null;exit 1; };}
@@ -126,7 +126,7 @@ _checkers() {
     { ! command -v infer &>/dev/null||{ infer run --no-progress-bar -o "$T/infer" -- clang $A -w -c "$F" -o /dev/null >"$T/10" 2>&1;! grep -q 'NULLPTR_DEREFERENCE\|BUFFER_OVERRUN\|USE_AFTER_FREE' "$T/infer/report.txt" 2>/dev/null;};}||touch "$T/10.f" &
     wait
 }
-_o3(){ $CC $A -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -w -o "$ABIN/a.opt" "$F" -lutil;}  # glibc-static first: SIMD str*/stdio = 2.1x faster i render than musl (measured 7/5); musl fallback
+_o3(){ $CC $A -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -w -o "$ABIN/a.opt" "$F" -lutil;}  # glibc-static first: 2.1x faster than musl (measured); musl fallback
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
 build) _PT=${EPOCHREALTIME/./};_tok_chk
@@ -138,7 +138,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         echo "Couldn't auto-fix. github:seanpattencode"
     }
     if command -v tcc &>/dev/null && [[ ! -d /data/data/com.termux ]]; then
-        # old tcc (0.9.27) dies on odd ' counts inside #if 0 (book.c py half) - fall back to $CC before calling the fix agent
+        # old tcc dies on odd ' counts in #if 0 — fall back to $CC first
         TCT=${EPOCHREALTIME/./};tcc $_Q -w -o "$ABIN/a" "$D/a.c" -lutil 2>/dev/null&&TCT=$(( ${EPOCHREALTIME/./} - TCT ))000||{ TCT="";_ensure_cc;E=$($CC $_Q -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1)||{ _build_fix "$E"; exit 1; }; }
     else
         _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
@@ -239,7 +239,7 @@ install)
             if [[ -n "$SUDO" ]]; then $SUDO pacman -Sy --noconfirm clang tmux nodejs npm git python-pip sshpass rclone rsync github-cli tcc gcc cppcheck frama-c android-tools 2>/dev/null && ok "pkgs"
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo pacman -S tmux"; fi ;;
         fedora)
-            # core first (must succeed), analyzers best-effort: frama-c pulls 500+ pkgs (OOMs small VMs), tcc not in default repos; unsplit, one missing pkg aborted node/zstd
+            # core first, analyzers best-effort (frama-c OOMs small VMs; one missing pkg once aborted the lot)
             if [[ -n "$SUDO" ]]; then $SUDO dnf install -y --skip-unavailable clang tmux nodejs npm git curl gcc gh zstd android-tools 2>/dev/null && ok "pkgs"
                 $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone rsync tcc cppcheck frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
@@ -252,9 +252,9 @@ install)
     [[ -f "$E/e.c" ]] || git clone https://github.com/seanpattencode/e "$E" 2>/dev/null || :
     [[ -f "$E/e.c" ]] && sh "$E/e.c" install || :
     _shell_funcs
-    _SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12"/><text x="32" y="50" font-family="monospace" font-size="52" fill="#fff" text-anchor="middle">a</text></svg>'  # launcher icon so users SEE a exists (Sean 2026-08-23); windows next
+    _SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12"/><text x="32" y="50" font-family="monospace" font-size="52" fill="#fff" text-anchor="middle">a</text></svg>'  # launcher icon so users SEE a exists
     [[ "$OS" == debian || "$OS" == arch || "$OS" == fedora ]] && { mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps; printf %s "$_SVG" >~/.local/share/icons/hicolor/scalable/apps/a.svg; printf '[Desktop Entry]\nType=Application\nName=a\nComment=agent manager\nExec=a\nTerminal=true\nIcon=a\nCategories=Development;\n' >~/.local/share/applications/a.desktop; ok "app icon"; }
-    [[ "$OS" == mac ]] && { AP=~/Applications/a.app;IS=$(mktemp -d);mkdir -p "$AP/Contents/MacOS" "$AP/Contents/Resources" "$IS/a.iconset";printf %s "$_SVG" >"$IS/a.svg";qlmanage -t -s 1024 -o "$IS" "$IS/a.svg" &>/dev/null&&mv "$IS/a.svg.png" "$IS/a.iconset/icon_512x512@2x.png"&&iconutil -c icns "$IS/a.iconset" -o "$AP/Contents/Resources/a.icns"||:;printf '<plist version="1.0"><dict><key>CFBundleExecutable</key><string>a</string><key>CFBundleIconFile</key><string>a</string><key>CFBundleIdentifier</key><string>com.seanpatten.a</string><key>CFBundleName</key><string>a</string></dict></plist>' >"$AP/Contents/Info.plist";printf %s 'import Cocoa;import WebKit;let a=NSApplication.shared;a.setActivationPolicy(.regular);let w=NSWindow(contentRect:.init(x:0,y:0,width:1280,height:820),styleMask:.init(rawValue:15),backing:.buffered,defer:false);w.title="a";w.center();w.appearance=NSAppearance(named:.darkAqua);w.titlebarAppearsTransparent=true;w.backgroundColor=NSColor.black;let v=WKWebView(frame:w.contentView!.bounds);v.autoresizingMask=[.width,.height];v.load(URLRequest(url:URL(string:"http://localhost:1111")!));w.contentView!.addSubview(v);NotificationCenter.default.addObserver(forName:NSWindow.willCloseNotification,object:w,queue:nil){_ in exit(0)};try? Process.run(URL(fileURLWithPath:"/usr/bin/osascript"),arguments:["-e","tell app \"Terminal\" to do script \"a\""]);w.makeKeyAndOrderFront(nil);a.activate(ignoringOtherApps:true);a.run()' >"$IS/a.swift";swiftc "$IS/a.swift" -o "$AP/Contents/MacOS/a" 2>/dev/null||:;rm -rf "$IS";/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$AP" 2>/dev/null||:;ok "a.app"; }  # own window (Sean 9/1); Mach-O req'd or Spotlight hides it (avocado ablation)
+    [[ "$OS" == mac ]] && { AP=~/Applications/a.app;IS=$(mktemp -d);mkdir -p "$AP/Contents/MacOS" "$AP/Contents/Resources" "$IS/a.iconset";printf %s "$_SVG" >"$IS/a.svg";qlmanage -t -s 1024 -o "$IS" "$IS/a.svg" &>/dev/null&&mv "$IS/a.svg.png" "$IS/a.iconset/icon_512x512@2x.png"&&iconutil -c icns "$IS/a.iconset" -o "$AP/Contents/Resources/a.icns"||:;printf '<plist version="1.0"><dict><key>CFBundleExecutable</key><string>a</string><key>CFBundleIconFile</key><string>a</string><key>CFBundleIdentifier</key><string>com.seanpatten.a</string><key>CFBundleName</key><string>a</string></dict></plist>' >"$AP/Contents/Info.plist";printf %s 'import Cocoa;import WebKit;let a=NSApplication.shared;a.setActivationPolicy(.regular);let w=NSWindow(contentRect:.init(x:0,y:0,width:1280,height:820),styleMask:.init(rawValue:15),backing:.buffered,defer:false);w.title="a";w.center();w.appearance=NSAppearance(named:.darkAqua);w.titlebarAppearsTransparent=true;w.backgroundColor=NSColor.black;let v=WKWebView(frame:w.contentView!.bounds);v.autoresizingMask=[.width,.height];v.load(URLRequest(url:URL(string:"http://localhost:1111")!));w.contentView!.addSubview(v);NotificationCenter.default.addObserver(forName:NSWindow.willCloseNotification,object:w,queue:nil){_ in exit(0)};try? Process.run(URL(fileURLWithPath:"/usr/bin/osascript"),arguments:["-e","tell app \"Terminal\" to do script \"a\""]);w.makeKeyAndOrderFront(nil);a.activate(ignoringOtherApps:true);a.run()' >"$IS/a.swift";swiftc "$IS/a.swift" -o "$AP/Contents/MacOS/a" 2>/dev/null||:;rm -rf "$IS";/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$AP" 2>/dev/null||:;ok "a.app"; }  # Mach-O required or Spotlight hides it
     install_cli() {
         local pkg="$1" cmd="$2" p=$(command -v "$cmd" 2>/dev/null)
         [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && "$cmd" --version &>/dev/null && { ok "$cmd"; return; }
@@ -270,18 +270,13 @@ install)
         _cok&&ok "claude"||warn "claude failed";}
     python3 -c 'import json,os;p=os.path.expanduser("~/.claude/settings.json");os.makedirs(os.path.dirname(p),exist_ok=True);d=json.load(open(p)) if os.path.exists(p) else {};d["effortLevel"]="xhigh";json.dump(d,open(p,"w"),indent=2)' 2>/dev/null && ok "effort=xhigh"
     install_cli "$([[ $OS == termux ]] && echo @mmmbuto/codex-cli-termux || echo @openai/codex)" "codex"
-    install_cli "@google/gemini-cli" "gemini"
-    [[ "$OS" == termux ]] && info "Gemini auth: NO_BROWSER=true gemini"
     command -v uv &>/dev/null&&ok "uv"||{ info "Installing uv...";curl -LsSf https://astral.sh/uv/install.sh|sh&&export PATH="$HOME/.local/bin:$PATH"&&ok "uv"||warn "uv failed";}
-    command -v ollama &>/dev/null&&ok "ollama"||{ [[ -n "$SUDO" || $EUID -eq 0 ]]&&{ info "Installing ollama...";curl -fsSL https://ollama.com/install.sh|sh&&ok "ollama"||warn "ollama failed";}||warn "ollama needs sudo";}
-    command -v yt-dlp &>/dev/null&&ok "yt-dlp"||{ info "Installing yt-dlp...";[[ "$OS" == termux ]]&&pkg install -y yt-dlp||{ Y_=macos;[[ "$OSTYPE" != darwin* ]]&&{ Y_=linux;[[ $(uname -m) == aarch64 ]]&&Y_=linux_aarch64;};curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_$Y_" -o "$BIN/yt-dlp"&&chmod +x "$BIN/yt-dlp";};command -v yt-dlp &>/dev/null&&ok "yt-dlp"||warn "yt-dlp failed";}  # a music dies SILENTLY without it (child's output is /dev/null) — brew bottle was broken on macOS 27, so: standalone binary (Sean "mozart not playing" 9/11)
+    command -v yt-dlp &>/dev/null&&ok "yt-dlp"||{ info "Installing yt-dlp...";[[ "$OS" == termux ]]&&pkg install -y yt-dlp||{ Y_=macos;[[ "$OSTYPE" != darwin* ]]&&{ Y_=linux;[[ $(uname -m) == aarch64 ]]&&Y_=linux_aarch64;};curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_$Y_" -o "$BIN/yt-dlp"&&chmod +x "$BIN/yt-dlp";};command -v yt-dlp &>/dev/null&&ok "yt-dlp"||warn "yt-dlp failed";}  # a music dies SILENTLY without yt-dlp -> standalone binary (brew bottle broken)
     command -v gh &>/dev/null&&ok "gh"||[[ "$OS" == termux ]]||{ info "Installing gh...";A_=$(uname -m);[[ "$A_" == x86_64 ]]&&A_=amd64;[[ "$A_" == aarch64||"$A_" == arm64 ]]&&A_=arm64;O_=linux;[[ "$OSTYPE" == darwin* ]]&&O_=macOS;V_=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest 2>/dev/null|grep -m1 tag_name|cut -d\" -f4|tr -d v);[[ -z "$V_" ]]&&V_=2.63.2;T_=$(mktemp -d);curl -fsSL "https://github.com/cli/cli/releases/download/v$V_/gh_${V_}_${O_}_${A_}.tar.gz"|tar -xzf - -C "$T_"&&mv "$T_"/*/bin/gh "$HOME/.local/bin/gh" 2>/dev/null&&ok "gh $V_"||warn "gh failed";rm -rf "$T_";}
     "$BIN/a" ui on 2>/dev/null && ok "UI service (localhost:1111)" || :
     [[ ! -s "$HOME/.tmux.conf" ]] && "$BIN/a" config tmux_conf y 2>/dev/null && ok "tmux config (mouse enabled)" || :
     "$BIN/a" >/dev/null 2>&1 && ok "cache generated" || :
-    # 8s timeout on the gh-login prompt: ssh -tt forwards a tty so `[[ -t 0 ]]` is true even when
-    # no human is attached (curl|sh through automation, CI, agent-spawned bootstrap). Without the
-    # timeout, read blocks forever and eventually crashes the VM via stuck process.
+    # 8s timeout: ssh -tt fakes a tty for [[ -t 0 ]]; unbounded read has crashed a VM
     command -v gh &>/dev/null && { gh auth status &>/dev/null || { [[ -t 0 ]] && info "GitHub login enables sync" && { read -t 8 -p "Login? (y/n) [8s]: " yn || yn=n; } && [[ "$yn" =~ ^[Yy] ]] && gh auth login && gh auth setup-git; }; gh auth status &>/dev/null && ok "sync configured"; } || :
     AROOT="$D/adata"; SROOT="$AROOT/git"
     if [[ ! -d "$SROOT/.git" ]]; then mkdir -p "$AROOT"
@@ -295,11 +290,7 @@ install)
     [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;git -C "$SROOT" config fetch.unpackLimit 1;ok "adata/git tuned";}
     # install synced fleet ssh key so `a ssh <host>` authenticates out-of-box (don't clobber an existing device key)
     [[ -f "$SROOT/ssh/id_ed25519" && ! -f "$HOME/.ssh/id_ed25519" ]]&&{ mkdir -p "$HOME/.ssh";cp "$SROOT/ssh/id_ed25519" "$SROOT/ssh/id_ed25519.pub" "$HOME/.ssh/" 2>/dev/null;chmod 600 "$HOME/.ssh/id_ed25519";ok "fleet ssh key";}
-    # extra user repos: adata/git/repos.txt - one "owner/name [target]" per line, '#' comments ok.
-    # rationale: `a clone` brings `a` itself, but the user's personal repos (updater, trading,
-    # research) don't ride along. manifest lives in adata so it syncs across the fleet -> a new
-    # device's `a install` ends up with the same user repos. scope-bounded to git clone only;
-    # any per-repo setup lives inside that repo (run it via `a cron` or its own bootstrap).
+    # extra user repos: adata/git/repos.txt "owner/name [target]" per line — synced manifest, clone-only
     [[ -f "$SROOT/repos.txt" ]]&&while IFS= read -r ln;do ln="${ln%%#*}";set -- $ln;[[ -z "$1" ]]&&continue
         tgt="${2:-$HOME/${1##*/}}";tgt="${tgt/#\~/$HOME}";[[ -d "$tgt/.git" ]]&&continue
         info "clone $1 -> $tgt"
@@ -411,7 +402,6 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/tok.c"
 #include "lib/m.c"
 #include "lib/h.c"
-#include "lib/handoff.c"
 #include "lib/pedal.c"
 #include "lib/grep.c"
 #include "lib/fleet.c"
@@ -458,7 +448,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest f
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
     {char cm[B];init_db();load_cfg();CWD(wc);size_t sl=strlen(SDIR);
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
-    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null|tr '\\n' '\\0'|xargs -0 ls -t 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* cwd repo + cat_more repos (u) + /a (stubs when outside it), newest first so the budget goes to live files */
+    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null|tr '\\n' '\\0'|xargs -0 ls -t 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* cwd repo + cat_more + /a stubs, newest first */
     size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,nst=0,nam=0;
     size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):1200000;
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
@@ -479,7 +469,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest f
         fclose(f);p=e+1;}
     CWD(cd);const char*actx=getenv("A_CTX");char ctd[P];
     if(actx&&actx[0]=='/')snprintf(ctd,P,"%s",actx);else snprintf(ctd,P,"%s/context/%s",AROOT,actx&&actx[0]?actx:bname(cd));
-    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=l>bud;  /* bud gates context too — 2.4MB embed blew the 1M window */\
+    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=l>bud;  /* bud gates context too */\
         for(size_t i=0;i<sr&&!bin;i++)if((unsigned char)b[i]<32&&b[i]!=9&&b[i]!=10&&b[i]!=13)bin=1;\
         {size_t hl=(size_t)snprintf(b,8192,"\n==> context%s: %s <==\n",bin?" doc":"",bin?FP:HDR);GA(b,hl);}\
         if(bin)fclose(cf);else{rewind(cf);while(fgets(b,512,cf)){size_t bl=strlen(b);GA(b,bl);}fclose(cf);}nf++;}}
@@ -504,7 +494,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest f
     return 0;}
 static int cmd_j(int c,char**v){
     if(c<3||!strcmp(v[2],"rm")||!strcmp(v[2],"watch")||!strcmp(v[2],"-r")||(c==3&&isdigit(*v[2])))return cmd_jobs(c,v);
-    if(c>2&&!strcmp(v[2],"-q")){perf_disarm();char ln[B],ob[4096];  /* rapid entry: each line spawns a detached claude win, stays in loop */
+    if(c>2&&!strcmp(v[2],"-q")){perf_disarm();char ln[B],ob[4096];  /* each line = detached claude win */
         for(fputs("j> ",stdout),fflush(stdout);fgets(ln,B,stdin);fputs("j> ",stdout),fflush(stdout)){
             ln[strcspn(ln,"\n")]=0;if(!*ln)continue;int p[2];if(pipe(p))continue;
             if(!fork()){dup2(p[1],1);dup2(p[1],2);close(p[0]);execlp("a","a","j",ln,(char*)0);_exit(127);}
@@ -552,7 +542,7 @@ static int cmd_j(int c,char**v){
         if(!fork_cp(wd,fp)){printf("+ %s\n",fp);snprintf(wd,P,"%s",fp);}
     }
     printf("+ job: %s\n  %.*s\n",bname(wd),80,pr);
-    if(pr[0])pl+=snprintf(pr+pl,(size_t)(B-pl),"\n\nWhen done: write .a_done — one simple sentence + test cmd; output beginning...end 4 lines max; no spacing between sections");
+    if(pr[0])snprintf(pr+pl,(size_t)(B-pl),"\n\nWhen done: write .a_done — one simple sentence + test cmd; output beginning...end 4 lines max; no spacing between sections");
     tm_ensure_conf();
     char jcmd[B];jcmd_fill(jcmd,0,wd,pr[0]?pr:NULL);
     const char*sn=tm_name("j",bname(wd),time(0));
@@ -582,7 +572,7 @@ static const cmd_t CMDS[] = {
     {"book",cmd_book},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_new},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},{"cron",cmd_hub},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},{"handoff",cmd_handoff},
+    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},
     {"help",cmd_help_full},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
@@ -605,7 +595,7 @@ static const cmd_t CMDS[] = {
 #define NCMDS (sizeof(CMDS)/sizeof(*CMDS))
 static char perf_msg[B];
 __attribute__((noreturn)) static void perf_alarm(int sig){(void)sig;
-    (void)!write(STDERR_FILENO,perf_msg,strlen(perf_msg));kill(-getpid(),SIGTERM);_exit(124);}  /* pgrp 0 from tmux run-shell = server */
+    (void)!write(STDERR_FILENO,perf_msg,strlen(perf_msg));kill(-getpid(),SIGTERM);_exit(124);}  
 static void perf_arm(const char *cmd) {
     if(getenv("A_BENCH")||isdigit(*cmd))return;
     char sk[64];snprintf(sk,64,"|%s|",cmd);
@@ -622,17 +612,17 @@ static void gt_print(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);
     fprintf(stderr,"%ldus\n",(t.tv_sec-gt0.tv_sec)*1000000L+(t.tv_nsec-gt0.tv_nsec)/1000);}
 int main(int argc, char **argv) {
     clock_gettime(CLOCK_MONOTONIC, &T0);
-    signal(SIGCHLD,SIG_DFL);  /* serve execs us with SIGCHLD=IGN: system() rc=-1 → phantom snap restores */
+    signal(SIGCHLD,SIG_DFL);  /* serve execs us with SIGCHLD=IGN: system() rc lies */
     init_paths();
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
-    if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);  /* multicall: `h` symlink = one-keypress home */
-    if (argc < 2) { if(isatty(1))ifr_blast(); perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }  /* blast cached frame pre-init; cmd_i repaints over it */
+    if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);  /* multicall: h = home */
+    if (argc < 2) { if(isatty(1))ifr_blast(); perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }  /* blast cached frame pre-init */
     char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
     alog(acmd, wd);
     const char *arg = argv[1];
-    /* per-cmd auto-sync removed: was sweeping working-tree changes (e.g. my/ lab work) into "sync" commits across adata. Notes/tasks still sync on their explicit write paths. */
+    /* per-cmd auto-sync removed: swept others' WIP */
 
     if (*arg && !arg[strspn(arg,"0123456789")]) { init_db(); return cmd_project_num(argc, argv, atoi(arg)); }
 

@@ -1,25 +1,11 @@
 #!/usr/bin/env python3
-"""a mail — write a Gmail draft, never send: the draft lands complete (to/subject/body/attachments)
-in Gmail web where Sean lives; he reviews there and presses Send. Nothing auto-sends.
-
-Why drafts and not SMTP: spatten2@fordham.edu is Workspace behind Fordham SAML SSO —
-no password auth exists; and a compose-wrapper (Thunderbird) was rejected: Gmail web is
-the mailbox that's actually used. OAuth (loopback, desktop client) with scopes
-openid email gmail.compose; gmail.compose covers drafts.* (create/get/list). Stdlib only.
-2026-07-27 (Sean): the rclone-derived OAuth client will NOT work for spatten2@fordham.edu —
-don't retry auth on it; Fordham path = relay (draft in an authorized personal account
-To: spatten2, then copy+send from Fordham Gmail web).
-
-  a mail auth [email]   one-time OAuth for that account (browser consent; token stored)
-  a mail who            which account(s) a mail is registered as — THE identity that drafts land in
-  a mail <draft.md>     create the draft (From: header picks the account; else sole stored one)
-  a mail drafts [email] list current drafts via API (machine check that drafts really entered)
-
-Draft file: To:/Subject:/[Attach: f1,f2 rel to draft dir]/[From: email]/blank/body.
-Tokens: adata/local/gmail-oauth.json {email:{refresh_token,client_id,client_secret}} 600.
-Client: adata/local/gmail-client.json (Google 'installed' client json). Testing-mode apps
-expire refresh tokens after 7 days -> rerun a mail auth (error says so).
-"""
+"""a mail — Gmail DRAFTS only, never sends: draft lands complete in Gmail web, he presses Send.
+Why not SMTP: spatten2@fordham.edu is Workspace behind SAML SSO, no password auth; compose-wrappers rejected.
+2026-07-27: the rclone OAuth client will NOT work for fordham — don't retry; Fordham path = draft in a personal
+account To: spatten2, copy+send from Fordham web. OAuth loopback, scopes openid email gmail.compose. Stdlib only.
+  a mail auth [email] | who | <draft.md> | drafts [email]
+Draft file: To:/Subject:/[Attach: rel]/[From: email]/blank/body. Tokens adata/local/gmail-oauth.json (600),
+client adata/local/gmail-client.json; testing-mode refresh tokens die in 7 days -> rerun a mail auth."""
 import base64, json, os, pathlib, socket, subprocess, sys, urllib.parse, urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 STORE, CLIENT = ROOT/'adata/local/gmail-oauth.json', ROOT/'adata/local/gmail-client.json'

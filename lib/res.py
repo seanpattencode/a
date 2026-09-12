@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
-"""a res — resume agents: interactive pick, or save/restore the OPEN tmux windows across a reboot.
-(same command as `a resume` and `a snap`)
-
-  a res                                  [h] revive all ≤hrs · [c/g/k] native · [/] search · ↑↓↵ open
-  a res save | show | restore [--dry]    snapshot / restore the tmux session across a reboot
-
-Reboot revival: each window → (name, cwd, cmd). claude/codex/gemini/grok windows resume their session
-(claude's launch id goes stale on compaction); `a ssh` host windows reconnect; all others reopen as a
-shell in cwd. Restore fires on session-create (tm_ensure_sess). A_SNAP_SESSION overrides the session.
-GUI layer (sway): foot/firefox snapshotted; restore opens AT MOST ONE of each, never the saved
-count (5 restored foots squashed ws1, 2026-09-11). No sway → gui skipped, tmux still restores.
-"""
+"""a res — resume agents: bare = interactive pick; save/show/restore = tmux snapshot across a reboot (same cmd: a resume/a snap).
+Window -> (name,cwd,cmd): claude/codex/agy/grok resume their session (claude launch id goes stale on compaction), `a ssh` host
+windows reconnect, rest reopen as shells. Restore fires on session-create (tm_ensure_sess); A_SNAP_SESSION overrides.
+GUI (sway): reopen AT MOST ONE foot+firefox, never the saved count (5 foots squashed ws1, 9/11); no sway -> tmux only."""
 import sys, os, json, glob, re, socket, subprocess, time
 
 DEV = socket.gethostname()
@@ -24,7 +16,7 @@ try: C = dict(re.findall(r"^m_(\w+): *(.*)", open(f"{GIT}/workspace/config.txt")
 except OSError: C = {}
 MF = "".join(f" --{k} {C[k]}" for k in ("model", "effort") if C.get(k)) if C.get("agent", "claude") == "claude" else ""
 RESUME = {"claude": f"claude --dangerously-skip-permissions{MF} --resume %s; exec bash",  # %s=sid; no MF → settings.json default
-          "codex": "codex resume --last; exec bash", "gemini": "gemini --yolo --resume latest; exec bash",
+          "codex": "codex resume --last; exec bash", "agy": "agy --dangerously-skip-permissions -c; exec bash",
           "grok": "grok --always-approve --continue; exec bash"}   # --continue = cwd's newest session
 HOST = f"{GIT}/ssh/%s.txt"                            # a ssh host registry
 
@@ -65,7 +57,7 @@ def tree(pid):                                        # pid + all descendants
     return seen
 
 
-AEXE = {"claude", "codex", "gemini", "grok"}          # agent binaries we revive natively
+AEXE = {"claude", "codex", "agy", "grok"}          # agent binaries we revive natively
 
 def agent(pids):                                      # (kind, sid) of the agent under these panes; (None, "") if none
     for p in (t for pid in pids for t in tree(pid)):  # match the LAUNCHED BINARY, never a prompt substring:
@@ -114,7 +106,7 @@ def save():
         if kind == "claude":                                       # claude → resume its real transcript
             s = sid if have(sid) else newest_in(cwd, claimed | used)
             if s and s not in used: used.add(s); cmd = RESUME["claude"] % s
-        elif kind in ("codex", "gemini", "grok"): cmd = RESUME[kind]   # native resume
+        elif kind in ("codex", "agy", "grok"): cmd = RESUME[kind]   # native resume
         elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name   # ssh window → reconnect
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
                      "preview": (_preview(s) if s else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
@@ -128,7 +120,7 @@ def save():
     json.dump({"host": DEV, "session": TMS, "jobs": jobs, "gui": gui}, open(SNAP, "w"), indent=1)
     print(f"✓ snapshot {len(jobs)} window(s) + {len(gui)} gui · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
     for m, j in zip(here, jobs):
-        tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"       # what respawns: claude/codex/gemini/a/(shell)
+        tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"       # what respawns: claude/codex/agy/a/(shell)
         print(f" {m} {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
     return jobs
 
@@ -278,7 +270,7 @@ def pick():                                           # resume picker: menu keys
         for r in rows[:20]: print(f"{_age(time.time()-r[0]):>4} {r[3]:3d}t {os.path.basename(r[2]):<12} {_snip(r[4], '', 58)}")
         return
     corp = [(r, (os.path.basename(r[2]) + "\n" + r[4]).lower()) for r in rows]
-    NAT = {"c": ("codex", "codex resume; exec bash"), "g": ("gemini", RESUME["gemini"]),
+    NAT = {"c": ("codex", "codex resume; exec bash"), "g": ("agy", RESUME["agy"]),
            "k": ("grok", "grok --always-approve --resume; exec bash")}
     q, sel, act, mode = "", 0, None, ""
     old = termios.tcgetattr(0)
@@ -298,7 +290,7 @@ def pick():                                           # resume picker: menu keys
             hh = float(v) if (v := q.rstrip("h")).replace(".", "", 1).isdigit() else 0
             st = f"hrs: {q}▌ [ revive ALL {sum(r[0] >= time.time() - hh * 3600 for r in rows)} ≤{hh:g}h ] ↵=go esc=back" if mode == "h" \
                 else f"/{q}▌ {len(m)}/{len(rows)} ↵=open esc=back" if mode == "/" \
-                else "[/]search  [h]revive ≤hrs  [c]odex  [g]emini  [k]grok  ↑↓↵ open  [q]uit"
+                else "[/]search  [h]revive ≤hrs  [c]odex  [g]=agy  [k]grok  ↑↓↵ open  [q]uit"
             o += (st + f" · {(time.perf_counter_ns()-t1)/1e6:.4f}ms")[:W] + "\x1b[K"
             sys.stdout.write(o); sys.stdout.flush()
             b = os.read(0, 1); t1 = time.perf_counter_ns()

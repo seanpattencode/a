@@ -1,22 +1,22 @@
 /* tmux — one session "a", windows are jobs */
 #define TMS "a"
-#define ACAT "A_NOPROMPT=1 a cat"  /* dprompt() already wrote default.txt at the top of the ctx file */
+#define ACAT "A_NOPROMPT=1 a cat"  /* dprompt already wrote default.txt */
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");
     (void)!system("tmux list-clients -t '"TMS"' -F'#{client_pid} #{client_tty}' 2>/dev/null|while read p t;do g='"TMS"'-$p;tmux has-session -t \"$g\" 2>/dev/null||tmux new-session -d -t '"TMS"' -s \"$g\" 2>/dev/null;tmux switch-client -c \"$t\" -t \"$g\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
     tm_gc();
     if(system("tmux has-session -t '"TMS"' 2>/dev/null")){
-    /* own scope: `a ui reload` cgroup-kill must not take tmux down; diag: my/tmuxlog.sh */
+    /* own scope: ui reload cgroup-kill must not take tmux down */
     (void)!system("{ command -v systemd-run >/dev/null 2>&1&&systemctl --user show-environment >/dev/null 2>&1&&Z='systemd-run --user --scope -q --'||Z=;"
         "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
-    /* restore once per SERVER (@res dies with it) — raw creators (ssh tmux new -A -s a) no longer skip it; 2026-08-14: 7 agents lost */
+    /* restore once per SERVER (@res dies with it); raw creators no longer skip it */
     (void)!system("tmux show -gv @res 2>/dev/null|grep -qx 1||{ tmux set -g @res 1;(a snap restore >>\"$HOME/a/adata/local/restore.log\" 2>&1 &);} 2>/dev/null");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
     return !system(c);
 }
-/* agent window name = <pre>-<base>-Sep4-346p: who, where, WHEN, readable on the bar (Sean 2026-09-04). taken → +seconds, still taken → +pid */
+/* window name = <pre>-<base>-Sep4-346p (who/where/when); taken -> +sec -> +pid */
 static const char*tm_name(const char*pre,const char*base,time_t t){static char b[256];struct tm*l=localtime(&t);char m[6];strftime(m,6,"%b",l);
     int n=snprintf(b,256,"%.64s-%.64s-%s%d-%d%02d",pre,base,m,l->tm_mday,l->tm_hour%12?l->tm_hour%12:12,l->tm_min),ap=l->tm_hour<12?'a':'p';
     snprintf(b+n,256-(size_t)n,"%c",ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c",l->tm_sec,ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c-%d",l->tm_sec,ap,(int)getpid());return b;}
@@ -25,8 +25,8 @@ static void tm_go(const char *w) {
     char c[B];const char*op=getenv("TMUX")?"switch-client":"attach-session";
     snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
-static void tm_rename(const char*n){const char*p=getenv("TMUX_PANE");char c[200];snprintf(c,200,"tmux rename-window -t '%s' '%s'",p?p:"",n);(void)!system(c);}  /* -t pane: bare rename hits session-current window (clobbered keeper on restore) */
-static void ram_park(void){                                             /* low RAM at window spawn → park LRU claude window; tmux server = the agent registry, pane child-check spots agents under any name (Sean 7/9: spawn freely, RAM never bottlenecks; parked = resumable via a res). gate: MemAvailable, mac vm_stat free+inactive+purgeable (7/15); neither → av 0 → no-op */
+static void tm_rename(const char*n){const char*p=getenv("TMUX_PANE");char c[200];snprintf(c,200,"tmux rename-window -t '%s' '%s'",p?p:"",n);(void)!system(c);}  /* -t pane: bare rename hits the session-current window */
+static void ram_park(void){                                             /* low RAM -> park LRU agent window (resumable: a res); gate MemAvailable / mac vm_stat; neither -> no-op */
     long need=4096;{const char*e=getenv("A_RAM_MIN_MB");if(e)need=atol(e);}
     char b[192]="";pcmd("a=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null);[ -n \"$a\" ]||a=$(vm_stat 2>/dev/null|awk '/page size of/{ps=$8}/Pages (free|inactive|purgeable):/{s+=$NF}END{if(s*ps)print int(s*ps/1048576)}');printf %s \"$a\"",b,192);
     long av=atol(b);if(av<=0||av>=need)return;
@@ -41,7 +41,7 @@ static int tm_new(const char *w, const char *wd, const char *cmd) {
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
     return system(c);
 }
-/* write default prompt + tools info to file. source=off skips intro+a-cat. */
+/* prompt+tools -> file; source=off skips a-cat */
 #define SRC_ON strcmp(cfget("source"),"off")
 static void prompt_freshness(FILE*f){
     char c[B],b[256]="";
@@ -75,10 +75,11 @@ static void jcmd_fill(char*b,int cont,const char*wd,const char*extra){
     if(extra&&extra[0]){char xf[P];snprintf(xf,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(xf,extra);
         snprintf(xsuf,512," \"$(cat '%s')\"",xf);}
     const char*ag=cfget("m_agent");if(!*ag)ag="claude";const char*md=cfget("m_model"),*ef=cfget("m_effort");char run[B];
-    if(strstr(ag,"codex"))snprintf(run,B,"codex -c model_reasoning_effort=\"%s\" --model %s --dangerously-bypass-approvals-and-sandbox%s",*ef?ef:"xhigh",*md?md:"gpt-5.5",xsuf);
-    else if(strstr(ag,"gemini"))snprintf(run,B,"gemini --yolo%s",xsuf);
+    int by=strcmp(cfget("m_perms"),"ask")!=0;   /* m_perms ask = gated */
+    if(strstr(ag,"codex"))snprintf(run,B,"codex -c model_reasoning_effort=\"%s\" --model %s%s%s",*ef?ef:"xhigh",*md?md:"gpt-5.5",by?" --dangerously-bypass-approvals-and-sandbox":"",xsuf);
+    else if(strstr(ag,"agy")||strstr(ag,"gemini"))snprintf(run,B,"agy%s%s%s%s%s%s",*md?" --model ":"",md,*ef?" --effort ":"",ef,by?" --dangerously-skip-permissions":"",xsuf);   /* stale m_agent=gemini heals here */
     else{const char*sid=getenv("SID");char sp[96]="";if(sid&&*sid)snprintf(sp,96,"--session-id %s ",sid);
-        snprintf(run,B,ACAT " >>%s 2>/dev/null;claude %s--dangerously-skip-permissions --model %s --effort %s --append-system-prompt-file %s%s%s",ctxf,sp,*md?md:"claude-fable-5",*ef?ef:"max",ctxf,cont?" --continue":"",xsuf);}
+        snprintf(run,B,ACAT " >>%s 2>/dev/null;claude %s%s--model %s --effort %s --append-system-prompt-file %s%s%s",ctxf,sp,by?"--dangerously-skip-permissions ":"",*md?md:"claude-fable-5",*ef?ef:"max",ctxf,cont?" --continue":"",xsuf);}
     snprintf(b,B,"tmux splitw -vd -p50 -t $TMUX_PANE;%s;e=$?;[ $e -ne 0 ]&&echo \"$(date) $e $(pwd)\">>%s/crashes.log;exec bash",run,LOGDIR);}
 
 static void tm_ensure_conf(void) {
@@ -91,7 +92,7 @@ static void tm_ensure_conf(void) {
     if (!f) return;
     const char *cc = clip_cmd();
     fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\nset -wg pane-scrollbars on\n"
-        "set -g history-limit 10000\n"   /* 50000 x 15 windows x grouped sessions = 11.5G tmux server RSS (2026-07-01 lag incident) */
+        "set -g history-limit 10000\n"   /* 50000-line history x windows x groups = 11.5G RSS once */
         "set -ga update-environment \"WAYLAND_DISPLAY\"\n"
         "set -ga update-environment \"SWAYSOCK\"\n"
         "set -g mouse on\n"
@@ -108,7 +109,7 @@ static void tm_ensure_conf(void) {
         "set -s extended-keys on\n"
         "set -as terminal-features 'xterm*:extkeys:overline'\n"
         "set -as terminal-overrides ',*:Smol=\\E[53m:Rmol=\\E[55m'\n"
-        "set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'\n"   /* OSC52 to every client on copy — foot+xterm terminfo lack Ms here */
+        "set -as terminal-overrides ',*:Ms=\\E]52;%p1%s;%p2%s\\007'\n"   /* OSC52 on copy: foot+xterm terminfo lack Ms */
         "set -g assume-paste-time 0\n"
         "set -g window-style bg=default\n"
         "set -g window-active-style bg=default\n"
@@ -118,12 +119,12 @@ static void tm_ensure_conf(void) {
         "set -g status-position bottom\n"
         "set -g status 2\n"
         "set -g status-right \"\"\n"
-/* hints (^key) only when client wide enough to be a desktop; mobile/narrow shows clean labels */
+/* ^key hints only on wide clients */
 #define WH(x) "#{?#{e|>:#{client_width},70}," x ",}"
         "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ..." WH(" ^.") " #[norange] #[range=user|kbd]Kb#[norange] \"\n"
 #undef WH
         "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] ,#[fg=#000000 bg=#ffffff bold] #I:#W #[default] }\"\n"
-        /* C-Tab/C-S-Tab won't work: Tab=0x09=C-i, so C-Tab is indistinguishable from Tab */
+        /* C-Tab impossible: Tab=0x09=C-i */
 #define SSHIF "if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' "
         "bind -n M-Right " SSHIF "'if-shell \"a fl n #{pane_id}\" next-window' 'next-window'\n"
         "bind -n M-Left " SSHIF "'if-shell \"a fl p #{pane_id}\" previous-window' 'previous-window'\n"
@@ -137,7 +138,7 @@ static void tm_ensure_conf(void) {
         "bind -n C-o " SSHIF "'send C-o' 'splitw -v -c \"#{pane_current_path}\"'\n"
         "bind -n C-w " SSHIF "'send C-w' 'selectw -n;killw -t:!'\n"
         "bind -n C-x " SSHIF "'send C-x' 'kill-pane'\n"
-/* the panel's ... menu; shared by the C-. key and the click case below */
+/* ... menu, shared by C-. and click */
 #define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills"
         "bind -n C-. " SSHIF "'send C-.' {" AMENU "}\n"
 #undef SSHIF

@@ -1,8 +1,6 @@
-/* a fleet — device status table: sync / agents / ram, one row per box, rows stream as boxes answer.
-   ssh + adb probes ALL launch at t0 and race in one poll loop (Sean 7/15: parallel, fast as possible);
-   ssh keeps row priority: an adb result buffers until its ssh sibling succeeds (dropped) or fails (printed).
-   TUI is the primary surface; serve's GET /fleet mirrors the cache this writes (adata/local/fleet.txt). */
-#define FWIRE 4096                                                       /* a ssh's remote-command buffer (a.c: B) — the hard ceiling on a shipped scanner */
+/* a fleet — status table (sync/agents/ram), rows stream as boxes answer; ssh+adb race, ssh wins (adb buffers
+   until its ssh sibling settles); cache adata/local/fleet.txt mirrors to GET /fleet. */
+#define FWIRE 4096                                                       /* a ssh's remote buffer = the scanner ceiling */
 static int f_b64(const char *in, char *out, size_t cap) {
     static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     int n = (int)strlen(in), o = 0;
@@ -17,19 +15,19 @@ static int f_b64(const char *in, char *out, size_t cap) {
     out[o] = 0; return 1;
 }
 
-/* resolve THE session's pane: sid-bearing procs (grep '[a]bc' form never matches its own argv) + codex fd-holders (no argv sid) → climb ppids to a pane; every candidate tried (transient ghosts die mid-climb). $s = raw sid for scripts, $i = pane or empty */
+/* resolve the session's pane: sid procs + codex fd-holders -> climb ppids; $s = sid, $i = pane or empty */
 #define FSID "s=$(printf %%s '%s'|tr -d '[]');L=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null);i=;" \
     "for p in $(grep -al '%s' /proc/[0-9]*/cmdline 2>/dev/null|cut -d/ -f3) $(for q in $(pgrep -x codex 2>/dev/null);do ls -l /proc/$q/fd 2>/dev/null|grep -q \"$s\"&&echo $q;done);do " \
     "while [ -n \"$p\" ]&&[ \"$p\" -gt 1 ] 2>/dev/null;do i=$(echo \"$L\"|awk -v x=\"$p\" '$1==x{print $2;exit}');[ -n \"$i\" ]&&break 2;p=$(awk '{print $4}' /proc/$p/stat 2>/dev/null);done;done;"
 #define FPAT(b, x) char b[56]; snprintf(b, 56, "[%c]%s", (x)->sid[0], (x)->sid + 1)
 #define FBASH(sc) { execlp("bash", "bash", "-c", sc, (char *)0); _exit(127); }
-static int f_sh(const char *host, const char *sc) {                     /* run sc on a box (local or ssh); returns stdout fd, caller reads to EOF then reaps. setsid: detach from tty — ssh else reads /dev/tty and steals keystrokes */
+static int f_sh(const char *host, const char *sc) {                     /* run sc on a box -> stdout fd; setsid or ssh steals keystrokes via /dev/tty */
     int pf[2]; if (pipe(pf)) return -1; pid_t pid = fork(); if (pid < 0) { close(pf[0]); close(pf[1]); return -1; }
     if (!pid) { setsid(); dup2(pf[1], 1); close(pf[0]); close(pf[1]); int dn = open("/dev/null", O_RDWR); if (dn >= 0) { dup2(dn, 0); dup2(dn, 2); if (dn > 2) close(dn); }
         if (strcmp(host, DEV)) { static char b6[FWIRE], cm[FWIRE + 64];
             if (!f_b64(sc, b6, FWIRE - 64)) _exit(127);
             snprintf(cm, sizeof cm, "echo %s|base64 -d|bash", b6);
-            if (strlen(cm) >= FWIRE) _exit(127);   /* die silent-but-visible: the box lands in "✗ not accessible" instead of answering with a truncated scanner */
+            if (strlen(cm) >= FWIRE) _exit(127);   /* die visible: truncated scanner must not answer */
             execlp("a", "a", "ssh", host, cm, (char *)0); }
         FBASH(sc) }
     close(pf[1]); return pf[0];
@@ -44,7 +42,7 @@ static const char *FLQ =
 "elif [ \"$b\" = 0 ]&&[ \"$a\" = 0 ];then echo synced;else echo \"$a to push, $b to pull\";fi;}||echo no-adata)\n"
 "printf '%s|%s|%s\\n' \"$s\" \"$ag\" \"$m\"";
 
-typedef struct { int fd, typ, st; char h[40], buf[160]; } FLCH;          /* typ 0=ssh/loc 1=adb · st 0=pending 1=shown 2=failed 3=buffered */
+typedef struct { int fd, typ, st; char h[40], buf[160]; } FLCH;          /* typ 0=ssh 1=adb · st 0=pend 1=shown 2=fail 3=buf */
 static FLCH fchn[64]; static int fln; static FILE *flcf;
 static void fl_row(const char *nm, int typ, char *b) {                   /* b = "sync|agents|ram" */
     char *q1 = strchr(b, '|'), *q2 = q1 ? strchr(q1 + 1, '|') : 0;
@@ -62,16 +60,16 @@ static void fl_off(FLCH *x, int adbtried) {
 
 static int cmd_fleet(int argc, char **argv) { (void)argc; (void)argv; perf_disarm();
     if(argc>2&&!strcmp(argv[2],"web")){(void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,"http://localhost:1111/fw");puts("\xe2\x9c\x93 localhost:1111/fw \xe2\x80\x94 every device's tmux, one page");return 0;}
-    init_db(); load_cfg();                                               /* SROOT/DDIR live behind init */
+    init_db(); load_cfg();                                               
     fln = 0; char cmd[B], ln[128];
     int fdl = f_sh(DEV, FLQ); if (fdl >= 0) { fchn[fln].fd = fdl; fchn[fln].typ = 0; fchn[fln].st = 0; snprintf(fchn[fln].h, 40, "%s", DEV); fln++; }
-    snprintf(cmd, B, "grep -h '^Name:' %s/ssh/*.txt 2>/dev/null|sed 's/Name: //'|sed -E 's/-(lan|wan|usb|hot|relay)$//'|sort -fu", SROOT);   /* -f: HSU/hsu are one box */
+    snprintf(cmd, B, "grep -h '^Name:' %s/ssh/*.txt 2>/dev/null|sed 's/Name: //'|sed -E 's/-(lan|wan|usb|hot|relay)$//'|sort -fu", SROOT);   /* -f: case-fold dupes */
     FILE *p = popen(cmd, "r");
     while (p && fgets(ln, 128, p) && fln < 48) { ln[strcspn(ln, "\n")] = 0;
         if (!ln[0] || !strcasecmp(ln, DEV)) continue;
         int fd = f_sh(ln, FLQ); if (fd >= 0) { fchn[fln].fd = fd; fchn[fln].typ = 0; fchn[fln].st = 0; snprintf(fchn[fln].h, 40, "%s", ln); fln++; } }
     if (p) pclose(p);
-    snprintf(cmd, B, "ls %s/adb/*.txt 2>/dev/null", SROOT); p = popen(cmd, "r");   /* adb probes launch NOW too — same poll loop, no serial phase */
+    snprintf(cmd, B, "ls %s/adb/*.txt 2>/dev/null", SROOT); p = popen(cmd, "r");   /* adb probes launch at t0 too */
     while (p && fgets(ln, 128, p) && fln < 64) { ln[strcspn(ln, "\n")] = 0;
         char nm[40] = "", sr[64] = "", wl[64] = ""; FILE *df = fopen(ln, "r"); if (!df) continue;
         char l2[128]; while (fgets(l2, 128, df)) { sscanf(l2, "Name: %39s", nm); sscanf(l2, "Serial: %63s", sr); sscanf(l2, "Wireless: %63[0-9.:]", wl); }
@@ -95,12 +93,12 @@ static int cmd_fleet(int argc, char **argv) { (void)argc; (void)argv; perf_disar
             char b[256]; int r = (int)read(x->fd, b, 255); close(x->fd); x->fd = -1; open_--;
             FLCH *s = fl_sib(x);
             if (r > 0) { b[r] = 0; b[strcspn(b, "\n")] = 0;
-                if (x->typ == 0) { if (!fl_shown(x->h)) { fl_row(x->h, 0, b); x->st = 1; } }   /* ssh wins; late buffered adb is dropped */
+                if (x->typ == 0) { if (!fl_shown(x->h)) { fl_row(x->h, 0, b); x->st = 1; } }   /* ssh wins */
                 else if (fl_shown(x->h)) x->st = 2;
-                else if (s && s->st == 0) { snprintf(x->buf, 160, "%s", b); x->st = 3; }       /* hold for the ssh verdict */
+                else if (s && s->st == 0) { snprintf(x->buf, 160, "%s", b); x->st = 3; }       
                 else { fl_row(x->h, 1, b); x->st = 1; } }
             else { x->st = 2;
-                if (x->typ == 0) { if (s && s->st == 3) { fl_row(s->h, 1, s->buf); s->st = 1; }   /* ssh dead → show the buffered adb row NOW */
+                if (x->typ == 0) { if (s && s->st == 3) { fl_row(s->h, 1, s->buf); s->st = 1; }   /* ssh dead -> show buffered adb */
                     else if (!s) fl_off(x, 0); else if (s->st == 2) fl_off(x, 1); }
                 else if (s && s->st == 2) fl_off(x, 1); } } }
     for (int i = 0; i < fln; i++) { FLCH *x = &fchn[i]; if (x->fd >= 0) { close(x->fd); x->st = 2; } }

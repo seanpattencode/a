@@ -1,32 +1,11 @@
-"""a apk — build+install the phone app
-  a apk [path] [serial] [noauth]   |   a apk build|self [abi]   |   a apk auth [serial]
-
-WHY THE APK EXISTS OVER TERMUX (keep this division — termux owns ALL logic + HTML + as much GUI as possible, to cut duplication + tokens):
-The apk is the thin shell for the only three things a termux terminal script can't do itself on Android OS:
-  1. visualization layer (the GUI).
-  2. termux keeps dying on Android and needs restarting — the apk, being durable, keeps/restarts it alive.
-  3. the numerous OS-level things only an installed apk can reach that a termux script cannot (OS + visualization).
-Everything else shells out to the termux `a` install — the apk is a UI caller, NOT a second runtime.
-
-After install, `a apk` auto-provisions the phone's termux with this dev box's gh + rclone
-creds (~/.config/gh/hosts.yml, ~/.config/rclone/rclone.conf) and points adata/git's origin
-at seanpattencode/a-git — so the web-UI's note sync (gh contents API) + rclone work on the
-phone. The apk does this via termux RUN_COMMAND (adb can't reach termux's home); idempotent
-and non-destructive (sets the remote, never clones/wipes). `noauth` skips it; `a apk auth
-[serial]` re-pushes creds + sets the remote without rebuilding.
-
-Inspect / debug the APK's live web UI from your dev machine (the app runs `a serve` on device port 1112):
-    adb -s <serial> forward tcp:9112 tcp:1112      # one-time; local 9112 -> device 1112
-    curl -s localhost:9112/                         # the index HTML the app actually serves
-    curl -s localhost:9112/term                     # terminal page
-    curl -s localhost:9112/api/omni --data-urlencode 'q=ssh <dev> a c <prompt>'   # drive it (e.g. ssh fedora-wan + launch claude)
-Chrome DevTools also works: chrome://inspect (WebContentsDebugging is on) to see the in-app WebView.
-Drive the UI programmatically (no coordinate-tapping) — pick any menu item / open the menu:
-    adb -s <serial> shell am start -n com.aios.a/.M --es nav note      # native items: a (web ui) Native Setup Read Rec Termux homebox; any other name = web page (note task term jobs proj …)
-    adb -s <serial> shell am start -n com.aios.a/.M --ez menu true     # open the menu overlay
-Assistant: Cap handles ACTION_ASSIST — register via Settings → Default apps → Digital assistant app (or adb shell cmd role add-role-holder --user 0 android.app.role.ASSISTANT com.aios.a); assist gesture then = capture UI with mic hot; simulate the gesture: adb shell input keyevent 219
-ui_full.html is re-copied from assets on every launch, so a fresh `a apk` reinstall always updates the UI.
-"""
+"""a apk — build+install the phone app. a apk [path] [serial] [noauth] | build|self [abi] | auth [serial]
+WHY over termux (keep the division — termux owns ALL logic+HTML): the apk = thin shell for what a termux script can't do:
+1) the GUI 2) termux dies on Android, the durable apk restarts it 3) OS surfaces only an installed apk reaches. All else
+shells out to termux `a`. Install auto-provisions termux with this box's gh+rclone creds via RUN_COMMAND (adb can't reach
+termux home; idempotent, sets remote only); noauth skips, `a apk auth` re-pushes. Debug the live UI: adb forward tcp:9112
+tcp:1112 then curl localhost:9112/ (chrome://inspect too). Drive it: am start -n com.aios.a/.M --es nav <note|term|...>
+(--ez menu true). Assistant: Cap handles ACTION_ASSIST (role via Settings/adb; gesture sim: input keyevent 219).
+ui_full.html re-copied from assets every launch, so reinstall always updates the UI."""
 import os,subprocess as S,shutil,glob,sys
 SELF="self" in sys.argv[2:]   # a apk self: parallel-installable variant — self-built signature can't UPDATE the installed app, so coexist under own id+label
 P="com.aios.a.self" if SELF else "com.aios.a"
@@ -35,12 +14,9 @@ package com.aios.a
 import android.app.*;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*;import android.media.session.*
 import java.io.File;import java.io.OutputStream;import java.net.Socket
 private const val BASE="http://127.0.0.1:1112"
-// "next tmux session" that works locally AND inside an `a ssh` session. Targets the ATTACHED client's session
-// (not the ambiguous implicit "current", which the grouped per-client sessions mis-resolve from a detached RUN_COMMAND).
-// `a ssh` runs via sshpass, so the pane's foreground command is ssh/mosh/sshpass — inject prefix+n as keystrokes so they ride
-// the ssh pipe to the REMOTE tmux (verified switching ubuntu's window); otherwise switch the local tmux.
+// next-tmux-session: target the ATTACHED client's session; ssh/mosh/sshpass pane = send C-b n keystrokes (rides to the remote tmux), else local next-window
 const val TMUXNEXT="S=\$(tmux list-clients -F '#{client_session}'|head -1);[ -n \"\$S\" ]||S=\$(tmux display -p '#{session_name}');C=\$(tmux display -t \"\$S\" -p '#{pane_current_command}');case \"\$C\" in ssh|mosh|sshpass)tmux send-keys -t \"\$S\" C-b n;;*)tmux next-window -t \"\$S\";;esac"
-// All a-logic shells out to the termux `a` install (the device's real terminal); the APK is a UI caller. RUN_COMMAND also cold-starts termux if it crashed. arg passed as $1 (no injection).
+// all logic = termux `a` via RUN_COMMAND (cold-starts termux too); arg as $1, no injection
 fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
 companion object{init{System.loadLibrary("anative")};@JvmStatic var su=false}
@@ -67,7 +43,7 @@ jsEval("window._wsClose&&window._wsClose(1000)")
 when{bs.size<126->o.write(0x80 or bs.size);bs.size<65536->{o.write(0x80 or 126);o.write(bs.size shr 8);o.write(bs.size and 0xff)}}
 o.write(ByteArray(4));o.write(bs)
 wsOut?.write(o.toByteArray());wsOut?.flush()}catch(e:Exception){}}}
-/* music (Sean 2026-09-01): page <audio id=p> stays the player; native MIRRORS it (MediaSession+MediaStyle notif = shade/carousel play-pause, buttons derived from PlaybackState) and the Ms FGS holds the process out of the cached-freeze that killed background play. Shade taps run back into p via evaluateJavascript. */
+/* music: page <audio id=p> is the player; native mirrors it (MediaSession notif), Ms FGS blocks the cached-freeze; shade taps -> evaluateJavascript into p */
 private var ms:MediaSession?=null
 private fun pjs(c:String)=w.evaluateJavascript("var e=document.getElementById('p');e&&e.$c()",null)
 @JavascriptInterface fun media(st:Int,title:String){h.post{
@@ -83,11 +59,11 @@ private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this
 private var openMenu:(()->Unit)?=null;private var backB:(()->Unit)?=null;private var nav:((String)->Unit)?=null
 /* programmatic menu control: am start -n com.aios.a/.M --es nav note   (or --ez menu true to open the menu) */
 private fun applyNav(i:Intent?):Boolean{val n=i?.getStringExtra("nav");if(n!=null)nav?.invoke(n);if(i?.getBooleanExtra("menu",false)==true)openMenu?.invoke()
-// `a apk` (desktop) adb-pushes the dev box's gh hosts.yml + rclone.conf to /data/local/tmp (file sync, so contents never hit logcat — unlike intent extras, which adbd logs verbatim) then fires --ez prov. Only the apk holds termux's RUN_COMMAND grant, so it copies them into termux ~/.config (chmod 600), runs gh auth setup-git, and ensures adata/git's origin points at a-git. note sync uses the gh contents API (note_url's PUT — see lib/git.c), which only needs the origin URL to derive owner/repo, NOT a full clone — so we just set the remote (no rm, no clone, no data loss). http.version=HTTP/1.1 is set because the phone's git stalls on HTTP/2 smart-POST (clone-fetch/push hang while GET/ls-remote work). a apk then wipes the staging copies.
+// prov: creds staged at /data/local/tmp (files never hit logcat; intent extras do) -> copy into termux ~/.config 600, setup-git, point adata/git origin at a-git (remote only, no clone); HTTP/1.1 forced (phone git stalls on h2 smart-POST)
 if(i?.getBooleanExtra("prov",false)==true)txRun(this,"mkdir -p ~/.config/gh ~/.config/rclone;[ -f /data/local/tmp/a_gh ]&&{ cp /data/local/tmp/a_gh ~/.config/gh/hosts.yml;chmod 600 ~/.config/gh/hosts.yml;};[ -f /data/local/tmp/a_rc ]&&{ cp /data/local/tmp/a_rc ~/.config/rclone/rclone.conf;chmod 600 ~/.config/rclone/rclone.conf;};command -v gh>/dev/null||exit 0;gh auth setup-git 2>/dev/null;git config --global http.version HTTP/1.1;D=~/a/adata/git;git -C \"\$D\" remote get-url origin 2>/dev/null|grep -q a-git||{ git -C \"\$D\" remote add origin https://github.com/seanpattencode/a-git.git 2>/dev/null;git -C \"\$D\" remote set-url origin https://github.com/seanpattencode/a-git.git 2>/dev/null;}")
 return n!=null||i?.getBooleanExtra("prov",false)==true}
 override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);applyNav(i)}
-private fun goMenu(){val f=backB;if(f!=null)f() else moveTaskToBack(true)}   // back = home menu selector; menu already open = background app, NEVER finish (thrown-out-of-app bug, Sean 2026-08-02)
+private fun goMenu(){val f=backB;if(f!=null)f() else moveTaskToBack(true)}   // back = menu; NEVER finish (thrown-out-of-app bug)
 override fun onBackPressed(){goMenu()}
 override fun onResume(){val _wt=android.os.SystemClock.elapsedRealtime();super.onResume();if(!su){su=true;setup()};spawn();startWd(this);if(!loaded){n=0;h.postDelayed({if(!loaded)w.loadUrl(cur)},700)};rt?.post{android.util.Log.i("aPerf","warm: resume->frame "+(android.os.SystemClock.elapsedRealtime()-_wt)+"ms")}}
 override fun onDestroy(){try{ms?.release()}catch(e:Exception){};Ms.tok=null;Ms.playing=false;stopService(Intent(this,Ms::class.java));Ms.nm(this).cancel(9);super.onDestroy()}   /* task swiped = player gone: no zombie "playing" notification */
@@ -97,7 +73,7 @@ val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.de
 ProcessBuilder("$nl/libtic.so","-o",ti.absolutePath,src.absolutePath).redirectErrorStream(true).redirectOutput(File(filesDir,"tic.log")).start().waitFor()}
 val bin=File(filesDir,"bin");bin.mkdirs();for(p in listOf("a" to "liba.so","tmux" to "libtmux.so","tic" to "libtic.so","dbclient" to "libssh.so","ssh" to "libsshwrap.so","sshpass" to "libsshwrap.so")){val l=File(bin,p.first);try{android.system.Os.remove(l.absolutePath)}catch(e:Exception){};try{android.system.Os.symlink("$nl/${p.second}",l.absolutePath)}catch(e:Exception){}}
 for(sub in listOf("ssh","workspace/projects","workspace/cmds")){val sd=File(filesDir,"adata/git/$sub");sd.mkdirs();try{for(n in assets.list("git/$sub")?:emptyArray()){assets.open("git/$sub/$n").use{i->File(sd,n).outputStream().use{o->i.copyTo(o)}}}}catch(e:Exception){}}}
-private fun spawn(){txRun(this,"a serve 1112")}  // termux serves on shared loopback :1112; WebView connects to it. onResume re-ensures serve but never reloads the page, so app-switch preserves your current box.
+private fun spawn(){txRun(this,"a serve 1112")}  // termux serves :1112; onResume re-ensures serve, never reloads (app-switch keeps state)
 @android.annotation.SuppressLint("ClickableViewAccessibility")
 override fun onCreate(b:Bundle?){super.onCreate(b)
 WebView.setWebContentsDebuggingEnabled(true)
@@ -110,17 +86,16 @@ override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){
 val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE}
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
-root.addView(fr,LinearLayout.LayoutParams(-1,-1));setContentView(root);show(1);getSharedPreferences("nav",0).getString("cur",null)?.let{cur=it;n=0;w.loadUrl(cur)};nv.onMenu={show(1)};openMenu={};nav={nm->val ni=listOf("native","a","setup","read","rec").indexOf(nm.lowercase());if(ni>=0)show(ni) else {show(1);val r=when(nm){"home"->"/";"task"->"/tasks";else->"/$nm"};if(loaded)w.evaluateJavascript("navpage('$r')",null) else {cur="$BASE$r";n=0;w.loadUrl(cur)}}};backB={if(w.visibility!=View.VISIBLE)show(1) else if(w.canGoBack())w.goBack() else if(w.url=="$BASE/")moveTaskToBack(true) else w.loadUrl("$BASE/")};if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(0,{goMenu()});applyNav(intent)}}   // WebView full-screen; native ☰ selector removed (Sean 2026-09-11), web omnibox is the only nav; nav()/shortcuts still reach native views + web pages
-// homebox = the user's primary ssh device — the main box they work on. Generic alias, not a specific host: each user points "homebox" at their default machine via an ssh entry named homebox. Cap fires captured thoughts to it (a sw homebox) and the button attaches (a ssh homebox).
+root.addView(fr,LinearLayout.LayoutParams(-1,-1));setContentView(root);show(1);getSharedPreferences("nav",0).getString("cur",null)?.let{cur=it;n=0;w.loadUrl(cur)};nv.onMenu={show(1)};openMenu={};nav={nm->val ni=listOf("native","a","setup","read","rec").indexOf(nm.lowercase());if(ni>=0)show(ni) else {show(1);val r=when(nm){"home"->"/";"task"->"/tasks";else->"/$nm"};if(loaded)w.evaluateJavascript("navpage('$r')",null) else {cur="$BASE$r";n=0;w.loadUrl(cur)}}};backB={if(w.visibility!=View.VISIBLE)show(1) else if(w.canGoBack())w.goBack() else if(w.url=="$BASE/")moveTaskToBack(true) else w.loadUrl("$BASE/")};if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(0,{goMenu()});applyNav(intent)}}   // native selector removed; web omnibox = the nav; nav()/shortcuts still reach native views
+// homebox = generic alias for the user's main box (ssh entry named homebox); Cap fires a sw homebox at it
 class Cap:Activity(){
 private val ACT="com.aios.a.CAP_RESULT"
 private var status:TextView?=null;private var tailv:TextView?=null;private var boxhdr:TextView?=null;private var hosts=listOf<String>()
 private var sr:android.speech.SpeechRecognizer?=null;private var listening=false;private var dbase="";private var lastp=""
-private var agent=0;private val AGS=listOf("claude","codex","gemini")
+private var agent=0;private val AGS=listOf("claude","codex","agy")
 private val hh=Handler(Looper.getMainLooper());private var tw="";private var tn=0
 private lateinit var e:EditText;private var row:BtnRow?=null
-// keep-text invariant: finals commit to dbase; onErr must commit the pending partial instead of dropping it.
-// Android kills long dictation sessions via onError — losing the partial there wiped everything not yet finalized.
+// keep-text invariant: onErr commits the pending partial (Android kills long sessions via onError)
 private fun put(s:String){lastp=s;e.setText(dbase+s);e.setSelection(e.text.length)}
 private fun onPart(s:String){put(s)}
 private fun onFinal(s:String){if(s.isNotBlank())dbase=(dbase+s).trimEnd()+" ";put("")}
@@ -139,8 +114,7 @@ runOnUiThread{if(hi>=0){boxhdr?.text=o.lines()[hi].replace("->","→")+"  ·tap 
 else if(sline!=null)status?.text=sline
 else if(w!=null){status?.text="✓ "+AGS[agent]+" "+w+" · live:";tw=w;tn=0;hh.removeCallbacks(tailR);hh.post(tailR)}
 else status?.text=if(o.isNotBlank())o.trim().takeLast(120) else "keys=["+(ex?.keySet()?.joinToString(",")?:"")+"]"}}}
-// live status of the created window: the same capture-pane tail the a TUIs use, callable from anywhere:
-//   a ssh homebox "tmux capture-pane -pt a:<win> -S -60 2>/dev/null|awk NF|tail -12"
+// live tail: a ssh homebox "tmux capture-pane -pt a:<win> -S -60|awk NF|tail -12"
 private val tailR=object:Runnable{override fun run(){if(tw.isEmpty())return
 txr("echo -n @T@;a ssh homebox \"tmux capture-pane -pt a:\$1 -S -60 2>/dev/null|awk NF|tail -12\" 2>&1","a",tw)
 if(++tn<40)hh.postDelayed(this,3000) else status?.text="⏸ live view paused — reopen to resume"}}
@@ -161,7 +135,7 @@ private fun act(i:Int){when(i){
 3->{agent=(agent+1)%AGS.size;status?.text="send → "+AGS[agent];row?.invalidate()}
 4->{fire(e.text.toString());clr()}}}
 private val ri=Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS,true).putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,6000)
-// continuous dictation: partials stream into the box, finals commit, re-listen until stop; on-device recognizer first (same call the kb IME uses)
+// continuous dictation: partials stream, finals commit, re-listen; on-device recognizer first
 private fun reco(){sr=if(Build.VERSION.SDK_INT>=31&&android.speech.SpeechRecognizer.isOnDeviceRecognitionAvailable(this))android.speech.SpeechRecognizer.createOnDeviceSpeechRecognizer(this) else android.speech.SpeechRecognizer.createSpeechRecognizer(this)
 sr!!.setRecognitionListener(object:android.speech.RecognitionListener{
 override fun onPartialResults(b:Bundle?){b?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let{onPart(it)}}
@@ -173,7 +147,7 @@ if(listening){listening=false;status?.text="";sr?.destroy();sr=null}
 else if(checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO),7);return}
 else{listening=true;status?.text="listening… tap stop to end";dbase=e.text.toString().let{if(it.isEmpty()||it.endsWith(" "))it else "$it "};lastp="";reco()}
 row?.invalidate()}
-// row like the kb: black, white mono glyphs, send = the white section; fires on ACTION_DOWN, invert = press feedback
+// kb-style row; fires on ACTION_DOWN, invert = press feedback
 inner class BtnRow(c:Context):android.view.View(c){
 private val pf=Paint().apply{isAntiAlias=true;typeface=Typeface.MONOSPACE;textSize=46f;textAlign=Paint.Align.CENTER}
 private var pr=-1
@@ -189,7 +163,7 @@ override fun onTouchEvent(ev:MotionEvent):Boolean{
 if(ev.action==MotionEvent.ACTION_DOWN){val i=(ev.x/(width/labs().size.toFloat())).toInt().coerceIn(0,labs().size-1);pr=i;invalidate();act(i)}
 else if(ev.action==MotionEvent.ACTION_UP||ev.action==MotionEvent.ACTION_CANCEL)postDelayed({pr=-1;invalidate()},70)
 return true}}
-// headless debug feed (`a captest`): am start .Cap --es feed 'r|p hello|e|p world|f world' replays recognizer events through the SAME handlers; text → files/cap_out.txt + logcat aCapTest
+// debug feed: --es feed 'r|p hello|e|f world' replays recognizer events; out = files/cap_out.txt + logcat aCapTest
 private fun feed(i:Intent?){val f=i?.getStringExtra("feed")?:return
 for(ev in f.split("|")){val t=ev.trim();when{t=="r"->clr();t.startsWith("p ")->onPart(t.drop(2));t.startsWith("f ")->onFinal(t.drop(2));t.startsWith("e")->onErr()}}
 val out=e.text.toString();java.io.File(filesDir,"cap_out.txt").writeText(out)
@@ -206,7 +180,7 @@ row=BtnRow(this)
 ll.addView(boxhdr,LinearLayout.LayoutParams(-1,-2));ll.addView(e,LinearLayout.LayoutParams(-1,0,1f));ll.addView(tailv,LinearLayout.LayoutParams(-1,-2));ll.addView(status,LinearLayout.LayoutParams(-1,-2));ll.addView(row,LinearLayout.LayoutParams(-1,-2))
 setContentView(ll);e.requestFocus();hb("")
 window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-// assistant role (Settings → Default apps → Digital assistant, or adb: cmd role add-role-holder --user 0 android.app.role.ASSISTANT com.aios.a): the gesture fires ACTION_ASSIST here with the mic already hot — gesture → speak → send, zero taps
+// assistant role: gesture fires ACTION_ASSIST with mic hot (adb: cmd role add-role-holder ... ASSISTANT com.aios.a)
 if(intent?.action==Intent.ACTION_ASSIST)hh.post{if(!listening)micTap()}
 feed(intent)}
 override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);if(i.action==Intent.ACTION_ASSIST&&!listening)micTap();feed(i)}
@@ -346,7 +320,7 @@ override fun onTouchEvent(e:MotionEvent):Boolean{if(e.action==MotionEvent.ACTION
 if(nTouch(e.action and 0xFF,e.x,e.y)!=0){spoken=-1;tts?.stop();invalidate()};return true}
 override fun onDetachedFromWindow(){super.onDetachedFromWindow();tts?.shutdown();tts=null}}
 fun startWd(c:Context){val w=Intent(c,Wd::class.java);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(w) else c.startService(w)}catch(e:Exception){}}
-// Wd = serve keep-alive (reason #2 the apk exists). Durable foreground service: every 8s, probe :1112; if dead, txRun "a serve 1112" — which cold-starts termux if it died (proven: revives in <2s). So serve comes back in the BACKGROUND, before the user opens the app. serve is blocking + double-bind-safe (2nd a serve hits EADDRINUSE, exits) so re-firing when alive is harmless. (poll, not event: android has no cross-process death signal; held-conn liveness needs serve's WS endpoint — upgrade later if the 8s probe ever shows.)
+// Wd: FGS probes :1112 every 8s, dead -> txRun a serve 1112 (cold-starts termux, ~2s); double-bind-safe so refiring is harmless; poll = android has no cross-process death signal
 class Wd:android.app.Service(){override fun onBind(i:Intent?):IBinder?=null
 override fun onStartCommand(i:Intent?,f:Int,id:Int):Int{val ch="wd";val nm=getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
 if(Build.VERSION.SDK_INT>=26)nm.createNotificationChannel(android.app.NotificationChannel(ch,"a",android.app.NotificationManager.IMPORTANCE_MIN))
@@ -355,7 +329,7 @@ if(Build.VERSION.SDK_INT>=34)startForeground(7,nt,android.content.pm.ServiceInfo
 val ctx:Context=this;if(!up){up=true;Thread{while(true){try{val s=java.net.Socket();s.connect(java.net.InetSocketAddress("127.0.0.1",1112),1500);s.close()}catch(e:Exception){txRun(ctx,"a serve 1112")};try{Thread.sleep(8000)}catch(e:Exception){}}}.start()}
 return android.app.Service.START_STICKY}
 companion object{@Volatile var up=false}}
-// Ms = music FGS: alive only while page audio plays (M.media drives it); owns notification 9 (MediaStyle).
+// Ms = music FGS, alive only while page audio plays; owns notif 9
 class Ms:Service(){override fun onBind(i:Intent?):IBinder?=null
 companion object{var inst:Ms?=null;var tok:MediaSession.Token?=null;var title="";var playing=false
 fun nm(c:Context)=c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -1031,22 +1005,15 @@ object NativeKB {
     external fun getLabels(): String
 }
 
-// Clip: persisted history of everything committed via the keyboard (dictation finals, typed lines)
-// + whatever is on the system clipboard when opened. Newest-first, capped, survives IME restarts so
-// nothing said/typed/copied is ever lost. The 📋 key (left of mic) shows it; tap an entry to re-insert.
+// Clip: persisted newest-first history of everything committed (dictation, typed, clipboard) — nothing is ever lost; 📋 shows, tap re-inserts
 object Clip {
     private val items = ArrayList<String>(); private var f: java.io.File? = null
     fun init(c: android.content.Context) { if (f != null) return; f = java.io.File(c.filesDir, "clip.txt"); try { f!!.readText().split("\u0000").forEach { if (it.isNotBlank()) items.add(it) } } catch (e: Exception) {} }
     fun add(s: String) { val t = s.trim(); if (t.isEmpty() || t == items.firstOrNull()) return; items.remove(t); items.add(0, t); while (items.size > 40) items.removeAt(items.size - 1); try { f?.writeText(items.joinToString("\u0000")) } catch (e: Exception) {} }
     fun list(): List<String> = items
 }
-// Dict: shared continuous dictation (both IMEs) — partials stream as composing text, finals commit.
-// API33+ uses an on-device (Gboard-speed) SpeechRecognizer in EXTRA_SEGMENTED_SESSION mode: each
-// sentence arrives via onSegmentResults and commits as completed while the session keeps listening
-// (no per-utterance restart, no overwrite); pre-33 falls back to the old restart loop. Raw editors (inputType
-// TYPE_NULL: terminals like termux) can't compose — stream append-only tails there; NEVER delete
-// (termux deletes = async key events that can eat pre-existing content). Revisions may dup a few
-// boundary chars; content is never lost.
+// Dict: shared dictation. API33+ = segmented session, commit per sentence, no restart; pre-33 restart loop.
+// TYPE_NULL editors (termux) can't compose: append-only, NEVER delete (async deletes eat content); boundary dups ok, loss never.
 class Dict(private val svc: InputMethodService, private val ui: () -> Unit) {
     var listening = false; private var sr: SpeechRecognizer? = null; private var sent = 0
     private val ic get() = svc.currentInputConnection
@@ -1129,9 +1096,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
 
     private val toolbarH = 0f
     val rec = Dict(svc) { invalidate() }
-    // clipboard history: 📋 key — OR active dictation — fills the keyboard area with a live tappable list
-    // (newest-first, read fresh each draw). Each dictated sentence appends the instant it commits, so you
-    // watch it fill as you talk while the text field fills above. Row 0 = ⏹ stop (dictating) / ✕ close; tap an entry to re-insert.
+    // 📋 or active dictation = live tappable list; each sentence appends the instant it commits; row 0 = stop/close
     var clipMode = false
     private val clipPaint = Paint().apply { color = Color.WHITE; textSize = 38f; isAntiAlias = true }
     private val rowH get() = resources.displayMetrics.density * 50
@@ -1247,10 +1212,7 @@ class SettingsActivity : android.app.Activity() {
     }
 }
 
-// VoiceLine: a SECOND IME in this same APK (own entry in Android's keyboard picker, label "a voice
-// line") — literally ONE LINE tall: a dictation toggle + enter. The point is giving screen height
-// back to the content while still allowing input. Continuous dictation à la Cap: partials stream
-// into the field as composing text, finalized phrases commit, auto-relisten until tapped off.
+// VoiceLine: second IME, ONE line tall (dictation toggle + enter) — gives the screen back
 class VoiceLineService : InputMethodService() {
     private var v: VoiceLineView? = null
     val rec = Dict(this) { v?.invalidate() }
@@ -1534,7 +1496,7 @@ def _rish_install(apk_path,pkg,serial=None):
         sh(f"{R} -c 'pm uninstall {pkg}'")
         r=sh(f"{R} -c 'pm install -t -d -g \"{dst}\"'")
     if "Success" in (r.stdout or ""):
-        # rish pm install -g doesn't actually grant; without RUN_COMMAND the apk can't reach termux at all ("a serve not reachable") — so grant here, not in _provision (noauth skips that)
+        # rish -g doesn't grant: grant here (noauth skips _provision) or the apk can't reach termux
         if pkg:sh(f"{R} -c 'pm grant {pkg} android.permission.RECORD_AUDIO;pm grant {pkg} android.permission.POST_NOTIFICATIONS;pm grant {pkg} com.termux.permission.RUN_COMMAND'")
         if pkg:sh(f"{R} -c 'am start -n {pkg}/.M'" if in_tmx else f"am start -n {pkg}/.M")
         return True
@@ -1543,7 +1505,7 @@ def _rish_install(apk_path,pkg,serial=None):
 
 
 def _provision(serial,pkg):
-    """Push this dev box's gh+rclone creds to the phone so its termux web-UI can sync. adb can't write termux's private home, so we adb-push the files to /data/local/tmp (binary sync — contents never logged, unlike intent extras) and fire --ez prov; only the apk holds termux's RUN_COMMAND grant, so it copies them into ~/.config. Then we wipe the staging copies. Returns provisioned names."""
+    """push gh+rclone creds via /data/local/tmp + --ez prov (only the apk holds the RUN_COMMAND grant); staging wiped; returns names"""
     import time;staged=[]
     for src,dst,nm in[("~/.config/gh/hosts.yml","/data/local/tmp/a_gh","gh"),("~/.config/rclone/rclone.conf","/data/local/tmp/a_rc","rclone")]:
         p=os.path.expanduser(src)
@@ -1570,13 +1532,13 @@ def _adb_install(apk,pkg,serial):   # install -r -g; on INSTALL_FAILED uninstall
 AST=R+"/adata/apks/state"   # app-state snapshots — navfreq/★/localStorage must survive reinstall (Sean 2026-08-02)
 def _stq(serial,*a,**kw):return S.run(["adb"]+(["-s",serial] if serial else[])+list(a),capture_output=True,**kw)
 def _stf(serial,pkg,nm):return f"{AST}/{pkg}-{serial or 'any'}-{nm}.tgz"   # keyed per device — two phones must not clobber each other's state
-def _st_pull(serial,pkg):   # debug builds allow run-as: snapshot prefs (navfreq/bub) + webview Local Storage (web ★/recents) BEFORE any install — uninstall fallback + manual uninstalls must never cost state. An empty pull never overwrites a good snapshot.
+def _st_pull(serial,pkg):   # run-as snapshot of prefs + webview Local Storage BEFORE any install; empty pull never overwrites a good snapshot
     if not pkg:return
     os.makedirs(AST,exist_ok=True)
     for nm,scr in(("prefs","tar -czf - shared_prefs databases 2>/dev/null"),("webls",'cd app_webview/Default 2>/dev/null && tar -czf - "Local Storage" 2>/dev/null')):   # NOT files/: app-provisioned bins + symlinks into the apk lib dir — toybox tar refuses those symlinks on extract (rc 1) and they regenerate anyway
         r=_stq(serial,"exec-out","run-as",pkg,"sh","-c","'"+scr+"'")   # adb re-joins args for the remote shell — scr must carry its own quotes
         if len(r.stdout)>100:open(_stf(serial,pkg,nm),"wb").write(r.stdout)
-def _st_push(serial,pkg):   # ALWAYS push after install: snapshot is seconds-fresh (pulled pre-install), so this is an identity no-op on -r installs and beats Google Backup's STALE racing restore on wiping installs (allowBackup now false, but old installs + slow transports linger). Force-stop after so no process caches pre-restore prefs.
+def _st_push(serial,pkg):   # always push after install: no-op on -r, beats Google Backup's stale racing restore; force-stop so nothing caches pre-restore prefs
     if not pkg:return
     import time as _t;_t.sleep(4)   # let any in-flight legacy backup restore finish losing
     n=0
@@ -1584,13 +1546,13 @@ def _st_push(serial,pkg):   # ALWAYS push after install: snapshot is seconds-fre
         f=_stf(serial,pkg,nm)
         if os.path.exists(f):n+=_stq(serial,"shell","-T","run-as",pkg,"sh","-c","'"+scr+"'",stdin=open(f,"rb")).returncode==0
     if n:_stq(serial,"shell","am","force-stop",pkg);print(f"→ app state pushed from snapshot ({n} archives: freq/★/localStorage)")
-def _roles(serial,pkg):   # Android clears the default launcher(HOME) + keyboard(IME) on every -r reinstall by design; re-assert both via adb so you never re-enable by hand
+def _roles(serial,pkg):   # -r reinstall clears default HOME+IME by design; re-assert via adb
     if not pkg:return
     kb=pkg+"/.InstantNdkService"
     adb("shell","cmd","package","set-home-activity",pkg+"/.Home",serial=serial)
     adb("shell","ime","enable",kb,serial=serial); adb("shell","ime","set",kb,serial=serial)
     print("+ default launcher + keyboard kept")
-def _txupdate(serial,pkg):   # pull+rebuild termux a via /api/omni, then restart serve so the new binary is live (a update doesn't reload the running serve); force-stops com.termux. skip: noup
+def _txupdate(serial,pkg):   # rebuild termux a via /api/omni + restart serve (a update doesn't reload it); skip: noup
     d=f"adb -s {serial} ";S.run(["sh","-c",d+f"forward tcp:19112 tcp:1112;sleep 3;curl -sm90 localhost:19112/api/omni --data-urlencode q=update;sleep 8;"+d+"shell am force-stop com.termux;"+d+f"shell am start -n {pkg}/.M;"+d+"forward --remove tcp:19112"],capture_output=True);print("→ termux a updated + serve restarted")
 def run():
     if "pair" in sys.argv[1:]:return shizuku_pair()
@@ -1638,7 +1600,7 @@ def run():
         gp="android.useAndroidX=true\norg.gradle.jvmargs=-Xmx2g\nkotlin.compiler.execution.strategy=in-process\n"   # one 2g JVM, kotlinc inside it — two 4g JVMs got earlyoom/OOM-killed on a RAM-tight box; ample for this single-module app
         if os.environ.get("JAVA_HOME"):gp+="org.gradle.java.home="+os.environ["JAVA_HOME"]+"\n"   # pin the build JVM: system java 25 poisons stale daemons (kotlin-dsl JavaVersion.parse("25.0.3") crash, 2026-08-02)
         if IT:gp+="android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2\n"
-        # white-on-black 'a' launcher icon from the one glyph (lib/logo.py). adaptive: a solid-black background LAYER so the launcher's mask (circle/squircle) fills black — never the default white plate — with the white a foreground on top. skip silently if no rasterizer, MF then keeps the default icon
+        # adaptive launcher icon (lib/logo.py): black bg LAYER so the mask fills black, white a on top; no rasterizer = keep default
         _res=D+"/app/src/main/res";_ico=''
         try:
             sys.path.insert(0,R+"/lib");import logo as _lg

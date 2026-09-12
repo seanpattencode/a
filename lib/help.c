@@ -1,12 +1,12 @@
 /* help */
 static const char *HELP_SHORT =
     "a j \"prompt\"     Job: worktree + agent\n"
-    "a a|c|co|g      Default/claude/codex/gemini\n"
+    "a a|c|co|g      Default/claude/codex/agy\n"
     "a <#>           Open project by number\n"
     "a help          All commands";
 
 static const char *HELP_FULL =
-    "a - agent manager  c=claude co=codex g=gemini\n\n"
+    "a - agent manager  c=claude co=codex g=agy\n\n"
     "JOBS    a j \"prompt\"  a done \"msg\"\n"
     "AGENTS  a c|co|g  a <key>++  a agent\n"
     "PROJ    a <#>  a add/remove/move/scan  a create <name>\n"
@@ -30,7 +30,7 @@ static void list_all(int cache, int quiet) {
         snprintf(cf,P,"%s/i_cache.txt",DDIR);unlink(cf);}
 }
 
-/* d/n's 1st comment/docstring → "≤4-word desc · t": clause-cut, no dangling stopword/punct; """ over # */
+/* file's 1st comment -> "<=4-word desc · t" */
 static void d4(const char*d,const char*n,const char*t,char*o){char fp[P],l[256],c[256]="",*p,*s;snprintf(fp,P,"%s/%s",d,n);FILE*f=fopen(fp,"r");
     for(int i=0;f&&i<3&&fgets(l,256,f);i++){int q=!strncmp(l,"\"\"\"",3);
         if(q||(!*c&&((*l=='#'&&l[1]==' ')||(*l=='/'&&strchr("/*",l[1]))))){strcpy(c,l+2+q);if(q)break;}}
@@ -78,7 +78,8 @@ static void gen_icache(void){
             if(dot&&(!strcmp(dot,".py")||!strcmp(dot,".c")||!strcmp(dot,".sh")))
                 fprintf(f,"%.*s\t%s · repo\n",(int)(dot-se->d_name),se->d_name,re->d_name);}closedir(sd);}}closedir(d);}}}
     /* subcommands not discoverable from filenames */
-    fputs("scp\tsend file to host\n"
+    fputs("music\tsearch+play, yt+cache\n"
+    "scp\tsend file to host\n"
     "diff\ttok diff vs main\ncat\twhole codebase as text\nfreq\tusage frequency\n"
     "perf\tcmd time caps\n"
     "ui\tweb dashboard\n"
@@ -160,13 +161,13 @@ static void gen_icache(void){
         _exit(0);}
 }
 
-/* cached list: rescanning projects blew help's 879us budget. catf raw-write(2)s, so flush first */
+/* cached list (rescan blew the budget); flush before catf's raw writes */
 static int help_p(const char*h){char p[P];snprintf(p,P,"%s/help_list.txt",DDIR);puts(h);fflush(stdout);
     if(catf(p)<0){init_db();load_cfg();list_all(1,0);}return 0;}
 static int cmd_help(int c,char**v){(void)c;(void)v;return help_p(HELP_SHORT);}
 static int cmd_help_full(int c,char**v){(void)c;(void)v;return help_p(HELP_FULL);}
 
-static const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";   /* the [p] prompt; also sent by :1111/review "tell agent: push" */
+static const char*PP="push just these changes, and stop if there is an issue with pushing and ask me how to proceed";   /* the [p] prompt; also /review "tell agent" */
 static int cmd_done(int argc,char**argv){AB;
     char p[P],msg[B]="";snprintf(p,P,"%s/.done",DDIR);ajoin(msg,B,argc,argv,2);
     {FILE*f=fopen(p,"w");if(f){fputs(msg,f);fclose(f);}}
@@ -179,26 +180,24 @@ static int cmd_done(int argc,char**argv){AB;
         char ck[16];char*cc[16],*cx[16];int ncu=0;char*me=msg;
         #define TAG(o,t) {char*a=strstr(msg,"<"t">"),*b=a?strstr(a,"</"t">"):0;\
             if(a&&b){int n=(int)(b-a-(int)sizeof(t)-1);if(n>0&&n<B)snprintf(o,(size_t)n+1,"%s",a+sizeof(t)+1);if(b+sizeof(t)+2>me)me=b+sizeof(t)+2;}}
-        TAG(ts,"test")TAG(dl,"diff")TAG(cu,"do")TAG(dc,"doc")   /* <doc>paths</doc>: documents for :1111/review to show (a review); stripped from the pane text like the others */
+        TAG(ts,"test")TAG(dl,"diff")TAG(cu,"do")TAG(dc,"doc")   /* <doc>paths</doc>: files for /review; stripped like the others */
         #undef TAG
         while(*me==' '||*me==']')me++;int fl=(int)strcspn(dl," ");
-        /* custom menu actions: <do>key::label::cmd||key::label::cmd</do> — menu prints the literal cmd, keypress runs it */
+        /* <do>key::label::cmd||...</do>: menu prints cmd, keypress runs it */
         for(char*ent=cu;*ent&&ncu<16;){char*nx=strstr(ent,"||");if(nx)*nx=0;
             char*p1=strstr(ent,"::"),*p2=p1?strstr(p1+2,"::"):0;
             if(p2){*p1=*p2=0;while(*ent==' ')ent++;ck[ncu]=*ent;cc[ncu]=p1+2;cx[ncu++]=p2+2;}
             if(!nx)break;ent=nx+2;}
-        {char used[32]="pcseoyrnbv";   /* key colliding with built-ins/each other = both handlers fire on one press -> remap to first free */
+        {char used[32]="pcseoyrnbv";   /* colliding key = both fire -> remap to first free */
             for(int i=0;i<ncu;i++){
                 if(strchr(used,ck[i])){char o=ck[i];for(const char*q="123456789adfghijklmqtuvwxz";*q;q++)if(!strchr(used,*q)){ck[i]=*q;break;}
                     fprintf(stderr,"a done: key [%c] is built-in (p c s e o y r n b v) -> shown as [%c]; announce [%c]\n",o,ck[i],ck[i]);}
                 used[strlen(used)]=ck[i];}}
         if(dl[0]){char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(me,"\n"),me,dl);fclose(cf);}}
-        char np[P];int dp=(int)getpid(); /* per-invocation: shared names let a later `a done` (other agent/project) clobber this pane's [r]/[n]/[b] */
+        char np[P];int dp=(int)getpid(); /* per-invocation names: a later a done must not clobber this pane's keys */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        /* order = importance bottom-up (Sean 2026-08-31): a long pane isn't seen at once, the BOTTOM is —
-           no scroll, so most important last. bottom→top: actions, diff (the real thing), test output (its
-           output), agent report — least useful, not the real thing; maybe deleted later (undecided). */
+        /* order = importance bottom-up: the BOTTOM is what's seen — actions, diff, test, report */
         if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\nAP='%s'\nw(){ printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sp,np,tp?tp:"");fputs("echo '✓ done'\n",sf);
             if(*me)fprintf(sf,"printf '\\033[1;32m=== agent report ===\\033[0m\\n';cat<<'A_RPT'\n%s\nA_RPT\n",me);
             {FILE*nf=fopen(np,"w");if(nf){
@@ -206,16 +205,16 @@ static int cmd_done(int argc,char**argv){AB;
                 if(ts[0])fprintf(nf," echo; echo '=== TEST CMD OUTPUT ==='; %s 2>&1;",ts);
                 fprintf(nf," echo; echo '=== TASK ==='; cat '%s/common/prompts/next.txt'; } | claude -p --dangerously-skip-permissions --model claude-fable-5 --effort \"$EF\" --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)'\necho\nexec ${SHELL:-bash}\n",SROOT);fclose(nf);}}
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
-            const char*KX="[ \"$k\" = %c ]&&{ tmux selectp -t $AP;tmux send -t $AP -X cancel 2>/dev/null;tmux send -t $AP -l '%s';sleep 0.4;tmux send -t $AP Enter; }\n"; /* copy-mode eats sent keys ('g'=goto-line) — cancel first */
+            const char*KX="[ \"$k\" = %c ]&&{ tmux selectp -t $AP;tmux send -t $AP -X cancel 2>/dev/null;tmux send -t $AP -l '%s';sleep 0.4;tmux send -t $AP Enter; }\n"; /* copy-mode eats keys — cancel first */
             if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\nprintf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
             else fputs("printf '\\033[2mno test command\\033[0m\\n'\n",sf);
             fputs("printf '\\033[1;36m=== diff ===\\033[0m\\n';D=$(a diff 2>&1);printf '%s\\n' \"$D\";TK=$(printf '%s\\n' \"$D\"|grep -aE '^(net|fork):'|tail -1)\n",sf);
             if(dl[0])fprintf(sf,"printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
             fputs("while :;do\n",sf);
-            fputs("[ -n \"$TK\" ]&&printf '%s\\n' \"$TK\"\n",sf);  /* tok line glued to actions: visible with no scroll (2026-08-30 intent kept) */
+            fputs("[ -n \"$TK\" ]&&printf '%s\\n' \"$TK\"\n",sf);  /* tok line glued to actions: no scroll */
             fputs("if [ -z \"$M\" ];then printf '\\033[1;37m=== actions (key) ===\\033[0m\\n'\n",sf);
             if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent to push (it commits + pushes its own changes)\\n'\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m direct push, these files only: git add+commit -- %s && git push   (whole repo = a push)\\n'\n",dl);   /* the human's own paths-only push, first-class (Sean 09-04): distinct from telling the agent, distinct from a whole-repo a push */
+            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m direct push, these files only: git add+commit -- %s && git push   (whole repo = a push)\\n'\n",dl);   /* [y] = the human's paths-only push */
             if(tp)fputs("printf '\\033[1;37m[c]\\033[0m crunch the code\\n\\033[1;37m[e]\\033[0m talk to agent\\n'\n",sf);
             fprintf(sf,"printf '\\033[1;37m[v]\\033[0m edit: %%s/%.*s\\n' \"$PWD\"\n",fl,dl);
             for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;37m[%c]\\033[0m %%s: %%s\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
@@ -236,7 +235,7 @@ static int cmd_done(int argc,char**argv){AB;
             fputs("case \"$k\" in o) M=1;; r|n|b|v) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
             char c[P*2];
-            /* unify into ONE pane: clear prior output panes (keep the agent pane), then split one */
+            /* one pane: clear old outputs, split fresh */
             if(tp){snprintf(c,P*2,"tmux killp -a -t '%s' 2>/dev/null",tp);(void)!system(c);}
             snprintf(c,P*2,"tmux splitw -v -l 70%% -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
     (void)!write(STDERR_FILENO,"\a",1);

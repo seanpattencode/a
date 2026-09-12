@@ -1,4 +1,4 @@
-static const char*CFG_KEYS[]={"default_agent","claude_prefix","source","worktrees_dir","tmux_conf","cat_a","m_agent","m_model","m_effort","m_cmd","m_tier","i_agent","i_effort",NULL};
+static const char*CFG_KEYS[]={"default_agent","claude_prefix","source","worktrees_dir","tmux_conf","cat_a","m_agent","m_model","m_effort","m_perms","m_cmd","m_tier","i_agent","i_effort",NULL};
 static void cfg_show(void){for(const char**s=CFG_KEYS;*s;s++){const char*v=cfget(*s);
     printf("  %-16s%s\n",*s,v[0]?v:!strcmp(*s,"default_agent")?"c":"-");}}
 static int cmd_settings(int argc,char**argv) {
@@ -51,7 +51,7 @@ static int cmd_config(int argc, char **argv) {
     init_db(); load_cfg();
     if (argc < 3) {
         cfg_show();
-        puts("\n  Prompts: claude_prompt codex_prompt gemini_prompt\n  Set: a config <key> <value>  |  a config <key> off");
+        puts("\n  Prompts: claude_prompt codex_prompt agy_prompt\n  Set: a config <key> <value>  |  a config <key> off");
         return 0;
     }
     const char *key = argv[2];
@@ -64,7 +64,7 @@ static int cmd_config(int argc, char **argv) {
     return 0;
 }
 
-static void prompt_preview(const char*path){ /* confirm load: first 6 + last 3 lines, ... between */
+static void prompt_preview(const char*path){ /* preview: first 6 + last 3 lines */
     size_t n=0;char*d=readf(path,&n);if(!d){puts("  (empty)");return;}
     int tot=0;for(size_t i=0;i<n;i++)tot+=d[i]=='\n';
     if(tot<10){fputs(d,stdout);if(n&&d[n-1]!='\n')putchar('\n');free(d);return;}
@@ -72,7 +72,7 @@ static void prompt_preview(const char*path){ /* confirm load: first 6 + last 3 l
     printf("\033[2m  ... (%d lines) ...\033[0m\n",tot-9);
     char*q=d;for(int c=0;*q&&c<tot-3;q++)c+=*q=='\n';
     fputs(q,stdout);if(n&&d[n-1]!='\n')putchar('\n');free(d);}
-/* a prompt (bare,tty) → viewer TUI (tui.md): j/k pick, o view file, u unified, e edit, q quit. View delegates to less (universal j/k/q); menu loop is C/1ms. Activate stays `a prompt <name>`. Mirrors /prompt html. */
+/* bare tty = viewer TUI: j/k o=view u=unified e=edit q; view = less */
 static int prompt_tui(const char*d){char p[64][P];int n=listdir(d,p,64);if(n<1){puts("no prompts");return 0;}int s=0;raw_enter();
     for(int c;;){struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);
         printf("\033[H\033[2J  prompt files\033[K\n\n");
@@ -90,11 +90,9 @@ static int cmd_prompt(int argc, char **argv) {
     init_db();load_cfg();
     char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
     const char*act=cfget("prompt");if(!*act)act="default";
-    if(!(argc>2)&&isatty(1)){perf_disarm();return prompt_tui(d);}  /* bare `a prompt` on a tty = TUI; piped / `a prompt list` keep the plain list */
+    if(!(argc>2)&&isatty(1)){perf_disarm();return prompt_tui(d);}  /* tty = TUI; piped = plain list */
     const char*sub=argc>2?argv[2]:"";
-    /* DISTINCTION: prompt CANDIDATES (a prompt c [text]) = suggested prompts that could accomplish a *task*
-       — an appendable list like notes/tasks (lives in SROOT/prompts, note-file format so `a flow`/load_notes reads it).
-       COMMON PROMPTS (the .txt files below, managed by `a prompt`) = common instructions of how to *act*, not specific tasks. */
+    /* prompt CANDIDATES (a prompt c) = task prompts, appendable notes; COMMON prompts (.txt here) = how to act */
     if(!strcmp(sub,"c")||!strcmp(sub,"cand")){perf_disarm();
         char cd[P];snprintf(cd,P,"%s/prompts",SROOT);mkdirp(cd);
         if(argc>3){char t[B]="";ajoin(t,B,argc,argv,3);

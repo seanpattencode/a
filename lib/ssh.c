@@ -1,12 +1,8 @@
 /* ── ssh ── */
-/* Fleet note: Android/termux sshd is unreliable — it dies on sleep/battery, the
-   termux user (u0_aNNN) changes across reinstalls, and the app sandbox blocks a
-   fixed home. For Android phones in a fleet, prefer wireless adb from another
-   device (adb pair/connect over mDNS, then `adb shell`); ssh is supported but
-   secondary for Android. */
+/* Android/termux sshd unreliable (dies on sleep, uid churns): prefer wireless adb for phones */
 #define SMUX " -oControlMaster=auto -oControlPath=%%d/.ssh/a-%%C -oControlPersist=300"
 #define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7}';ipconfig getifaddr en0 2>/dev/null"
-/* live-filter picker (moved from m.c): anchors menu at bottom of pane via ABSOLUTE row positioning. caller sets raw mode. */
+/* live-filter picker, bottom-anchored (absolute rows); caller sets raw mode */
 static int m_pick(const char *cat,const char *const *items,int n,char *out,size_t osz){
     struct winsize ws; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row:24;
     int rsv=n+2; if(rsv>rows-1)rsv=rows-1; if(rsv>20)rsv=20;
@@ -86,7 +82,7 @@ static int cmd_ssh(int argc,char**argv){
         snprintf(H[nh].path,P,"%s",paths[i]);nh++;}
     const char*sub=argc>2?argv[2]:NULL;
     /* list */
-    if(!sub){/* auto-refresh self */
+    if(!sub){
         char ip[128]="",port[8]="22",h[256]="";const char*u=getenv("USER");
         char pv[64];pcmd("grep -ci microsoft /proc/version 2>/dev/null",pv,64);
         if(atoi(pv)>0){pcmd("powershell.exe -c \"ipconfig\"|grep -oP '192\\.168\\.\\d+\\.\\d+'|head -1",ip,128);ip[strcspn(ip,"\n")]=0;snprintf(port,8,"2222");}
@@ -166,7 +162,7 @@ static int cmd_ssh(int argc,char**argv){
         printf("Name: ");if(!fgets(n,128,stdin))return 1;n[strcspn(n,"\n")]=0;
         if(!n[0]){char*at=strchr(h,'@');snprintf(n,128,"%s",at?at+1:h);}
         printf("Password: ");if(!fgets(pw,256,stdin))return 1;pw[strcspn(pw,"\n")]=0;
-        /* validate connection */
+        
         {char hp[256],port[8];ssh_parse(h,hp,port);
         char tc[B];int l=ssh_pre(tc,B,pw,"-oConnectTimeout=5 -oStrictHostKeyChecking=no",port,hp);
         snprintf(tc+l,(size_t)(B-l)," 'echo ok' 2>&1");
@@ -175,7 +171,7 @@ static int cmd_ssh(int argc,char**argv){
     /* self — register this device */
     if(!strcmp(sub,"self")){char ip[128]="",port[8]="22",h[256],dnm[160];
         const char*u=getenv("USER");const char*nm=argc>3?argv[3]:dnm;
-        /* WSL detection */
+        
         int wsl=0;{char pv[64];pcmd("grep -ci microsoft /proc/version 2>/dev/null",pv,64);wsl=atoi(pv)>0;}
         if(wsl){
             pcmd("powershell.exe -c \"ipconfig\"|grep -oP '192\\.168\\.\\d+\\.\\d+'|head -1",ip,128);ip[strcspn(ip,"\n")]=0;
@@ -205,7 +201,7 @@ static int cmd_ssh(int argc,char**argv){
         snprintf(h,256,!strcmp(port,"22")?"%s@%s":"%s@%s:%s",u?u:"",ip,port);
         snprintf(dnm,160,"%s-%s",DEV,ssh_scope(ip));
         char os[128];pcmd("uname -sr 2>/dev/null",os,128);os[strcspn(os,"\n")]=0;
-        /* preserve existing password */
+        
         const char*epw=NULL;for(int i=0;i<nh;i++)if(!strcmp(H[i].name,nm)){epw=H[i].pw;break;}
         ssh_savex(dir,nm,h,epw,"OS",os);printf("✓ %s %s [%s]\n",nm,h,os);return 0;}
     /* rm */
@@ -241,9 +237,7 @@ static int cmd_ssh(int argc,char**argv){
             if(o[0]){ssh_savex(dir,h->name,h->host,h->pw,"OS",o);printf("✓ %s\n",h->name);}
             else printf("x %s\n",h->name);}
         return 0;}
-    /* tunnel — view a device's OWN `a serve` (or any port) over ssh: forward its loopback port here.
-       a ssh tunnel <host> [rport=1111] [lport=auto]  →  ssh -N -L lport:127.0.0.1:rport <host>; open http://127.0.0.1:lport
-       rport defaults to 1111 (every device's `a serve`); lport auto-picks a free local port (1111 is this box's own serve). */
+    /* tunnel <host> [rport=1111] [lport=auto]: ssh -N -L to view a device's own serve here */
     if(!strcmp(sub,"tunnel")&&argc>3){
         int x=ssh_idx(argv[3],H,nh);
         if(x<0||x>=nh){printf("x No host %s\n",argv[3]);return 1;}
@@ -259,13 +253,12 @@ static int cmd_ssh(int argc,char**argv){
         printf("→ http://127.0.0.1:%s  (%s :%s over ssh · Ctrl-C to close)\n",lport,H[x].name,rport);fflush(stdout);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 
-    /* hb — show/set homebox (the box captures + `a sw homebox` target). `a ssh hb` prints which
-       computer homebox points at + the pickable host list; `a ssh hb <name|#>` repoints it. */
-    if(!strcmp(sub,"hb")){/* NOT "homebox": that's a real host — `a ssh homebox <cmd>` must still connect+run */
+    /* hb: show/repoint homebox (capture + a sw target) */
+    if(!strcmp(sub,"hb")){/* NOT "homebox": that's a real host, must still connect */
         char curh[256]="",curn[128]="?";
         if(argc>3){int x=ssh_idx(argv[3],H,nh);
             if(x<0||x>=nh){printf("x No host %s\n",argv[3]);return 1;}
-            char fb[128]="";char*ls=strstr(H[x].name,"-lan");/* keep WAN reach: fall back to the picked box's -wan sibling */
+            char fb[128]="";char*ls=strstr(H[x].name,"-lan");/* fall back to the -wan sibling */
             if(ls&&!ls[4]){snprintf(fb,128,"%.*s-wan",(int)(ls-H[x].name),H[x].name);int ok=0;for(int i=0;i<nh;i++)if(!strcmp(H[i].name,fb))ok=1;if(!ok)fb[0]=0;}
             ssh_savex(dir,"homebox",H[x].host,H[x].pw,fb[0]?"Fallback":(char*)0,fb[0]?fb:(char*)0);
             snprintf(curh,256,"%s",H[x].host);snprintf(curn,128,"%s",H[x].name);}
@@ -274,14 +267,14 @@ static int cmd_ssh(int argc,char**argv){
         printf("homebox -> %s (%s)\n",curn,curh[0]?curh:"unset");
         for(int i=0;i<nh;i++)if(strcasecmp(H[i].name,"homebox"))printf("%s\n",H[i].name);
         return 0;}
-    /* fleet view: ordered host windows, idx 90+, -k recreates */
+    /* fleet view: host windows at idx 90+, -k recreates */
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc==3){
         if(!getenv("TMUX")){char sn[32];snprintf(sn,32,"a-%d",(int)getpid());execlp("tmux","tmux","new-session","-s",sn,"a","ssh","all",(char*)NULL);}
         tm_ensure_sess();int tot=0;size_t dl=strlen(DEV);char cm[B];
         for(int i=nh-1;i>=0;i--)if(strncmp(H[i].name,DEV,dl)){snprintf(cm,B,"tmux new-window -dk -t '"TMS":%d' -n '%s' -c '%s' 'a ssh %s'",90+tot++,H[i].name,HOME,H[i].name);(void)!system(cm);}
         printf("→ %d windows\n",tot);fflush(stdout);
         tm_go(NULL);return 0;}
-    /* all/broadcast — parallel */
+    
     if((!strcmp(sub,"all")||!strcmp(sub,"*"))&&argc>3){
         char cmd[B]="";ajoin(cmd,B,argc,argv,3);
         char qc[B];snprintf(qc,B," 'bash -c '\"'\"'export PATH=$HOME/.local/bin:$PATH; %s'\"'\"'' 2>&1",cmd);
@@ -295,13 +288,13 @@ static int cmd_ssh(int argc,char**argv){
         for(int i=0;i<ns;i++){char o[B];int l=(int)read(S[i].fd,o,B-1);o[l>0?l:0]=0;close(S[i].fd);waitpid(S[i].pid,NULL,0);
             printf("\n%s %s\n",o[0]=='+'?"✓":"x",S[i].nm);if(o[1])printf("%s",o+1);}
         return 0;}
-    /* resolve host by # or name; "<name> <scope>" → exact host "<name>-<scope>" (n1 lan → n1-lan, dodges the bare rotating-IP entry) */
+    /* resolve # or name; "<name> <scope>" = exact "<name>-<scope>" */
     int idx=-1,ci=3;char cn[160];cn[0]=0;if(argc>3)snprintf(cn,160,"%s-%s",sub,argv[3]);
     if(isdigit((unsigned char)*sub))idx=atoi(sub);
     else for(int i=0;i<nh;i++){if(cn[0]&&!strcasecmp(H[i].name,cn)){idx=i;ci=4;break;}if(idx<0&&strcasestr(H[i].name,sub))idx=i;}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
-    /* fast TCP probe; on fail switch to: explicit Fallback, else the -wan sibling of a dead -lan */
+    /* TCP probe; fail -> Fallback, else -wan sibling */
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
         snprintf(pb,B,"timeout 1 bash -c 'exec 3<>/dev/tcp/%s/%s' 2>/dev/null",ph,port);
         if(system(pb)){int f=-1;
@@ -343,12 +336,11 @@ static int cmd_ssh(int argc,char**argv){
         n+=snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),"%s",cs);
         if(getenv("TMUX")&&!cmd[0])tm_rename(H[idx].name);
         if(cmd[0])alarm(30);
-        /* interactive: rc 255 = conn lost/refused (never user exit) → fresh `a ssh <name>` re-resolves host+fallbacks; exec loop, no growth */
+        /* rc 255 = conn lost (never user exit) -> exec fresh a ssh, re-resolves */
         else snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),";rc=$?;[ $rc -eq 255 ]||exit $rc;printf '\\n\\033[33m! %s dropped - reconnecting\\033[0m\\n';sleep 2;exec a ssh '%s'",H[idx].name,H[idx].name);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 }
-/* sw <device> <prompt>: ssh-launch a claude job on a remote, report its window + reattach cmd.
- * v1 simplest: reuses `a ssh` (auth/resolve) + `a j` (claude+context+tmux window). keep prompt quote-free. */
+/* sw <device> <prompt>: ssh-launch a j remotely, report window + reattach; keep the prompt quote-free */
 static int cmd_swarm(int c,char**v){
     if(c<4){char ex[128]="";
         if(c==3)snprintf(ex,128,"%s",v[2]);
@@ -363,7 +355,7 @@ static int cmd_swarm(int c,char**v){
         return 1;}
     char pr[B]="";ajoin(pr,B,c,v,3);
     char cmd[B*2],out[B];
-    /* newest j- window = highest window_id (tmux reuses window indexes, so tail-by-index reports a stale window) */
+    /* newest j- = highest @id (indexes get reused) */
     snprintf(cmd,B*2,"a ssh %s 'a j \"%s\">/dev/null 2>&1;tmux lsw -t a -F \"#{window_id} #{window_name}\" 2>/dev/null|grep \" j-\"|sort -t@ -k2 -n|tail -1|cut -d\" \" -f2' 2>&1",v[2],pr);
     pcmd(cmd,out,B);out[strcspn(out,"\n")]=0;
     int ok=!strncmp(out,"j-",2);
@@ -371,11 +363,8 @@ static int cmd_swarm(int c,char**v){
     else printf("x %s: %s\n",v[2],out[0]?out:"no job window made");
     return!ok;
 }
-/* a fl n|p <pane> — recursive cross-device window flip, all logic on this device.
-   The ssh pane renders every nested tmux's status bar (deeper levels stack upward). Forward
-   the nav key inward so each device cycles its own innermost window; return 0 (caller pops to
-   the local next/prev window) only when every nested level sits at its last(n)/first(p) window
-   — no window index beyond the active one on any bar. One key sweeps deepest→shallowest→local. */
+/* a fl n|p <pane> — recursive cross-device flip: forward the key inward; return 0 (caller flips locally)
+   only when every nested bar sits at its last/first window. One key sweeps deepest->local. */
 static int cmd_fl(int c,char**v){
     if(c<4)return 1;int n=*v[2]=='n';char cm[B];
     snprintf(cm,B,
