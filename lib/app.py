@@ -8,4 +8,7 @@ from gi.repository import Gtk,WebKit,GLib
 open(os.environ['HOME']+'/.local/share/applications/a-app.desktop','w').write('[Desktop Entry]\nType=Application\nName=a app\nExec=a app\nIcon=a\n')
 GLib.set_prgname('a-app')
 w=Gtk.Window(title='a');v=WebKit.WebView();w.set_child(v);v.load_uri('http://localhost:1111'+''.join(sys.argv[2:]))
+k=Gtk.EventControllerKey() # F11
+k.connect('key-pressed',lambda _,k,*a:k==65480 and not(w.fullscreen,w.unfullscreen)[w.is_fullscreen()]())
+w.add_controller(k)
 w.connect('close-request',lambda*_:os._exit(0));w.present();GLib.MainLoop().run()
