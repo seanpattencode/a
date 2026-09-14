@@ -3,10 +3,12 @@ static void do_archive(const char *p) {
     snprintf(d,P,"%s%s",a,s); rename(p,d);
 }
 static char* note_save(const char *d, const char *t) {
+    fputs("saving...\n",stderr);
     struct timespec tp; clock_gettime(CLOCK_REALTIME,&tp); time_t now=tp.tv_sec;
     static char fn[P]; char ts[32]; strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&now));
     snprintf(fn,P,"%s/%08x_%s.%09ld.txt",d,(unsigned)(tp.tv_nsec^(unsigned)now),ts,tp.tv_nsec);
-    FILE*f=fopen(fn,"w"); if(f){fprintf(f,"Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n",t,DEV,ts);fclose(f);}
+    FILE*f=fopen(fn,"w");if(!f){perror(fn);return NULL;}fprintf(f,"Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n",t,DEV,ts);
+    if(fclose(f)){perror(fn);return NULL;}
     return fn;
 }
 static char rdir[P];
@@ -15,18 +17,13 @@ static void task_py(const char*a,const char*b){char p[P];snprintf(p,P,"%s/lib/ta
     if(!k){int n=open("/dev/null",O_WRONLY);if(n>=0)dup2(n,1);execlp("python3","python3",p,a,b,(char*)0);_exit(127);}if(k>0)waitpid(k,0,0);}
 static int cmd_task(int c,char**v){fallback_py("task",c,v);return 0;}
 static void ts_human(const char*,char*,size_t);
-static char nfs[256][P];static int nfn;  /* session notes; url'd on exit, never mid-loop */
-static void notebox(const char*t){struct winsize w={0};ioctl(1,TIOCGWINSZ,&w);  /* echo saved text in a box */
-    int mx=(w.ws_col>20?w.ws_col:60)-6,n=(int)strlen(t),bw=n<mx?n:mx;if(bw<4)bw=4;if(bw>500)bw=500;  
-    printf("  ┌");for(int i=0;i<bw+2;i++)fputs("─",stdout);puts("┐");
-    int rows=(n+bw-1)/bw;
-    for(int r2=0;r2<rows;r2++){  /* huge text: head + count + tail */
-        if(rows>9&&r2==4){char mid[48];snprintf(mid,48,"… %dc total …",n);printf("  │ %-*.*s │\n",bw,bw,mid);r2=rows-5;continue;}
-        char rb[512];int rl=n-r2*bw<bw?n-r2*bw:bw;
-        for(int k=0;k<rl;k++)rb[k]=(char)(t[r2*bw+k]=='\n'||t[r2*bw+k]=='\t'?' ':t[r2*bw+k]);rb[rl]=0;
-        printf("  │ %-*.*s │\n",bw,bw,rb);}
-    printf("  └");for(int i=0;i<bw+2;i++)fputs("─",stdout);puts("┘");}
-static void rapid_note(const char*t){char*f=note_save(rdir,t);if(nfn<256)snprintf(nfs[nfn++],P,"%s",f);puts("  ✓ saved:");notebox(t);}
+static FILE**nfs;static int nfn; /* background receipts, displayed on exit */
+static void rapid_note(const char*t){char*f=note_save(rdir,t);if(!f)return;size_t n=strlen(t);
+    printf("  ✓ saved locally · syncing: %.240s\n",t);if(n>240)printf("  … %zu bytes … %s\n",n,t+n-120);fflush(NULL);
+    int p[2];if(pipe(p)){perror("sync pipe");return;}pid_t k=fork();
+    if(!k){signal(SIGCHLD,SIG_DFL);close(p[0]);dup2(p[1],1);dup2(p[1],2);close(p[1]);note_url(f,"note",NULL);fflush(stdout);_exit(0);}
+    close(p[1]);if(k<0){perror("sync fork");close(p[0]);return;}
+    nfs=realloc(nfs,(size_t)(nfn+1)*sizeof*nfs);nfs[nfn++]=fdopen(p[0],"r");}
 typedef struct{char p[P];char t[2048];}GN;
 static GN*gn;static int gn_cap;
 static int gncmp(const void*a,const void*b){return strcmp(strrchr(((const GN*)a)->p,'_'),strrchr(((const GN*)b)->p,'_'));}
@@ -42,7 +39,7 @@ static int load_notes(const char *dir, const char *f) {
 }
 static int cmd_note(int argc, char **argv) {
     AB;perf_disarm();
-    char dir[P]; snprintf(dir,P,"%s/notes",SROOT); mkdirp(dir);
+    char*dir=rdir;snprintf(dir,P,"%s/notes",SROOT);mkdirp(dir);
     if(argc>2&&!strcmp(argv[2],"l")){int n=load_notes(dir,NULL);
         if(!n){puts("(none)");return 0;}
         qsort(gn,(size_t)n,sizeof(GN),gncmp);   
@@ -61,7 +58,7 @@ static int cmd_note(int argc, char **argv) {
         if(!lb[0])return 0;
         if(lb[0]=='/')lb[0]='?';   /* /x = search */
         execvp("a",(char*[]){"a","n",lb,NULL});return 0;}
-    if(argc>2&&(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review"))){
+    if(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review")){
         const char *f=argv[2][0]=='?'?argv[2]+1:NULL;int n=load_notes(dir,f);
         if(!n){puts("(none)");return 0;} if(!isatty(STDIN_FILENO)){for(int i=0;i<n&&i<10;i++)puts(gn[i].t);return 0;}
         int i=0,show=1; raw_enter();
@@ -75,13 +72,14 @@ static int cmd_note(int argc, char **argv) {
             else if(k=='k'){if(i>0)i--;else show=0;}
             else if(k=='q'||k==3||k==27)break;else if(k=='j')i++;else show=0;}
         raw_exit();if(i>=n)puts("Done");return 0;}
-    if(argc>2&&!strcmp(argv[2],"m")){
+    if(!strcmp(argv[2],"m")){
         execvp("a",(char*[]){"a","c","Run 'a n l' to see all notes. Read a.c for context. Help me archive stale/done/duplicate notes in bulk. To archive: mkdir -p <dir>/.archive && mv <file> <dir>/.archive/. Large batches, only archive what I approve.",NULL});return 1;}
     if(argc>3&&!strcmp(argv[2],"-u")){char t[B*100]="";ajoin(t,sizeof t,argc,argv,3);  
         note_url(note_save(dir,t),"note",NULL);return 0;}
-    {char t[B*100]="";ajoin(t,sizeof t,argc,argv,2);snprintf(rdir,P,"%s",dir);rapid_note(t);  
+    {char t[B*100]="";ajoin(t,sizeof t,argc,argv,2);signal(SIGCHLD,SIG_IGN);rapid_note(t);
         rapid("n> ",rapid_note);
-        for(int i=0;i<nfn;i++){printf("[%d/%d] ",i+1,nfn);fflush(stdout);note_url(nfs[i],"note",NULL);}  
+        puts("Sync status (waiting for unfinished saves):");
+        for(int i=0;i<nfn;i++){char b[B];printf("[%d/%d] ",i+1,nfn);fflush(stdout);if(!fgets(b,B,nfs[i]))puts("sync worker failed");else do{fputs(b,stdout);}while(fgets(b,B,nfs[i]));fclose(nfs[i]);}
         return 0;}
 }
 static void ts_human(const char*ts,char*out,size_t sz){

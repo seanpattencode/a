@@ -26,7 +26,7 @@ static void ensure_git_id(void) {
 }
 static void sync_repo(void) {
     ensure_git_id();
-    int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);
+    int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY|O_CLOEXEC,0644);
     if(fd>=0&&flock(fd,LOCK_EX|LOCK_NB)){close(fd);return;}
     char c[B];
     snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
@@ -45,19 +45,19 @@ static void sync_bg(void) {
     pid_t p=fork();if(p<0)return;if(p>0){waitpid(p,NULL,WNOHANG);return;}
     if(fork()>0)_exit(0);setsid();freopen("/dev/null","w",stdout);freopen("/dev/null","w",stderr);sync_repo();_exit(0);
 }
-/* note proof: gh contents PUT to the remote head -> real url even when local trails; then local commit (no push) so the next PUT can't 422; no gh -> bg sync "saved ✓ syncing" */
+/* Note uploads never commit the worktree. */
 static void note_url(const char*fn,const char*msg,char*out){
-    const char*rel=fn;size_t sl=strlen(SROOT);if(fn&&!strncmp(fn,SROOT,sl)&&fn[sl]=='/')rel=fn+sl+1;
-    int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY,0644);if(fd>=0)flock(fd,LOCK_EX);
+    if(!fn){if(out)snprintf(out,256,"save failed");return;}
+    const char*rel=fn;size_t sl=strlen(SROOT);if(!strncmp(fn,SROOT,sl)&&fn[sl]=='/')rel=fn+sl+1;
+    int fd=open("/tmp/.a_note.lock",O_CREAT|O_WRONLY|O_CLOEXEC,0644);if(fd>=0)flock(fd,LOCK_EX);
     char c[B*2],o[512]="";
-    if(fn){snprintf(c,B*2,"command -v gh>/dev/null||exit 1;D='%s';"
+    snprintf(c,B*2,"D='%s';"
         "r=$(git -C $D remote get-url origin 2>/dev/null|sed 's#.*github.com[:/]##;s#\\.git$##');[ -n \"$r\" ]||exit 1;"
         "d=$(base64 -w0 <'%s' 2>/dev/null||base64 <'%s'|tr -d '\\n');"
-        "u=$(gh api --method PUT \"repos/$r/contents/%s\" -f message=%s -f content=\"$d\" --jq .content.html_url 2>/dev/null);[ -n \"$u\" ]||exit 1;"
-        "git -C $D add --sparse -A;git -C $D commit -qm %s >/dev/null 2>&1;echo \"$u\"",SROOT,fn,fn,rel,msg,msg);
-        pcmd(c,o,512);o[strcspn(o,"\n")]=0;}  /* trust output not rc: SIGCHLD=IGN fakes pclose -1 */
+        "gh api --method PUT \"repos/$r/contents/%s\" -f message=%s -f content=\"$d\" --jq .content.html_url",SROOT,fn,fn,rel,msg);
+    pcmd(c,o,512);o[strcspn(o,"\n")]=0;
     if(fd>=0)close(fd);
-    char l[300];if(!strncmp(o,"https",5))snprintf(l,300,"saved \342\206\222 %s",o);else{sync_bg();snprintf(l,300,"saved \342\234\223 syncing");}
+    char l[300];if(!strncmp(o,"https",5))snprintf(l,300,"saved \342\206\222 %s",o);else snprintf(l,300,"saved locally · sync FAILED · retry: a sync");
     if(out)snprintf(out,256,"%s",l);else puts(l);}
 static const char*sync_age(void){static char b[16];char p[P];
     snprintf(p,P,"%s/.git/FETCH_HEAD",SROOT);struct stat st;
