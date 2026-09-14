@@ -192,6 +192,13 @@ def _ff_restart(headless=False):
         os.setsid(); _ff_move(m); os._exit(0)
     subprocess.Popen(['firefox-nightly']+(['--headless']if headless else[]),env=env,stdout=-3,stderr=-3,start_new_session=True)
 
+def _ffup():   # auto-start Firefox when it is not running, wait 5s for bri-ext; fail loud (Sean 09-13)
+    if subprocess.run(['pgrep','-fx','(/usr/lib/)?firefox-nightly'],stdout=-3).returncode == 0: return
+    sys.stderr.write('bri: Firefox not running, starting it\n'); _ff_restart()
+    for _ in range(5):
+        time.sleep(1); s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
+        if 'firefox' in r.split('connected:')[-1]: return
+    sys.exit('x bri: Firefox did not start or bri-ext did not connect in 5s (no GUI session? try: a bri serve ff)')
 def _mon():
     def run(c): return subprocess.run(c, capture_output=True, text=True).stdout
     pid = (run(['pgrep','-f',r'bri\.py$']).strip().split('\n') or [''])[0]
@@ -448,6 +455,7 @@ def client(args):
         else: sys.stderr.write(MENU+'\n'); sys.exit(1)   # one maintained list, not a second stale copy
         if to != 'all': j['to'] = to   # CLI targets firefox by default; @all (or BRI_TO=all) broadcasts to every browser
         msg = json.dumps(j)
+    if to in ('firefox','all'): _ffup()
     s = _sock(); s.sendall((msg+'\n').encode()); r = b''
     while (ch := s.recv(1<<16)): r += ch
     sys.stdout.write(r.decode(errors='replace'))
