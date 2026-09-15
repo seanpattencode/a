@@ -621,6 +621,10 @@ static void handle(int c){
                 char cmd[B*2];snprintf(cmd,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -F '%s' -- %s; }&&" PUSHCMD "&&{ git fetch -q origin 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&echo PUSHED_OK $(git rev-parse --short HEAD); }",f[3],fl,fl,mf,fl);
                 FILE*pp=popen(cmd,"r");size_t n=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[n]=0;unlink(mf);}}
         free(rl);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
+    if(!strncmp(req,"GET /review/close?n=",20)){char*f[5],out[256]="x no such row";char*rl=rvline(atoi(req+20),f);   /* review [e]: kill the agent's tmux window by exact name, hide the row; the conversation stays resumable via a res */
+        if(rl){char nm[64];int k=0;for(const char*q=f[2];*q&&k<63;q++)if(isalnum((unsigned char)*q)||strchr("-_.",*q))nm[k++]=*q;nm[k]=0;char cmd[B];snprintf(cmd,B,"tmux list-windows -t a -F '#{window_index}\t#{window_name}' 2>/dev/null|awk -F'\t' -v n='%s' 'n!=\"\"&&$2==n{print $1}'|xargs -r -I{} tmux kill-window -t a:{}",nm);(void)!system(cmd);
+            char cf[P];snprintf(cf,P,"%s/review_closed.txt",DDIR);FILE*cfp=fopen(cf,"a");if(cfp){fprintf(cfp,"%s\t%s\n",f[0],f[2]);fclose(cfp);}snprintf(out,256,"closed %s and removed it from the queue; restore with: a res",nm[0]?nm:"(no window)");free(rl);}
+        sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
     if(!strncmp(req,"GET /review/tell?w=",19)){int w=atoi(req+19);char cmd[B],out[128];snprintf(cmd,B,"tmux send -t a:%d -X cancel 2>/dev/null;tmux send -t a:%d -l '%s'&&sleep 0.4&&tmux send -t a:%d Enter",w,w,PP,w);   /* review [p] typed into the agent window (cancel copy-mode first) */
         strncat(cmd,"&&echo SENT",B-strlen(cmd)-1);FILE*pp=popen(cmd,"r");char r[16]="";if(pp){if(!fgets(r,16,pp))r[0]=0;pclose(pp);}   /* popen+marker: SIGCHLD=IGN makes system() rc -1 even on success */
         snprintf(out,128,strstr(r,"SENT")?"told window %d: push just these changes":"x tmux window %d not reachable",w);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
@@ -649,10 +653,11 @@ static void handle(int c){
     if(!strncmp(req,"GET /review/wsz?w=",18)){int w=atoi(req+18);char tc[160],sz[32]="";snprintf(tc,160,"tmux display-message -p -t a:%d '#{window_width} #{window_height}' 2>/dev/null",w);FILE*pp=popen(tc,"r");if(pp){if(fgets(sz,32,pp))sz[strcspn(sz,"\n")]=0;pclose(pp);}sresp(c,200,"text/plain",sz,(int)strlen(sz));return;}   /* host window size for the pull-up's fit-width */
     if(!strncmp(req,"GET /review",11)){   /* a review: done.log rows (ts\tidx\tname\tdir\tmsg) newest first, per agent; shell = lib/review.html */
         char tf[P];snprintf(tf,P,"%s/lib/review.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(!th){sresp(c,404,"text/plain","no review.html",14);return;}
-        char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;
+        char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;char cf[P];snprintf(cf,P,"%s/review_closed.txt",DDIR);char*cl=readf(cf,NULL);
         size_t li=0;for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l),li++){nl=strchr(l,'\n');if(nl)*nl=0;char*f[5]={l,0,0,0,0};int k=1;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}if(k<5)continue;
+            if(cl){char ck[256];snprintf(ck,256,"%s\t%s\n",f[0],f[2]);if(strstr(cl,ck))continue;}   /* closed with [e] */
             if(n>=nc){nc=nc?nc*2:64;rs=realloc(rs,nc*sizeof*rs);}rs[n].t=atol(f[0]);rs[n].w=f[1][0]&&strspn(f[1],"0123456789")==strlen(f[1])?f[1]:0;rs[n].n=f[2];rs[n].p=f[3];rs[n].i=li;rs[n++].m=f[4];}
-        qsort(rs,n,sizeof*rs,rvcmp);int cap=1<<18;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
+        free(cl);qsort(rs,n,sizeof*rs,rvcmp);int cap=1<<18;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
         for(size_t i=0;i<n&&hl<cap-4096;i++){long a=(long)(now-rs[i].t);char*m=strrchr(rs[i].m,']');m=m?m+1:rs[i].m;while(*m==' ')m++;for(char*q=m;*q;q++)if(*q=='<'||*q=='>')*q=' ';
             const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;char ag[32];if(a<3600)snprintf(ag,32,"%ldm",a/60);else if(a<86400)snprintf(ag,32,"%ldh%02ldm",a/3600,a%3600/60);else snprintf(ag,32,"%ldd%ldh%02ldm",a/86400,a%86400/3600,a%3600/60);
             char nm[64]="";{int k=0;for(const char*q=rs[i].n;*q&&k<63;q++)if(isalnum((unsigned char)*q)||strchr("-_.",*q))nm[k++]=*q;nm[k]=0;}
@@ -663,7 +668,7 @@ static void handle(int c){
             for(int k=0;k<8;k++){char dp[P];if(!rvdoc(rs[i].m,rs[i].p,k,dp,P))break;const char*bn=strrchr(dp,'/');bn=bn?bn+1:dp;char sn[96];int z=0;for(const char*q=bn;*q&&z<95;q++)if(!strchr("<>\"&",*q))sn[z++]=*q;sn[z]=0;   /* <doc> files: view in the same pull-up */
                 if(!strncmp(mime(dp,""),"image/",6))hl+=snprintf(h+hl,(size_t)(cap-hl),"<img src=\"/review/doc?n=%zu&amp;k=%d\" title=\"%s\" style=\"display:block;max-width:100%%;margin-top:8px\">",rs[i].i,k,sn);else   /* <doc> images show inline */
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"dv(this)\" data-u=\"/review/doc?n=%zu&amp;k=%d\" data-n=\"%s\">view document: %s</button></div>",rs[i].i,k,sn,sn);}
-            hl+=snprintf(h+hl,(size_t)(cap-hl),"</div>");}
+            hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"ce(this)\" data-n=\"%zu\">close agent + remove from queue (restore: a res)</button></div></div>",rs[i].i);}
         free(rs);free(rl);sdoc(c,h,hl);free(h);return;}
     if(!strncmp(req,"GET /music",10)){char mc[P],rel[P]="";snprintf(mc,P,"%s/music",DDIR);setenv("MC",mc,1);   /* a music web (page common/music.html, cli lib/music.c): /musics?f=q rows · /musicf?f=name stream · /musicg?f=id get+stream */
         if(req[10]=='s'){docrel(req,rel);setenv("Q",rel,1);char b[8192];   /* cache rows + 5 hits via one InnerTube call (0.45s; yt-dlp was 9s) */
