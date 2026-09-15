@@ -154,7 +154,7 @@ def _ff_move(mon):
             p.terminate(); return
 def _ffenv():
     # "already running, not responding" dialog = D-Bus mismatch (FF remoting rides the session bus): adopt the running FF's bus+displays, else sway's
-    env = os.environ.copy(); env['MOZ_ENABLE_WAYLAND'] = '1'
+    env = os.environ.copy(); env['MOZ_ENABLE_WAYLAND'] = '1'; env['MOZ_CRASHREPORTER_DISABLE'] = '1'   # crash-reporter dialog is another press-gate: off
     xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
     socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
     if socks: env['WAYLAND_DISPLAY'] = socks[0]
@@ -170,8 +170,8 @@ def _ff_restart(headless=False):
     # restart is SAFE and the right way to reload bri-ext: prefs restore every tab; stale wayland-0 in env = FF invisible
     for _p in glob.glob(os.path.expanduser('~/.mozilla/firefox/*default-nightly'))+[d for d in glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) if 'nightly' in d.lower()]:
         _u=os.path.join(_p,'user.js')
-        if 'resume_from_crash' not in (open(_u).read() if os.path.exists(_u) else ''):
-            open(_u,'a').write('\nuser_pref("browser.sessionstore.resume_from_crash", true);\nuser_pref("browser.startup.page", 3);\n')
+        if 'max_resumed_crashes' not in (open(_u).read() if os.path.exists(_u) else ''):   # -1 = never show the "Nightly closed unexpectedly" Troubleshoot-Mode gate — it stalls every restart pre-extension awaiting a human press (recent_crashes was 17; Sean 2026-09-15: auto dismiss this and have firefox actually open)
+            open(_u,'a').write('\nuser_pref("browser.sessionstore.resume_from_crash", true);\nuser_pref("browser.startup.page", 3);\nuser_pref("toolkit.startup.max_resumed_crashes", -1);\nuser_pref("browser.sessionstore.max_resumed_crashes", -1);\n')
     # many-tab restart spikes RAM -> OOM killer targets THIS bridge: require y/N
     _nt = subprocess.run(['pgrep','-fc','firefox.*-isForBrowser'],capture_output=True,text=True).stdout.strip()
     _nt = int(_nt) if _nt.isdigit() else 0
