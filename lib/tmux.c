@@ -55,8 +55,8 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     const char *dp=dprompt(),*cp=cfget("claude_prefix");
     if(dp[0])fprintf(f,"%s\n",dp);
     if(cp[0])fprintf(f,"%s\n",cp);
-    fprintf(f,"When work finished, run a done \"[<test>cmd</test>][<diff>files</diff>][<do>key::label::cmd||key::label::cmd</do>] msg\""
-        " — msg: one simple sentence. Quoted test output: beginning...end, 4 lines max. No spacing between report sections (diff shows better). Spawns diff + live-PTY test panes; <do> keys run cmd on keypress."
+    fprintf(f,"When work finished, run a done \"[<test>cmd</test>][<diff>files</diff>][<doc>files</doc>][<do>key::label::cmd||key::label::cmd</do>] msg\""
+        " — msg: one simple sentence. Quoted test output: beginning...end, 4 lines max. No spacing between report sections (diff shows better). Spawns diff + live-PTY test panes; <do> keys run cmd on keypress; <doc> images show inline in a review."
         " a tools: a done a help a diff a push [msg] a note <text> a cat 2|3 a ssh\n");
     char af[P];snprintf(af,P,"%s/AGENTS.md",wd);
     char *amd=readf(af,NULL);if(amd){fprintf(f,"%s\n",amd);free(amd);}

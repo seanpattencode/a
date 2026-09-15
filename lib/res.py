@@ -179,9 +179,7 @@ def _preview(sid):                                   # tail (last 64KB) of a cla
             with open(fp, "rb") as fh:
                 fh.seek(0, 2); fh.seek(max(0, fh.tell() - 65536)); txt = fh.read().decode("utf-8", "ignore")
         except OSError: continue
-        m = [x for x in re.findall(r'"role":"user","content":"([^"]{2,90})', txt)
-             if "command-name" not in x and "local-command" not in x and not x.startswith(("<", "[Request"))]
-        if m: return re.sub(r"\s+", " ", m[-1])[:60]
+        if m := _hum(txt): return re.sub(r"\s+", " ", m[-1])[:60]
     return ""
 
 
@@ -245,17 +243,18 @@ def _claunch(r):                                      # resume one claude transc
     subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(r[2])}-{_stamp(r[0])}", "-c", r[2], RESUME["claude"] % r[1]])
 
 
-def _load(cut=0):                                     # rows [mt, sid, cwd, turns, text]; cut=mtime floor else newest 150
+def _hum(t): return [x for x in re.findall(r'"role":"user","content":"([^"]{2,400})', t) if not x.startswith(("<", "[Request"))]
+
+
+def _load(cut=0):                                     # rows [mt, sid, cwd, turns, text]; typed sessions only (claude -p = sdk-cli); cut=mtime floor else newest 150
     rows = []
     for f in sorted(glob.glob(f"{PROJ}/*/*.jsonl"), key=os.path.getmtime, reverse=True)[:None if cut else 150]:
-        if cut and os.path.getmtime(f) < cut: break
+        if os.path.getmtime(f) < cut: break
         try: txt = open(f, errors="ignore").read()
         except OSError: continue
-        ms = [x for x in re.findall(r'"role":"user","content":"([^"]{2,400})', txt)
-              if "command-name" not in x and not x.startswith(("<", "[Request"))]
-        c = re.search(r'"cwd":"([^"]+)"', txt)
-        if len(ms) > 1 and c and os.path.isdir(c[1]):
-            rows.append([os.path.getmtime(f), os.path.basename(f)[:-6], c[1], len(ms),
+        ms, c = _hum(txt), re.search(r'"entrypoint":"([^"]+)","cwd":"([^"]+)"', txt)
+        if ms and c and c[1] == "cli" and os.path.isdir(c[2]):
+            rows.append([os.path.getmtime(f), os.path.basename(f)[:-6], c[2], len(ms),
                          "\n".join(ms).replace('\\"', '"').replace("\\n", " ")])
     return rows
 
@@ -360,12 +359,31 @@ def remote(host):                                     # review one box's agent w
     _resume_attach(host, live, cwd, sid, _mt)
 
 
+def review(name, revive=False):
+    dirs = {f[3] for l in open(os.path.expanduser('~/a/adata/local/done.log')) if len(f := l.split('\t', 4)) == 5 and f[2] == name}
+    cwd = dirs.pop() if len(dirs) == 1 else None
+    if not LINUX: _ps()
+    ws = [w for w in windows() if w[1:3] == [name, cwd]]
+    panes = subprocess.run(['tmux', 'list-panes', '-t', ws[0][0], '-F', '#{pane_id}\t#{pane_pid}\t#{window_index}'], capture_output=True, text=True).stdout.splitlines() if len(ws) == 1 else []
+    live = [p.split('\t') for p in panes if agent([p.split('\t')[1]])[0]]
+    try: saved = [j for j in json.load(open(SNAP))['jobs'] if j['window'] == name and j['cwd'] == cwd and j['cmd']]
+    except (OSError, ValueError): saved = []
+    state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
+    if len(live) == 1:
+        p, _, win = live[0]; state = 'ALIVE'
+        preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-30'], capture_output=True, text=True).stdout.rstrip(); preview = '\n'.join([l.rstrip() for l in preview.splitlines() if any(c.isalnum() for c in l) and 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)][-8:])
+    elif not live and len(ws) < 2 and len(saved) == 1:
+        state, preview = 'RESUMABLE', 'Saved output: ' + saved[0].get('preview', '')
+        if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', saved[0]['cmd']], check=True); state = 'RESUMING'
+    return dict(state=state, preview=preview, window=win)
+
 def main(a):
     via = a[0] if a and a[0] in ("res", "resume", "snap") else ""   # how we were invoked
     if via: a = a[1:]
     cmd = a[0] if a else ("save" if via == "snap" else "")          # bare `a snap` = save (back-compat); res/resume = pick
     if cmd in ("save", "s"): save()
     elif cmd == "show": show(a[1] if len(a) > 1 else "")
+    elif cmd == "review": print(json.dumps(review(a[1], a[2:] == ['resume'])))
     elif cmd == "restore": restore(dry=("--dry" in a or "-n" in a))
     elif cmd in ("", "pick"): pick()
     elif os.path.exists(HOST % cmd): remote(cmd)

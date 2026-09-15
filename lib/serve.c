@@ -661,6 +661,7 @@ static void handle(int c){
             {char*da=strstr(rs[i].m,"<diff>"),*db=da?strstr(da,"</diff>"):0;if(da&&db){char sn[160];int z=0;for(const char*q=da+6;q<db&&z<159;q++)if(!strchr("<>\"&",*q))sn[z++]=*q;sn[z]=0;   /* <diff> files: the panel's focused diff, rendered in the same pull-up */
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"dv(this)\" data-u=\"/review/diff?n=%zu\" data-n=\"diff %s\">show diff: %s</button> <button class=op onpointerdown=\"pu(this)\" data-n=\"%zu\" data-l=\"direct push, these files only: %s\">direct push, these files only: %s</button></div>",rs[i].i,sn,sn,rs[i].i,sn,sn);}}
             for(int k=0;k<8;k++){char dp[P];if(!rvdoc(rs[i].m,rs[i].p,k,dp,P))break;const char*bn=strrchr(dp,'/');bn=bn?bn+1:dp;char sn[96];int z=0;for(const char*q=bn;*q&&z<95;q++)if(!strchr("<>\"&",*q))sn[z++]=*q;sn[z]=0;   /* <doc> files: view in the same pull-up */
+                if(!strncmp(mime(dp,""),"image/",6))hl+=snprintf(h+hl,(size_t)(cap-hl),"<img src=\"/review/doc?n=%zu&amp;k=%d\" title=\"%s\" style=\"display:block;max-width:100%%;margin-top:8px\">",rs[i].i,k,sn);else   /* <doc> images show inline */
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"dv(this)\" data-u=\"/review/doc?n=%zu&amp;k=%d\" data-n=\"%s\">view document: %s</button></div>",rs[i].i,k,sn,sn);}
             hl+=snprintf(h+hl,(size_t)(cap-hl),"</div>");}
         free(rs);free(rl);sdoc(c,h,hl);free(h);return;}
