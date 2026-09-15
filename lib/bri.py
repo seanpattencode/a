@@ -107,7 +107,7 @@ def cmd_serve():
             c.send(('\n'.join(out) or json.dumps({'error': err or 'no response'})).encode()+b'\n')
         c.close()
 
-def main(browser='none'):
+def main(browser='none', watch=True):
     import briext; briext.build()  # regenerate BOTH extensions from lib/briext.py — the auto-update
     # bridge is browser-agnostic; serve launches NO browser (only FF needs the managed -marionette-free launch: `serve ff`)
     hl = browser == 'ffh'   # HEADLESS FF: same profile/ext/sign-ins; EXCLUSIVE with GUI FF (two FFs double-execute); `serve ff` switches back
@@ -122,6 +122,7 @@ def main(browser='none'):
     s.listen(50); log(f'[*] http on :{PORT} | log: {LOG}')
     if ff: _ff_restart(hl)  # GUI serve also heals an accidental invisible-FF state (dead wayland socket)
     else:  log('[*] no browser launched (serves Chrome + FF both). Chrome: open the browser + focus an http(s) tab to wake bri-chrome. Firefox: `a bri serve ff` (or `a bri deploy`).')
+    if watch: threading.Thread(target=_ffwatch, args=(ff, hl), daemon=True).start()
     while True:
         c,addr = s.accept()
         threading.Thread(target=handle, args=(c,addr), daemon=True).start()
@@ -199,6 +200,11 @@ def _ffup():   # auto-start Firefox when it is not running, wait 5s for bri-ext;
         time.sleep(1); s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
         if 'firefox' in r.split('connected:')[-1]: return
     sys.exit('x bri: Firefox did not start or bri-ext did not connect in 5s (no GUI session? try: a bri serve ff)')
+def _ffwatch(expect, hl=False):  # nightly is always crashing (Sean 2026-09-15): "if its dead there is no point in not restarting it" — on by default, `serve ... nowatch` disables; expect=1 (serve ff) restarts from birth, else only death-after-life (a no-FF box stays no-FF)
+    while True:
+        time.sleep(20)
+        if subprocess.run(['pgrep','-fx','(/usr/lib/)?firefox-nightly'],stdout=-3).returncode == 0: expect = 1
+        elif expect: log('[ffwatch] firefox dead — restarting'); _ff_restart(hl); time.sleep(40)
 def _mon():
     def run(c): return subprocess.run(c, capture_output=True, text=True).stdout
     pid = (run(['pgrep','-f',r'bri\.py$']).strip().split('\n') or [''])[0]
@@ -462,7 +468,7 @@ def client(args):
     sys.exit(r.startswith(b'{"error"'))   # rc, not just text: hub jobs and scripts cannot see a dead target otherwise
 
 MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per cmd: firefox default, @chrome/@all prefix retargets
-  serve [ff]       start bridge (:1234 http, :1235 cmd) — serves Chrome+FF both; add 'ff' to also launch Firefox on monitor
+  serve [ff]       start bridge (:1234 http, :1235 cmd) — serves Chrome+FF both; add 'ff' to also launch Firefox on monitor; crash-watchdog restarts a dead FF (default; 'nowatch' disables)
   deploy           rebuild lib/bri-ext xpi + install + restart FF (zero-click)
   restart          quit + relaunch FF Nightly
   screen [name|-]  list outputs / pin FF to sway output (no arg=show, -=clear)
@@ -518,5 +524,5 @@ if __name__=='__main__':
                     print(f"      {p[0]} {p[1]} — {note}")
         except FileNotFoundError: pass
         print(f"\n{MENU}")
-    elif args[0] == 'serve': main(args[1] if len(args) > 1 else 'none')
+    elif args[0] == 'serve': main(next((x for x in args[1:] if x != 'nowatch'), 'none'), 'nowatch' not in args)
     else: client(args)
