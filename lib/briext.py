@@ -214,13 +214,6 @@ browser.userScripts.onBeforeScript.addListener((script) => {
   });
 });
 ''',
-"newtab.html": r'''<!doctype html><style>html,body{margin:0;height:100vh;background:#000}</style><script src="newtab.js"></script>''',
-"newtab.js": r'''// Ctrl+T pins focus to the urlbar (bugzilla 1411465); spawn the real tab, remove this shell
-browser.tabs.getCurrent().then(t => {
-  browser.tabs.create({url: 'http://localhost:1111/', index: t.index + 1});
-  browser.tabs.remove(t.id);
-});
-''',
 }
 CH={
 "manifest.json": r'''{
@@ -347,23 +340,21 @@ async function loop(){
 loop();
 ''',
 "wake.js": r'''chrome.runtime.sendMessage({bri:'wake'}).catch(()=>{});  // page-load ping wakes the SW → it (re)creates the offscreen poller''',
-"newtab.html": r'''<!doctype html><meta charset=utf-8>
-<!-- new tab = :1111 embedded; no redirect/SW/perms (each kept breaking). FROZEN: change the :1111 page, never this file -->
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}iframe{display:block;border:0;width:100vw;height:100vh}</style>
-<iframe src="http://localhost:1111/" allow="clipboard-read; clipboard-write"></iframe>
-<script>addEventListener('load',()=>{var f=document.querySelector('iframe');f.focus();})</script>
-''',
+}
+NT={  # new tab: Ctrl+T pins focus to the url bar (FF bug 1411465, Chrome by design); only a tabs.create'd tab focuses content (Chrome's iframe/redirect/SW versions never did)
+"newtab.html": r'''<!doctype html><style>html,body{margin:0;height:100vh;background:#000}</style><script src="newtab.js"></script>''',
+"newtab.js": r'''chrome.tabs.getCurrent(t=>chrome.tabs.create({url:'http://localhost:1111/',index:t.index+1},()=>chrome.tabs.remove(t.id)))''',
 }
 
 def build():
     tg={"bri-ext":FF,"bri-chrome":CH}
     for name,files in tg.items():
         d=os.path.join(OUT,name); os.makedirs(d,exist_ok=True)
-        for fn,c in files.items(): open(os.path.join(d,fn),"w",encoding="utf-8").write(c)
+        for fn,c in (files|NT).items(): open(os.path.join(d,fn),"w",encoding="utf-8").write(c)
         for fn,b in ICONS.items(): open(os.path.join(d,fn),"wb").write(base64.b64decode(b))
     return [os.path.join(OUT,n) for n in tg]
 
-def chrome_install(chrome='google-chrome-unstable'):
+def chrome_install(chrome='google-chrome-canary'):  # pack with the channel that installs it
     # pack signed crx + force-install via enterprise policy off a file:// update manifest (http blocked; --load-extension DEAD in branded builds); key reuse = stable ID
     import subprocess,hashlib,json,time
     build()
@@ -379,11 +370,11 @@ def chrome_install(chrome='google-chrome-unstable'):
     open(upd,'w').write(
       "<?xml version='1.0' encoding='UTF-8'?>\n<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>\n"
       "<app appid='%s'><updatecheck codebase='file://%s' version='%s'/></app>\n</gupdate>\n"%(ID,crx,ver))
-    pol=json.dumps({"ExtensionInstallForcelist":["%s;file://%s"%(ID,upd)],"ExtensionInstallSources":["file:///*"]})
+    pol=json.dumps({"ExtensionInstallForcelist":["%s;file://%s"%(ID,upd)],"ExtensionInstallSources":["file:///*"],"NTPFooterExtensionAttributionEnabled":False,"NTPFooterManagementNoticeEnabled":False})   # Chrome 138+ NTP footer off
     subprocess.run(['sudo','mkdir','-p','/etc/opt/chrome/policies/managed'],check=True)
     subprocess.run(['sudo','tee','/etc/opt/chrome/policies/managed/bri-chrome.json'],input=pol.encode(),stdout=subprocess.DEVNULL,check=True)
     print("\u2713 force-install policy set  id=%s v%s crx=%d bytes"%(ID,ver,os.path.getsize(crx)))
-    print("  -> a briext restart; lands ~1-5 min AFTER boot (roll-call), not at boot.  remove: a briext uninstall")
+    print("  -> updater ignores file:// exts: to refresh, close Chrome, rm Extensions/<id>/<ver>_0 + its extensions.settings entry, a briext restart.  remove: a briext uninstall")
     return ID
 
 def chrome_uninstall():
@@ -392,16 +383,18 @@ def chrome_uninstall():
     print("\u2713 removed force-install policy (restart Chrome to drop the extension)")
 
 def chrome_restart(chrome='google-chrome-canary'):
-    # restart from the terminal (extensions can't): SIGTERM the main proc (no --type=), relaunch with restore; pgrep ^-anchored (vmtouch carries the path in argv)
-    import subprocess,time
-    for pid in subprocess.run(['pgrep','-f','^/opt/google/chrome-canary/chrome'],capture_output=True,text=True).stdout.split():
-        try: cl=open('/proc/%s/cmdline'%pid,'rb').read().split(b'\0')
-        except OSError: continue
-        if b'--type=' not in b' '.join(cl): subprocess.run(['kill','-TERM',pid])
-    for _ in range(80):
-        if not subprocess.run(['pgrep','-f','^/opt/google/chrome-canary/chrome'],capture_output=True).stdout.strip(): break
-        time.sleep(0.1)
-    subprocess.Popen([chrome,'--restore-last-session'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+    # kill the default-profile browser only (not renderers/crashpad/other --user-data-dir instances: the pad kiosk), relaunch with the session env a bare shell lacks — no WAYLAND_DISPLAY: ozone picks X11 and Chrome exits; no DBUS: a keyring prompt stalls every load
+    import subprocess,select,ctypes
+    pr=lambda *a:subprocess.run(['pgrep',*a],capture_output=True,text=True).stdout.split()
+    ps=[int(p) for p in pr('-f','^/opt/google/chrome-canary/chrome( |$)') if not any(x in open('/proc/%s/cmdline'%p).read() for x in('--type=','--user-data-dir='))]
+    fds=[ctypes.CDLL(None).syscall(434,p,0) for p in ps]  # pidfd_open (this python lacks os.pidfd_open)
+    for p in ps: os.kill(p,15)
+    for f in fds: select.select([f],[],[],8)
+    env=dict(os.environ)
+    for p in pr('-x','sway')[:1]: env.update(l.split('=',1) for l in open('/proc/%s/environ'%p).read().split('\0') if l[:5] in('DBUS_','XDG_R','XDG_S'))
+    r=env.setdefault('XDG_RUNTIME_DIR','/run/user/%d'%os.getuid())
+    if not env.get('WAYLAND_DISPLAY'): env['WAYLAND_DISPLAY']=next((f for f in sorted(os.listdir(r)) if f[:8]=='wayland-' and f[-5:]!='.lock'),'')  # sway never exports it
+    subprocess.Popen([chrome,'--restore-last-session']+(['--ozone-platform=wayland'] if env.get('WAYLAND_DISPLAY') else []),env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
     print("\u2713 Canary restarted (session restore) \u2014 new crx lands in ~1-5 min")
 
 def main(argv):
