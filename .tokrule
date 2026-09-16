@@ -1,4 +1,4 @@
 total=500000
 ramp=750000 500000 2026-09-11 2026-09-26
-fable=220000 2.1
-# Unit: fable tokens served to an /a agent ≈ fixed + k × (tracked bytes/4 of this repo). fixed 220000 ≈ default.txt 59k + mem index 8k + tools list 37k + u 115k (transferred from the 2026-09-05 /i calibration; re-measure with a tokreal ~/a, then edit fable=). Read: i tokcap ~/a · gate: _tok_chk in a.c build/check (the static a.c+lib cap in adata/git/perf/tok.txt still runs beside it). Caps are HUMAN-ONLY to raise — simplify instead; over the cap = crunch, don't wait. [SEAN 2026-09-11, verbatim]: "do the same for /a target 500k fable equivalent in 15 days".
+fable=105000 2.1
+# Unit: fable tokens served to an /a agent ≈ fixed + k × (tracked bytes/4 of this repo). fixed 105000 ≈ default.txt 60k + mem index 8k + tools list 37k (u 115k removed — u left served context 2026-09-14; Sean-approved recalc 09-15). Read: i tokcap ~/a · gate: _tok_chk in a.c build/check (the static a.c+lib cap in adata/git/perf/tok.txt still runs beside it). Caps are HUMAN-ONLY to raise — simplify instead; over the cap = crunch, don't wait. [SEAN 2026-09-11, verbatim]: "do the same for /a target 500k fable equivalent in 15 days".

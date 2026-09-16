@@ -628,8 +628,8 @@ static void handle(int c){
     if(!strncmp(req,"GET /review/tell?w=",19)){int w=atoi(req+19);char cmd[B],out[128];snprintf(cmd,B,"tmux send -t a:%d -X cancel 2>/dev/null;tmux send -t a:%d -l '%s'&&sleep 0.4&&tmux send -t a:%d Enter",w,w,PP,w);   /* review [p] typed into the agent window (cancel copy-mode first) */
         strncat(cmd,"&&echo SENT",B-strlen(cmd)-1);FILE*pp=popen(cmd,"r");char r[16]="";if(pp){if(!fgets(r,16,pp))r[0]=0;pclose(pp);}   /* popen+marker: SIGCHLD=IGN makes system() rc -1 even on success */
         snprintf(out,128,strstr(r,"SENT")?"told window %d: push just these changes":"x tmux window %d not reachable",w);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
-    if(!strncmp(req,"GET /review/go?w=",17)||!strncmp(req,"GET /problems/go?w=",19)){int w=atoi(strchr(req,'=')+1);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}' 2>/dev/null|sort -n|tail -1","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* switch newest attached tmux client to window INDEX w + raise foot */
-        char*cn=strchr(ln,'\t'),*cs=cn?strchr(cn+1,'\t'):0;if(!cs)snprintf(out,512,"no attached local terminal: tmux switch-client -t :%d",w);
+    if(!strncmp(req,"GET /review/go?w=",17)||!strncmp(req,"GET /problems/go?w=",19)){int w=atoi(strchr(req,'=')+1);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}\t#{client_termname}' 2>/dev/null|sort -n|awk -F'\t' '{a=$0}$4==\"foot\"{f=$0}END{print f?f:a}'","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* newest REAL terminal (foot) beats newest client: web /op clients are also tmux clients and were stealing the switch */
+        char*cn=strchr(ln,'\t'),*cs=cn?strchr(cn+1,'\t'):0,*ct=cs?strchr(cs+1,'\t'):0;if(ct)*ct=0;if(!cs)snprintf(out,512,"no attached local terminal: tmux switch-client -t :%d",w);
         else{*cn=0;*cs=0;char cmd[600],er[200]="";snprintf(cmd,600,"tmux switch-client -c '%s' -t '%s:%d' 2>&1 && SWAYSOCK=$(ls -t /run/user/$(id -u)/sway-ipc.* 2>/dev/null|head -1) swaymsg '[app_id=foot] focus' >/dev/null 2>&1",cn+1,cs+1,w);FILE*p2=popen(cmd,"r");if(p2){if(!fgets(er,200,p2))er[0]=0;pclose(p2);}er[strcspn(er,"\n")]=0;
             if(er[0])snprintf(out,512,"x %s",er);else snprintf(out,512,"window %d in %s on %s",w,cs+1,cn+1);}
         sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
@@ -651,18 +651,33 @@ static void handle(int c){
             free(b);b=o;bl=(size_t)ol;ct="text/html; charset=utf-8";}   /* wrap text files dark: transparent body was black-on-black */
         sfile(c,ct,b,bl,"no-cache");free(b);return;}
     if(!strncmp(req,"GET /review/wsz?w=",18)){int w=atoi(req+18);char tc[160],sz[32]="";snprintf(tc,160,"tmux display-message -p -t a:%d '#{window_width} #{window_height}' 2>/dev/null",w);FILE*pp=popen(tc,"r");if(pp){if(fgets(sz,32,pp))sz[strcspn(sz,"\n")]=0;pclose(pp);}sresp(c,200,"text/plain",sz,(int)strlen(sz));return;}   /* host window size for the pull-up's fit-width */
+    if(!strncmp(req,"GET /review/live?n=",19)){static const char SEH[]="HTTP/1.1 200 OK\r\nContent-Type:text/event-stream\r\nCache-Control:no-store\r\nConnection:close\r\n\r\n";   /* live box stream: exec res.py watch with the socket as stdout — pushes only on real events (pidfd/inotify), no polling */
+        (void)!write(c,SEH,sizeof SEH-1);dup2(c,1);if(c>2)close(c);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL);
+        char rp2[P],nb[16];snprintf(rp2,P,"%s/lib/res.py",SDIR);snprintf(nb,16,"%d",atoi(req+19));
+        execlp("python3","python3",rp2,"res","watch",nb,(char*)0);_exit(1);}
+    if(!strncmp(req,"GET /review/closeold?h=",23)){double hh=atof(req+23);if(hh<=0)hh=100;long cut=(long)time(NULL)-(long)(hh*3600);int nn=0;   /* bulk archive: hide every row older than h hours; windows untouched (names repeat — bulk kills would hit the wrong live agents) */
+        char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);
+        char cp2[P];snprintf(cp2,P,"%s/review_closed.txt",DDIR);char*cz=readf(cp2,NULL);FILE*cw=fopen(cp2,"a");
+        for(char*l=rl,*e;l&&*l;l=e?e+1:l+strlen(l)){e=strchr(l,'\n');if(e)*e=0;
+            char*f[5]={l,0,0,0,0};int k=1;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}
+            if(k<5||atol(f[0])>=cut)continue;
+            char ck[256];snprintf(ck,256,"%s\t%s\n",f[0],f[2]);
+            if((!cz||!strstr(cz,ck))&&cw){fputs(ck,cw);nn++;}}
+        if(cw)fclose(cw);free(rl);free(cz);
+        char ob[224];int ol=snprintf(ob,224,"archived %d rows older than %gh — hidden only, windows untouched; undo: edit adata/local/review_closed.txt",nn,hh);
+        sresp(c,200,"text/plain; charset=utf-8",ob,ol);return;}
     if(!strncmp(req,"GET /review",11)){   /* a review: done.log rows (ts\tidx\tname\tdir\tmsg) newest first, per agent; shell = lib/review.html */
         char tf[P];snprintf(tf,P,"%s/lib/review.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(!th){sresp(c,404,"text/plain","no review.html",14);return;}
-        char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;char cf[P];snprintf(cf,P,"%s/review_closed.txt",DDIR);char*cl=readf(cf,NULL);
+        char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;char cf[P];snprintf(cf,P,"%s/review_closed.txt",DDIR);char*cvz=readf(cf,NULL);
         size_t li=0;for(char*l=rl,*nl;l&&*l;l=nl?nl+1:l+strlen(l),li++){nl=strchr(l,'\n');if(nl)*nl=0;char*f[5]={l,0,0,0,0};int k=1;for(char*q=l;*q&&k<5;q++)if(*q=='\t'){*q=0;f[k++]=q+1;}if(k<5)continue;
-            if(cl){char ck[256];snprintf(ck,256,"%s\t%s\n",f[0],f[2]);if(strstr(cl,ck))continue;}   /* closed with [e] */
+            if(cvz){char ck[256];snprintf(ck,256,"%s\t%s\n",f[0],f[2]);if(strstr(cvz,ck))continue;}   /* closed with [e] */
             if(n>=nc){nc=nc?nc*2:64;rs=realloc(rs,nc*sizeof*rs);}rs[n].t=atol(f[0]);rs[n].w=f[1][0]&&strspn(f[1],"0123456789")==strlen(f[1])?f[1]:0;rs[n].n=f[2];rs[n].p=f[3];rs[n].i=li;rs[n++].m=f[4];}
-        free(cl);qsort(rs,n,sizeof*rs,rvcmp);int cap=1<<18;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
+        free(cvz);qsort(rs,n,sizeof*rs,rvcmp);int cap=1<<18;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,"%.*s",(int)tl,th);free(th);time_t now=time(NULL);
         for(size_t i=0;i<n&&hl<cap-4096;i++){long a=(long)(now-rs[i].t);char*m=strrchr(rs[i].m,']');m=m?m+1:rs[i].m;while(*m==' ')m++;for(char*q=m;*q;q++)if(*q=='<'||*q=='>')*q=' ';
             const char*rp=strncmp(rs[i].p,HOME,strlen(HOME))?rs[i].p:rs[i].p+strlen(HOME)+1;char ag[32];if(a<3600)snprintf(ag,32,"%ldm",a/60);else if(a<86400)snprintf(ag,32,"%ldh%02ldm",a/3600,a%3600/60);else snprintf(ag,32,"%ldd%ldh%02ldm",a/86400,a%86400/3600,a%3600/60);
             char nm[64]="";{int k=0;for(const char*q=rs[i].n;*q&&k<63;q++)if(isalnum((unsigned char)*q)||strchr("-_.",*q))nm[k++]=*q;nm[k]=0;}
             char bt[1280]="";if(rs[i].w)snprintf(bt,1280,"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"op(this)\" data-w=\"%s\" data-n=\"%s\">web terminal: %s</button> <button class=op onpointerdown=\"go(this)\" data-w=\"%s\">local terminal: %s</button> <button class=op onpointerdown=\"tl(this)\" data-w=\"%s\">tell agent: push</button></div>",rs[i].w,nm,nm[0]?nm:"window",rs[i].w,nm[0]?nm:"window",rs[i].w);   /* per entry: web terminal, local terminal, tell-agent-push; plain words, not icons */
-            hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%s</span> <b>%s</b> <span style=color:#888>%s</span> %.300s%s",ag,nm[0]?nm:"(no window)",rp,m,bt);
+            hl+=snprintf(h+hl,(size_t)(cap-hl),"<div data-n=\"%zu\" style=\"padding:8px 0;border-bottom:1px solid #222\"><span style=color:#888>%s</span> <b>%s</b> <span style=color:#888>%s</span><br>%.300s%s",rs[i].i,ag,nm[0]?nm:"(no window)",rp,m,bt);
             {char*da=strstr(rs[i].m,"<diff>"),*db=da?strstr(da,"</diff>"):0;if(da&&db){char sn[160];int z=0;for(const char*q=da+6;q<db&&z<159;q++)if(!strchr("<>\"&",*q))sn[z++]=*q;sn[z]=0;   /* <diff> files: the panel's focused diff, rendered in the same pull-up */
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div style=\"margin-top:8px\"><button class=op onpointerdown=\"dv(this)\" data-u=\"/review/diff?n=%zu\" data-n=\"diff %s\">show diff: %s</button> <button class=op onpointerdown=\"pu(this)\" data-n=\"%zu\" data-l=\"direct push, these files only: %s\">direct push, these files only: %s</button></div>",rs[i].i,sn,sn,rs[i].i,sn,sn);}}
             for(int k=0;k<8;k++){char dp[P];if(!rvdoc(rs[i].m,rs[i].p,k,dp,P))break;const char*bn=strrchr(dp,'/');bn=bn?bn+1:dp;char sn[96];int z=0;for(const char*q=bn;*q&&z<95;q++)if(!strchr("<>\"&",*q))sn[z++]=*q;sn[z]=0;   /* <doc> files: view in the same pull-up */
