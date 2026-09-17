@@ -18,16 +18,17 @@ static int tm_has(const char *w) {
 }
 /* window name = <pre>-<base>-Sep4-346p (who/where/when); taken -> +sec -> +pid */
 static const char*tm_name(const char*pre,const char*base,time_t t){static char b[256];struct tm*l=localtime(&t);char m[6];strftime(m,6,"%b",l);
-    int n=snprintf(b,256,"%.64s-%.64s-%s%d-%d%02d",pre,base,m,l->tm_mday,l->tm_hour%12?l->tm_hour%12:12,l->tm_min),ap=l->tm_hour<12?'a':'p';
-    snprintf(b+n,256-(size_t)n,"%c",ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c",l->tm_sec,ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c-%d",l->tm_sec,ap,(int)getpid());return b;}
+    int n=snprintf(b,256,"%.64s-%.64s-%s%d-%d%02d",pre,base,m,l->tm_mday,(l->tm_hour+11)%12+1,l->tm_min),ap=l->tm_hour<12?'a':'p';
+    for(char*q=b;*q;q++)if(*q=='.'||*q==':')*q='-';   /* '.' ':' = tmux target seps */
+    b[n]=(char)ap;b[n+1]=0;if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c",l->tm_sec,ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c-%d",l->tm_sec,ap,(int)getpid());return b;}
 static void tm_go(const char *w) {
     perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
     char c[B];const char*op=getenv("TMUX")?"switch-client":"attach-session";
     snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
-static void tm_rename(const char*n){const char*p=getenv("TMUX_PANE");char c[200];snprintf(c,200,"tmux rename-window -t '%s' '%s'",p?p:"",n);(void)!system(c);}  /* -t pane: bare rename hits the session-current window */
+static void tm_rename(const char*n){char c[200];snprintf(c,200,"tmux rename-window -t \"$TMUX_PANE\" '%s'",n);(void)!system(c);}  /* -t pane: bare rename hits the session-current window */
 static void ram_park(void){                                             /* low RAM -> park LRU agent window (resumable: a res); gate MemAvailable / mac vm_stat; neither -> no-op */
-    long need=4096;{const char*e=getenv("A_RAM_MIN_MB");if(e)need=atol(e);}
+    const char*e=getenv("A_RAM_MIN_MB");long need=e?atol(e):4096;
     char b[192]="";pcmd("a=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null);[ -n \"$a\" ]||a=$(vm_stat 2>/dev/null|awk '/page size of/{ps=$8}/Pages (free|inactive|purgeable):/{s+=$NF}END{if(s*ps)print int(s*ps/1048576)}');printf %s \"$a\"",b,192);
     long av=atol(b);if(av<=0||av>=need)return;
     pcmd("mw=$(tmux display -p -t \"$TMUX_PANE\" '#{window_id}' 2>/dev/null);tmux list-panes -s -t '"TMS"' -F '#{window_activity} #{window_active} #{window_id} #{pane_pid} #{window_name}' 2>/dev/null|sort -n|awk -v mw=\"$mw\" '$2==0&&$3!=mw{print $3\" \"$4\" \"$5}'|while read i p n;do pgrep -x -P $p 'claude|grok|codex' >/dev/null&&{ tmux kill-window -t \"$i\";echo \"$n\";break;};done",b,192);
@@ -85,11 +86,9 @@ static void jcmd_fill(char*b,int cont,const char*wd,const char*extra){
 static void tm_ensure_conf(void) {
     if (strcmp(cfget("tmux_conf"), "y") != 0) return;
     if(fork())return;setsid();
-    char adir[P]; snprintf(adir, P, "%s/.a", HOME);
-    mkdirp(adir);
-    char cpath[P]; snprintf(cpath, P, "%s/tmux.conf", adir);
-    FILE *f = fopen(cpath, "w");
-    if (!f) return;
+    char adir[P];snprintf(adir,P,"%s/.a",HOME);mkdirp(adir);
+    char cpath[P];snprintf(cpath,P,"%s/tmux.conf",adir);
+    FILE*f=fopen(cpath,"w");if(!f)return;
     const char *cc = clip_cmd();
     fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\nset -wg pane-scrollbars on\n"
         "set -g history-limit 10000\n"   /* 50000-line history x windows x groups = 11.5G RSS once */
@@ -165,11 +164,11 @@ static void tm_ensure_conf(void) {
         :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);
         static const char*K[]={"PPage","NPage","WheelUpPane","WheelDownPane"};for(int k=0;k<4;k++)fprintf(f,"bind -T %s %s send -X -N '%s' scroll-%s\n",cm[i],K[k],k<2?"#{pane_height}":wn,k&1?"down":"up");}}
     fclose(f);
-    char uconf[P]; snprintf(uconf, P, "%s/.tmux.conf", HOME);
-    char *uc = readf(uconf, NULL);
-    if (!uc || !strstr(uc, "~/.a/tmux.conf")) {
-        FILE *uf = fopen(uconf, "a");
-        if (uf) { fputs("\nsource-file -q ~/.a/tmux.conf  # a\n", uf); fclose(uf); }
+    char uconf[P];snprintf(uconf,P,"%s/.tmux.conf",HOME);
+    char*uc=readf(uconf,NULL);
+    if(!uc||!strstr(uc,"~/.a/tmux.conf")){
+        FILE*uf=fopen(uconf,"a");
+        if(uf){fputs("\nsource-file -q ~/.a/tmux.conf  # a\n",uf);fclose(uf);}
     }
     free(uc);
     {char cmd[B];snprintf(cmd,B,"tmux source-file '%s' 2>/dev/null&&tmux refresh-client -S 2>/dev/null",cpath);(void)!system(cmd);}
