@@ -270,6 +270,55 @@ static void handle(int c){
             snprintf(tf,P,"%s/tasks_in_%d.txt",TMP,(int)getpid());FILE*f=fopen(tf,"w");if(f){fputs(v,f);fclose(f);}
             if(set)snprintf(cmd,P,"python3 '%s/lib/task.py' set %d <'%s'",SDIR,n,tf);else snprintf(cmd,P,"python3 '%s/lib/task.py' web <'%s'",SDIR,tf);}
         FILE*pp=popen(cmd,"r");char out[B*2]="";size_t ol=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[ol]=0;if(tf[0])unlink(tf);sresp(c,200,"text/plain; charset=utf-8",out,(int)ol);return;}
+    if(!strncmp(req,"GET /prompt",11)&&(req[11]==' '||req[11]=='/'||req[11]=='?')){   /* what every spawn receives, live-measured, + manage common/prompts; edit rides /doc */
+        init_db();load_cfg();const char*act=cfget("prompt");if(!*act)act="default";
+        char d2[P];snprintf(d2,P,"%s/common/prompts",SROOT);
+        char tf[P];snprintf(tf,P,"%s/a_praw_%d",TMP,(int)getpid());
+        if(!strncmp(req+11,"/raw",4)){write_prompt_file(tf,SDIR,NULL);size_t l=0;char*b=readf(tf,&l);unlink(tf);
+            sresp(c,200,"text/plain; charset=utf-8",b?b:"x",(int)(b?l:1));free(b);return;}
+        if(!strncmp(req+11,"/use?",5)){char nm[128];qn(req,nm);char f[P];snprintf(f,P,"%s/%s.txt",d2,nm);
+            if(bkok(nm)&&!access(f,R_OK))cfset("prompt",nm);
+            redir(c,"/prompt");return;}
+        struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);struct stat st;
+        char cf2[P];snprintf(cf2,P,"%s/local/.ptoolsz",AROOT);long tb=0;   /* tools-list bytes, 5-min file cache: live popen cost 26ms, page stays stat-only */
+        {char*v=readf(cf2,NULL);if(v){tb=atol(v);free(v);}}
+        #define TCNT "ls $(echo \"$PATH\"|tr : ' ') 2>/dev/null|sort -u|wc -c"
+        if(stat(cf2,&st)||time(0)-st.st_mtime>300){char o[32]="";
+            if(!tb){pcmd(TCNT,o,32);tb=atol(o);snprintf(o,32,"%ld",tb);writef(cf2,o);}
+            else if(!fork()){pcmd(TCNT,o,32);writef(cf2,o);_exit(0);}}
+        #undef TCNT
+        char fp[P];
+        #define FSZ(...) (snprintf(fp,P,__VA_ARGS__),stat(fp,&st)?0:(long)st.st_size)
+        long pb=FSZ("%s/%s.txt",d2,act),mi=FSZ("%s/mem/index.txt",SROOT),ag=FSZ("%s/AGENTS.md",SDIR);
+        long ca=FSZ("%s/local/a_cat.txt",AROOT);char cs[24]="never";if(ca)strftime(cs,24,"%m-%d %H:%M",localtime(&st.st_mtime));
+        long bud=getenv("A_CB")?atol(getenv("A_CB")):1200000,ht=tb+600;   /* +600 ≈ time+freshness+a-done lines; exact composition = /prompt/raw */
+        static char h[1<<17];int hl=0;
+        #define HP(...) hl+=snprintf(h+hl,sizeof h-(size_t)hl,__VA_ARGS__)
+        HP("<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>a prompt</title>"
+            "<style>body{margin:0;background:#000;color:#fff;font:16px ui-monospace,monospace;padding:18px}table{border-collapse:collapse;margin:8px 0 22px}td,th{padding:5px 12px;border-bottom:1px solid #222;text-align:left}th{color:#888;font-weight:400}.r{text-align:right}a{color:#fff}.g{color:#888}.on{color:#4f4}</style>"
+            "<div class=g>a prompt — what goes into every agent spawned on this box, in order (tok = bytes/4; fable reads ~1.3-2.1x)</div>"
+            "<table><tr><th>layer</th><th></th><th class=r>tok</th></tr>"
+            "<tr><td>1 active prompt: <b class=on>%s</b></td><td><a href=\"/doc?f=common/prompts/%s.txt\">edit</a></td><td class=r>%ld</td></tr>"
+            "<tr><td>2 spawn header + a-done rules + installed-tools list</td><td class=g>lib/tmux.c</td><td class=r>%ld</td></tr>"
+            "<tr><td>3 AGENTS.md of agent cwd (measured: ~/a)</td><td><a href=\"/doc?f=AGENTS.md&d=code\">edit</a></td><td class=r>%ld</td></tr>"
+            "<tr><td>4 mem index</td><td><a href=\"/doc?f=mem/index.txt\">edit</a></td><td class=r>%ld</td></tr>"
+            "<tr><td>5 code context, a cat (last run %s)</td><td class=g>cap %ldk</td><td class=r>%ld</td></tr>"
+            "<tr><td><b>total served</b> — the agent CLI adds its own harness on top</td><td><a href=\"/prompt/raw\">raw 1-4</a></td><td class=r><b>%ld</b></td></tr></table>",
+            act,act,pb/4,ht/4,ag/4,mi/4,cs,bud/4000,ca/4,(pb+ht+ag+mi+ca)/4);
+        HP("<div class=g>prompt files — <span class=on>*</span> feeds layer 1 for ALL next spawns; edit opens /doc (save = push)</div>"
+            "<table><tr><th></th><th>file</th><th class=r>tok</th><th></th><th></th></tr>");
+        char paths[64][P];int n=listdir(d2,paths,64);
+        for(int i=0;i<n;i++){const char*b2=bname(paths[i]),*dot=strrchr(b2,'.');int tx=dot&&!strcmp(dot,".txt");
+            char nm[128];snprintf(nm,128,"%.*s",(int)(dot?dot-b2:(long)strlen(b2)),b2);
+            long sz=stat(paths[i],&st)?0:(long)st.st_size;int on=tx&&!strcmp(nm,act);
+            HP("<tr><td class=on>%s</td><td>%s</td><td class=r>%ld</td><td><a href=\"/doc?f=common/prompts/%s\">edit</a></td><td>",on?"*":"",nm,sz/4,b2);
+            if(on)HP("<span class=g>active</span>");else if(tx)HP("<a href=\"/prompt/use?n=%s\">use</a>",nm);
+            HP("</td></tr>");}
+        clock_gettime(CLOCK_MONOTONIC,&t1);
+        HP("</table><div class=g>server build %.4fms · <span id=pm></span></div><script>document.getElementById('pm').textContent='page '+performance.now().toFixed(1)+'ms'</script>",(double)(t1.tv_sec-t0.tv_sec)*1e3+(double)(t1.tv_nsec-t0.tv_nsec)/1e6);
+        #undef FSZ
+        #undef HP
+        sdoc(c,h,hl);return;}
     if(!strncmp(req,"GET / ",6)||!strncmp(req,"GET /note ",10)||!strncmp(req,"GET /term",9)){
         char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when page newer than cache (boot-freeze bug) */
         if(shlen&&!stat(uf,&us)&&us.st_mtime>=sgen_t)html_gen();
