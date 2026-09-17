@@ -359,9 +359,26 @@ def remote(host):                                     # review one box's agent w
     _resume_attach(host, live, cwd, sid, _mt)
 
 
-def review(name, revive=False):
-    dirs = {f[3] for l in open(os.path.expanduser('~/a/adata/local/done.log')) if len(f := l.split('\t', 4)) == 5 and f[2] == name}
-    cwd = dirs.pop() if len(dirs) == 1 else None
+def _row(n):
+    try: f = open(os.path.expanduser('~/a/adata/local/done.log')).read().splitlines()[int(n)].split('\t', 4); return f[2], f[3]
+    except Exception: return '', ''
+
+def watch(n):                                         # /review SSE: push on events only (pidfd exit, transcript/snapshot inotify)
+    import select, ctypes, signal; signal.signal(signal.SIGPIPE, signal.SIG_DFL); C = ctypes.CDLL(None); last = ''
+    name, cwd = _row(n)
+    while True:
+        s = 'data: %s\n' % json.dumps(review(n))
+        if s != last: last = s; print(s, flush=True)
+        if not LINUX: time.sleep(60); continue
+        ap = next((int(p) for w in windows() if w[1:3] == [name, cwd] for q in w[3] for p in tree(q) if any(os.path.basename(t) in AEXE for t in _cmdline(p).split('\0')[:2])), 0)
+        pfd = max(0, C.syscall(434, ap, 0)); ifd = C.inotify_init1(0)   # micromamba py lacks os.pidfd_open
+        for d in (PROJ + '/' + ''.join(c if c.isalnum() else '-' for c in cwd), SNAPDIR): C.inotify_add_watch(ifd, d.encode(), 0x3c2)
+        if select.select([ifd] + [pfd] * (pfd > 0), [], [], 240)[0]: time.sleep(0.6)
+        else: print(':\n', flush=True)                # dead-client reap
+        os.close(ifd); pfd and os.close(pfd)
+
+def review(n, revive=False):
+    name, cwd = _row(n)
     if not LINUX: _ps()
     ws = [w for w in windows() if w[1:3] == [name, cwd]]
     panes = subprocess.run(['tmux', 'list-panes', '-t', ws[0][0], '-F', '#{pane_id}\t#{pane_pid}\t#{window_index}'], capture_output=True, text=True).stdout.splitlines() if len(ws) == 1 else []
@@ -384,6 +401,7 @@ def main(a):
     if cmd in ("save", "s"): save()
     elif cmd == "show": show(a[1] if len(a) > 1 else "")
     elif cmd == "review": print(json.dumps(review(a[1], a[2:] == ['resume'])))
+    elif cmd == "watch": watch(a[1])
     elif cmd == "restore": restore(dry=("--dry" in a or "-n" in a))
     elif cmd in ("", "pick"): pick()
     elif os.path.exists(HOST % cmd): remote(cmd)
