@@ -7,7 +7,6 @@
 # TERMUX: set CLAUDE_CODE_TMPDIR=$HOME/.tmp; build with clang directly.
 case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
     set -e; A="$HOME/a"
-    [[ ! -t 0 ]] && { T="/tmp/_ainst$$.c"; curl -fsSL https://raw.githubusercontent.com/seanpattencode/a/main/a.c -o "$T"; exec sh "$T"; }
     # bootstrap git: ARCHITECTURE #40 - `curl ... | sh` must succeed on a bare OS with no prereqs.
     # detect package manager and install. sudo is auto-applied where root is needed.
     command -v git >/dev/null || { S=""; [ "$EUID" != 0 ] && command -v sudo >/dev/null && S="sudo"
