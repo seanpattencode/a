@@ -67,6 +67,24 @@ static int fq_get(const char*s){int b=0,bl=0;int c=(unsigned char)s[0];if(c>='A'
     for(int i=fqhead[c];i>=0;i=fqnext[i]){int l=fqlen[i];if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return !strncmp(s,"home\t",5)?0x7fffffff:strstr(s,"\tproject")||(s[0]>='0'&&s[0]<='9'&&strstr(s,"\tcmd"))?(1<<30)-atoi(s):b;}  /* numbered user cmds pin with projects */
 typedef struct{char*s;int k,i;}LNK;  /* decorate-sort: fq_get once per line */
 static int lnk_cmp(const void*a,const void*b){const LNK*x=a,*y=b;return x->k!=y->k?y->k-x->k:x->i-y->i;}
+/* win-rows regen, detached; called POST-PAINT only — the fork (~30ms on cygwin) must never sit on the key→frame path.
+   .t stamp gates attempts to <=1/s; the data file's mtime moves only when content changed, so renders rarely rebuild. */
+static void wc_spawn(const char*wc){
+    char sp[P];snprintf(sp,P,"%s.t",wc);struct stat st;
+    if(!stat(sp,&st)&&time(0)-st.st_mtime<1)return;
+    if(fork())return;
+    setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
+    char cm[P*3];snprintf(cm,sizeof cm,
+        "td=$(date +%%b%%e|tr -d ' ');tmux lsp -s -t '"TMS"' -F '#{window_id} #{pane_id} #{pane_pid} #{window_name} #{pane_start_command}' 2>/dev/null|while read -r i d p w sc;do "
+        "[ \"$i\" = \"$li\" ]&&continue;li=$i;"
+        "st=$(ps -o lstart= -p \"$p\" 2>/dev/null|awk -v td=\"$td\" '{split($4,T,\":\");h=T[1]+0;a=h<12?\"a\":\"p\";h=h%%12;if(!h)h=12;t=sprintf(\"%%d%%02d%%s\",h,T[2],a);if(($2 $3)==td)print t;else print $2 $3\" \"t}');"
+        "tl=$(tmux capturep -pJt \"$d\" -S -50 2>/dev/null|awk '{gsub(/^ +| +$/,\"\")}!/[a-z]/||/tokens|bypass|esc to interrupt|for shortcuts/{next}/^[^a-zA-Z0-9]/&&/ for [0-9]+[ms]/{next}{L[++i]=$0}END{s=\"\";for(j=i>8?i-7:1;j<=i;j++)s=s (s==\"\"?\"\":\" \")L[j];gsub(/\\(disable recaps in \\/config\\)/,\"\",s);gsub(/current: [0-9.]+ · latest: [0-9.]+/,\"\",s);gsub(/  +/,\" \",s);gsub(/ +$/,\"\",s);n=length(s);b=200;if(n>b){p=n-b+2;q=index(substr(s,p,30),\" \");if(q)p+=q;print \"…\"substr(s,p)}else print s}');"
+        "sid=$(printf %%s \"$sc\"|grep -oE '[0-9a-f-]{36}'|head -1);sb=;"  /* convo-word bag mid-desc: filter sees, elision hides; sid argv -> transcript words, else scrollback */
+        "[ -n \"$sid\" ]&&sb=$(tail -c 400000 \"$HOME\"/.claude/projects/*/\"$sid\".jsonl 2>/dev/null|grep -o '\"role\":\"user\",\"content\":\"[^\"]\\{3,200\\}'|tail -25|cut -c26-|tr -cs 'A-Za-z0-9' '\\n'|awk '!s[$0]++'|tr '\\n' ' '|cut -c1-900);"
+        "[ -n \"$sb\" ]||sb=$(tmux capturep -pJt \"$d\" -S -1500 2>/dev/null|tr -cs 'A-Za-z0-9' ' '|tail -c 400);"
+        "printf '%%s\twin\t%%s%%s · %%s %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$sb\" \"$tl\";done >'%s.%ld';:>'%s.t';cmp -s '%s.%ld' '%s' 2>/dev/null&&rm -f '%s.%ld'||mv '%s.%ld' '%s'",
+        wc,(long)getpid(),wc,wc,(long)getpid(),wc,wc,(long)getpid(),wc,(long)getpid(),wc);
+    execlp("sh","sh","-c",cm,(char*)0);_exit(0);}
 /* i_frame: cached first frame blasted pre-init (~0.3ms visible); real render overwrites ~1ms later */
 static int ifr_on;static double ifr_ms;  /* ifr_ms = pixels-on-pty time, shown as "seen" */
 static void ifr_blast(void){struct winsize w;char p[P];size_t l;
@@ -105,21 +123,11 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
      if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
     static char wb[65536];size_t wl=0;
-    {/* win rows: one cached file, detached <=1/s bg regen; -t TMS not -a (grouped sessions re-list); START = first-pane pid birth */
+    {/* win rows from the cached file only; regen runs POST-PAINT via wc_spawn (fork = ~30ms on cygwin, must never sit on the key→frame path) */
         size_t cl;char*cw=readf(wc,&cl);
         if(cw){if(cl>65535)cl=65535;memcpy(wb,cw,cl);wb[cl]=0;wl=cl;free(cw);}
-        else{pcmd("tmux lsw -t '"TMS"' -F '#W\twin' 2>/dev/null",wb,65536);wl=strlen(wb);}  /* first run: names now, rich later */
-        struct stat st;int sr=stat(wc,&st);wcm=sr?0:st.st_mtime;if(sr||time(0)-st.st_mtime>=1){if(fork()==0){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
-            char cm[P*3];snprintf(cm,sizeof cm,
-                "td=$(date +%%b%%e|tr -d ' ');tmux lsp -s -t '"TMS"' -F '#{window_id} #{pane_id} #{pane_pid} #{window_name} #{pane_start_command}' 2>/dev/null|while read -r i d p w sc;do "
-                "[ \"$i\" = \"$li\" ]&&continue;li=$i;"
-                "st=$(ps -o lstart= -p \"$p\" 2>/dev/null|awk -v td=\"$td\" '{split($4,T,\":\");h=T[1]+0;a=h<12?\"a\":\"p\";h=h%%12;if(!h)h=12;t=sprintf(\"%%d%%02d%%s\",h,T[2],a);if(($2 $3)==td)print t;else print $2 $3\" \"t}');"
-                "tl=$(tmux capturep -pJt \"$d\" -S -50 2>/dev/null|awk '{gsub(/^ +| +$/,\"\")}!/[a-z]/||/tokens|bypass|esc to interrupt|for shortcuts/{next}/^[^a-zA-Z0-9]/&&/ for [0-9]+[ms]/{next}{L[++i]=$0}END{s=\"\";for(j=i>8?i-7:1;j<=i;j++)s=s (s==\"\"?\"\":\" \")L[j];gsub(/\\(disable recaps in \\/config\\)/,\"\",s);gsub(/current: [0-9.]+ · latest: [0-9.]+/,\"\",s);gsub(/  +/,\" \",s);gsub(/ +$/,\"\",s);n=length(s);b=200;if(n>b){p=n-b+2;q=index(substr(s,p,30),\" \");if(q)p+=q;print \"…\"substr(s,p)}else print s}');"
-                "sid=$(printf %%s \"$sc\"|grep -oE '[0-9a-f-]{36}'|head -1);sb=;"  /* convo-word bag mid-desc: filter sees, elision hides; sid argv -> transcript words, else scrollback */
-                "[ -n \"$sid\" ]&&sb=$(tail -c 400000 \"$HOME\"/.claude/projects/*/\"$sid\".jsonl 2>/dev/null|grep -o '\"role\":\"user\",\"content\":\"[^\"]\\{3,200\\}'|tail -25|cut -c26-|tr -cs 'A-Za-z0-9' '\\n'|awk '!s[$0]++'|tr '\\n' ' '|cut -c1-900);"
-                "[ -n \"$sb\" ]||sb=$(tmux capturep -pJt \"$d\" -S -1500 2>/dev/null|tr -cs 'A-Za-z0-9' ' '|tail -c 400);"
-                "printf '%%s\twin\t%%s%%s · %%s %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$sb\" \"$tl\";done >'%s.%ld'&&mv '%s.%ld' '%s'",wc,(long)getpid(),wc,(long)getpid(),wc);
-            execlp("sh","sh","-c",cm,(char*)0);_exit(0);}}}
+        else wl=0;  /* no cache yet: rows land via the bg regen ~1s in (the old popen fallback cost ~20ms cold) */
+        struct stat st;wcm=stat(wc,&st)?0:st.st_mtime;}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static char*acts[]={"home\tssh into homebox","tmux split-window\tpane\tnew pane below","tmux new-window\twin\topen new window","tmux kill-pane\tpane\tclose this pane","tmux kill-window\twin\tclose this window","tmux detach\tquit\tdetach, session keeps running","tmux kill-session\tquit\tkill session + windows","tmux resize-pane -Z\tpane\ttoggle pane zoom","tmux set synchronize-panes\tpane\ttoggle sync all panes",
@@ -236,6 +244,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         (void)!write(STDOUT_FILENO,rb,(size_t)rl);
         if(sv&&!ft0){sv=0;char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames; torn read = one cosmetic frame */
             if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);(void)!write(fd,rb,(size_t)rl);close(fd);}}}
+        wc_spawn(wc);  /* regen AFTER the frame is on screen: fork+pipeline cost lands in idle time, never in the meter */
         char ch;
         int lw=na&&fresh;  /* live tail ticks only while the receipt is fresh (foreground, ≤3min) — then back to pure block-on-key */
         if(m_mode||lw){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,m_mode?250:500);

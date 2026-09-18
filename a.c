@@ -15,6 +15,7 @@ case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
         elif [ -f /etc/debian_version ]; then $S apt-get update -qq && $S apt-get install -y git
         elif [ -f /etc/arch-release ]; then $S pacman -Sy --noconfirm git
         elif [ -f /etc/fedora-release ]; then $S dnf install -y git
+        elif [[ "$OSTYPE" == cygwin* ]]; then curl -fsSL -o "$(cygpath -m ~/cygsetup.exe)" https://www.cygwin.com/setup-x86_64.exe && chmod +x ~/cygsetup.exe && ~/cygsetup.exe -q -B -R "$(cygpath -w /)" -s https://mirrors.kernel.org/sourceware/cygwin/ -l "$(cygpath -w ~/cygpkg)" -P git,curl
         else echo "x unsupported OS — install git manually"; exit 1; fi
         command -v git >/dev/null || { echo "x git install failed"; exit 1; }; }
     [ -d "$A/.git" ] && { echo "a already installed at $A"; git -C "$A" pull --ff-only --quiet 2>/dev/null || :; exec sh "$A/a.c" install; }
@@ -143,6 +144,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
         _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
     [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
+    ("$ABIN/a" i </dev/null >/dev/null 2>&1 &)  # regen the i_cache this build just wiped, in bg: the human's next `a` stays <1ms instead of paying ~200ms gen_icache
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
         T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q $_QT"
@@ -179,6 +181,7 @@ install)
     elif [[ -f /etc/debian_version ]]; then OS=debian
     elif [[ -f /etc/arch-release ]]; then OS=arch
     elif [[ -f /etc/fedora-release ]]; then OS=fedora
+    elif [[ "$OSTYPE" == cygwin* ]]; then OS=cygwin
     else OS=unknown; fi
     _want() { [[ $# -eq 0 ]] && return 0; local i; for i in "$@"; do [[ "$i" == "$1" ]] && return 0; done; return 1; }
     shift; SEL=("$@")
@@ -243,6 +246,11 @@ install)
                 $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone rsync tcc cppcheck frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
         termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone rsync cronie termux-services android-tools ffmpeg && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
+        cygwin)  # native Windows via the cygwin POSIX layer: deps by setup.exe (-B = zero UAC), a.cmd shim into WindowsApps (on every user PATH) so `a` works in PowerShell/cmd
+            curl -fsSL -o "$(cygpath -m ~/cygsetup.exe)" https://www.cygwin.com/setup-x86_64.exe; chmod +x ~/cygsetup.exe
+            ~/cygsetup.exe -q -B -R "$(cygpath -w /)" -s https://mirrors.kernel.org/sourceware/cygwin/ -l "$(cygpath -w ~/cygpkg)" -P git,curl,gcc-core,unzip,python3 >/dev/null 2>&1 && ok "cygwin pkgs (git curl gcc unzip python3)"
+            printf '%s\n' '$w=[Environment]::GetEnvironmentVariable("Path","User");foreach($b in @("'"$(cygpath -w "$D/adata/local")"'","'"$(cygpath -w /bin)"'")){if($w -notlike "*$b*"){$w=$w.TrimEnd(";")+";"+$b}};[Environment]::SetEnvironmentVariable("Path",$w,"User")' > ~/addpath.ps1   # a.exe + cygwin1.dll dirs on user PATH: PowerShell/cmd run a.exe directly, no shim (bash layer cost ~40ms, cmd batch ~30ms)
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/addpath.ps1)" >/dev/null 2>&1 && ok "PowerShell/cmd: a (a.exe on user PATH, new terminals)" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
     esac
     _ensure_cc
