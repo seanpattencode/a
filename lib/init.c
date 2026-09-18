@@ -26,7 +26,8 @@ static void init_paths(void) {
     {const char*e=getenv("A_SDIR");if(e&&*e){snprintf(SDIR,P,"%s",e);snprintf(AROOT,P,"%s/adata",e);snprintf(SROOT,P,"%s/git",AROOT);}}
     if (!SROOT[0]) { snprintf(AROOT, P, "%s/a/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
     snprintf(DDIR, P, "%s/local", AROOT);
-    /* device id */
+}
+static void init_dev(void) {  /* menu: after frame 1 */
     char df[P]; snprintf(df, P, "%s/.device", DDIR);
     FILE *f = fopen(df, "r");
     if (f) { if (fgets(DEV, 128, f)) DEV[strcspn(DEV, "\n")] = 0; fclose(f); }

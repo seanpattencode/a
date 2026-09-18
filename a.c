@@ -358,6 +358,10 @@ exit 0
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
+#ifdef __CYGWIN__
+#include <windows.h>
+#include <sys/cygwin.h>
+#endif
 
 #define P 1024
 #define B 4096
@@ -627,8 +631,8 @@ int main(int argc, char **argv) {
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
     if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);  /* multicall: h = home */
-    if (argc < 2) { if(isatty(1))ifr_blast(); perf_arm("i"); return (isatty(1)?cmd_i:cmd_help)(argc, argv); }  /* blast cached frame pre-init */
-    char acmd[B]="";ajoin(acmd,B,argc,argv,1);
+    if (argc < 2) { int t=isatty(1);if(t)ifr_blast(); perf_arm("i"); return (t?cmd_i:cmd_help)(argc, argv); }  /* blast cached frame pre-init */
+    init_dev();char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
     alog(acmd, wd);
     const char *arg = argv[1];

@@ -16,6 +16,13 @@ static void mkdirp(const char *p) { char t[P]; snprintf(t,P,"%s",p); for(char*s=
 
 static struct stat rfs;
 static char *readf(const char *p, size_t *len) {
+#ifdef __CYGWIN__  /* files in DDIR = the exe's dir: kernel32 read ~0.1ms vs cygwin open ~0.3ms, no path conversion */
+    static char w[P];char e[P];size_t dl=strlen(DDIR);ssize_t k;long long z,t;DWORD r;HANDLE h;
+    if(!*w){k=readlink("/proc/self/exe",e,P-1);*w=1;if(k>(ssize_t)dl&&!strncmp(e,DDIR,dl)&&e[dl]=='/'&&!memchr(e+dl+1,'/',(size_t)k-dl-1)&&GetModuleFileNameA(0,w,P))*strrchr(w,'\\')=0;}
+    if(*w>1&&!strncmp(p,DDIR,dl)&&p[dl]=='/'){char*b=0;snprintf(e,P,"%s\\%s",w,p+dl+1);
+        if((h=CreateFileA(e,1u<<31,7,0,3,0,0))!=(HANDLE)-1){if(GetFileSizeEx(h,(void*)&z)&&GetFileTime(h,0,0,(void*)&t)&&(b=malloc((size_t)z+1))&&ReadFile(h,b,(DWORD)z,&r,0)){b[r]=0;if(len)*len=r;rfs.st_mtime=(time_t)(t/10000000-11644473600LL);}else free(b),b=0;
+            CloseHandle(h);if(b)return b;}}
+#endif
     int fd = open(p, O_RDONLY); if (fd < 0) return NULL;
     if (fstat(fd, &rfs) < 0) { close(fd); return NULL; }
     size_t sz = (size_t)rfs.st_size;
