@@ -231,7 +231,7 @@ function sgr(a){
   }
 }
 const esc=s=>s.replace(/[&<>]/g,m=>m==='&'?'&amp;':m==='<'?'&lt;':'&gt;');
-const col=(v,t)=>{let n=v<256?PAL[v]:v&0xffffff,m=Math.max(n>>16,n>>8&255,n&255);return'#'+((t&&n>>16<m/2?m*65793:n)|1<<24).toString(16).slice(1)}; /* t=text: low red -> grey, else a red-only filter (i monitor red) blacks it */
+const col=(v,t)=>{let n=v<256?PAL[v]:v&0xffffff,m=Math.max(n>>16,n>>8&255,n&255);return'#'+((t&&n>>16<m/2?m*65793:n)|1<<24).toString(16).slice(1)}; /* t=text: low red->grey (red-only filter) */
 const flow=t=>{const c=t.codePointAt(0);return c<0x80||(c>=0x2500&&c<=0x25ff);};
 function style(x,f,b,l,w){
   if(l&16)[f,b]=[b<0?0x1000000:b,f<0?0x1cccccc:f];
