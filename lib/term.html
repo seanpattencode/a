@@ -6,11 +6,11 @@
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>a term</title>
 <style>
-html,body{margin:0;height:100%;background:#000;overflow:hidden}body{padding-top:16px;box-sizing:border-box} /* status strip: #sb never covers row 0 */
-#scr{position:relative;width:100vw;height:calc(100vh - 16px);overflow:hidden;cursor:text;color:#ccc}
+html,body{margin:0;height:100%;background:#000;overflow:hidden}#scr{top:16px} /* status strip: #sb never covers row 0 */
+#scr{position:absolute;left:0;width:100vw;height:calc(100vh - 16px);overflow:hidden;cursor:text;color:#ccc}
 .r{position:absolute;left:0;width:100%;contain:layout style}
 .r span{position:absolute;top:0;white-space:pre}
-#cur{position:absolute;background:#ccc;mix-blend-mode:difference;pointer-events:none}
+#cur{position:absolute;margin-top:16px;background:#ccc;mix-blend-mode:difference;pointer-events:none}
 #sb{position:fixed;top:2px;right:6px;font:11px monospace;color:#fff;background:#000b;padding:1px 5px;z-index:9;pointer-events:none}
 #kb{position:fixed;bottom:0;left:0;width:40%;height:1px;opacity:0;border:0;padding:0;resize:none;background:none}
 </style>
@@ -289,7 +289,7 @@ function fit(){
   e.style.cssText='position:absolute;visibility:hidden;white-space:pre';
   e.textContent='0'.repeat(100);
   scr.style.font=FS+'px/'+LH+'px '+FONT;
-  po.style.cssText='position:absolute;left:0;top:0;color:#ccc;pointer-events:none;font:'+FS+'px/'+LH+'px '+FONT;
+  po.style.cssText='position:absolute;left:0;top:16px;color:#ccc;pointer-events:none;font:'+FS+'px/'+LH+'px '+FONT;
   scr.appendChild(e);
   cw=e.getBoundingClientRect().width/100; 
   e.remove();
