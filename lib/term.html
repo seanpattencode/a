@@ -6,8 +6,8 @@
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>a term</title>
 <style>
-html,body{margin:0;height:100%;background:#000;overflow:hidden}
-#scr{position:relative;width:100vw;height:100vh;overflow:hidden;cursor:text;color:#ccc}
+html,body{margin:0;height:100%;background:#000;overflow:hidden}body{padding-top:16px;box-sizing:border-box} /* status strip: #sb never covers row 0 */
+#scr{position:relative;width:100vw;height:calc(100vh - 16px);overflow:hidden;cursor:text;color:#ccc}
 .r{position:absolute;left:0;width:100%;contain:layout style}
 .r span{position:absolute;top:0;white-space:pre}
 #cur{position:absolute;background:#ccc;mix-blend-mode:difference;pointer-events:none}
@@ -293,7 +293,7 @@ function fit(){
   scr.appendChild(e);
   cw=e.getBoundingClientRect().width/100; 
   e.remove();
-  const vw=visualViewport?visualViewport.width:innerWidth,vh=visualViewport?visualViewport.height:innerHeight;
+  const vw=visualViewport?visualViewport.width:innerWidth,vh=(visualViewport?visualViewport.height:innerHeight)-16;
   sizeTo(Math.max(20,Math.floor(vw/cw)),Math.max(5,Math.floor(vh/chh)));
 }
 function sizeTo(c,r){
@@ -375,7 +375,7 @@ kb.addEventListener('paste',e=>{
 });
 function mev(b,cx,cy,rel){
   if(!S.mouse||!S.sgrm)return false;
-  const x=Math.min(cols,Math.max(1,Math.floor(cx/cw)+1)),y=Math.min(rows,Math.max(1,Math.floor(cy/chh)+1));
+  const x=Math.min(cols,Math.max(1,Math.floor(cx/cw)+1)),y=Math.min(rows,Math.max(1,Math.floor((cy-16)/chh)+1));
   tx('\x1b[<'+b+';'+x+';'+y+(rel?'m':'M'));
   return true;
 }
