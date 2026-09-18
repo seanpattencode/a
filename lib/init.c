@@ -26,13 +26,12 @@ static void init_paths(void) {
     {const char*e=getenv("A_SDIR");if(e&&*e){snprintf(SDIR,P,"%s",e);snprintf(AROOT,P,"%s/adata",e);snprintf(SROOT,P,"%s/git",AROOT);}}
     if (!SROOT[0]) { snprintf(AROOT, P, "%s/a/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
     snprintf(DDIR, P, "%s/local", AROOT);
-    mkdirp(DDIR);
     /* device id */
     char df[P]; snprintf(df, P, "%s/.device", DDIR);
     FILE *f = fopen(df, "r");
     if (f) { if (fgets(DEV, 128, f)) DEV[strcspn(DEV, "\n")] = 0; fclose(f); }
     if (!DEV[0] || !strcmp(DEV, "localhost")) {
-        DEV[0] = 0;
+        DEV[0] = 0; mkdirp(DDIR);
         if (!access("/data/data/com.termux", F_OK)) {
             FILE *p = popen("getprop ro.product.model 2>/dev/null", "r");
             if (p) { if (fgets(DEV, 128, p)) { DEV[strcspn(DEV, "\n")] = 0; for (char *c = DEV; *c; c++) *c = (*c == ' ') ? '-' : (char)tolower((unsigned char)*c); } pclose(p); }

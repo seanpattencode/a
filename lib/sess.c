@@ -94,46 +94,44 @@ static void twrite(const void*b,size_t n){static int c=-1;static void*h;unsigned
 /* i_frame: cached first frame blasted pre-init (~0.3ms visible); real render overwrites ~1ms later */
 static int ifr_on;static double ifr_ms;  /* ifr_ms = pixels-on-pty time, shown as "seen" */
 static void ifr_blast(void){struct winsize w;char p[P];size_t l;
-    if(ioctl(1,TIOCGWINSZ,&w))return;snprintf(p,P,"%s/i_frame.%dx%d",DDIR,w.ws_row,w.ws_col);char*f=readf(p,&l);
+    if((ifr_on=getenv("A_PSSEEN")!=0)||ioctl(1,TIOCGWINSZ,&w))return;  /* PS painted it */snprintf(p,P,"%s/i_frame.%dx%d",DDIR,w.ws_row,w.ws_col);char*f=readf(p,&l);
     if(f&&l){twrite(f,l);ifr_on=1;
         struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ifr_ms=(double)(t.tv_sec-T0.tv_sec)*1e3+(double)(t.tv_nsec-T0.tv_nsec)/1e6;}
     free(f);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
-    perf_disarm(); init_db(); load_cfg();
+    perf_disarm();
     CWD(cwd);
     char cache[P],wc[P];snprintf(cache,P,"%s/i_cache.txt",DDIR);snprintf(wc,P,"%s/win_cache.txt",DDIR);time_t wcm=0;
-    {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications"};  /* regen when any source newer (>= = same-second; %.0s eats SROOT) */
-    if(!stat(cache,&c))for(int i=0;i<6;i++){snprintf(q,P,F[i],SROOT,HOME);if(!stat(q,&s)&&s.st_mtime>=c.st_mtime){unlink(cache);break;}}}
     char*lines[2048];int n=0;const char*ft0=getenv("A_FILT_TAG");
     size_t len=0;char*raw=0;
     struct winsize ws;
     struct termios old,raw_t;
     if(isatty(0)){tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
-    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);if(!ifr_on)twrite("\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);}
+    if(!ifr_on)twrite("\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);}
     int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="",lastnote[P]="";time_t lastfire=0;
     static char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
     struct timespec tk=T0; const char*act="render";  /* tk = per-frame timer (cold, then key->repaint); act = what it measured */
+    /* regen when any source newer (>= = same-second; %.0s eats SROOT); tty checks after frame 1 */
+    #define ISTALE {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications"};\
+        if(!stat(cache,&c))for(int i=0;i<6;i++){snprintf(q,P,F[i],SROOT,HOME);if(!stat(q,&s)&&s.st_mtime>=c.st_mtime){unlink(cache);goto bld;}}}
+    if(!isatty(0))ISTALE
     bld:n=0;free(raw);  /* detached regen lands after our read: mtime flip re-enters, typed buf survives */
     {
     raw=readf(cache,&len);
     if(!raw){gen_icache();raw=readf(cache,&len);if(!raw)return 1;}
-    {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);FILE*ff=fopen(fp,"r");if(ff){char ln[128];nfq=0;
-        while(nfq<1024&&fgets(ln,128,ff)){char*c=strchr(ln,':');if(!c)continue;*c=0;
-            snprintf(fq[nfq].n,64,"%s",ln);fq[nfq].c=atoi(c+1);nfq++;}fclose(ff);}}
-    fq_index();
     for(char*p=raw,*end=raw+len;p<end&&n<2048;){char*nl=memchr(p,'\n',(size_t)(end-p));
         if(!nl)nl=end;if(nl>p&&!strchr("<=>#",*p)){*nl=0;lines[n++]=p;}p=nl+1;}
-    {char wp[P];snprintf(wp,P,"%s/web_cache.txt",DDIR);size_t wl;static char*wr;free(wr);wr=readf(wp,&wl);
-     if(wr)for(char*p=wr,*e=wr+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
-        if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}}
+    {char fp[P];snprintf(fp,P,"%s/freq_cache.txt",DDIR);size_t wl;static char*wr;free(wr);wr=readf(fp,&wl);nfq=0;  /* name:count rows + tabbed web rows */
+     if(wr)for(char*p=wr,*e=wr+wl,*c;p<e;){char*nl=memchr(p,'\n',(size_t)(e-p));if(!nl)nl=e;*nl=0;
+        if(strchr(p,'\t')&&n<2048)lines[n++]=p;else if((c=strchr(p,':'))&&nfq<1024){*c=0;snprintf(fq[nfq].n,64,"%s",p);fq[nfq++].c=atoi(c+1);}p=nl+1;}}
+    fq_index();
     static char wb[65536];size_t wl=0;
-    {/* win rows from the cached file only; regen runs POST-PAINT via wc_spawn (fork = ~30ms on cygwin, must never sit on the key→frame path) */
-        size_t cl;char*cw=readf(wc,&cl);
+    {
+        size_t cl;char*cw=readf(wc,&cl);wcm=cw?rfs.st_mtime:0;
         if(cw){if(cl>65535)cl=65535;memcpy(wb,cw,cl);wb[cl]=0;wl=cl;free(cw);}
-        else wl=0;  /* no cache yet: rows land via the bg regen ~1s in (the old popen fallback cost ~20ms cold) */
-        struct stat st;wcm=stat(wc,&st)?0:st.st_mtime;}
+        else wl=0;}
     for(char*p=wb,*e=wb+wl;p<e&&n<2048;){char*nl=memchr(p,'\n',(size_t)(e-p));
         if(!nl)nl=e;if(nl>p){*nl=0;lines[n++]=p;}p=nl+1;}
     {static char*acts[]={"home\tssh into homebox","tmux split-window\tpane\tnew pane below","tmux new-window\twin\topen new window","tmux kill-pane\tpane\tclose this pane","tmux kill-window\twin\tclose this window","tmux detach\tquit\tdetach, session keeps running","tmux kill-session\tquit\tkill session + windows","tmux resize-pane -Z\tpane\ttoggle pane zoom","tmux set synchronize-panes\tpane\ttoggle sync all panes",
@@ -158,7 +156,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     #define SNIP do{int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}while(0)  /* receipt snippet, UTF-8-safe */
     #define IRST twrite("\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);twrite("\033[?1049l",8);free(raw);free(buf)
     while (1) {
-        {struct stat st;if(!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
+        {struct stat st;if(!sv&&!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: box rules */
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
         char*fb=buf;int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' '){fb+=2;fl-=2;}  /* "a app" head-matches `app` */
@@ -248,9 +246,11 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,ccol);  /* +1: top rule of input box */
         #undef FP
         twrite(rb,(size_t)rl);
-        if(sv&&!ft0){sv=0;char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames; torn read = one cosmetic frame */
-            if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);(void)!write(fd,rb,(size_t)rl);close(fd);}}}
-        wc_spawn(wc);  /* regen AFTER the frame is on screen: fork+pipeline cost lands in idle time, never in the meter */
+        if(sv){sv=0;tcsetattr(0,TCSANOW,&raw_t);init_db();load_cfg();  /* frame 1 is out */
+            if(!ft0){char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames; torn read = one cosmetic frame */
+            if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);(void)!write(fd,rb,(size_t)rl);close(fd);}}
+            ISTALE}}
+        wc_spawn(wc);
         char ch;
         int lw=na&&fresh;  /* live tail ticks only while the receipt is fresh (foreground, ≤3min) — then back to pure block-on-key */
         if(m_mode||lw){struct pollfd pf={.fd=0,.events=POLLIN};int pr=poll(&pf,1,m_mode?250:500);

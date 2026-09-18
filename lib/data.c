@@ -28,13 +28,12 @@ static void cfset(const char *key, const char *val) {
 }
 
 static void init_db(void) {
-    char d[P]; snprintf(d,P,"%s/workspace",SROOT); mkdirp(d);
-    char p[P]; snprintf(p, P, "%s/workspace/config.txt", SROOT);
-    if (!fexists(p)) {
+    char d[P],p[P]; snprintf(d,P,"%s/workspace",SROOT); snprintf(p,P,"%s/config.txt",d);
+    if (!fexists(p)) { mkdirp(d);
         FILE*wf=fopen(p,"w");
         if(wf){fprintf(wf,"default_agent: c\nworktrees_dir: %s/worktrees\nclaude_prefix: Ultrathink. \ntmux_conf: y\n",AROOT);fclose(wf);}
     }
-    snprintf(p, P, "%s/workspace/sessions.txt", SROOT);
+    snprintf(p,P,"%s/sessions.txt",d);
     if (!fexists(p)) {
         /* c/claude pin EXACT claude-fable-5 max: 5.1 = regression, bare alias -> 5.1; never alias. l/o follow default */
         const char *C = "claude --dangerously-skip-permissions";

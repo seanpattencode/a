@@ -40,7 +40,7 @@ static void d4(const char*d,const char*n,const char*t,char*o){char fp[P],l[256],
     for(char b[24];(s=strrchr(p,' '))&&snprintf(b,24,"%s ",s)&&(s[1]<'!'||strstr(" a an and for in into of on the to via with ",b));)*s=0;
     snprintf(o,128,"%s%s%s",p,*p?" · ":"",t);}
 static void gen_icache(void){
-    load_proj();load_apps();load_cfg();load_sess();
+    init_db();load_proj();load_apps();load_cfg();load_sess();
     char ic[P],ds[128];snprintf(ic,P,"%s/i_cache.txt",DDIR);
     FILE*f=fopen(ic,"w");if(!f)return;
     fputs("a\tdefault agent\n",f);
@@ -130,8 +130,6 @@ static void gen_icache(void){
             if(j==nc&&nc<1024){snprintf(ct[nc].n,64,"%s",p);ct[nc].c=1;nc++;}}
             fclose(af);}
         pclose(d);qsort(ct,(size_t)nc,sizeof(ct[0]),ctcmp);
-        snprintf(fp2,P,"%s/freq_cache.txt",DDIR);
-        FILE*ff=fopen(fp2,"w");if(ff){for(int j=0;j<nc;j++)if(ct[j].c>1)fprintf(ff,"%s:%d\n",ct[j].n,ct[j].c);fclose(ff);}  /* c==1 = one-shot noise: pollutes ranking + triples scoring buckets */
         {snprintf(fp2,P,"%s/web_cache.txt",DDIR);
         char cm[P*2];snprintf(cm,P*2,"T=/tmp/.a_h$$;Q=\"SELECT url,title FROM urls WHERE title<>'' ORDER BY visit_count DESC LIMIT 50\";"
 #ifdef __APPLE__
@@ -158,6 +156,8 @@ static void gen_icache(void){
                 if(t[0]){fprintf(wf,"web %s\t%s · web\n",u,t);nw++;}}
             fclose(wf);if(nw)rename(tp,fp2);else unlink(tp);}  /* sticky: never wipe a good cache on a transient empty/locked query */
             pclose(hf);}}
+        char*w=readf(fp2,NULL);snprintf(fp2,P,"%s/freq_cache.txt",DDIR);
+        FILE*ff=fopen(fp2,"w");if(ff){for(int j=0;j<nc;j++)if(ct[j].c>1)fprintf(ff,"%s:%d\n",ct[j].n,ct[j].c);if(w)fputs(w,ff);fclose(ff);}  /* c==1 = one-shot noise: pollutes ranking + triples scoring buckets */
         _exit(0);}
 }
 
