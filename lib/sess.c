@@ -332,15 +332,10 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             IRST;
             if(dexists(cmd)){char tf[P];snprintf(tf,P,"%s/cd_target",DDIR);writef(tf,cmd);return 0;}
             {int wo=!strncmp(cmd,"open ",5)?5:!strncmp(cmd,"web ",4)?4:0;
-            if(wo){alog(cmd,"");if(wo==5){char ac[512];const char*app=cmd+5;
-                if(getenv("SWAYSOCK")){
-                    char df[P]="",hd[P];snprintf(hd,P,"%s/.local/share/applications",HOME);
-                    const char*ad[]={"/usr/share/applications","/usr/local/share/applications","/var/lib/flatpak/exports/share/applications",hd};
-                    for(int i=0;i<4;i++){snprintf(df,P,"%s/%s.desktop",ad[i],app);if(fexists(df))break;df[0]=0;}
-                    if(df[0])snprintf(ac,512,"swaymsg exec \"gio launch '%s'\"",df);
-                    else snprintf(ac,512,"swaymsg exec '%s'",app);
-                } else snprintf(ac,512,APP_CMD " '%s'",app);
-                (void)!system(ac);}
+            if(wo){alog(cmd,"");if(wo==5){char ac[B];const char*app=cmd+5;
+                /* pane env goes stale on sway restart (gtk-launch then exits 0 displayless): live socket, launch in sway's env */
+                snprintf(ac,B,"SWAYSOCK=$(ls -t /run/user/$(id -u)/sway-ipc.*.sock 2>/dev/null|head -1) swaymsg -q exec \"gtk-launch '%s'\" 2>/dev/null||" APP_CMD " '%s'",app,app);
+                printf("%s %s\n",system(ac)?"x":"→",app);}
                 else bg_exec(OPENER,cmd+4);return 0;}}
             char*args[32];int ac=0;args[ac++]="a";
             for(char*p=cmd;*p&&ac<31;){while(*p==' ')p++;if(!*p)break;args[ac++]=p;while(*p&&*p!=' ')p++;if(*p)*p++=0;}
