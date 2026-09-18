@@ -467,7 +467,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest f
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
     {char cm[B];init_db();load_cfg();CWD(wc);size_t sl=strlen(SDIR);
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
-    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null|tr '\\n' '\\0'|xargs -0 ls -t 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* cwd repo + cat_more + /a stubs, newest first */
+    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null|tr '\\n' '\\0'|xargs -0 -r ls -t 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* cwd repo + cat_more + /a stubs, newest first · -r: no input must NOT ls the cwd (non-repo cwd dumped 35M NTUSER.DAT on win) */
     size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,nst=0,nam=0;
     size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):1200000;
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;
