@@ -11,8 +11,9 @@ _kill = lambda: _r(['pkill','-f','a serve'])
 def _url(p): return f'http://localhost:{p}'
 
 def _bg(p):
-    S.Popen([_A,'serve',str(p)], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL)
-    time.sleep(0.3); import webbrowser; webbrowser.open(_url(p))
+    pr = S.Popen([_A,'serve',str(p)], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL); time.sleep(0.3)
+    if pr.poll() is not None: print(f'x :{p} in use — another a serve has it (win+wsl share localhost)')
+    import webbrowser; webbrowser.open(_url(p))
 
 def _plist(): return expanduser('~/Library/LaunchAgents/com.a.ui.plist')
 def _unit(): return expanduser('~/.config/systemd/user/a-ui.service')
@@ -67,8 +68,9 @@ def run():
     if a and a[0][0] == 'k':
         _kill(); print('Killed (service will restart)')
     elif a and a[0] == 'on':
-        if _svc_on(): print(f'UI service on — {_url(PORT)}')
-        else: print('No service manager (use a ui)'); sys.exit(1)
+        if not _svc_on(): print('No service manager (use a ui)'); sys.exit(1)
+        ok = _MAC or _TERMUX or (time.sleep(1) or _r(['systemctl', '--user', 'is-active', 'a-ui']).returncode == 0)
+        print(f'UI service on — {_url(PORT)}' if ok else f'x a-ui failed — :{PORT} in use by another a? journalctl --user -u a-ui')
     elif a and a[0] == 'off':
         _svc_off(); _kill(); print('UI service off')
     elif a and a[0] == 'reload':  # restart :PORT so it serves the rebuilt binary — incl. unmanaged serves (dead-runsvdir termux) and stale per-connection children

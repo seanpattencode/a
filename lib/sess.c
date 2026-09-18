@@ -87,11 +87,9 @@ static void wc_spawn(const char*wc){
     execlp("sh","sh","-c",cm,(char*)0);_exit(0);}
 #ifdef __CYGWIN__  /* real Windows console via kernel32: VT bytes ~0.04ms vs cygwin's console layer ~39ms; size ~0.03ms vs ioctl ~0.1ms */
 static void twrite(const void*b,size_t n){static int c=-1;static void*h;unsigned m,w;if(c<0){h=GetStdHandle((unsigned)-11);c=GetConsoleMode(h,&m)&&SetConsoleMode(h,m|4)&&SetConsoleOutputCP(65001);}  /* 65001: bytes are UTF-8, not cp437 */if(c)WriteFile(h,b,(unsigned)n,&w,0);else(void)!write(1,b,n);}
-#define CYG 1
 #define WSZ(w) {CONSOLE_SCREEN_BUFFER_INFO c;if(GetConsoleScreenBufferInfo(GetStdHandle((DWORD)-11),&c))w.ws_row=(unsigned short)(c.srWindow.Bottom-c.srWindow.Top+1),w.ws_col=(unsigned short)(c.srWindow.Right-c.srWindow.Left+1);else ioctl(1,TIOCGWINSZ,&w);}
 #else
 #define twrite(b,n) (void)!write(1,b,n)
-#define CYG 0
 #define WSZ(w) ioctl(1,TIOCGWINSZ,&w);
 #endif
 /* i_frame: cached first frame blasted pre-init (~0.3ms visible); real render overwrites ~1ms later */

@@ -26,6 +26,9 @@ static void init_paths(void) {
     {const char*e=getenv("A_SDIR");if(e&&*e){snprintf(SDIR,P,"%s",e);snprintf(AROOT,P,"%s/adata",e);snprintf(SROOT,P,"%s/git",AROOT);}}
     if (!SROOT[0]) { snprintf(AROOT, P, "%s/a/adata", h); snprintf(SROOT, P, "%s/git", AROOT); }
     snprintf(DDIR, P, "%s/local", AROOT);
+#ifdef __CYGWIN__  /* DDIR/python3 = sh a.c's shim; environ, not setenv: that converts PATH to windows form now (+28ms render) */
+    if(!getenv("A_PYOK")){static char p[B*4];snprintf(p,sizeof p,"PATH=%s:%s",DDIR,getenv("PATH"));for(char**e=environ;*e;e++)if(!strncmp(*e,"PATH=",5))*e=p;}
+#endif
 }
 static void init_dev(void) {  /* menu: after frame 1 */
     char df[P]; snprintf(df, P, "%s/.device", DDIR);

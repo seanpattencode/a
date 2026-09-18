@@ -779,22 +779,32 @@ static void handle(int c){
         return;}
     sresp(c,404,"text/plain","not found",9);
 }
+#define PSAS "ps -ef|awk '/serve( 1111)? *$/"
+static int cmd_ui(int c,char**v){  /* cygwin: lib/ui is python (hangs there): restart a serve detached + open the browser */
+    if(!CYG)fallback_py("ui/__init__",c,v);
+    perf_disarm();int up=!system("p=$(" PSAS "{print $2}');kill $p 2>/dev/null;sleep .2;[ -n \"$p\" ]");const char*o=c>2?v[2]:"";
+    if(*o=='k'||!strcmp(o,"off")||(*o=='r'&&!up))return puts("\xe2\x9c\x93 ui off")<0;   /* reload (sh a.c): only if running */
+    bg_exec(*v,"serve");if(!*o)bg_exec(OPENER,"http://localhost:1111");
+    return puts(system("sleep .6;" PSAS "{f=1}END{exit !f}'")?"x serve exited — :1111 held by another a (win+wsl share localhost)":"\xe2\x9c\x93 http://localhost:1111 (stop: a ui off)")<0;}  /* our serve gone = it lost the port */
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     {const char*op=getenv("PATH");if(!op)op="";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;
+    int fd=socket(AF_INET,SOCK_STREAM,0);fcntl(fd,F_SETFD,FD_CLOEXEC);
+    setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&(int){1},4);
+    struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port),.sin_addr.s_addr=htonl(CYG*INADDR_LOOPBACK)};  /* cygwin: loopback = no firewall prompt */
+    if(bind(fd,(void*)&a,sizeof a)<0){printf("x bind :%d: %s%s\n",port,strerror(errno),errno==EADDRINUSE?" — another a serve has it (win+wsl share localhost)":"");return 1;}  /* bind before html_gen: a lost port race exits fast + loud; early connects queue in the backlog */
+    listen(fd,64);
     if(argc>3){if(!realpath(argv[3],sdr)||!dexists(sdr)){printf("x no dir %s\n",argv[3]);return 1;}
         printf("+ site %s\n",sdr);}
     else{printf("> generating HTML...\n");html_gen();
         if(!shlen){puts("x HTML generation failed");return 1;}
         printf("+ %d bytes cached\n",shlen);}
-    int fd=socket(AF_INET,SOCK_STREAM,0);fcntl(fd,F_SETFD,FD_CLOEXEC);
-    setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&(int){1},4);
-    struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port)};
-    if(bind(fd,(void*)&a,sizeof a)<0){perror("bind");return 1;} /* port race lost -> exit before any tmux touch */
-    listen(fd,64);printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
-    for(;;){int c=accept(fd,0,0);if(c<0)continue;
+    printf("+ http://localhost:%d (C server, pid %d)\n",port,(int)getpid());
+    struct sockaddr_in6 a6={.sin6_family=AF_INET6,.sin6_port=a.sin_port,.sin6_addr=in6addr_loopback};int f6=CYG?socket(AF_INET6,SOCK_STREAM,0):-1;  /* windows localhost tries ::1 first: unserved = +0.2s/connect */
+    if(bind(f6,(void*)&a6,sizeof a6)||listen(f6,64))f6=-1;
+    for(;;){struct pollfd q[2]={{fd,POLLIN,0},{f6,POLLIN,0}};poll(q,2,-1);int c=accept(q[1].revents?f6:fd,0,0);if(c<0)continue;
         struct timeval tv={2,0};setsockopt(c,SOL_SOCKET,SO_RCVTIMEO,&tv,sizeof tv);
-        if(!fork()){close(fd);
+        if(!fork()){close(fd);close(f6);
             struct timespec t0,t1;clock_gettime(CLOCK_MONOTONIC,&t0);
             handle(c);close(c);
             clock_gettime(CLOCK_MONOTONIC,&t1);

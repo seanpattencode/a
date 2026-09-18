@@ -145,6 +145,7 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
     [[ -z $TCT && ! -x $HOME/.local/bin/tcc && ! -d /data/data/com.termux && $OSTYPE != cygwin ]]&&{ (T_=$(mktemp -d)&&git clone -q --depth 1 https://github.com/TinyCC/tinycc.git $T_&&cd $T_&&./configure --prefix=$HOME/.local&&make -j8&&make install;rm -rf $T_) >/dev/null 2>&1 & }  # no working tcc: build mob once, in bg
     [[ "$ABIN" == */adata/local && ! "$BIN/a" -ef "$ABIN/a" ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
     { rm -f "$ABIN/i_cache.txt";"$ABIN/a" i; } </dev/null >/dev/null 2>&1 &  # bg menu-cache regen: next a <1ms
+    [[ $OSTYPE == cygwin ]]&&{ printf '#!/bin/sh\necho "x python3 hangs on this cygwin (A_PYOK=1 unblocks)";exit 1\n'>"$ABIN/python3";chmod +x "$ABIN/python3";("$ABIN/a" ui reload >&- 2>&- &); }  # python3 spins forever here (win 29667, cygwin 3.6.10): shim blocks it, $ABIN is PATH-first · serve's forks crash on a new exe: restart
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
         rm -f "$ABIN/.chk";T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_QT"
@@ -360,7 +361,11 @@ exit 0
 #endif
 #ifdef __CYGWIN__
 #include <windows.h>
+#include <tlhelp32.h>
 #include <sys/cygwin.h>
+#define CYG 1
+#else
+#define CYG 0
 #endif
 
 #define P 1024
@@ -600,7 +605,7 @@ static const cmd_t CMDS[] = {
     {"settings",cmd_settings},{"setup",cmd_setup},{"snap",cmd_resume},
     {"ssh",cmd_ssh},{"sw",cmd_swarm},
     {"sync",cmd_sync},{"t",cmd_task},{"task",cmd_task},
-    {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},
+    {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},{"ui",cmd_ui},
     {"uninstall",cmd_uninstall},{"update",cmd_update},
     {"vm",cmd_vm},
     {"w",cmd_w},{"work",cmd_w},

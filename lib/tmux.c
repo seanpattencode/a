@@ -5,6 +5,10 @@ static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_atta
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");
     (void)!system("tmux list-clients -t '"TMS"' -F'#{client_pid} #{client_tty}' 2>/dev/null|while read p t;do g='"TMS"'-$p;tmux has-session -t \"$g\" 2>/dev/null||tmux new-session -d -t '"TMS"' -s \"$g\" 2>/dev/null;tmux switch-client -c \"$t\" -t \"$g\" 2>/dev/null;done");}
 static void tm_ensure_sess(void){
+#ifdef __CYGWIN__  /* no tmux.exe = stale socket: each tmux call would wait ~2s on it (windows retries refused connects) */
+    {char s[64];HANDLE h=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);PROCESSENTRY32 e={.dwSize=sizeof e};BOOL m=Process32First(h,&e);while(m&&strcmp(e.szExeFile,"tmux.exe"))m=Process32Next(h,&e);
+     CloseHandle(h);snprintf(s,64,"/tmp/tmux-%d/default",(int)getuid());if(!m)unlink(s);}
+#endif
     tm_gc();
     if(system("tmux has-session -t '"TMS"' 2>/dev/null")){
     /* own scope: ui reload cgroup-kill must not take tmux down */
@@ -22,7 +26,7 @@ static const char*tm_name(const char*pre,const char*base,time_t t){static char b
     for(char*q=b;*q;q++)if(*q=='.'||*q==':')*q='-';   /* '.' ':' = tmux target seps */
     b[n]=(char)ap;b[n+1]=0;if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c",l->tm_sec,ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c-%d",l->tm_sec,ap,(int)getpid());return b;}
 static void tm_go(const char *w) {
-    perf_disarm();tm_gc();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
+    perf_disarm();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
     char c[B];const char*op=getenv("TMUX")?"switch-client":"attach-session";
     snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
@@ -90,7 +94,7 @@ static void tm_ensure_conf(void) {
     char cpath[P];snprintf(cpath,P,"%s/tmux.conf",adir);
     FILE*f=fopen(cpath,"w");if(!f)return;
     const char *cc = clip_cmd();
-    fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\nset -wg pane-scrollbars on\n"
+    fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\nset -qwg pane-scrollbars on\n"
         "set -g history-limit 10000\n"   /* 50000-line history x windows x groups = 11.5G RSS once */
         "set -ga update-environment \"WAYLAND_DISPLAY\"\n"
         "set -ga update-environment \"SWAYSOCK\"\n"

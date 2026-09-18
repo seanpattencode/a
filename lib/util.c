@@ -5,6 +5,9 @@
 #elif defined(__APPLE__)
 #define OPENER "open"
 #define APP_CMD "open -a"
+#elif defined(__CYGWIN__)
+#define OPENER "cygstart"
+#define APP_CMD "cygstart"
 #else
 #define OPENER "xdg-open"
 #define APP_CMD "gtk-launch"
