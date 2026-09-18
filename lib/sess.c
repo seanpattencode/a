@@ -85,11 +85,17 @@ static void wc_spawn(const char*wc){
         "printf '%%s\twin\t%%s%%s · %%s %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$sb\" \"$tl\";done >'%s.%ld';:>'%s.t';cmp -s '%s.%ld' '%s' 2>/dev/null&&rm -f '%s.%ld'||mv '%s.%ld' '%s'",
         wc,(long)getpid(),wc,wc,(long)getpid(),wc,wc,(long)getpid(),wc,(long)getpid(),wc);
     execlp("sh","sh","-c",cm,(char*)0);_exit(0);}
+#ifdef __CYGWIN__  /* real Windows console: VT bytes go straight to kernel32 (~0.7ms/frame); cygwin console layer costs ~39ms */
+void*GetStdHandle(unsigned);int GetConsoleMode(void*,unsigned*),SetConsoleMode(void*,unsigned),SetConsoleOutputCP(unsigned),WriteFile(void*,const void*,unsigned,unsigned*,void*);
+static void twrite(const void*b,size_t n){static int c=-1;static void*h;unsigned m,w;if(c<0){h=GetStdHandle((unsigned)-11);c=GetConsoleMode(h,&m)&&SetConsoleMode(h,m|4)&&SetConsoleOutputCP(65001);}  /* 65001: bytes are UTF-8, not cp437 */if(c)WriteFile(h,b,(unsigned)n,&w,0);else(void)!write(1,b,n);}
+#else
+#define twrite(b,n) (void)!write(1,b,n)
+#endif
 /* i_frame: cached first frame blasted pre-init (~0.3ms visible); real render overwrites ~1ms later */
 static int ifr_on;static double ifr_ms;  /* ifr_ms = pixels-on-pty time, shown as "seen" */
 static void ifr_blast(void){struct winsize w;char p[P];size_t l;
     if(ioctl(1,TIOCGWINSZ,&w))return;snprintf(p,P,"%s/i_frame.%dx%d",DDIR,w.ws_row,w.ws_col);char*f=readf(p,&l);
-    if(f&&l){(void)!write(1,f,l);ifr_on=1;
+    if(f&&l){twrite(f,l);ifr_on=1;
         struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ifr_ms=(double)(t.tv_sec-T0.tv_sec)*1e3+(double)(t.tv_nsec-T0.tv_nsec)/1e6;}
     free(f);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
@@ -105,7 +111,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     struct termios old,raw_t;
     if(isatty(0)){tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;
-    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);if(!ifr_on)write(STDOUT_FILENO,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);}
+    tcsetattr(STDIN_FILENO,TCSANOW,&raw_t);if(!ifr_on)twrite("\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);}
     int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="",lastnote[P]="";time_t lastfire=0;
     static char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
     struct timespec tk=T0; const char*act="render";  /* tk = per-frame timer (cold, then key->repaint); act = what it measured */
@@ -150,7 +156,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);free(raw);return 0;}
     #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)  /* heap buf: any paste */
     #define SNIP do{int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}while(0)  /* receipt snippet, UTF-8-safe */
-    #define IRST write(STDOUT_FILENO,"\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);(void)!write(STDOUT_FILENO,"\033[?1049l",8);free(raw);free(buf)
+    #define IRST twrite("\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);twrite("\033[?1049l",8);free(raw);free(buf)
     while (1) {
         {struct stat st;if(!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
         ioctl(STDOUT_FILENO,TIOCGWINSZ,&ws);int maxshow=ws.ws_row>8?ws.ws_row-(m_mode?6:5):10;  /* +2: box rules */
@@ -202,7 +208,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         RULE;
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
-        else if(!blen&&!plen){char sn2[32]="";if(ifr_ms>0)snprintf(sn2,32,"seen %.3f · ",ifr_ms);
+        else if(!blen&&!plen){char sn2[32]="";const char*ps=getenv("A_PSSEEN");if(ps)snprintf(sn2,32,"seen %.8s ps · ",ps);else if(ifr_ms>0)snprintf(sn2,32,"seen %.3f · ",ifr_ms);  /* ps: PowerShell painted the cached frame in-process before this exe even loaded */
             FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
         else{int W=ws.ws_col?ws.ws_col:80,aw=W-plen-4,off=0,cw=0;char cnt[24]="";  /* tail-anchored row; Nc count proves the paste landed */
             if(aw>440)aw=440;if(aw<8)aw=8;
@@ -241,7 +247,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dv,dl,desc);FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",m_mode?(hdr_rows+2):2,ccol);  /* +1: top rule of input box */
         #undef FP
-        (void)!write(STDOUT_FILENO,rb,(size_t)rl);
+        twrite(rb,(size_t)rl);
         if(sv&&!ft0){sv=0;char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames; torn read = one cosmetic frame */
             if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",32);(void)!write(fd,rb,(size_t)rl);close(fd);}}}
         wc_spawn(wc);  /* regen AFTER the frame is on screen: fork+pipeline cost lands in idle time, never in the meter */

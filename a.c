@@ -22,7 +22,7 @@ case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
     git clone https://github.com/seanpattencode/a.git "$A" && exec sh "$A/a.c" install
     exit 1;; esac
 set -e
-D="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+D="$(cd "${BASH_SOURCE[0]%/*}" 2>/dev/null&&pwd||pwd)"
 
 G='\033[32m' Y='\033[33m' C='\033[36m' R='\033[0m'
 ok() { echo -e "${G}✓${R} $1"; }
@@ -97,24 +97,23 @@ _install_node() {
     else curl -fsSL "$URL" | tar -xJf - -C "$HOME/.local" --strip-components=1; fi
     [[ -x "$HOME/.local/bin/node" ]] && ok "node $($HOME/.local/bin/node -v)" || warn "node install failed"
 }
-_perf_lim() { local f="$D/adata/git/perf/$(cat "$D/adata/local/.device" 2>/dev/null||cat "$D/adata/local/device.txt" 2>/dev/null||hostname 2>/dev/null||echo unknown).txt"
-    local v;v=$(grep "^$1:" "$f" 2>/dev/null)&&echo "${v#*:}"||echo 0;}
-_perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=$(_perf_lim "$1")
+_perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=0 d=unknown k v;read -r d <"$D/adata/local/.device" 2>/dev/null||:  # builtins: each spawn ~3ms
+    [[ -f $D/adata/git/perf/$d.txt ]]&&while IFS=: read -r k v;do [[ $k != "$1" ]]||l=${v%%:*};done <"$D/adata/git/perf/$d.txt"
     [[ $l -gt 0 && $e -gt $l ]] && { echo -e "\033[31m✗ PERF KILL\033[0m: sh a.c $1 ${e}us > ${l}us" >&2; exit 1; }
     echo -e "${e}us" >&2;}
 _tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen (human-only caps): .tokrule ramp + tok.txt static
-    r=$(python3 "$HOME/i/lib/tokcap/tokcap.py" cap "$D" 2>/dev/null||:)  # no ~/i -> ramp skips, static still guards
+    c="$HOME/i/lib/tokcap/tokcap.py";[ -f "$c" ]&&r=$(python3 "$c" cap "$D" 2>/dev/null||:)  # no ~/i: no python, ramp skips
     if [[ "$r" =~ ^[0-9]+$ ]]; then t=$(( $(git -C "$D" ls-files -z 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
         echo "tok repo $t/$r b/4 ($(( t<=r ? r-t : t-r )) $([[ $t -le $r ]] && echo left || echo over) · ramp: i tokcap $D)" >&2
         [[ $t -le $r ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: repo $t > cap $r b/4 — simplify, don't raise (.tokrule)" >&2;sed 1d "$D/.tokrule" >&2 2>/dev/null;exit 1; }; fi
-    c=$(head -1 "$f" 2>/dev/null||:)
+    read -r c <"$f" 2>/dev/null||:
     [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file -> floor; never fail open
-    t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
-    echo "tok $t/$c ($(( t<=c ? c-t : t-c )) $([[ $t -le $c ]] && echo left || echo over))" >&2
+    t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ));[[ $t -le $c ]]&&r=left||r=over
+    echo "tok $t/$c ($(( t<=c ? c-t : t-c )) $r)" >&2
     [[ $t -le $c ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: a.c+lib = $t > cap $c tok — simplify, don't raise ($f)" >&2;sed 1d "$f" >&2 2>/dev/null;exit 1; };}
-_Q=-DSRC="\"$D\"";[[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
+[[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
 _abin() { [[ "$D" == *"/adata/worktrees/"*||"$D" == *"/adata/forks/"* ]]&&ABIN="$D"||ABIN="$D/adata/local"
-    BIN="$HOME/.local/bin";mkdir -p "$ABIN" "$BIN";}
+    BIN="$HOME/.local/bin";[[ -d $ABIN && -d $BIN ]]||mkdir -p "$ABIN" "$BIN";}
 _checkers() {
     _c(){ n=$1;shift;{ ! command -v "$1" &>/dev/null||"$@";}>"$T/$n" 2>&1||touch "$T/$n.f";}
     _rgcc(){ command -v gcc &>/dev/null&&! gcc --version 2>&1|grep -q clang;}
@@ -130,24 +129,25 @@ _o3(){ $CC $A -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/n
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
 build) _PT=${EPOCHREALTIME/./};_tok_chk
-    _abin; rm -f "$ABIN/.chk" "$ABIN/i_cache.txt"
+    _abin
     printf '%s' $$ > "$ABIN/.bld"
     _build_fix() {
         warn "Build failed, attempting fix..."
         command -v a &>/dev/null && { a j --no-wt "a.c compile error: $1. Fix and run 'sh a.c'."; return; }
         echo "Couldn't auto-fix. github:seanpattencode"
     }
-    if command -v tcc &>/dev/null && [[ ! -d /data/data/com.termux ]]; then
-        # old tcc dies on odd ' counts in #if 0 — fall back to $CC first
-        TCT=${EPOCHREALTIME/./};tcc $_Q -w -o "$ABIN/a" "$D/a.c" -lutil 2>/dev/null&&TCT=$(( ${EPOCHREALTIME/./} - TCT ))000||{ TCT="";_ensure_cc;E=$($CC $_Q -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1)||{ _build_fix "$E"; exit 1; }; }
+    TC=$HOME/.local/bin/tcc;[[ -x $TC ]]||TC=tcc  # distro tcc 0.9.27 dies on odd ' in #if 0
+    if command -v $TC &>/dev/null && [[ ! -d /data/data/com.termux ]]; then
+        TCT=${EPOCHREALTIME/./};$TC -w -o "$ABIN/a" "$D/a.c" -lutil 2>"$ABIN/.tcc"&&TCT=$(( ${EPOCHREALTIME/./} - TCT ))000||{ TCT="";warn "tcc failed (100ms build law): $(head -c 160 "$ABIN/.tcc")";_ensure_cc;E=$($CC -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1)||{ _build_fix "$E"; exit 1; }; }
     else
-        _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
+        _ensure_cc; E=$($CC $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
-    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
-    ("$ABIN/a" i </dev/null >/dev/null 2>&1 &)  # regen the i_cache this build just wiped, in bg: the human's next `a` stays <1ms instead of paying ~200ms gen_icache
+    [[ -z $TCT && ! -x $HOME/.local/bin/tcc && ! -d /data/data/com.termux && $OSTYPE != cygwin ]]&&{ (T_=$(mktemp -d)&&git clone -q --depth 1 https://github.com/TinyCC/tinycc.git $T_&&cd $T_&&./configure --prefix=$HOME/.local&&make -j8&&make install;rm -rf $T_) >/dev/null 2>&1 & }  # no working tcc: build mob once, in bg
+    [[ "$ABIN" == */adata/local && ! "$BIN/a" -ef "$ABIN/a" ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
+    { rm -f "$ABIN/i_cache.txt";"$ABIN/a" i; } </dev/null >/dev/null 2>&1 &  # bg menu-cache regen: next a <1ms
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
-        T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q $_QT"
+        rm -f "$ABIN/.chk";T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_QT"
         if [[ -n "$TCT" ]]; then
             PYT=$(date +%s%N);python3 -c 'import subprocess;subprocess.run(["echo","hello world"],capture_output=True)';PYT=$(( $(date +%s%N)-PYT ))
             [[ $TCT -gt $PYT ]] && { echo "PERF KILL: tcc ${TCT}ns > python ${PYT}ns" >"$ABIN/.chk"; touch "$T/0.f"; }
@@ -161,15 +161,15 @@ build) _PT=${EPOCHREALTIME/./};_tok_chk
     ) >&- 2>&- &
     ;;
 check) _PT=${EPOCHREALTIME/./};_tok_chk
-    _abin; _ensure_cc; E=$($CC $_Q $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
+    _abin; _ensure_cc; E=$($CC $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
     [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }
-    T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_Q";_warn_flags
+    T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A=;_warn_flags
     _checkers
     if ls "$T"/*.f &>/dev/null;then cat "$T"/[0-9]* 2>/dev/null; exit 1
     else ok "all checkers passed"; _perf_chk check; _o3&&mv "$ABIN/a.opt" "$ABIN/a" 2>&-&&("$ABIN/a" ui reload >/dev/null 2>&1 &);rm -f "$ABIN/a.opt" & fi
     ;;
 analyze) _ensure_cc;_warn_flags
-    $CC $WARN $_Q --analyze -Xanalyzer -analyzer-output=text -Xanalyzer -analyzer-checker=security,unix,nullability,optin.portability.UnixAPI -Xanalyzer -analyzer-disable-checker=security.insecureAPI.DeprecatedOrUnsafeBufferHandling "$D/a.c"
+    $CC $WARN --analyze -Xanalyzer -analyzer-output=text -Xanalyzer -analyzer-checker=security,unix,nullability,optin.portability.UnixAPI -Xanalyzer -analyzer-disable-checker=security.insecureAPI.DeprecatedOrUnsafeBufferHandling "$D/a.c"
     find "$D" -maxdepth 1 -name '*.plist' -delete;;
 shell) _shell_funcs;;
 clean) rm -f "$D/adata/local/a";;
@@ -250,7 +250,11 @@ install)
             curl -fsSL -o "$(cygpath -m ~/cygsetup.exe)" https://www.cygwin.com/setup-x86_64.exe; chmod +x ~/cygsetup.exe
             ~/cygsetup.exe -q -B -R "$(cygpath -w /)" -s https://mirrors.kernel.org/sourceware/cygwin/ -l "$(cygpath -w ~/cygpkg)" -P git,curl,gcc-core,unzip,python3 >/dev/null 2>&1 && ok "cygwin pkgs (git curl gcc unzip python3)"
             printf '%s\n' '$w=[Environment]::GetEnvironmentVariable("Path","User");foreach($b in @("'"$(cygpath -w "$D/adata/local")"'","'"$(cygpath -w /bin)"'")){if($w -notlike "*$b*"){$w=$w.TrimEnd(";")+";"+$b}};[Environment]::SetEnvironmentVariable("Path",$w,"User")' > ~/addpath.ps1   # a.exe + cygwin1.dll dirs on user PATH: PowerShell/cmd run a.exe directly, no shim (bash layer cost ~40ms, cmd batch ~30ms)
-            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/addpath.ps1)" >/dev/null 2>&1 && ok "PowerShell/cmd: a (a.exe on user PATH, new terminals)" ;;
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/addpath.ps1)" >/dev/null 2>&1 && ok "PowerShell/cmd: a (a.exe on user PATH, new terminals)"
+            W="$(cygpath -w "$D/adata/local")";PF="$(cygpath "$(powershell.exe -NoProfile -c '$PROFILE'|tr -d '\r')")";mkdir -p "${PF%/*}"  # profile fn paints the cached frame in-process (~0.8ms) while a.exe spends ~170ms in cygwin init
+            sed -i '/# a-paint/d' "$PF" 2>/dev/null;: >"$D/adata/local/.warm"
+            printf '%s\r\n' "function ap(\$f){\$t=[Diagnostics.Stopwatch]::StartNew();if([IO.File]::Exists(\$f)){if([Console]::OutputEncoding.CodePage -ne 65001){[Console]::OutputEncoding=[Text.Encoding]::UTF8};[Console]::Out.Write([IO.File]::ReadAllText(\$f));\$t.Elapsed.TotalMilliseconds.ToString('0.000')}} # a-paint" "function a{\$e='$W\a.exe';if(!\$args){\$env:A_PSSEEN=ap \"$W\i_frame.\$([Console]::WindowHeight)x\$([Console]::WindowWidth)\"};if([IO.File]::Exists(\$e)){& \$e @args}else{a.exe @args};Remove-Item env:A_PSSEEN -EA 0} # a-paint" "1..3|%{\$null=ap '$W\.warm'} # a-paint: warm call sites at shell start (first a ~11ms -> <1ms)" >>"$PF"
+            icacls.exe "$(cygpath -w "$PF")" /reset >/dev/null 2>&1;powershell.exe -NoProfile -c 'if((Get-ExecutionPolicy) -in "Restricted","Undefined"){Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force}' >/dev/null 2>&1 && ok "PowerShell profile: a paints in-process (policy CurrentUser RemoteSigned)" ;;
         *) install_node; warn "Unknown OS - install tmux manually" ;;
     esac
     _ensure_cc
@@ -396,7 +400,6 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/net.c"
 #include "lib/agent.c"
 #include "lib/file.c"
-#include "lib/cc.c"
 #include "lib/cmd.c"
 #include "lib/perf.c"
 #include "lib/work.c"
@@ -576,7 +579,7 @@ static int cmd_cmp(const void*a,const void*b){return strcmp(((const cmd_t*)a)->n
 static const cmd_t CMDS[] = {
     {"--help",cmd_help_full},{"-h",cmd_help_full},
     {"a",cmd_a_default},{"add",cmd_add},{"agent",cmd_agent},
-    {"book",cmd_book},{"cat",cmd_cat},{"cc",cmd_cc},{"clone",cmd_new},{"cmd",cmd_cmd},{"config",cmd_config},
+    {"book",cmd_book},{"cat",cmd_cat},{"clone",cmd_new},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},{"cron",cmd_hub},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
     {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},
