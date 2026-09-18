@@ -223,12 +223,12 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             static const char*PV[]={"✎ save note","☐ add task","⌕ web search"};
             for(int r=1;r<pv;r++)FP("%s \033[%dm%s\033[0m\033[K\n",sel==r?" >":"  ",sel==r?37:90,PV[r-1]);}
         if(na){int pl2=(int)strlen(lastpr),mx=Wc-22;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}
-            FP("%s \033[36m⮌ switch → win %s · %.*s%s\033[0m\033[K\n",sel==0?" >":"  ",lastidx,pl2,lastpr,cut?"…":"");
+            FP("%s ⮌ switch → win %s · %.*s%s\033[K\n",sel==0?" >":"  ",lastidx,pl2,lastpr,cut?"…":"");
             if(!tl1&&fresh)FP("   \033[90m(no output yet)\033[0m\033[K\n");
             for(int r=0;r<2;r++){char*t3=r?tl2:tl1;int L3=r?ll2:ll1,mw=Wc-4;if(!t3)continue;if(mw<8)mw=8;
                 if(L3>mw){L3=mw;while(L3>0&&(t3[L3]&0xC0)==0x80)L3--;}FP("   \033[90m%.*s\033[0m\033[K\n",L3,t3);}}
         if(nn){int pl2=(int)strlen(lastpr),mx=Wc-12;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}  /* note receipt: row 0 = editor, row 1 = web */
-            FP("%s \033[36m✓ %s · %.*s%s\033[0m\033[K\n",sel==0?" >":"  ",strstr(lastnote,"/notes/")?"✎ note":"☐ task",pl2,lastpr,cut?"…":"");
+            FP("%s ✓ %s · %.*s%s\033[K\n",sel==0?" >":"  ",strstr(lastnote,"/notes/")?"✎ note":"☐ task",pl2,lastpr,cut?"…":"");
             FP("%s \033[%dm⌕ open in web\033[0m\033[K\n",sel==1?" >":"  ",sel==1?37:90);}
         for(int i=0;i<show;i++){int j=top+i,gj=j+vo,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
             int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);if(ml>W-7)ml=W-7;
