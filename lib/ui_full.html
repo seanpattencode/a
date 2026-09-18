@@ -17,7 +17,7 @@
   <iframe id=tif style="flex:1;width:100%;border:0;background:#000"></iframe>
 </div>
 <iframe id=v_tasks class=v style="width:100%;border:0"></iframe>
-<iframe id=v_profile class=v style="width:100%;border:0;background:#000"></iframe><!-- hash route: reload survives with no C route -->
+<iframe id=v_profile class=v style="width:100%;border:0;background:#000"></iframe><div id=v_model class=v style="justify-content:flex-end;padding:0 16px"></div><!-- hash route: reload survives with no C route -->
 <div id=v_note class=v style="padding-top:20px;align-items:center">
   <form id=nf style="display:flex;flex-direction:column;gap:10px;width:95vw">
     <textarea id=nc autofocus rows=1 placeholder="note — type, enter to save (shift-enter newline)" class=f style="width:100%;font-size:16px;padding:22px;box-sizing:border-box;resize:none;overflow:hidden" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();nf.requestSubmit()}"></textarea>
@@ -31,8 +31,9 @@
   <div id=nl style="width:95vw;overflow-y:auto;flex:1;margin-top:10px">__NO__</div>
 </div>
 <script>
-var views={'/':'v_index','/term':'v_term','/note':'v_note','/tasks':'v_tasks','/ag':'v_ag','#clock':'v_clock','#profile':'v_profile'};
+var views={'/':'v_index','/term':'v_term','/note':'v_note','/tasks':'v_tasks','/ag':'v_ag','#clock':'v_clock','#profile':'v_profile','#model':'v_model'};
 function _pm(t,l){pms.textContent=l+' DOM '+(performance.now()-t).toFixed(3)+'ms'}
+function mdl(b){var t=performance.now(),q='model htmlbody';if(b){for(var x of b.parentNode.children)x.style.cssText=x==b?'background:#fff;color:#000':'';q+=' '+b.textContent}var o=(performance.now()-t).toFixed(3);fetch('/api/omni',{method:'POST',body:'q='+q}).then(r=>r.text()).then(h=>{v_model.innerHTML=h;_pm(t,'op '+o+'ms · a '+q)})}
 function go(p,t=performance.now()){history.pushState(null,'',p);show(p);_pm(t,'nav '+p)}
 /* clock: wake 8ms early + spin to the boundary; hidden = 'bg untimed'; quantum measured */
 var _ckQ=(function(){var a=performance.now(),b=a;while(b===a&&performance.now()-a<6)b=performance.now();return b>a?b-a:.001})(),_ckTg=0;
@@ -44,7 +45,7 @@ ckt.textContent=(h%12||12)+':'+_ckP(d.getMinutes())+':'+_ckP(d.getSeconds())+' '
 ckd.textContent=d.toDateString().slice(0,3)+' '+d.getFullYear()+'-'+_ckP(d.getMonth()+1)+'-'+_ckP(d.getDate());
 ckl.textContent='transition +'+late.toFixed(3)+'ms · clock step '+_ckQ.toFixed(3)+'ms'+(on?'':' · bg untimed');
 var w=1000-Date.now()%1000;_ckTg=performance.now()+w;setTimeout(_ck,Math.max(0,w-8));}_ck();
-function show(p){pf.hidden=p==='#profile';for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'){if(!tif.src)tif.src='/op';setTimeout(function(){try{tif.contentWindow.focus()}catch(e){}},50);}if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='#profile')fetch('/api/omni',{method:'POST',body:'q=profile htmlbody'}).then(r=>r.text()).then(t=>{const i=t.indexOf('<!doctype'),j=t.lastIndexOf('</pre>');v_profile.srcdoc=i<0?t:t.slice(i,j>i?j:t.length)});if(p==='/'){qi.oninput();v_tasks.src='/tasks'}}
+function show(p){pf.hidden=p==='#profile';for(var k in views)window[views[k]].classList.toggle('on',k===p);if(p==='/term'){if(!tif.src)tif.src='/op';setTimeout(function(){try{tif.contentWindow.focus()}catch(e){}},50);}if(p==='/note'){setTimeout(function(){nc.focus()},0);fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h);}if(p==='#profile')fetch('/api/omni',{method:'POST',body:'q=profile htmlbody'}).then(r=>r.text()).then(t=>{const i=t.indexOf('<!doctype'),j=t.lastIndexOf('</pre>');v_profile.srcdoc=i<0?t:t.slice(i,j>i?j:t.length)});if(p==='#model')mdl();if(p==='/'){qi.oninput();v_tasks.src='/tasks'}}
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 window.onpopstate=function(){show(views[location.hash]?location.hash:location.pathname);}; 
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';nc.style.height='auto';ns.innerHTML='<span style="color:#ccc">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#ccc">saved → </span><a href="'+m[0]+'" target=_blank style="color:#fff">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#fff">save FAILED</span>'});};
@@ -62,6 +63,7 @@ _cmds.sort(function(a,b){function h(c){return c[1]==='page'||views['/'+c[0]]?1:0
 // pages = primary launchables: freq-sorted, favored on type
 var PAGES=[['/bm','a bm'],['#profile','a profile'],['/review','a review'],['/op','a op'],['/fw','a fleet'],['/music','a music'],['/note','a note'],['/tasks','a tasks'],['#clock','a clock'],['/term','a term'],['/book','a book'],['/book?sort=author','authors'],['/docs','a docs'],['/datamap','a datamap']];
 try{if(window.A&&A.native)PAGES=PAGES.concat([['native:setup','a setup'],['native:native','a native term'],['native:read','a read'],['native:rec','a rec']])}catch(e){}   // apk only: native pages via the A.native bridge
+PAGES.push(['#model','a settings'])   // settings page = lib/model.py
 /* agent picker = own page (DOM toggle, <1ms) */
 var AGO=[['c','claude'],['co','codex'],['g','agy'],['grok','grok'],['note','note'],['task','task'],['google','google']],AG=0;
 try{for(var _ai=0;_ai<AGO.length;_ai++)if(AGO[_ai][0]===localStorage.agm)AG=_ai}catch(e){}
