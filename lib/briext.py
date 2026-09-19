@@ -85,7 +85,7 @@ async function run(cmd) {
   if (cmd.action === 'open') {
     try { let v;
       if (cmd.tag && _tag.has(cmd.tag)) { try { const t = await browser.tabs.get(_tag.get(cmd.tag));
-        if (!cmd.bg) { await browser.tabs.update(t.id, {active:true}); await browser.windows.update(t.windowId, {focused:true}); }
+        if (!cmd.bg) { await browser.tabs.update(t.id, {active:true}); if (!cmd.nofocus) await browser.windows.update(t.windowId, {focused:true}); }   // nofocus: show the tab in its window without stealing keyboard focus (i web /scan dual j/k)
         v = {id:t.id, focused:!cmd.bg}; } catch (e) { _tag.delete(cmd.tag); } }
       if (!v && cmd.win) {   // win:<name> = a dedicated window (i web /scan dual mode): tabs of one job live there, never among Sean's
         let w = _win.get(cmd.win); try { if (w != null) await browser.windows.get(w); else throw 0; } catch (e) { w = (await browser.windows.create({url: cmd.url})).id; _win.set(cmd.win, w); v = (await browser.tabs.query({windowId: w}))[0]; }
