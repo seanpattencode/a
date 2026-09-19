@@ -56,7 +56,6 @@ const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'applica
 
 // openTab deduped by NORMALIZED url (origin+path): pages mutate their URLs, exact-match dupes
 const _opening = new Map();
-const _tag = new Map(), _win = new Map();   // _win: cmd.win name -> window id   // cmd.tag -> tab id: redirects (gnews) rewrite the tab's url, the id survives — open/close by tag ride this (i q)
 const _norm = u => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/,''); }
                      catch (e) { return u.split(/[?#]/)[0].replace(/\/+$/,''); } };
 function openTab(url, bg, fresh) {     // dedup by origin+path; hit → navigate to exact url
@@ -83,16 +82,7 @@ browser.tabs.onCreated.addListener(async t => {
 async function run(cmd) {
   const id = cmd.id;
   if (cmd.action === 'open') {
-    try { let v;
-      if (cmd.tag && _tag.has(cmd.tag)) { try { const t = await browser.tabs.get(_tag.get(cmd.tag));
-        if (!cmd.bg) { await browser.tabs.update(t.id, {active:true}); if (!cmd.nofocus) await browser.windows.update(t.windowId, {focused:true}); }   // nofocus: show the tab in its window without stealing keyboard focus (i web /scan dual j/k)
-        v = {id:t.id, focused:!cmd.bg}; } catch (e) { _tag.delete(cmd.tag); } }
-      if (!v && cmd.win) {   // win:<name> = a dedicated window (i web /scan dual mode): tabs of one job live there, never among Sean's
-        let w = _win.get(cmd.win); try { if (w != null) await browser.windows.get(w); else throw 0; } catch (e) { w = (await browser.windows.create({url: cmd.url})).id; _win.set(cmd.win, w); v = (await browser.tabs.query({windowId: w}))[0]; }
-        if (!v) { const t = await browser.tabs.create({url: cmd.url, windowId: w, active: !cmd.bg}); v = t; }
-        v = {id: v.id, focused: !cmd.bg}; if (cmd.tag) _tag.set(cmd.tag, v.id); }
-      if (!v) { v = await openTab(cmd.url, cmd.bg, cmd.fresh); if (cmd.tag) _tag.set(cmd.tag, v.id); }
-      return post({id, src:'background', ok:true, value:v}); }
+    try { return post({id, src:'background', ok:true, value: await openTab(cmd.url, cmd.bg, cmd.fresh)}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
   if (cmd.action === 'screenshot') {
