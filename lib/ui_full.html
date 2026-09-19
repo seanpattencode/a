@@ -17,7 +17,7 @@
   <iframe id=tif style="flex:1;width:100%;border:0;background:#000"></iframe>
 </div>
 <iframe id=v_tasks class=v style="width:100%;border:0"></iframe>
-<iframe id=v_profile class=v style="width:100%;border:0;background:#000"></iframe><div id=v_model class=v style=justify-content:flex-end></div><!-- hash route: reload survives with no C route -->
+<iframe id=v_profile class=v style="width:100%;border:0;background:#000"></iframe><div id=v_model class=v style="justify-content:flex-end;align-items:center;color:#fff"></div><!-- hash route: reload survives with no C route -->
 <div id=v_note class=v style="padding-top:20px;align-items:center">
   <form id=nf style="display:flex;flex-direction:column;gap:10px;width:95vw">
     <textarea id=nc autofocus rows=1 placeholder="note — type, enter to save (shift-enter newline)" class=f style="width:100%;font-size:16px;padding:22px;box-sizing:border-box;resize:none;overflow:hidden" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();nf.requestSubmit()}"></textarea>
@@ -33,7 +33,7 @@
 <script>
 var views={'/':'v_index','/term':'v_term','/note':'v_note','/tasks':'v_tasks','/ag':'v_ag','#clock':'v_clock','#profile':'v_profile','#model':'v_model'};
 function _pm(t,l){pms.textContent=l+' DOM '+(performance.now()-t).toFixed(3)+'ms'}
-function mdl(m){var t=performance.now();fetch('/api/omni',{method:'POST',body:"q=cmd f=~/a/adata/git/workspace/sessions.txt;"+(m&&"sed -i 's/model c[^ ]*/model claude-"+m+"/' $f;")+"grep -om1 'model c[^ ]*' $f"}).then(r=>r.text()).then(h=>{v_model.innerHTML=h+'fable-5 opus-5[1m] opus-5 sonnet-5 haiku-4-5'.split(' ').map(x=>'<div class=pg onclick=mdl(textContent)'+(h.includes(x+'\n')?' style=filter:invert(1)':'')+'>'+x+'</div>').join('');_pm(t,m)})}
+function mdl(m){var t=performance.now();fetch('/api/omni',{method:'POST',body:"q=cmd f=~/a/adata/git/workspace/sessions.txt;"+(m&&"sed -i 's/model c[^ ]*/model claude-"+m+"/' $f;")+"grep -om1 'model c[^ ]*' $f"}).then(r=>r.text()).then(h=>{var c=(/claude-(\S+)/.exec(h)||[,h])[1];v_model.innerHTML='<div style=width:min(92vw,560px)><h2>a c model: '+c+'</h2><small style=color:#888>tap to select</small>'+'fable-5-1 fable-5 opus-5[1m] opus-5 sonnet-5 haiku-4-5'.split(' ').map(x=>'<div class=pg id='+x+' onclick=mdl(id)'+(x==c?' style=filter:invert(1)>● ':'>○ ')+x+'</div>').join('')+'</div>';_pm(t,m)})}
 function go(p,t=performance.now()){history.pushState(null,'',p);show(p);_pm(t,'nav '+p)}
 /* clock: wake 8ms early + spin to the boundary; hidden = 'bg untimed'; quantum measured */
 var _ckQ=(function(){var a=performance.now(),b=a;while(b===a&&performance.now()-a<6)b=performance.now();return b>a?b-a:.001})(),_ckTg=0;
