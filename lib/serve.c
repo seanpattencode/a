@@ -784,8 +784,12 @@ static int cmd_ui(int c,char**v){  /* cygwin: lib/ui is python (hangs there): re
     if(!CYG)fallback_py("ui/__init__",c,v);
     perf_disarm();int up=!system("p=$(" PSAS "{print $2}');kill $p 2>/dev/null;sleep .2;[ -n \"$p\" ]");const char*o=c>2?v[2]:"";
     if(*o=='k'||!strcmp(o,"off")||(*o=='r'&&!up))return puts("\xe2\x9c\x93 ui off")<0;   /* reload (sh a.c): only if running */
-    bg_exec(*v,"serve");if(!*o)bg_exec(OPENER,"http://localhost:1111");
-    return puts(system("sleep .6;" PSAS "{f=1}END{exit !f}'")?"x serve exited — :1111 held by another a (win+wsl share localhost)":"\xe2\x9c\x93 http://localhost:1111 (stop: a ui off)")<0;}  /* our serve gone = it lost the port */
+    bg_exec(*v,"serve");
+    if(system("sleep .6;" PSAS "{f=1}END{exit !f}'"))return puts("x serve exited — :1111 held by another a (win+wsl share localhost)")<0;  /* our serve gone = it lost the port */
+    const char*u="http://localhost:1111";
+    if(!*o)bg_exec(OPENER,u);  /* bare a ui: open now */
+    else if(isatty(0)){printf("open %s in the default browser? [Y/n] ",u);fflush(stdout);char b[8];if(fgets(b,8,stdin)&&(*b=='\n'||(*b|32)=='y'))bg_exec(OPENER,u);}  /* a ui on: offer it */
+    return puts("\xe2\x9c\x93 http://localhost:1111 (stop: a ui off)")<0;} /* our serve gone = it lost the port */
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     {const char*op=getenv("PATH");if(!op)op="";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
     int port=argc>2?atoi(argv[2]):1111;

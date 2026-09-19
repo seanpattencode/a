@@ -5,15 +5,28 @@ PORT = 1111
 _A = expanduser('~/.local/bin/a')
 _MAC = platform.system() == 'Darwin'
 _TERMUX = isdir('/data/data/com.termux')
+_WSL = 'microsoft' in platform.release().lower()
 _r = lambda c: S.run(c, capture_output=True)
 _kill = lambda: _r(['pkill','-f','a serve'])
 
 def _url(p): return f'http://localhost:{p}'
 
+def _open(url):  # default browser per platform; WSL has no X -> hand the url to the Windows browser (mirrored localhost)
+    if _WSL: S.Popen(['powershell.exe','-NoProfile','-c','Start-Process',url], stdout=S.DEVNULL, stderr=S.DEVNULL)
+    elif _MAC: S.Popen(['open',url], stdout=S.DEVNULL, stderr=S.DEVNULL)
+    elif _TERMUX: S.Popen(['termux-open',url], stdout=S.DEVNULL, stderr=S.DEVNULL)
+    else: import webbrowser; webbrowser.open(url)
+
+def _ask_open(p):  # offer the browser only when interactive; never block install/systemd (no tty)
+    if not sys.stdin.isatty(): return
+    try: r = input(f'open {_url(p)} in the default browser? [Y/n] ')
+    except EOFError: return
+    if r.strip().lower() in ('', 'y', 'yes'): _open(_url(p))
+
 def _bg(p):
     pr = S.Popen([_A,'serve',str(p)], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL); time.sleep(0.3)
     if pr.poll() is not None: print(f'x :{p} in use — another a serve has it (win+wsl share localhost)')
-    import webbrowser; webbrowser.open(_url(p))
+    else: _open(_url(p))
 
 def _plist(): return expanduser('~/Library/LaunchAgents/com.a.ui.plist')
 def _unit(): return expanduser('~/.config/systemd/user/a-ui.service')
@@ -71,6 +84,7 @@ def run():
         if not _svc_on(): print('No service manager (use a ui)'); sys.exit(1)
         ok = _MAC or _TERMUX or (time.sleep(1) or _r(['systemctl', '--user', 'is-active', 'a-ui']).returncode == 0)
         print(f'UI service on — {_url(PORT)}' if ok else f'x a-ui failed — :{PORT} in use by another a? journalctl --user -u a-ui')
+        if ok: _ask_open(PORT)
     elif a and a[0] == 'off':
         _svc_off(); _kill(); print('UI service off')
     elif a and a[0] == 'reload':  # restart :PORT so it serves the rebuilt binary — incl. unmanaged serves (dead-runsvdir termux) and stale per-connection children
