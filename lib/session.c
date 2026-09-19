@@ -42,7 +42,11 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
             if(g){fputs("---\nname: a\ndescription: a agent manager context\nprompt_mode: full\nmodel: inherit\npermission_mode: default\nagents_md: true\n---\n",g);
                 char*cx=readf(ctxf,NULL);if(cx){fputs(cx,g);free(cx);}fclose(g);}
             snprintf(csuf,512," --agent %s",gf);}
-        else if(is_claude)snprintf(csuf,512," --append-system-prompt-file %s",ctxf);
+        else if(is_claude){char cw[P];snprintf(cw,P,"%s",ctxf);
+#ifdef __CYGWIN__
+            cygwin_conv_path(CCP_POSIX_TO_WIN_A|CCP_ABSOLUTE,ctxf,cw,P);for(char*b=cw;*b;b++)if(*b=='\\')*b='/';  /* native claude.exe reads /tmp as C:\tmp; give it the real win path, forward slashes (backslashes get eaten by the nested-quote wcmd) */
+#endif
+            snprintf(csuf,512," --append-system-prompt-file %s",cw);}
         if((is_claude||is_codex||is_grok)&&extra&&extra[0]){size_t cl=strlen(csuf);char ef[P];snprintf(ef,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(ef,extra);
                 snprintf(csuf+cl,512-cl," \"$(cat '%s')\"",ef);}
         else if(is_agy)snprintf(csuf,512," --prompt-interactive \"Read %s in full now — it is your operating context + task.\"",ctxf);
