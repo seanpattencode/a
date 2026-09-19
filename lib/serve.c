@@ -227,6 +227,7 @@ static int rvfl(char*f[5],char*fl){   /* the <diff>files</diff> of that a done, 
     return fl[0]&&fl[0]!='-'&&!strstr(fl,"..")&&strspn(fl,"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./ -")==strlen(fl)&&!strchr(f[3],'\'');}
 static int rvpath(int N,int K,char*fp,int n){char*f[5];fp[0]=0;char*rl=rvline(N,f);int ok=rl?rvdoc(f[4],f[3],K,fp,n):0;free(rl);return ok;}   /* a review: K-th <doc> path of done.log line N; 1 = found */
 static void udec(const char*s,char*o,size_t n){size_t k=0;for(;*s&&*s!='&'&&k<n-1;s++){if(*s=='%'&&isxdigit((unsigned char)s[1])&&isxdigit((unsigned char)s[2])){char h[3]={s[1],s[2],0};o[k++]=(char)strtol(h,0,16);s+=2;}else o[k++]=*s=='+'?' ':*s;}o[k]=0;}   /* one urlencoded form value, stops at & */
+static const char*ktok(long b,int i){static char k[8][16];if(b<4000)snprintf(k[i],16,"%ld tok",b/4);else snprintf(k[i],16,"%.1fk tok",b/4000.);return k[i];}   /* i = caller-chosen slot: many per printf */
 static void handle(int c){
     static char req[262144];int rn=0;
     while(rn<262143){int r=(int)read(c,req+rn,(size_t)(262143-rn));if(r<=0)break;rn+=r;req[rn]=0;if(strstr(req,"\r\n\r\n"))break;}
@@ -300,19 +301,19 @@ static void handle(int c){
             char nm[128];snprintf(nm,128,"%.*s",(int)(dot?dot-b2:(long)strlen(b2)),b2);
             long sz=stat(paths[i],&st)?0:(long)st.st_size;int on=tx&&!strcmp(nm,act);
             if(tx)AP(o,ol,"<option%s>%s",on?" selected":"",nm);
-            AP(fc,fl,"<a href=\"/doc?f=common/prompts/%s\"%s>%s <span class=g>%ld</span></a>",b2,on?" class=on":"",nm,sz/4);}
+            AP(fc,fl,"<a href=\"/doc?f=common/prompts/%s\"%s>%s <span class=g>%s</span></a>",b2,on?" class=on":"",nm,ktok(sz,1));}
         clock_gettime(CLOCK_MONOTONIC,&t1);
-        #define R(u,l) "<a class=r href=\"" u "\" style=--p:%ld%%><span>" l "</span><span>%ld</span></a>"
+        #define R(u,l) "<a class=r href=\"" u "\" style=--p:%ld%%><span>" l "</span><span>%s</span></a>"
         AP(h,hl,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>a prompt</title>"
             "<style>body{margin:0 auto;max-width:640px;padding:10px;background:#000;color:#fff;font:15px ui-monospace,monospace}a{color:#fff;text-decoration:none}.g{color:#888}.on{color:#4f4}select{font:inherit;background:#000;color:#fff;border:1px solid #444}"
             ".r{display:flex;justify-content:space-between;gap:8px;padding:7px 6px;border-bottom:1px solid #222;background:linear-gradient(90deg,#1d3a1d var(--p),#000 0)}"
             "a.r>:first-child,.f a{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.f{display:flex;flex-wrap:wrap;gap:6px}.f a{max-width:100%%;box-sizing:border-box;border:1px solid #333;border-radius:6px;padding:5px 8px}</style>"
-            "<p class=g>spawn context, in order, after the CLI's own · tok=bytes/4 · bar=share · %.4fms <span id=pm></span></p>"
-            "<form class=r action=/prompt/use style=--p:%ld%%><span>1 prompt <select name=n onchange=form.submit()>%s</select> <a href=\"/doc?f=common/prompts/%s.txt\">edit</a></span><span>%ld</span></form>"
+            "<p class=g>what each spawn reads, in order · bar = share of total · %.4fms <span id=pm></span></p>"
+            "<form class=r action=/prompt/use style=--p:%ld%%><span>1 prompt <select name=n onchange=form.submit()>%s</select> <a href=\"/doc?f=common/prompts/%s.txt\">edit</a></span><span>%s</span></form>"
             R("/prompt/raw","2 header+tools") R("/doc?f=AGENTS.md&d=code","3 AGENTS.md") R("/doc?f=mem/index.txt","4 mem index") R("/prompt/raw","5 a cat %s")
-            "<a class=r href=/prompt/raw><b>= total, raw</b><b>%ld</b></a><p class=g>files · tap=edit · save pushes</p><div class=f>%s</div>"
+            "<a class=r href=/prompt/raw><b>= total, raw</b><b>%s</b></a><p class=g>files · tap=edit · save pushes</p><div class=f>%s</div>"
             "<script>pm.textContent='page '+performance.now().toFixed(1)+'ms'</script>",
-            (double)(t1.tv_sec-t0.tv_sec)*1e3+(double)(t1.tv_nsec-t0.tv_nsec)/1e6,pb*100/T,o,act,pb/4,ht*100/T,ht/4,ag*100/T,ag/4,mi*100/T,mi/4,ca*100/T,cs,ca/4,T/4,fc);
+            (double)(t1.tv_sec-t0.tv_sec)*1e3+(double)(t1.tv_nsec-t0.tv_nsec)/1e6,pb*100/T,o,act,ktok(pb,2),ht*100/T,ktok(ht,3),ag*100/T,ktok(ag,4),mi*100/T,ktok(mi,5),ca*100/T,cs,ktok(ca,6),ktok(T,7),fc);
         #undef R
         #undef AP
         #undef FSZ
