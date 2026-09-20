@@ -2,14 +2,14 @@
 # Claude Code holds ONE login (~/.claude/.credentials.json); each run snapshots the active account into
 # ~/.claude-<email-slug>/ (CLAUDE_CONFIG_DIR dirs too), kept alive by refresh (rotates the RT — the new
 # pair MUST be written back); a stale snapshot (x row) heals next time that account is active.
-import json,os,re,sys,glob,time,urllib.request,datetime as dt
+import json,os,re,sys,glob,time,shutil,urllib.request,datetime as dt
 def J(u,d=None,h={}):
     return json.load(urllib.request.urlopen(urllib.request.Request(u,json.dumps(d).encode() if d else None,{"Content-Type":"application/json",**h})))
 def em_of(d):
     try:return json.load(open(d+"/.claude.json"))["oauthAccount"]["emailAddress"]
     except Exception:return ""
 now=dt.datetime.now(dt.timezone.utc);H=os.path.expanduser("~")
-def R(r):s=max(0,int((r-now).total_seconds()));return f'  resets {r.astimezone():%a %H:%M} ({s//3600}h{s%3600//60:02}m)'   # clamp: a reset just past printed as "-1h59m"
+def R(r):s=max(0,int((r-now).total_seconds()));return f'{s//3600}h{s%3600//60:02}m'   # clamp: avoids negative just after a reset
 mf=H+"/.claude/.credentials.json";me=em_of(H)
 def aw(p,s):open(p+".tmp","w").write(s);os.chmod(p+".tmp",0o600);os.rename(p+".tmp",p)
 def snap():  # active -> slug dir: creds + full oauthAccount
@@ -28,12 +28,18 @@ if "switch" in sys.argv[1:3]:  # a usage switch <email-part>: flip ~/.claude (pr
     j=json.load(open(H+"/.claude.json"));j["oauthAccount"]=json.load(open(m[0]+"/.claude.json"))["oauthAccount"]
     aw(H+"/.claude.json",json.dumps(j))
     print("✓ claude →",em_of(H));raise SystemExit
+W=shutil.get_terminal_size().columns
+def fit(k,m,p,t):  # drops reset before it'd wrap W; bolds pct at 100%+
+    pc=f'{p:>3}%';c=f'{k:<14} {m:<5} {pc}'
+    if t and len(c)+len(t)+5<=W:c+="  "+t
+    return c.replace(pc,f'\033[1;31m{pc}\033[0m',1) if p>=100 else c
+S=[]
 rows=[(f"{me or 'main'} (active)",mf)]
 for f in sorted(glob.glob(H+"/.claude-*/.credentials.json")):
     d=os.path.dirname(f);e=em_of(d)
     if e!=me:rows.append((e or d.split("/")[-1],f))
 for n,f in rows:
-    print(n)
+    L=[]
     try:
         c=json.load(open(f));o=c["claudeAiOauth"]
         if o["expiresAt"]/1000<time.time()+60:
@@ -44,19 +50,29 @@ for n,f in rows:
         for l in u["limits"]:
             m=((l.get("scope") or {}).get("model") or {}).get("display_name") or "all";t=""
             if l["resets_at"]:t=R(dt.datetime.fromisoformat(l["resets_at"]))
-            print(f'  {l["kind"]:14}{m:8}{l["percent"]:3}%{t}')
-    except Exception as e:print(f"  x {e}"+("  — dead refresh token; heal by running claude logged into THIS account once" if "400" in str(e) else ""))
+            L.append(fit(l["kind"],m,l["percent"],t))
+    except Exception as e:L.append(f"x {e}"+("  — dead refresh token; heal by running claude logged into THIS account once" if "400" in str(e) else ""))
+    S.append((n,L))
 try:  # codex (~/.codex, self-refreshes on codex use). UA spoof: cloudflare 403s python-urllib. TUI: /status (shows % LEFT), not /usage
     t=json.load(open(H+"/.codex/auth.json"))["tokens"]
     u=J("https://chatgpt.com/backend-api/codex/usage",h={"Authorization":"Bearer "+t["access_token"],"User-Agent":"codex"})
-    print(f'codex {u["email"]} ({u["plan_type"]})')
+    L=[]
     for w in ("primary_window","secondary_window"):
-        if u["rate_limit"].get(w):x=u["rate_limit"][w];print(f'  {("session","weekly_all")[x["limit_window_seconds"]>=86400]:14}all     {x["used_percent"]:3.0f}%'+R(dt.datetime.fromtimestamp(x["reset_at"]).astimezone()))
+        if u["rate_limit"].get(w):
+            x=u["rate_limit"][w];k=("session","weekly_all")[x["limit_window_seconds"]>=86400]
+            L.append(fit(k,"all",round(x["used_percent"]),R(dt.datetime.fromtimestamp(x["reset_at"]).astimezone())))
+    S.append((f'codex {u["email"]} ({u["plan_type"]})',L))
 except FileNotFoundError:pass
-except Exception as e:print("  x codex:",e,"— run codex once" if "401" in str(e) else "")
+except Exception as e:S.append(("codex",[f"x {e}"+("  — run codex once" if "401" in str(e) else "")]))
 try:  # grok: no usage api for cli oauth tokens — rest api rejects them, ratelimit hdrs cost a model call
-    print("grok",list(json.load(open(H+"/.grok/auth.json")).values())[0]["email"],"— no usage api")
+    S.append(("grok "+list(json.load(open(H+"/.grok/auth.json")).values())[0]["email"],["no usage api"]))
 except Exception:pass
+
+rule="─"*min(W-1,58)
+for i,(hdr,L) in enumerate(S):
+    if i:print(rule)
+    print(hdr)
+    for l in L:print("  "+l)
 # Snapshot the ACTIVE account LAST. The loop above refreshes it IN PLACE and the endpoint rotates the
 # refresh token, so a copy taken before it holds a token that is already dead — the snapshot then 400s
 # forever once that account stops being active. That is self-inflicted, not "the CLI rotated behind us".
