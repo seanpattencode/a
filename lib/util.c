@@ -13,6 +13,7 @@
 #define APP_CMD "gtk-launch"
 #endif
 static void bg_exec(const char *c,const char *a){if(!fork()){setsid();int n=open("/dev/null",O_RDWR);dup2(n,0);dup2(n,1);dup2(n,2);close(n);execlp(c,c,a,(char*)NULL);_exit(1);}}
+static pid_t bg(void){pid_t c=fork();if(!c){setsid();int d=open("/dev/null",O_WRONLY);dup2(d,1);dup2(d,2);}return c;}   /* detached child, stdout/err nulled: never holds a caller's pipe open */
 static int fexists(const char *p) { struct stat s; return stat(p, &s) == 0; }
 static int dexists(const char *p) { struct stat s; return stat(p, &s) == 0 && S_ISDIR(s.st_mode); }
 static void mkdirp(const char *p) { char t[P]; snprintf(t,P,"%s",p); for(char*s=t+1;*s;s++) if(*s=='/'){*s=0;mkdir(t,0755);*s='/';} mkdir(t,0755); }

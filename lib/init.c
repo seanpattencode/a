@@ -7,12 +7,12 @@ static void init_paths(void) {
     /* non-interactive ssh PATH on macOS omits Homebrew, so tmux/brew tools aren't found. prepend them once. */
     {const char*pe=getenv("PATH");if(!pe||!strstr(pe,"/opt/homebrew/bin")){char np[4096];snprintf(np,4096,"/opt/homebrew/bin:/usr/local/bin:%s",pe?pe:"/usr/bin:/bin");setenv("PATH",np,1);}}
 #endif
-    char self[P]; ssize_t n = -1;
+    char self[P];
 #ifdef __APPLE__
-    uint32_t sz = P - 1;
+    ssize_t n = -1; uint32_t sz = P - 1;
     if (_NSGetExecutablePath(self, &sz) == 0) { n = (ssize_t)strlen(self); char rp[P]; if (realpath(self, rp)) { snprintf(self, P, "%s", rp); n = (ssize_t)strlen(self); } }
 #else
-    n = readlink("/proc/self/exe", self, P - 1);
+    ssize_t n = readlink("/proc/self/exe", self, P - 1);
 #endif
     if (n > 0) {
         self[n] = 0; char *s = strrchr(self, '/');

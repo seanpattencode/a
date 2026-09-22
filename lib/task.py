@@ -8,6 +8,7 @@ AG=g('m_agent','claude');MD=g('m_model');EF=g('m_effort');PM=g('m_perms','bypass
 CF='--dangerously-skip-permissions'+(MD and' --model '+MD)+(EF and' --effort '+EF) # same flags a res resumes with
 MO=dict(claude=('claude-fable-5 claude-fable-5-1 claude-opus-4-8 claude-opus-5 claude-sonnet-5 claude-haiku-4-5'.split(),'max xhigh high medium low'.split()),codex=('gpt-5.5 gpt-6-astra gpt-5'.split(),'xhigh max high medium low'.split()),agy=('gemini-3.8-flash-high gemini-3.1-pro-high'.split(),'low medium high'.split())) # models+efforts per agent, default first; all-claude incl opus 4-8 (Sean 2026-09-21: fable's separate limit forces non-fable volume; he rates 4-8 > opus 5)
 def sel(k,v,o):return'<select class=bb onchange="cf(\''+k+' \'+this.value)">'+''.join('<option'+(' selected'if x==v else'')+'>'+x+'</option>'for x in o)+'</select>' # dropdown -> cf
+DVS=lambda:[DEV]+sorted(f[:-4]for f in os.listdir(D+'/ssh')if f.endswith('.txt')and f!='description.txt') # spawn-device options: this box + every ssh host (fleet dispatch, Sean 2026-09-21)
 P0=g('prompt','default');TP=D+'/common/prompts/task-agent.txt' # a j appends common/prompts/<P0>.txt under every spawn (data.c dprompt); none = appends nothing
 DEV=os.uname().nodename # this machine; a task's dev: line says where its agent lives
 TS='tasks.txt tasks-done.txt common/prompts/task-agent.txt'
@@ -93,6 +94,27 @@ def spawn(n): # board task n -> a j with the task-agent prompt, label the window
  lab=('t%d-'%n+re.sub(r'[^a-z0-9]+','-',h.lower())[:14].strip('-'))[:20].rstrip('-')
  pr=('== TASK __N__ (localhost:1111/tasks · tmux window __LABEL__) ==\n__ENTRY__\n\n'+(open(TP).read()if os.path.exists(TP)else TA)).replace('__LABEL__',lab).replace('__N__',str(n)).replace('__ENTRY__','\n'.join(ls[hi[n-1]:hi[n]]))
  if os.environ.get('TASK_DRY'):return'dry: label %s, prompt %d chars'%(lab,len(pr))
+ dv=g('m_dev')
+ if dv and dv!=DEV: # fleet spawn: RAW ssh + prompt over stdin (a ssh caps streams and re-quotes — backup.sh precedent); tag ssh:<dev>:<idx> — /op, term and fleetview all stream that target
+  try:kv=dict(l.split(': ',1)for l in open(D+f'/ssh/{dv}.txt')if': 'in l)
+  except OSError:return'x unknown spawn device %r — options: '%dv+' '.join(DVS())
+  hp=kv['Host'].strip();pt='22'
+  if':'in hp.split('@')[-1]:hp,pt=hp.rsplit(':',1)
+  pw=kv.get('Password','').strip()
+  rc='E=$(python3 -c "import json;print(json.load(open(%r))[\'oauthAccount\'][\'emailAddress\'])" 2>/dev/null);[ "$AG" != claude ]||[ -n "$E" ]||{ echo NOACCT;exit 7;};echo "ACCT:$E";PATH=$HOME/.local/bin:$PATH a j "$(cat)"'%'~/.claude.json' # account fetched on the TARGET at spawn time (Sean 2026-09-22: real-time latest, indicate when, error if unknown); claude spawns abort before a j when unreadable
+  q=subprocess.run((['sshpass','-p',pw]if pw else[])+['ssh','-p',pt,'-oStrictHostKeyChecking=accept-new','-oConnectTimeout=8']+([]if pw else['-oBatchMode=yes'])+[hp,'AG=%s;'%AG+rc.replace('~',"$HOME")],input=pr,capture_output=True,text=True,timeout=90)
+  if'NOACCT'in q.stdout:return f'x claude account UNKNOWN on {dv} — spawn refused (fix: a acct list / login there)'
+  ac=(re.search(r'ACCT:(\S+)',q.stdout)or(0,''))[1];m=re.search(r'tmux win (\d+)',q.stdout+q.stderr)
+  if not m:return'x remote spawn %s: '%dv+(q.stdout+q.stderr).strip()[-160:]
+  w='ssh:%s:%s'%(dv,m[1]);k=hi[n-1]
+  ls[k]=re.sub(TAG,'',ls[k])[:-2].rstrip()+f' [a:{w}] =='
+  ls.insert(k+1,f'dev: {dv}');open(F,'w').write('\n'.join(ls)+'\n');os.system(SYNC)
+  return'spawned on %s (%s acct %s, fetched %s) -> %s · stream: /op?w=%s'%(dv,AG,ac or'n/a',time.strftime('%T'),w,w)
+ ac=''
+ if AG=='claude': # local spawn: same real-time account read + refuse-when-unknown (Sean 2026-09-22)
+  try:
+   import json;ac=json.load(open(os.path.expanduser('~/.claude.json')))['oauthAccount']['emailAddress']
+  except Exception:return'x claude account UNKNOWN on this box — spawn refused (a acct list)'
  r=subprocess.run(['a','j',pr],capture_output=True,text=True,timeout=60);m=re.search(r'\bj-[\w.-]+',r.stdout+r.stderr)
  if not m:return'x spawn: '+(r.stdout+r.stderr).strip()[-160:]
  subprocess.run(['sh',os.path.expanduser('~/a/lib/label.sh'),lab,m[0]],timeout=10)
@@ -100,7 +122,7 @@ def spawn(n): # board task n -> a j with the task-agent prompt, label the window
   r=run(['agent',str(n),lab],True);ls,hi=blocks()
   if any(l.startswith('sid: ')for l in ls[hi[n-1]:hi[n]]):break
   time.sleep(1.2)
- return'spawned %s ← %s · '%(lab,m[0])+r
+ return'spawned %s ← %s'%(lab,m[0])+(ac and' (claude acct %s, fetched %s)'%(ac,time.strftime('%T')))+' · '+r
 def resume(n): # RESUMABLE -> LIVE: run the block's resume: line in a window carrying its label
  ls,hi=blocks()
  if not 0<n<len(hi):return'x bad task'
@@ -114,12 +136,12 @@ def page(): # Local navigation; rank = file order, date = soonest first.
   pv='\n'.join(l for l in body.splitlines() if not l.startswith(('resume: ','sid: ','dev: ')))
   m=re.search(TAG,h);w=m[1]if m else'';sd=next((l[5:].strip()for l in body.splitlines()if l.startswith('sid: ')),'');rs=next((l[8:].strip()for l in body.splitlines()if l.startswith('resume: ')),'');dvc=next((l[5:].strip()for l in body.splitlines()if l.startswith('dev: ')),'')
   inf=S.get(sd)or next((v for v in S.values()if w and v[0]==w),None)or(None if sd else(w,)+tuple(W[w])if w in W else None) # sid first; else ANY live agent holding the window — a stale sid must not hide a running agent (09-12); else the bare window
-  w=inf[0]if inf else w;st='LIVE'if inf else'NO AGENT'if not w else'RESUMABLE'if rs else'GONE';c='#6a6'if inf else'#fc6'if st=='RESUMABLE'else'#f66'
+  w=inf[0]if inf else w;st='LIVE'if inf else'REMOTE '+w.split(':')[1]if w.startswith('ssh:')else'NO AGENT'if not w else'RESUMABLE'if rs else'GONE';c='#6a6'if inf else'#8cf'if w.startswith('ssh:')else'#fc6'if st=='RESUMABLE'else'#f66'
   d=re.match(DT,h);dp=f'<span class=n style="background:#524">{d[1]}</span> 'if d else'';dv=(d[1]if d and len(d[1])>5 else'').replace(' ','T')
   D=[('rank',str(i),'position in the list'),('date',d[1]if d else'','deadline, to the second'),('state',st,'LIVE · RESUMABLE · GONE · NO AGENT'),('window',w,'tmux window name — the address it has today'),('tmux',inf[1]if inf else'','session:index'),('process',inf[2]if inf else'','foreground process in that pane'),('device',dvc,'the machine this agent runs on — cross-device spawn over ssh is future work'),('session id',sd,'THE agent — survives a reboot, unlike the window name'),('resume',rs,'full command — copy it, or press resume')]
   dt=''.join(f'<div><b title="{t}">{k}</b><span>{e(v)}</span>'+('<button class=bb style="font-size:12px;padding:0 7px" onpointerdown="navigator.clipboard.writeText(this.previousElementSibling.textContent);this.textContent=\'copied\'">copy</button>'if k=='resume'else'')+'</div>'for k,v,t in D if v)
   ix=inf[1].split(':')[-1]if inf else''
-  act=B('spawn','spawn new agent')if st=='NO AGENT'else f'<a class=bb data-w="{ix}" target=_blank>open in a term</a>'+B('go','go → local terminal',ix)if inf else B('resume','resume')if st=='RESUMABLE'else''
+  act=B('spawn','spawn new agent')if st=='NO AGENT'else f'<a class=bb data-w="{w}" target=_blank>open in a term · {e(w.split(":")[1])}</a>'if w.startswith('ssh:')else f'<a class=bb data-w="{ix}" target=_blank>open in a term</a>'+B('go','go → local terminal',ix)if inf else B('resume','resume')if st=='RESUMABLE'else''
   s=R(c,st)+(f'<span class=n>{e(w)}</span> 'if w else'')+act+'<button class=bb data-k=i onpointerdown="nf(this)">details ⋯ (i)</button>'
   return(f'<div class=tk data-i={i} data-d="{d and(d[1]if len(d[1])>5 else time.strftime("%Y-")+d[1])or""}" style="margin:6px 0;border:1px solid {c};border-radius:8px;padding:5px 8px"><div style="font-size:17px"><span class=n>rank {i}</span> {dp}{e(re.sub(DT,"== ",re.sub(TAG,"",h)).strip("= ").strip())}</div>'
    +(f'<div style="color:#999;font-size:14px;white-space:pre-wrap;margin:2px 0 0;flex:1 1 auto;min-height:0;overflow-y:auto">{LM(pv)}</div>' if pv else'')
@@ -130,7 +152,7 @@ def page(): # Local navigation; rank = file order, date = soonest first.
 +''.join(row(j+1,ls[hi[j]],'\n'.join(ls[hi[j]+1:hi[j+1]]).strip())for j in O)
  +f'<div class=top><span class=grp><button class=bb id=sR onpointerdown="tsort()">order: rank (s)</button><a class=bb href=/review style="text-decoration:none">review</a></span>'
  '<span class=grp><button class=bb onpointerdown="step(-1)">‹ prev (k)</button><b id=cnt>list</b><button class=bb onpointerdown="step(1)">next › (j)</button></span>'
- +'<span class=grp id=dgs><button class=bb onpointerdown="sp()" style="font-size:17px;font-weight:700;padding:8px 16px;background:#fff;color:#000">&#9654; spawn agents</button><input id=sn class=bb value=3 inputmode=numeric style="width:3.5em"><label class=d>on the top N tasks &#8594; results in review</label><select class=bb onchange="ga(this.value)">'+''.join('<option'+(' selected'if AG==x else'')+'>'+x+'</option>'for x in MO)+'</select>'+sel('m_model',MD or mo[0][0],mo[0])+(sel('m_effort',EF or mo[1][0],mo[1])if mo[1]else'')+sel('m_perms',PM,['bypass','ask'])+'</span><span class=grp><button class=bb onpointerdown="pv()">prompt · view/edit (o)</button></span></div>'
+ +'<span class=grp id=dgs><button class=bb onpointerdown="sp()" style="font-size:17px;font-weight:700;padding:8px 16px;background:#fff;color:#000">&#9654; spawn agents</button><input id=sn class=bb value=3 inputmode=numeric style="width:3.5em"><label class=d>on the top N tasks &#8594; results in review</label><select class=bb onchange="ga(this.value)">'+''.join('<option'+(' selected'if AG==x else'')+'>'+x+'</option>'for x in MO)+'</select>'+sel('m_model',MD or mo[0][0],mo[0])+(sel('m_effort',EF or mo[1][0],mo[1])if mo[1]else'')+sel('m_perms',PM,['bypass','ask'])+sel('m_dev',g('m_dev')or DEV,DVS())+'</span><span class=grp><button class=bb onpointerdown="pv()">prompt · view/edit (o)</button></span></div>'
  '<div id=tr0 class=d style="height:20px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">&nbsp;</div><div id=tar class=d style="height:20px;line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>'
  +'<div id=pp hidden style="border:1px solid #666;border-radius:8px;padding:8px;margin:6px 0"><div class=d>what every task agent is told. The task text is placed above it automatically. Saves to '+e(TP)+'</div><label class=d style="display:block;margin:4px 0"><input type=checkbox '+('checked 'if apnd else'')+'onchange="cf(this.checked?\'prompt default\':\'prompt none\')" style="width:18px;height:18px;vertical-align:middle"> '+('common/prompts/'+e(P0)+'.txt is also added under it on every spawn. Untick to send this prompt alone.'if apnd else'default.txt is NOT added. The agent gets this prompt alone. Tick to add it.')+'</label><textarea id=pt spellcheck=false style="width:96%;height:38vh;background:#000;color:#fff;font:14px/1.45 monospace;border:1px solid #fff;border-radius:8px;padding:8px">'+e(open(TP).read()if os.path.exists(TP)else TA)+'</textarea><div><button class=bb onpointerdown="ps()">save prompt</button></div></div>'
  

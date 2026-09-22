@@ -96,9 +96,11 @@ async function run(cmd) {
       return post({id, src:'background', ok:true, value:{navigated: t ? t.id : null}}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
-  if (cmd.action === 'close') {   // close the tab matching cmd.url (deck flip) or the active tab; privileged → must live here
-    try { const ts = await browser.tabs.query(cmd.url ? {} : {active:true, currentWindow:true});
-      const t = cmd.url ? ts.find(x => x.url && _norm(x.url) === _norm(cmd.url)) : ts[0];
+  if (cmd.action === 'close') {   // close by cmd.tag (id map) > cmd.url match > active tab; privileged → must live here
+    try { let t = null;
+      if (cmd.tag) { try { t = await browser.tabs.get(_tag.get(cmd.tag)); } catch (e) {} _tag.delete(cmd.tag); }
+      if (!t && (cmd.url || !cmd.tag)) { const ts = await browser.tabs.query(cmd.url ? {} : {active:true, currentWindow:true});
+        t = cmd.url ? ts.find(x => x.url && _norm(x.url) === _norm(cmd.url)) : ts[0]; }
       if (t) await browser.tabs.remove(t.id);
       return post({id, src:'background', ok:true, value:{closed: t ? t.id : null}}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }

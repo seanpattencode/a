@@ -9,6 +9,7 @@ Logic goes in flat files in lib folder.
 Experimental work lives in adata/git/my/ (the real path — there is no longer a my/ symlink at the repo root). It is tracked inside adata's own git repo so it travels with the rest of your personal data when you push adata, but it is NOT swept up by any per-command auto-commit (that mechanism was removed; notes/tasks still sync on their own explicit write paths). Lab work is not in a/'s context load. Promoted experiments live in a/lib/ tagged "# experimental". Promote from adata/git/my/ to a/lib/ when proven by use.
 All persistent data lives in adata folder.
 Don't push without approval. 
+Mobile-first layout: on any page a phone touches, put the things you TOUCH at the BOTTOM — search box, entry box, buttons — and let read-only content scroll above them. Thumbs live at the bottom of a phone; that is the only reachable zone one-handed. Applies to new surfaces by default, not just the ones already fixed (a note view, /flow bottom bar).
 The optimal program is maximally short fast and valuable. Edits should converge towards this.
 Never poll. Use event-driven methods only (e.g. tmux wait-for, inotifywait, signals). Polling wastes CPU and kills shared services under load.
 Issues with environment, ex dependency is not working, should be fixed by modifying a.c to systemically fix issue in code for all users not one off single device fixes.

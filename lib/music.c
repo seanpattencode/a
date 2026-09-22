@@ -23,7 +23,6 @@ static void lines(const char*f,...){char b[1200];va_list a;va_start(a,f);vsnprin
 static char*res(const char*q){lines("sed -n 's|^%s  ||p' \"%s/.index\" 2>&-|sed q",q,C);return N?L[0]:(char*)q;}   /* id → cached name via .index (N = hit) */
 static char*fp(const char*f){static char p[880];snprintf(p,880,"%s/%s",C,f);return p;}
 static void killf(const char*n){FILE*k=fopen(fp(n),"r");if(k){int d;while(fscanf(k,"%d",&d)==1)kill(-d,SIGTERM);fclose(k);}}
-static pid_t bg(void){pid_t c=fork();if(!c){setsid();int d=open("/dev/null",O_WRONLY);dup2(d,1);dup2(d,2);}return c;}
 static void ff(const char*p){execlp("ffplay","ffplay","-nodisp","-autoexit","-v","16",p,(char*)0);_exit(1);}
 static void play(const char*f,const char*src){printf("playing %s: %s\n",src,f);fflush(stdout);
     char*p=fp(f);

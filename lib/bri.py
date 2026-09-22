@@ -13,6 +13,7 @@ import socket, threading, queue, json, sys, time, os, re, glob, subprocess
 
 PORT, CMD, LOG = 1234, 1235, '/tmp/bri.log'
 pollers, pending = [], {}  # pollers: list[(Queue, browser)]  pending: id -> Queue
+backlog = []  # (ts, msg, tgt) no-id cmds that matched zero pollers: the ext's poll re-registration leaves a gap that silently ate bursts (i q pre-open) — held 60s, delivered on the next /poll; id'd cmds keep fail-fast (a late run would double-execute under caller retries)
 
 def _bid(ua):  # browser/version from UA
     m = re.search(r'Firefox/([\d.]+)', ua)
@@ -46,7 +47,11 @@ def handle(c, addr):
     head, _, rest = req.partition(b'\r\n\r\n')
     method, path, *_ = (head.split(b'\r\n',1)[0].decode(errors='replace').split() + ['',''])
     if method == 'GET' and path == '/poll':
-        q = queue.Queue(); entry = (q, _chan(head) or _bid(_ua(head))); pollers.append(entry)   # remember which exact browser this poller is
+        b = _chan(head) or _bid(_ua(head))
+        q = queue.Queue(); entry = (q, b); pollers.append(entry)   # remember which exact browser this poller is
+        now = time.time(); backlog[:] = [x for x in backlog if now - x[0] < 60]
+        for i, (_, m2, t2) in enumerate(backlog):
+            if t2 in ('all','any','*') or b == '?' or b.startswith(t2): q.put(backlog.pop(i)[1]); break
         try: cmd = q.get(timeout=25)
         except Exception: cmd = None
         try: pollers.remove(entry)
@@ -95,6 +100,7 @@ def cmd_serve():
         conn = ', '.join(sorted({b for _,b in pollers})) or 'none'
         if rid is not None: pending[rid] = queue.Queue()
         for q,_b in tq: q.put(msg)
+        if not tq and rid is None: backlog.append((time.time(), msg, tgt)); del backlog[:-32]
         err = '' if tq else f'no {tgt} client (connected: {conn}). FF ext: a bri deploy'
         if rid is None:
             c.send((f'sent to {len(tq)}/{len(pollers)} pollers (target={tgt}; connected: {conn})\n'+(f'  → {err}\n' if err else '')).encode())

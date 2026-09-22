@@ -8,6 +8,9 @@ while getopts lv:p:o: o; do case $o in
     l) L=1 ;; v) V=$OPTARG ;; p) P=$OPTARG ;; o) O=$OPTARG ;;
 esac; done
 shift $((OPTIND-1))
+[ -n "${A_BOOK_READLOG:-}" ] && [ $# -gt 0 ] && { # book read-aloud (^T in e): spoken line -> read record, live
+  printf '== %s %s say ==\n%s\n' "$(date '+%F %H:%M')" "$A_BOOK_READLOG" "$*" >> "$HOME/a/adata/git/read.log"
+  (A_BOOK_READLOG= a book next "$A_BOOK_READLOG" page >/dev/null 2>&1 &) ; }
 [ $# -eq 0 ] && { cat <<EOF
 a say [-l] [-v voice] [-p semitones] [-o out.wav] text…
   online (default): edge-tts en-GB-RyanNeural at -0.5  (-v r=ryan|s=sonia|<full>)

@@ -117,7 +117,7 @@ static void gen_icache(void){
         closedir(d);}}
 #endif
     fclose(f);
-    if(!fork()){char ad[P],fp2[P],ln[256];snprintf(ad,P,"%s/local/activity",AROOT);
+    if(!bg()){char ad[P],fp2[P],ln[256];snprintf(ad,P,"%s/local/activity",AROOT);
         char fc[P+64];snprintf(fc,sizeof(fc),"find '%s' -maxdepth 2 -name '*_*.txt' 2>/dev/null",ad);
         FILE*d=popen(fc,"r");if(!d)_exit(0);FC ct[1024]={0};int nc=0;
         while(fgets(fp2,P,d)){fp2[strcspn(fp2,"\n")]=0;FILE*af=fopen(fp2,"r");if(!af)continue;

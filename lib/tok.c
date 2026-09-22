@@ -26,7 +26,7 @@ static int cmd_tok(int c,char**v){perf_disarm();
     char*buf=NULL;size_t bl=0,bc=0,n;char tmp[8192];
     while(f&&(n=fread(tmp,1,8192,f))>0){if(bl+n+1>bc){bc=(bl+n+65536)*2;buf=realloc(buf,bc);}memcpy(buf+bl,tmp,n);bl+=n;}
     if(f)pclose(f);if(!buf)return 1;buf[bl]=0;
-    char*he=strchr(buf,'\n');if(!he)return 1;*he=0;
+    char*he=strchr(buf,'\n');if(!he){free(buf);return 1;}*he=0;
     int rp=buf[0]=='1';char*top=buf+2;
     static char*pth[32768];static long psz[32768];int np=0;
     for(char*p=he+1;p<buf+bl&&np<32768;){

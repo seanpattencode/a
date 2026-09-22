@@ -29,7 +29,7 @@ Guided walkthrough — tells you what `a` is, asks what you're working on, and t
 
 ```bash
 a                # Menu of everything — type to filter, enter to run
-a c              # New tmux window running Claude (co=codex, g=gemini, a=default)
+a c              # New tmux window running Claude (co=codex, g=agy, a=default)
 a j "prompt"     # Job: own worktree + agent, runs in the background
 a <#>            # cd to project by number
 a n "text"       # Write a note

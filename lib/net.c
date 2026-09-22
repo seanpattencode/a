@@ -29,7 +29,7 @@ static int cmd_log(int argc, char **argv) {
     if(pf){while(nf<32&&fgets(pb,P,pf)){pb[strcspn(pb,"\n")]=0;fn[nf++]=strdup(pb);}pclose(pf);}
     int o=snprintf(c,B,"cat");
     for(int i=0;i<nf;i++)o+=snprintf(c+o,(size_t)(B-o)," '%s'",fn[i]);
-    o+=snprintf(c+o,(size_t)(B-o),"|grep \"^[0-9][0-9]/\"|sort|tail -30|awk '/^[0-9][0-9]\\//{split($2,t,\":\");h=int(t[1]);m=t[2];ap=\"AM\";"
+    snprintf(c+o,(size_t)(B-o),"|grep \"^[0-9][0-9]/\"|sort|tail -30|awk '/^[0-9][0-9]\\//{split($2,t,\":\");h=int(t[1]);m=t[2];ap=\"AM\";"
         "if(h>=12){ap=\"PM\";if(h>12)h-=12}if(h==0)h=12;"
         "c=\"\";for(i=4;i<NF;i++){if(i>4)c=c\" \";c=c$i}"
         "if(length(c)>40)c=substr(c,1,18)\"...\"substr(c,length(c)-14);"
@@ -144,7 +144,7 @@ static int cmd_update(int argc, char **argv) { AB;
     init_db();load_cfg();
     puts("✓ Updated (bg)");
     /* background: build, deps, cache, sync, rclone, backup */
-    {pid_t p=fork();if(p==0){setsid();int n=open("/dev/null",O_WRONLY);dup2(n,1);dup2(n,2);close(n);
+    {if(!bg()){
         snprintf(c,B,"sh '%s/a.c'",SDIR);(void)!system(c);
         if(dc){char vp[P];snprintf(vp,P,"%s/venv/bin/pip",AROOT);
             if(!access(vp,X_OK)){snprintf(c,B,"'%s' install -q pexpect prompt_toolkit aiohttp 2>/dev/null",vp);(void)!system(c);}

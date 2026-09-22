@@ -584,6 +584,7 @@ if __name__ == "__main__":
               "a book corpus <author>  single-author .txt → adata/corpus/ (gutenberg dump + outputs), for evals\n"
               "a book yt <great> <url>  append youtube talk/interview transcripts to that great's corpus\n"
               "a book list | index | serve [start|stop] | sync\n"
+              "a book next <name> [A-B|page]  unread chunk → read.log; read.html live page\n"
               "a book archive <substr>  toggle hidden .<name>: saved, not listed")
         sys.exit(0)
 
@@ -600,6 +601,35 @@ if __name__ == "__main__":
         o = m[0].name; m[0].rename(t); print("+ restored " + t.name if t.name[0] != '.' else "+ " + t.name)
         subprocess.Popen(["rclone","moveto",f"a-gdrive2:adata/books/{o}",f"a-gdrive2:adata/books/{t.name}"],
             stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)  # cloud follows, else any sync pull resurrects the old name
+    elif cmd == "next":   # read record = the words themselves in read.log; unread = not in log by content (Sean 2026-09-15)
+        import re; N = lambda s: re.sub(r"\s+", " ", s).strip().lower()
+        n = args[2] if len(args) > 2 else sys.exit("a book next <name> [A-B|page]")
+        m = [DATA_DIR/n] if (DATA_DIR/n).is_dir() else [d for d in DATA_DIR.iterdir() if d.is_dir() and n in d.name]
+        if len(m) != 1: sys.exit(f"x {len(m)} matches")
+        b = m[0]; tf = next((p for p in (b/"output"/"explained.txt", b/"output"/(b.name+".txt"), b/"source.txt") if p.is_file()), None) or sys.exit("x no text — a book transcribe first")   # same file as a book read
+        L = [l for l in tf.read_text().splitlines() if l.strip()]
+        RL = ADATA/"git"/"read.log"; T = RL.read_text().splitlines() if RL.exists() else []
+        R = {N(l) for l in T}
+        rd = {i for i, l in enumerate(L) if N(l) in R}
+        pg = args[3:4] == ["page"]
+        if len(args) > 3 and not pg: x, y = map(int, args[3].split("-"))
+        elif not pg:
+            u = [i for i in range(len(L)) if i not in rd] or sys.exit(f"{b.name}: all {len(L)} lines read")
+            x = y = u[0]; w = 0
+            while w < 700 and y+1 < len(L): y += 1; w += len(L[y].split())
+            print("\n".join(L[x:y+1]))
+        lb = None; cur = 0   # last logged = being spoken
+        for l in T:
+            if l.startswith("== "): cur = f" {b.name} " in l
+            elif cur and l.strip(): lb = l
+        if not pg:
+            with RL.open("a") as f: f.write("== %s %s %d-%d ==\n%s\n" % (time.strftime("%F %H:%M"), b.name, x, y, "\n".join(L[x:min(y+1,len(L))])))
+            rd |= set(range(x, min(y+1, len(L)))); lb = L[min(y, len(L)-1)]
+        la = next((i for i, l2 in enumerate(L) if N(l2) == N(lb)), None) if lb else None
+        pct = 100*len(rd)//len(L); E = lambda s: s.replace("&", "&amp;").replace("<", "&lt;")
+        body = "".join(f'<div class="l{" r" if i in rd else ""}{" n" if i == la else ""}"><b>{i}</b>{E(l)}</div>' for i, l in enumerate(L))
+        (b/"read.html").write_text('<!doctype html><meta charset=utf-8><title>%s</title><style>body{background:#000;color:#fff;font:17px monospace;padding:24px;max-width:900px}.d{color:#888;font-size:14px}.l{color:#666;margin:7px 0;padding:2px 0 2px 10px;border-left:4px solid #222}.l.r{color:#fff;border-left:4px solid #fff;background:#222}.l.n{outline:2px dashed #fff}.l.n b:before{content:"\u25b6 "}.l b{color:#555;font-size:12px;margin-right:8px}.l.r b{color:#fff}</style><h3>%s — %d/%d read · %d%%</h3><div class=d>WHITE = read · dashed \u25b6 = being spoken</div>%s<script>let C=0;setInterval(async()=>{const t=await(await fetch(location.href,{cache:"no-store"})).text();if(C&&t.length!=C){const s=scrollY;document.body.innerHTML=t.split("</st"+"yle>")[1];scrollTo(0,s)}C=t.length},2000)</script>' % (b.name, b.name, len(rd), len(L), pct, body))
+        print(f"[{'page' if pg else '%d-%d ->log' % (x, y)} · {len(rd)}/{len(L)} read]")
     elif cmd == "lib":
         import json; subprocess.run("pkill -9 -f /opt/calibre;sleep 2",shell=True); p=os.path.expanduser('~/.config/calibre/global.py.json'); json.dump({**json.load(open(p)),'library_path':os.path.expanduser('~/calibre-lib')},open(p,'w'))
     elif cmd == "serve": w=Path.home()/'.local/bin/calibre'; w.exists() or (w.parent.mkdir(parents=True,exist_ok=True),w.write_text('#!/bin/sh\nsystemctl --user stop calibre-server 2>/dev/null\n/usr/bin/calibre "$@"\nsystemctl --user start calibre-server 2>/dev/null\n'),w.chmod(0o755)); subprocess.run(["systemctl","--user","--no-pager",args[2] if len(args)>2 else "status","calibre-server"])
@@ -737,6 +767,7 @@ if __name__ == "__main__":
         pos_out = f"/tmp/book_pos_{name}.txt"
         Path(pos_out).unlink(missing_ok=True)
         print(f">> reading {name} from offset {pos} ({txt})")
+        os.environ["A_BOOK_READLOG"] = name   # ^T say -> live marks
         subprocess.run(["e", "-r", f"+{pos}", "--pos-out", pos_out, str(txt)])
         new_pos = pos
         try: new_pos = int(Path(pos_out).read_text().strip())
@@ -752,6 +783,10 @@ if __name__ == "__main__":
         if updated: _idxw(IDX, lines)
         _pos_w(name, new_pos)
         print(f"+ position {pos} -> {new_pos} (register + col5)")
+        if new_pos > pos:   # paragraphs fully passed -> read record
+            raw = txt.read_text(errors="replace"); nl = lambda o: sum(1 for l in raw[:o].split("\n")[:-1] if l.strip())
+            a2, z2 = nl(pos), nl(new_pos)
+            if z2 > a2: subprocess.run(["a", "book", "next", name, f"{a2}-{z2-1}"])
         sys.exit(0)
     elif cmd in ("push", "pull", "index"):
         # cross-device library: rclone <-> a-gdrive2:books/ (a-gdrive full since 08-2026, writes 403; flipped 09-02), line per book in adata/git/books/index.txt
