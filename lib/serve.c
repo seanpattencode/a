@@ -435,7 +435,7 @@ static void handle(int c){
         if(!bkok(nm)||nm[0]=='.'){sresp(c,400,"text/plain","bad book",8);return;}
         char fr[P],to[P];snprintf(fr,P,"%s/books/%s",AROOT,nm);snprintf(to,P,"%s/books/.%s",AROOT,nm);
         if(rename(fr,to)){sresp(c,404,"text/plain","x",1);return;}sresp(c,200,"text/plain","ok",2);return;}
-    if(!strncmp(req,"POST /up?",9)){char nm[96];qp(req,"&n=",nm,96);char*bp=strstr(req,"\r\n\r\n");char f2[P];snprintf(f2,P,"%s/%s",TMP,nm);  /* <=200KB slices; qp bars / */
+    if(!strncmp(req,"POST /up?",9)){char nm[256];qp(req,"&n=",nm,256);char*bp=strstr(req,"\r\n\r\n");char f2[P];snprintf(f2,P,"%s/%s",TMP,nm);  /* nm=256: shadow-lib names run ~150c; a 96 cap truncated off the .epub/.pdf -> a book add missed the file. matches ext4's 255-byte filename limit */
         int fd=*nm&&bp?open(f2,O_WRONLY|O_CREAT|(req[11]=='1'?O_TRUNC:O_APPEND),0644):-1;
         sresp(c,fd<0||write(fd,bp+4,(size_t)(rn-(bp+4-req)))<0?400:200,"text/plain","",0);return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];qn(req,nm);
@@ -481,7 +481,8 @@ static void handle(int c){
                 "if(hd)hd.style.display=vn?'':'none';qms.textContent=(performance.now()-t0).toFixed(2)+'ms'};"
                 "q.onkeydown=function(e){if(e.key=='Enter'){var r=document.querySelector('.r:not([style*=none]) a.t');if(r)location=r.href}};"
                 "onkeydown=function(e){if(document.activeElement!=q&&!e.ctrlKey&&!e.metaKey&&(e.key.length==1||e.key=='Backspace'))q.focus()}</script>"
-                "<button id=ab onpointerdown=af.click()>+ add book</button><input id=af type=file hidden><script>af.onchange=async()=>{var f=af.files[0],m=f.name.replace(/[^\\w.]+/g,'-');for(var o=0;o<f.size;o+=2e5)await fetch('/up?s='+ +!o+'&n='+m,{method:'POST',body:f.slice(o,o+2e5)}),ab.textContent=o;navigator.sendBeacon('/api/omni','q=cmd+a+book+add+${TMPDIR:-/tmp}/'+m);setTimeout(\"location=''\",999)}</script>",
+                "<button id=ab onpointerdown=af.click()>+ add book</button><input id=af type=file multiple hidden><script>async function up(fs){for(var f of fs){var m=f.name.replace(/[^\\w.]+/g,'-');for(var o=0;o<f.size;o+=2e5)await fetch('/up?s='+ +!o+'&n='+m,{method:'POST',body:f.slice(o,o+2e5)}),ab.textContent=m+' '+o;navigator.sendBeacon('/api/omni','q=cmd+a+book+add+${TMPDIR:-/tmp}/'+m)}setTimeout(\"location=''\",999)}af.onchange=()=>up(af.files);"
+                "ondragover=e=>{e.preventDefault();ab.textContent='drop to add book'};ondragleave=e=>{if(!e.relatedTarget)ab.textContent='+ add book'};ondrop=e=>{e.preventDefault();ab.textContent='+ add book';if(e.dataTransfer.files.length)up(e.dataTransfer.files)}</script>",
                 n,(au||alp)?"":" class=on",alp?" class=on":"",au?" class=on":"");
             const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};char pk[96]="";
             for(int ii=0;ii<n&&hl<cap-2048;ii++){int i=idx[ii];
@@ -501,12 +502,13 @@ static void handle(int c){
         if(!bkok(nm)){sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];bkfile(nm,tf);
         size_t tl=0;char*txt=readf(tf,&tl);
-        if(!txt){char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);int reg=0;  /* in synced index but not local: pull in bg, page retries */
+        if(!txt){char bdir[P];snprintf(bdir,P,"%s/books/%s",AROOT,nm);struct stat bst;int local=!stat(bdir,&bst)&&S_ISDIR(bst.st_mode);  /* book here but no transcript = needs transcribe, NOT a pull loop */
+            char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);int reg=0;  /* in synced index, not local: pull in bg, page retries */
             if(ix){char pat[140];snprintf(pat,140,"\t%s\t",nm);reg=!!strstr(ix,pat);free(ix);}
-            if(reg){if(!fork()){signal(SIGCHLD,SIG_DFL);int z=open("/dev/null",O_WRONLY);if(z>=0){dup2(z,1);dup2(z,2);}execlp("a","a","book","pull",nm,(char*)0);_exit(1);}
+            if(reg&&!local){if(!fork()){signal(SIGCHLD,SIG_DFL);int z=open("/dev/null",O_WRONLY);if(z>=0){dup2(z,1);dup2(z,2);}execlp("a","a","book","pull",nm,(char*)0);_exit(1);}
                 char b[512];int bl=snprintf(b,512,"<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=5><body style=\"background:#0b0b0b;color:#fff;font:16px ui-monospace,monospace;padding:40px\">syncing %s from cloud\xe2\x80\xa6 auto-retrying</body>",nm);
                 sdoc(c,b,bl);return;}
-            sresp(c,404,"text/plain","no text — a book transcribe first",34);return;}
+            char b[640];int bl=snprintf(b,640,"<!doctype html><meta charset=utf-8><body style=\"background:#0b0b0b;color:#ddd;font:16px/1.5 ui-monospace,monospace;padding:40px\"><b style=color:#fff>%s</b> is here but not transcribed yet \xe2\x80\x94 no text to read/search.<br><br>run: <code style=color:#8cf>a book transcribe %s</code> (epub/pdf \xe2\x86\x92 text; free calibre pass, no LLM).<br><br><a href=/book style=color:#888>\xe2\x86\x90 books</a></body>",nm,nm);sdoc(c,b,bl);return;}
         long pos=bkpos(nm);if(pos<0)pos=0;
         char*esc=malloc(tl*5+1);size_t el=0;  /* escape &<>: text node==file chars, caret offset==file offset */
         for(size_t i=0;i<tl;i++){char ch=txt[i];
@@ -616,8 +618,7 @@ static void handle(int c){
         sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"POST /api/omni",14)||!strncmp(req,"POST /note",10)){
         char*body=strstr(req,"\r\n\r\n");if(!body){sresp(c,400,"text/plain","bad",3);return;}
-        body+=4;
-
+        body+=4;char*dq=strstr(body,"&d=");int dn=dq&&dq[3]>='0'?atoi(dq+3):-1;   /* &d=<project #>: the box's folder */
         int isnote=!strncmp(req,"POST /note",10);
         char*q=strstr(body,isnote?"c=":"q=");if(!q){sresp(c,400,"text/plain","no param",8);return;}
         q+=2;char*cmd=q,*w=q;   /* in-place: decoded ≤ encoded */
@@ -631,6 +632,7 @@ static void handle(int c){
         int pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){close(pp[0]);dup2(pp[1],1);dup2(pp[1],2);close(pp[1]);
             signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL); /* SIG_DFL: child git must waitpid */
+            if(dn>=0){load_proj();if(dn>=NPJ||chdir(PJ[dn].path)){dprintf(1,"x no folder: project %d\n",dn);_exit(1);}dprintf(1,"in %s\n",PJ[dn].path);}
             char*args[32]={"a"};int ac=1;char*p2=cmd;
             while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(*p2)*p2++=0;}
             args[ac]=NULL;execvp("a",args);
@@ -791,8 +793,6 @@ static void handle(int c){
                 usleep(100000);}
             _exit(0);}
         else{char tf[P];snprintf(tf,P,"%s/common/music.html",SROOT);size_t tl=0;char*th=readf(tf,&tl);if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","x",1);return;}}
-    if(!strncmp(req,"GET /datamap",12)){char tf[P];snprintf(tf,P,"%s/lib/datamap.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);   /* datamap page over `a datamap` via /api/omni */
-        if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","no datamap.html",15);return;}
     if(!strncmp(req,"GET /fw",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){   /* fleet tmux view: all windows, one re-pointing terminal */
         char tf[P];snprintf(tf,P,"%s/lib/fleetview.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
         if(th){siso(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","no fleetview.html",16);return;}
@@ -813,12 +813,12 @@ static void handle(int c){
         snprintf(dst,P,"%s/%s",ad,name);rename(src,dst);
         sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
-        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3])&&!strstr(req,"&all"))?atoi(qw+3):-1;   /* &all: skip the agent-only gate */
-        if(idx>=0){char tc[256];
-            snprintf(tc,256,"p=$(tmux display-message -t a:%d -p '#{pane_pid}' 2>/dev/null);c=$(cat /proc/$p/task/$p/children 2>/dev/null|cut -d' ' -f1);[ -n \"$c\" ]&&cat /proc/$c/comm 2>/dev/null",idx);
-            FILE*pp=popen(tc,"r");char nm[64]={0};
-            if(pp){if(fgets(nm,64,pp))nm[strcspn(nm,"\n")]=0;pclose(pp);}
-            if(strcmp(nm,"claude")&&strcmp(nm,"codex")&&strcmp(nm,"agy")&&strcmp(nm,"aider")){
+        const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3])&&!strstr(req,"&all"))?atoi(qw+3):-1;   /* &all: skip the gate */
+        if(idx>=0){char tc[256];   /* gate = the WINDOW exists (comm-name allowlist lied: codex's comm is "node", 09-21); a dead agent's pane still shows — its last output beats "no agent" */
+            snprintf(tc,256,"tmux display-message -t a:%d -p ok 2>/dev/null",idx);
+            FILE*pp=popen(tc,"r");char nm[8]={0};
+            if(pp){(void)!fgets(nm,8,pp);pclose(pp);}
+            if(strncmp(nm,"ok",2)){
                 static const char NO[]="<!doctype html><style>body{background:#000;color:#fff;font:16px system-ui;text-align:center;padding-top:40vh}a{color:#fff}</style>no agent<br><br><a href=/review>← review</a>";
                 sresp(c,200,"text/html",NO,sizeof NO-1);return;}}
         char tf[P];snprintf(tf,P,"%s/lib/term.html",SDIR);size_t tl=0;char*th=readf(tf,&tl); /* direct-DOM terminal page */
