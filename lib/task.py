@@ -6,7 +6,7 @@ _c=os.path.expanduser('~/a/adata/git/workspace/config.txt');_cfg=open(_c).read()
 g=lambda k,d='':(re.search(r'^'+k+r': *(\S+)',_cfg,re.M)or(0,d))[1] # config field
 AG=g('m_agent','claude');MD=g('m_model');EF=g('m_effort');PM=g('m_perms','bypass') # a j spawn knobs
 CF='--dangerously-skip-permissions'+(MD and' --model '+MD)+(EF and' --effort '+EF) # same flags a res resumes with
-MO=dict(claude=('claude-fable-5 claude-fable-5-1'.split(),'max high medium low'.split()),codex=('gpt-5.5 gpt-6-astra gpt-5'.split(),'xhigh max high medium low'.split()),agy=('gemini-3.8-flash-high gemini-3.1-pro-high'.split(),'low medium high'.split())) # models+efforts per agent, default first
+MO=dict(claude=('claude-fable-5 claude-fable-5-1 claude-opus-4-8 claude-opus-5 claude-sonnet-5 claude-haiku-4-5'.split(),'max xhigh high medium low'.split()),codex=('gpt-5.5 gpt-6-astra gpt-5'.split(),'xhigh max high medium low'.split()),agy=('gemini-3.8-flash-high gemini-3.1-pro-high'.split(),'low medium high'.split())) # models+efforts per agent, default first; all-claude incl opus 4-8 (Sean 2026-09-21: fable's separate limit forces non-fable volume; he rates 4-8 > opus 5)
 def sel(k,v,o):return'<select class=bb onchange="cf(\''+k+' \'+this.value)">'+''.join('<option'+(' selected'if x==v else'')+'>'+x+'</option>'for x in o)+'</select>' # dropdown -> cf
 P0=g('prompt','default');TP=D+'/common/prompts/task-agent.txt' # a j appends common/prompts/<P0>.txt under every spawn (data.c dprompt); none = appends nothing
 DEV=os.uname().nodename # this machine; a task's dev: line says where its agent lives
@@ -82,6 +82,9 @@ def setblock(n,t): # replace block n with the editor's text (first line = title;
 def pset(t): # /tasks/set n=0: save the prompt template (spawn reads TP, else TA)
  open(TP,'w').write(t.rstrip('\n')+'\n');threading.Thread(target=os.system,args=(SYNC,),daemon=True).start();return'✓ prompt saved → '+TP
 TA="You are an agent spawned to help your user accomplish the task described above. You should do this step by step with the user rather than all at once and expect that this process will result in slight or major changes in the above task as preliminary steps change what the user realizes is valuable and they review the output at each step to be able to direct the next one. You should gather context as needed then propose the most straightforward simplified thing to do and then wait for the user to ok it or modify it before actually proceeding with actions or coding beyond simply reading information. It is strongly recommended that each step be kept to under 200 token equivalent of code or information so that the user can review and redirect the thing continuously throughout the process and minimize the amount of errors and assumptions that can be made that differ from the user's goals." # Sean's text 2026-09-12, typos cleaned as ordered · the task block is prepended by spawn(), never stored in the editable template · file override: adata/git/common/prompts/task-agent.txt
+# TRIAL SOON, not built (Sean 2026-09-21): fleet dispatch — spawn task agents on a device CHOSEN by RAM/disk
+# availability (a fleet reports both) to spread many tasks across the fleet; needs tests that ram parking is
+# reliable, and multi-device spawns must land in a task (dev: line exists) + a review, so status reads from one place.
 def spawn(n): # board task n -> a j with the task-agent prompt, label the window, tag [a:label] + resume line (i web.py _spawn ported a-side: no bridge, Sean 2026-09-05)
  ls,hi=blocks()
  if not 0<n<len(hi):return'x bad task'
