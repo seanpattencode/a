@@ -17,7 +17,9 @@ v=WebKit.WebView();v.load_uri('http://localhost:1111'+''.join(sys.argv[2:]))  # 
 w=Gtk.Window(title='a');w.set_child(v)
 F=os.environ.get('A_FLASH');F and w.connect('map',lambda*_:os.kill(int(F),15))  # real window mapped -> flash dies
 v.connect('load-changed',lambda v,e:e==3 and w.set_title('a %d0ms'%(time.clock_gettime(7)*100-T)))  # 7=BOOTTIME
-k=Gtk.EventControllerKey() # F11
-k.connect('key-pressed',lambda _,k,*a:k==65480 and not(w.fullscreen,w.unfullscreen)[w.is_fullscreen()]())
-w.add_controller(k)
+def key(_c,kv,kc,st):  # F11 fullscreen; Ctrl+R / F5 = hard reload (WebKitGTK binds no reload key, so refresh did nothing)
+ if kv==65480:(w.unfullscreen if w.is_fullscreen() else w.fullscreen)();return True
+ if kv==65474 or(st&4 and kv in(114,82)):v.reload_bypass_cache();return True  # 65474=F5, 114/82=r/R, st&4=Ctrl
+ return False
+k=Gtk.EventControllerKey();k.connect('key-pressed',key);w.add_controller(k)
 w.connect('close-request',lambda*_:os._exit(0));w.present();GLib.MainLoop().run()
