@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- direct-DOM terminal for /ws (tmux-backed), served at /op. Runs at col*cw, glyphs clipped to cells = alignment by
-     construction; zero deps. ?w= ?fs= ?host= · verify: adata/git/my/term/test.py · out of scope until screamed (unk counts):
+     construction; zero deps. ?w= ?fs= · verify: adata/git/my/term/test.py · out of scope until screamed (unk counts):
      F-keys, combining marks, DECOM, 47/1047/1048, SO/SI G1 -->
 <meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -28,17 +28,15 @@ const W0=[[0x300,0x36f],[0x483,0x489],[0x591,0x5c7],[0x610,0x61a],[0x64b,0x65f],
 const wcw=c=>c<32?0:c<0x7f?1:W0.some(([a,b])=>c>=a&&c<=b)?0:W2.some(([a,b])=>c>=a&&c<=b)?2:1;
 const ACS={'`':'◆','a':'▒','f':'°','g':'±','h':'░','i':'#','j':'┘','k':'┐','l':'┌','m':'└','n':'┼','o':'⎺','p':'⎻','q':'─','r':'⎼','s':'⎽','t':'├','u':'┤','v':'┴','w':'┬','x':'│','y':'≤','z':'≥','{':'π','|':'≠','}':'£','~':'·'};
 /* fl: 1 bold 2 dim 4 ital 8 ul 16 rev 32 inv 64 strike | 128 WIDE 512 CONT */
-let cols=0,rows=0,cw=9,chh=LH,G=[],RE=[],MAIN=null;
+let cols=0,rows=0,cw=9,G=[],RE=[],MAIN=null;
 const DEF={x:0,y:0,fg:-1,bg:-1,fl:0,top:0,bot:0,wrap:true,ckm:false,vis:true,mouse:0,sgrm:false,paste:false,alt:false,pw:false,cs0:false,last:' ',lw:1,save:null};
 const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
 let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,gc=0,gl=0,polast='',curlast='',pd='',px0=0,py0=0,pcf=0;
-function drow(y){
-  dirty.add(y);
-  if(!raf)raf=requestAnimationFrame(paint);
-}
+const sched=()=>raf||=frameElement?.className=='tf'?setTimeout(paint,500):requestAnimationFrame(paint);/* fleet-hidden ('tf'): 2Hz — WebKitGTK paints hidden iframes full-rate */
+function drow(y){dirty.add(y);sched()}
 function dall(){for(let y=0;y<rows;y++)drow(y);}
 function reset(){
   Object.assign(S,DEF,{bot:rows-1});
@@ -100,7 +98,7 @@ function feed(d){
   }
   pt=performance.now()-t0;
   if(pd){if(S.y===py0&&S.x>=px0&&S.x<=px0+pd.length){const a=S.x-px0;if(a>0){gc+=a;gl=kr;pcf+=a;pd=pd.slice(a);px0=S.x;}}else{pd='';pcf=0;}}else pcf=0; /* reconcile: drop confirmed prefix; drift => disarm (password-safe) */
-  if(!raf)raf=requestAnimationFrame(paint);
+  sched();
 }
 function title(){ /* OSC 0/2 -> window pin; OSC 52 -> clipboard */
   const m=ob.match(/^[02];(?:[^:]*:)?(.*)$/);
@@ -268,10 +266,10 @@ function paint(){
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
   const pon=pcf>=1&&pd,px=Math.min(cols-1,pon?px0+pd.length:S.x),r=G[S.y],w=r&&r.l[px]&128?2:1;
-  const ph=pon?[...pd].map((c,i)=>'<span style="position:absolute;left:'+((px0+i)*cw).toFixed(2)+'px;top:'+py0*chh+'px">'+esc(c)+'</span>').join(''):'';
+  const ph=pon?[...pd].map((c,i)=>'<span style="position:absolute;left:'+((px0+i)*cw).toFixed(2)+'px;top:'+py0*LH+'px">'+esc(c)+'</span>').join(''):'';
   if(ph!==polast){po.innerHTML=ph;polast=ph;} /* only-on-change: no reflow */
   if(kf&&(pon||!kt)){sm=performance.now()-ks;kf=0;} /* s = key->visible */
-  const cs='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
+  const cs='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*LH+'px;width:'+(w*cw).toFixed(2)+'px;height:'+LH+'px;display:'+(S.vis?'block':'none');
   if(cs!==curlast){cur.style.cssText=cs;curlast=cs;}
   dt=performance.now()-t0;
   stat();
@@ -294,7 +292,7 @@ function fit(){
   cw=e.getBoundingClientRect().width/100; 
   e.remove();
   const vw=visualViewport?visualViewport.width:innerWidth,vh=(visualViewport?visualViewport.height:innerHeight)-16;
-  sizeTo(Math.max(20,Math.floor(vw/cw)),Math.max(5,Math.floor(vh/chh)));
+  sizeTo(Math.max(20,Math.floor(vw/cw)),Math.max(5,Math.floor(vh/LH)));
 }
 function sizeTo(c,r){
   if(c===cols&&r===rows&&RE.length)return;
@@ -307,8 +305,8 @@ function sizeTo(c,r){
   for(let y=0;y<rows;y++){
     const d=document.createElement('div');
     d.className='r';
-    d.style.top=y*chh+'px';
-    d.style.height=chh+'px';
+    d.style.top=y*LH+'px';
+    d.style.height=LH+'px';
     RE.push(d);
     scr.appendChild(d);
   }
@@ -317,8 +315,7 @@ function sizeTo(c,r){
 }
 function connect(){
   if(W&&W.readyState<2)return;
-  const host=Q.get('host')||location.host;
-  W=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+host+'/ws'+(wn?'?w='+encodeURIComponent(wn):''));
+  W=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws'+(wn?'?w='+encodeURIComponent(wn):''));
   W.binaryType='arraybuffer';
   W.onopen=()=>{wsOk=true;ct=performance.now();W.send(JSON.stringify({cols,rows}));stat();};
   W.onmessage=e=>feed(typeof e.data==='string'?e.data:new Uint8Array(e.data));
@@ -366,7 +363,7 @@ function key(e){
 /* local echo: pd = typed-unechoed anchored at (px0,py0); reconcile by real cursor advance; pcf>=1 gate = password-safe; grid authoritative */
 function pred(k){if(pd===''){px0=S.x;py0=S.y;}if(px0+pd.length>=cols)return;pd+=k;
   if(pcf>=1){cancelAnimationFrame(raf);raf=0;paint();}} /* SYNCHRONOUS: char in DOM this turn */
-addEventListener('keydown',key);
+addEventListener('keydown',key);onfocus=()=>{clearTimeout(raf);raf=0;paint()};
 kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); 
 kb.addEventListener('paste',e=>{
   e.preventDefault();
@@ -375,7 +372,7 @@ kb.addEventListener('paste',e=>{
 });
 function mev(b,cx,cy,rel){
   if(!S.mouse||!S.sgrm)return false;
-  const x=Math.min(cols,Math.max(1,Math.floor(cx/cw)+1)),y=Math.min(rows,Math.max(1,Math.floor((cy-16)/chh)+1));
+  const x=Math.min(cols,Math.max(1,Math.floor(cx/cw)+1)),y=Math.min(rows,Math.max(1,Math.floor((cy-16)/LH)+1));
   tx('\x1b[<'+b+';'+x+';'+y+(rel?'m':'M'));
   return true;
 }
@@ -387,12 +384,12 @@ scr.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')mev(e.button===2
 scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);}); /* drag -> tmux selection; release = copy */
 scr.addEventListener('contextmenu',e=>{if(S.mouse)e.preventDefault();});
 /* scroll at the CURSOR row, never the status bar (wheel there = selectw) */
-addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,(S.y+.5)*chh,false))e.preventDefault();},{passive:false});
+addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,(S.y+.5)*LH,false))e.preventDefault();},{passive:false});
 scr.addEventListener('touchstart',e=>ty=e.touches[0].clientY,{passive:true});
 scr.addEventListener('touchmove',e=>{ 
-  const t=e.touches[0],n=Math.trunc((t.clientY-ty)/chh);
+  const t=e.touches[0],n=Math.trunc((t.clientY-ty)/LH);
   if(!n)return;
-  for(let i=Math.abs(n);i--;)mev(n>0?64:65,t.clientX,(S.y+.5)*chh,false);
+  for(let i=Math.abs(n);i--;)mev(n>0?64:65,t.clientX,(S.y+.5)*LH,false);
   ty=t.clientY;
 },{passive:true});
 const refit=()=>{clearTimeout(rt);rt=setTimeout(fit,150);};
