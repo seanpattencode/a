@@ -34,7 +34,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,gc=0,gl=0,polast='',curlast='',pd='',px0=0,py0=0,pcf=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,polast='',curlast='',pd='',px0=0,py0=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -52,7 +52,8 @@ function clr(y,x0,x1){
   for(let i=Math.max(0,x0);i<=Math.min(cols-1,x1);i++){r.t[i]=' ';r.f[i]=-1;r.b[i]=S.bg;r.l[i]=0;}
   drow(y);
 }
-function scrl(n,dn){ /* scroll region top..bot; dn=reverse */
+function scrl(n,dn){ /* scroll region top..bot; dn=reverse; drops local echo */
+  pd='';
   while(n-->0){G.splice(dn?S.bot:S.top,1);G.splice(dn?S.top:S.bot,0,newRow());}
   for(let y=S.top;y<=S.bot;y++)drow(y);
 }
@@ -99,7 +100,7 @@ function feed(d){
     else if(c!==0x7f)put(S.cs0&&ACS[ch]?ACS[ch]:ch,wcw(c));
   }
   pt=performance.now()-t0;
-  if(pd){if(S.y===py0&&S.x>=px0&&S.x<=px0+pd.length){const a=S.x-px0;if(a>0){gc+=a;gl=kr;pcf+=a;pd=pd.slice(a);px0=S.x;}}else{pd='';pcf=0;}}else pcf=0; /* reconcile: drop confirmed prefix; drift => disarm (password-safe) */
+  if(pd&&S.y!==py0)pd=''; /* row changed: anchor stale */
   if(!raf)raf=requestAnimationFrame(paint);
 }
 function title(){ /* OSC 0/2 -> window pin; OSC 52 -> clipboard */
@@ -267,7 +268,7 @@ function paint(){
   const t0=performance.now();
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
-  const pon=pcf>=1&&pd,px=Math.min(cols-1,pon?px0+pd.length:S.x),r=G[S.y],w=r&&r.l[px]&128?2:1;
+  const pon=pd&&G[py0]&&G[py0].t[px0]===pd[0],px=Math.min(cols-1,pon?px0+pd.length:S.x),r=G[S.y],w=r&&r.l[px]&128?2:1;
   const ph=pon?[...pd].map((c,i)=>'<span style="position:absolute;left:'+((px0+i)*cw).toFixed(2)+'px;top:'+py0*chh+'px">'+esc(c)+'</span>').join(''):'';
   if(ph!==polast){po.innerHTML=ph;polast=ph;} /* only-on-change: no reflow */
   if(kf&&(pon||!kt)){sm=performance.now()-ks;kf=0;} /* s = key->visible */
@@ -277,7 +278,7 @@ function paint(){
   stat();
 }
 function stat(){ /* p=parse d=draw s=key->shown r=echo */
-  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(pd?' P'+pd.length:'')+(gc?' g'+gc+'@'+gl.toFixed(1):'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
+  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(pd?' P'+pd.length:'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
   while(g.length<rows)g.push(newRow());
@@ -361,11 +362,12 @@ function key(e){
   e.preventDefault();
   if(s.length===1){kt=ks=performance.now();kf=1;}
   tx(s);
-  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);else{pcf=0;if(pd){pd='';if(!raf)raf=requestAnimationFrame(paint);}}
+  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);
+  else if(pd){pd=k==='Backspace'&&!e.altKey?pd.slice(0,-1):'';if(!raf)raf=requestAnimationFrame(paint);}
 }
-/* local echo: pd = typed-unechoed anchored at (px0,py0); reconcile by real cursor advance; pcf>=1 gate = password-safe; grid authoritative */
+/* local echo, no per-key reconcile (Sean 2026-09-25): pd = typed printables drawn at (px0,py0), the echo paints the same glyphs beneath; controls/Enter clear (backspace pops), row change/scroll = stale anchor; hidden until the grid shows pd[0] = password-safe */
 function pred(k){if(pd===''){px0=S.x;py0=S.y;}if(px0+pd.length>=cols)return;pd+=k;
-  if(pcf>=1){cancelAnimationFrame(raf);raf=0;paint();}} /* SYNCHRONOUS: char in DOM this turn */
+  cancelAnimationFrame(raf);raf=0;paint();} /* SYNCHRONOUS: char in DOM this keydown */
 addEventListener('keydown',key);
 kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); 
 kb.addEventListener('paste',e=>{
