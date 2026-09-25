@@ -30,7 +30,7 @@ body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:
 <script>
 var S=document.getElementById('s'),Q=document.getElementById('q'),BAG={},lq='',fms='',TW=document.getElementById('tw'),MS=document.getElementById('ms');
 var cur='',sel='',rows=[],ci=0;   /* cur = shown (empty at boot) · sel = highlight */
-/* prerender +4/-1 hidden iframes: switch = visibility swap */
+/* prerender ±4 hidden iframes: switch = visibility swap */
 var FR={},V=null;
 function frameFor(tg){if(FR[tg])return FR[tg];
   var f=document.createElement('iframe');f.className='tf';
@@ -39,14 +39,13 @@ function frameFor(tg){if(FR[tg])return FR[tg];
   TW.appendChild(f);FR[tg]=f;return f;}
 function foc(){try{V.contentWindow.focus();V.contentDocument.getElementById('kb').focus({preventScroll:true});}catch(e){}}
 function ensure(){if(!rows.length)return;var want={},n=rows.length;
-  for(var d of[0,1,2,3,4,-1])want[rows[((ci+d)%n+n)%n].dataset.t]=1;   
+  for(var d=-4;d<=4;d++)want[rows[((ci+d)%n+n)%n].dataset.t]=1;
   Object.keys(FR).forEach(k=>{if(!want[k]&&k!==cur){FR[k].remove();delete FR[k];}});
-  var i=0;Object.keys(want).forEach(k=>{if(!FR[k]){var mk=()=>frameFor(k);k===cur?mk():setTimeout(mk,200+180*i++);}});claimAll();}
-/* claim: hidden frames re-take drifted windows so reflow runs unwatched */
-var clt=0;
-function claimAll(){var t=Date.now();if(t-clt<250)return;clt=t;
-  for(var k in FR)if(FR[k]!==V)try{FR[k].contentWindow.claim()}catch(e){}}
-onfocus=claimAll;document.onvisibilitychange=()=>{document.hidden||claimAll()};
+  var i=0;Object.keys(want).forEach(k=>{if(!FR[k]){var mk=()=>frameFor(k);k===cur?mk():setTimeout(mk,200+180*i++);}});
+  if(CP!==cur){CP=cur;for(var k in want)try{FR[k]&&FR[k].contentWindow.claim()}catch(e){}}}
+/* claim ONCE per position: the prepped ±4 take our size when you land, then quiet until you move —
+   window-size latest follows the most-recent claimer, so devices never fight; last navigator wins */
+var CP;
 var swms='',inms='',rtms='',wn2=0,krt=0;   /* meters: sw=switch in=key lag rtt=echo */
 function hdr(){MS.textContent=(wn2?wn2+' win':'')+(fms?' · find '+fms:'')+(swms?' · sw '+swms:'')+(inms?' · in '+inms:'')+(rtms?' · rtt '+rtms:'')+'ms';}
 function readr(){try{var m=V.contentDocument.getElementById('sb').textContent.match(/r([\d.]+)/);if(m){rtms=m[1];hdr();}}catch(e){}}
@@ -76,7 +75,7 @@ function render(txt){var g='',dev='',n=0;
     if(p[0]!==dev){dev=p[0];g+='<div class=g>'+esc(dev)+'</div>';}
     g+='<a class=w data-t="'+esc(p[1])+'">'+esc(p[2]||p[1])+'<i></i></a>';});
   var nu=g!==last;if(nu){last=g;S.innerHTML=g||'<div class=g>no windows — reachable?</div>';}   /* same list = no rebuild (4s rebuilds flickered); text in BAG */
-  filt();if(nu&&rows.length&&cur!=='@'&&!rows.some(r=>r.dataset.t===sel))open_(rows[0].dataset.t);   /* '@': never yank the working shell */
+  filt();if(nu&&rows.length&&cur!=='@')rows.some(r=>r.dataset.t===sel)?ensure():open_(rows[0].dataset.t);   /* '@': never yank the working shell */
   wn2=n;hdr();}
 S.onclick=e=>{var r=e.target.closest('.w');if(r)open_(r.dataset.t);};
 /* find = local substring over label+pane text, <1ms */
@@ -106,7 +105,7 @@ function tap(e){var c=e.code;
   /* keys must never reach a hidden frame: swallow + refocus */
   try{var fe=e.view.frameElement;if(fe&&!fe.classList.contains('on')){e.stopImmediatePropagation();e.preventDefault();foc();return;}}catch(x){}
   if(e.type==='keydown'){
-    if(/^Shift(Left|Right)$/.test(c)){if(!armed){armed=c;dirty=0;claimAll();}}
+    if(/^Shift(Left|Right)$/.test(c)){if(!armed){armed=c;dirty=0;}}
     else{if(armed)dirty=1;
       /* per-keypress meters (e.view's clock) */
       try{inms=Math.max(0,e.view.performance.now()-e.timeStamp).toFixed(2);clearTimeout(krt);krt=setTimeout(readr,130);hdr();}catch(x){}}
