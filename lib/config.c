@@ -34,11 +34,7 @@ static int cmd_uninstall(int argc, char **argv) { (void)argc;(void)argv;
     fflush(stdout); _exit(0);
 }
 
-static int cmd_e(int argc, char **argv) { AB;
-    if (argc > 2 && !strcmp(argv[2], "install")) {
-        (void)!system("curl -sL https://raw.githubusercontent.com/seanpattencode/e/main/e.c|clang -xc -Wno-everything -o ~/.local/bin/e -");
-        return 0;
-    }
+static int cmd_e(int c,char**v){(void)c;(void)v;AB;
     if (getenv("TMUX")) execlp("e", "e", (char*)NULL);
     init_db(); load_cfg();
     CWD(wd);

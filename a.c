@@ -128,7 +128,9 @@ _checkers() {
 _o3(){ $CC $A -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -w -o "$ABIN/a.opt" "$F" -lutil;}  # glibc-static first: 2.1x faster than musl (measured); musl fallback
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
-build) _PT=${EPOCHREALTIME/./};_tok_chk
+build) _PT=${EPOCHREALTIME/./}
+    [[ -x ~/.local/bin/e ]]||{ ([[ -f ~/e/e.c ]]||git clone https://github.com/seanpattencode/e ~/e;sh ~/e/e.c install) &>/dev/null & }  # no e: bg install, before the tok gate (env repair, not growth)
+    _tok_chk
     _abin
     printf '%s' $$ > "$ABIN/.bld"
     _build_fix() {
@@ -260,9 +262,6 @@ install)
     esac
     _ensure_cc
     sh "$D/a.c" && ok "a compiled" || warn "Build failed"
-    E="$HOME/e"
-    [[ -f "$E/e.c" ]] || git clone https://github.com/seanpattencode/e "$E" 2>/dev/null || :
-    [[ -f "$E/e.c" ]] && sh "$E/e.c" install || :
     _shell_funcs
     _SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12"/><text x="32" y="50" font-family="monospace" font-size="52" fill="#fff" text-anchor="middle">a</text></svg>'  # launcher icon so users SEE a exists
     [[ "$OS" == debian || "$OS" == arch || "$OS" == fedora ]] && { mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps; printf %s "$_SVG" >~/.local/share/icons/hicolor/scalable/apps/a.svg; printf '[Desktop Entry]\nType=Application\nName=a\nComment=agent manager\nExec=a\nTerminal=true\nIcon=a\nCategories=Development;\n' >~/.local/share/applications/a.desktop; ok "app icon"; }
