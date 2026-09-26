@@ -716,6 +716,10 @@ static void handle(int c){
         if(cw)fclose(cw);free(rl);free(cz);
         char ob[224];int ol=snprintf(ob,224,"archived %d rows older than %gh — hidden only, windows untouched; undo: edit adata/local/review_closed.txt",nn,hh);
         sresp(c,200,"text/plain; charset=utf-8",ob,ol);return;}
+    if(!strncmp(req,"GET /review/sweep?k=",20)){char cmd[B],out[B*2];   /* bulk clear buttons: k=agent rows with no live/saved agent (res.py state UNAVAILABLE) · k=npend convo's last reply says Nothing pending; hide-only via review_closed.txt, &dry=1 counts without writing */
+        snprintf(cmd,B,"python3 '%s/lib/res.py' res sweep %s%s 2>&1",SDIR,req[20]=='n'?"npend":"agent",strstr(req,"&dry")?" dry":"");
+        FILE*pp=popen(cmd,"r");size_t n=pp?fread(out,1,sizeof out-1,pp):0;if(pp)pclose(pp);out[n]=0;
+        sresp(c,200,"text/plain; charset=utf-8",out,(int)n);return;}
     if(!strncmp(req,"GET /review",11)){   /* a review: done.log rows (ts\tidx\tname\tdir\tmsg) newest first, per agent; shell = lib/review.html */
         char tf[P];snprintf(tf,P,"%s/lib/review.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);if(!th){sresp(c,404,"text/plain","no review.html",14);return;}
         char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);size_t n=0,nc=0;rv_t*rs=NULL;char cf[P];snprintf(cf,P,"%s/review_closed.txt",DDIR);char*cvz=readf(cf,NULL);

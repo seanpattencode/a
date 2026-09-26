@@ -8,9 +8,11 @@ import sys, os, json, glob, re, socket, subprocess, time
 DEV = socket.gethostname()
 TMS = os.environ.get("A_SNAP_SESSION", "a")          # a's tmux session (overridable for testing)
 GIT = os.path.expanduser("~/a/adata/git")
-SNAPDIR = os.path.expanduser("~/a/adata/local/sessions")  # machine-rewritten: local, never git (Sean 09-11); .prev = undo
+LOC = os.path.expanduser("~/a/adata/local")
+SNAPDIR = f"{LOC}/sessions"                           # machine-rewritten: local, never git (Sean 09-11); .prev = undo
 SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
+PD = lambda cwd: PROJ + "/" + "".join(c if c.isalnum() else "-" for c in cwd)   # cwd -> its transcript dir
 ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # session id on a claude cmdline
 try: C = dict(re.findall(r"^m_(\w+): *(.*)", open(f"{GIT}/workspace/config.txt").read(), re.M))
 except OSError: C = {}
@@ -74,8 +76,7 @@ def have(sid): return bool(sid and glob.glob(f"{PROJ}/*/{sid}.jsonl"))
 
 
 def newest_in(cwd, skip):                             # newest claude transcript in cwd's project dir not already owned
-    d = PROJ + "/" + "".join(c if c.isalnum() else "-" for c in cwd)
-    for j in sorted(glob.glob(f"{d}/*.jsonl"), key=os.path.getmtime, reverse=True):
+    for j in sorted(glob.glob(f"{PD(cwd)}/*.jsonl"), key=os.path.getmtime, reverse=True):
         s = os.path.basename(j)[:-6]
         if s not in skip: return s
     return None
@@ -360,7 +361,7 @@ def remote(host):                                     # review one box's agent w
 
 
 def _row(n):
-    try: f = open(os.path.expanduser('~/a/adata/local/done.log')).read().splitlines()[int(n)].split('\t', 4); return f[2], f[3], int(f[0]), f[4][-50:]
+    try: f = open(LOC + '/done.log').read().splitlines()[int(n)].split('\t', 4); return f[2], f[3], int(f[0]), f[4][-50:]
     except Exception: return '', '', 0, ''
 
 def _first(t, k):  # first prompt of the transcript with k before t
@@ -379,7 +380,7 @@ def watch(n):                                         # /review SSE: push on eve
         if not LINUX: time.sleep(60); continue
         ap = next((int(p) for w in windows() if w[1:3] == [name, cwd] for q in w[3] for p in tree(q) if any(os.path.basename(t) in AEXE for t in _cmdline(p).split('\0')[:2])), 0)
         pfd = max(0, C.syscall(434, ap, 0)); ifd = C.inotify_init1(0)   # micromamba py lacks os.pidfd_open
-        for d in (PROJ + '/' + ''.join(c if c.isalnum() else '-' for c in cwd), SNAPDIR): C.inotify_add_watch(ifd, d.encode(), 0x3c2)
+        for d in (PD(cwd), SNAPDIR): C.inotify_add_watch(ifd, d.encode(), 0x3c2)
         if select.select([ifd] + [pfd] * (pfd > 0), [], [], 240)[0]: time.sleep(0.6)
         else: print(':\n', flush=True)                # dead-client reap
         os.close(ifd); pfd and os.close(pfd)
@@ -401,6 +402,22 @@ def review(n, revive=False):
         if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', saved[0]['cmd']], check=True); state = 'RESUMING'
     return dict(state=state, preview=preview, window=win)
 
+def sweep(kind, dry=False):   # /review bulk clear; kinds: serve.c route
+    rd = lambda p: os.path.exists(p) and open(p).read() or ''
+    cz, hit = rd(f'{LOC}/review_closed.txt'), set()
+    op = {i: r for i in range(rd(f'{LOC}/done.log').count('\n') + 1) if (r := _row(i))[1] and f'{r[2]}\t{r[0]}\n' not in cz}
+    if kind == 'agent': hit = {i for i in op if review(i)['state'] == 'UNAVAILABLE'}
+    else:
+        for cwd in {r[1] for r in op.values()}:
+            t0 = min(r[2] for r in op.values() if r[1] == cwd)
+            for fp in glob.glob(f'{PD(cwd)}/*.jsonl'):
+                if os.path.getmtime(fp) < t0: continue
+                s = open(fp, errors='ignore').read()
+                last = next((m[-1] for l in reversed(s.splitlines()) if '"role":"assistant"' in l and (m := re.findall(r'"type":"text","text":"((?:[^"\\]|\\.)*)"', l))), '')
+                if 'nothing pending' in last[-99:].lower(): hit |= {i for i, r in op.items() if r[1] == cwd and r[3] in s}
+    if not dry: open(f'{LOC}/review_closed.txt', 'a').write(''.join(f'{op[i][2]}\t{op[i][0]}\n' for i in hit))
+    print(f"{len(hit)}/{len(op)} {'would be ' if dry else ''}archived — undo: edit adata/local/review_closed.txt")
+
 def main(a):
     via = a[0] if a and a[0] in ("res", "resume", "snap") else ""   # how we were invoked
     if via: a = a[1:]
@@ -409,6 +426,7 @@ def main(a):
     elif cmd == "show": show(a[1] if len(a) > 1 else "")
     elif cmd == "review": print(json.dumps(review(a[1], a[2:] == ['resume'])))
     elif cmd == "watch": watch(a[1])
+    elif cmd == "sweep": sweep(*a[1:])
     elif cmd == "restore": restore(dry=("--dry" in a or "-n" in a))
     elif cmd in ("", "pick"): pick()
     elif os.path.exists(HOST % cmd): remote(cmd)
