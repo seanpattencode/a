@@ -188,40 +188,35 @@ static int cmd_done(int argc,char**argv){AB;
             char*p1=strstr(ent,"::"),*p2=p1?strstr(p1+2,"::"):0;
             if(p2){*p1=*p2=0;while(*ent==' ')ent++;ck[ncu]=*ent;cc[ncu]=p1+2;cx[ncu++]=p2+2;}
             if(!nx)break;ent=nx+2;}
-        {char used[32]="pcseoyrnbv";   /* colliding key = both fire -> remap to first free */
+        {char used[32]="pcseoyrnbvdaf";   /* colliding key = both fire -> remap to first free */
             for(int i=0;i<ncu;i++){
                 if(strchr(used,ck[i])){char o=ck[i];for(const char*q="123456789adfghijklmqtuvwxz";*q;q++)if(!strchr(used,*q)){ck[i]=*q;break;}
-                    fprintf(stderr,"a done: key [%c] is built-in (p c s e o y r n b v) -> shown as [%c]; announce [%c]\n",o,ck[i],ck[i]);}
+                    fprintf(stderr,"a done: key [%c] is built-in (p c s e o y r n b v d a f) -> shown as [%c]; announce [%c]\n",o,ck[i],ck[i]);}
                 used[strlen(used)]=ck[i];}}
         if(dl[0]){char cp[P];commit_path(cp);FILE*cf=fopen(cp,"w");if(cf){fprintf(cf,"%.*s\n%s\n",(int)strcspn(me,"\n"),me,dl);fclose(cf);}}
         char np[P];int dp=(int)getpid(); /* per-invocation names: a later a done must not clobber this pane's keys */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        /* order = importance bottom-up: the BOTTOM is what's seen — actions, diff, test, report */
-        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\nAP='%s'\nw(){ printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\n",sp,np,tp?tp:"");fputs("echo '✓ done'\n",sf);
-            if(*me)fprintf(sf,"printf '\\033[1;32m=== agent report ===\\033[0m\\n';cat<<'A_RPT'\n%s\nA_RPT\n",me);
+        /* default = header p e d o; [o] only expands, each body prints on its own key; g grows the pane (Sean 2026-09-25: panel too large) */
+        if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\nAP='%s'\nw(){ printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\ng(){ tmux resizep -t \"$TMUX_PANE\" -y 70%%;}\nf(){ a diff%s%s;}\n",sp,np,tp?tp:"",dl[0]?" -- ":"",dl);
             {FILE*nf=fopen(np,"w");if(nf){
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking fable 5 (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
                 if(ts[0])fprintf(nf," echo; echo '=== TEST CMD OUTPUT ==='; %s 2>&1;",ts);
                 fprintf(nf," echo; echo '=== TASK ==='; cat '%s/common/prompts/next.txt'; } | claude -p --dangerously-skip-permissions --model claude-fable-5 --effort \"$EF\" --output-format stream-json --include-partial-messages --verbose 2>/dev/null | jq -jn --unbuffered 'foreach inputs as $e (0; if $e.event.delta.type==\"thinking_delta\" then .+$e.event.delta.estimated_tokens else . end; if $e.event.delta.type==\"thinking_delta\" then \"\\r\\u001b[2mthinking ~\\(.) tok\\u001b[0m   \" elif ($e.event.type==\"content_block_start\" and $e.event.content_block.type==\"text\") then \"\\n\\u001b[1;32m> \\u001b[0m\" elif $e.event.delta.type==\"text_delta\" then $e.event.delta.text else \"\" end)'\necho\nexec ${SHELL:-bash}\n",SROOT);fclose(nf);}}
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
             const char*KX="[ \"$k\" = %c ]&&{ tmux selectp -t $AP;tmux send -t $AP -X cancel 2>/dev/null;tmux send -t $AP -l '%s';sleep 0.4;tmux send -t $AP Enter; }\n"; /* copy-mode eats keys — cancel first */
-            if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\nprintf '\\033[1;36m=== test output (auto-run \\xc2\\xb7 [r] re-runs) ===\\033[0m\\n\\033[1;33m$ \\033[0m%%s\\n' \"$TS\"\neval \"$TS\" 2>&1\n",ts);
-            else fputs("printf '\\033[2mno test command\\033[0m\\n'\n",sf);
-            fputs("printf '\\033[1;36m=== diff ===\\033[0m\\n';D=$(a diff 2>&1);printf '%s\\n' \"$D\";TK=$(printf '%s\\n' \"$D\"|grep -aE '^(net|fork):'|tail -1)\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;36m=== focused diff: %s ===\\033[0m\\n';a diff -- %s\n",dl,dl);
-            fputs("while :;do\n",sf);
-            fputs("[ -n \"$TK\" ]&&printf '%s\\n' \"$TK\"\n",sf);  /* tok line glued to actions: no scroll */
-            fputs("if [ -z \"$M\" ];then printf '\\033[1;37m=== actions (key) ===\\033[0m\\n'\n",sf);
-            if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent to push (it commits + pushes its own changes)\\n'\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m direct push, these files only: git add+commit -- %s && git push   (whole repo = a push)\\n'\n",dl);   /* [y] = the human's paths-only push */
-            if(tp)fputs("printf '\\033[1;37m[c]\\033[0m crunch the code\\n\\033[1;37m[e]\\033[0m talk to agent\\n'\n",sf);
+            if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\n",ts);
+            fputs("TK=$(f 2>&1|grep -aE '^(net|fork):'|tail -1)\nwhile :;do\nprintf '\\033[1;32m✓ a done\\033[0m\\n'\n",sf);  /* [d] line carries the diff numbers (Sean 2026-09-25) */
+            if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent to push\\n'\n",sf);
+            if(tp)fputs("printf '\\033[1;37m[e]\\033[0m talk to agent\\n'\n",sf);
+            fputs("printf '\\033[1;37m[d]\\033[0m view diff · %s\\n' \"$TK\"\nif [ -z \"$M\" ];then printf '\\033[1;37m[o]\\033[0m more\\n';else\n",sf);
+            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m push these files only: %s\\n'\n",dl);   /* [y] = the human's paths-only push */
+            if(tp)fputs("printf '\\033[1;37m[c]\\033[0m crunch the code\\n'\n",sf);
             fprintf(sf,"printf '\\033[1;37m[v]\\033[0m edit: %%s/%.*s\\n' \"$PWD\"\n",fl,dl);
             for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;37m[%c]\\033[0m %%s: %%s\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
-            fputs("printf '\\033[1;37m[o]\\033[0m more\\n'\nelse printf '\\033[1;37m=== more (key) ===\\033[0m\\n'\n",sf);
-            if(ts[0])fputs("printf '\\033[1;37m[r]\\033[0m re-run test\\n'\n",sf);
-            fputs("printf '\\033[1;37m[n]\\033[0m suggest next step (opus)\\n'\nprintf '\\033[1;37m[b]\\033[0m suggest next + book/effort\\n'\nfi\n",sf);
-            fputs("printf '\\033[1;37m[s]\\033[0m bash shell here (your own testing) \\033[2m· other key=close\\033[0m '\nread -rsn1 k </dev/tty;echo\n",sf);
+            if(ts[0])fputs("printf '\\033[1;37m[r]\\033[0m run test\\n'\n",sf);
+            fputs("printf '\\033[1;37m[a]\\033[0m agent report\\n\\033[1;37m[f]\\033[0m full diff\\n\\033[1;37m[n]\\033[0m suggest next step\\n\\033[1;37m[b]\\033[0m suggest next + book/effort\\n\\033[1;37m[s]\\033[0m shell here \\033[2m· other key=close\\033[0m '\nfi\nread -rsn1 k </dev/tty;echo\n[ \"$k\" = o ]&&{ g;M=1;clear;}\n[ \"$k\" = f ]&&a diff\n[ \"$k\" = d ]&&{ g;f;}\n",sf);
+            fprintf(sf,"[ \"$k\" = a ]&&cat<<'A_RPT'\n%s\nA_RPT\n",me);
             if(dl[0])fputs("[ \"$k\" = y ]&&{ A_PANE=$AP a push -f;w;}\n",sf);
             if(dl[0]&&tp)fprintf(sf,KX,'p',PP);
             if(tp)fprintf(sf,KX,'c',CR);
@@ -232,12 +227,12 @@ static int cmd_done(int argc,char**argv){AB;
             if(tp)fputs("[ \"$k\" = e ]&&tmux selectp -t $AP\n",sf);
             fprintf(sf,"[ \"$k\" = v ]&&${EDITOR:-e} %.*s\n",fl,dl);
             for(int i=0;i<ncu;i++)fprintf(sf,"[ \"$k\" = %c ]&&{ %s;w;}\n",ck[i],cx[i]);
-            fputs("case \"$k\" in o) M=1;; r|n|b|v) ;; *) break;; esac\ndone\n",sf);
+            fputs("case \"$k\" in [odrnbvaf]) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
             char c[P*2];
             /* one pane: clear old outputs, split fresh */
             if(tp){snprintf(c,P*2,"tmux killp -a -t '%s' 2>/dev/null",tp);(void)!system(c);}
-            snprintf(c,P*2,"tmux splitw -v -l 70%% -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
+            snprintf(c,P*2,"tmux splitw -v -l 7 -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
     (void)!write(STDERR_FILENO,"\a",1);
     puts("✓ done");return 0;}
 
