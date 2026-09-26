@@ -386,13 +386,19 @@ def watch(n):                                         # /review SSE: push on eve
         os.close(ifd); pfd and os.close(pfd)
 
 def review(n, revive=False):
-    name, cwd, *_ = _row(n)
+    name, cwd, t, m = _row(n)
     if not LINUX: _ps()
     ws = [w for w in windows() if w[1:3] == [name, cwd]]
     panes = subprocess.run(['tmux', 'list-panes', '-t', ws[0][0], '-F', '#{pane_id}\t#{pane_pid}\t#{window_index}'], capture_output=True, text=True).stdout.splitlines() if len(ws) == 1 else []
     live = [p.split('\t') for p in panes if agent([p.split('\t')[1]])[0]]
     try: saved = [j for j in json.load(open(SNAP))['jobs'] if j['window'] == name and j['cwd'] == cwd and j['cmd']]
     except (OSError, ValueError): saved = []
+    if not live and not saved:   # snapshot forgets closed windows — fall back to the auto-collected transcript; _first's at-done-time gate keeps later quoters out, newest hit = resumed continuation
+        for f in sorted(glob.glob(f'{PD(cwd)}/*.jsonl'), key=os.path.getmtime, reverse=True):
+            try:
+                if os.path.getmtime(f) >= t and m in (s := open(f, errors='ignore').read()) and any(m in l and json.loads(l)['timestamp'] < time.strftime('%FT%T', time.gmtime(t + 9)) for l in s.splitlines()):
+                    sid = os.path.basename(f)[:-6]; saved = [{'cmd': RESUME['claude'] % sid, 'preview': _preview(sid)}]; break
+            except Exception: pass
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
     if len(live) == 1:
         p, _, win = live[0]; state = 'ALIVE'
