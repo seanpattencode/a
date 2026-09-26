@@ -34,7 +34,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,polast='',curlast='',pd='',px0=0,py0=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,polast='',curlast='',pd='',px0=0,py0=0,a0=' ';
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -269,7 +269,7 @@ function paint(){
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
   const c0=pd&&G[py0]&&G[py0].t[px0],pon=c0===pd[0];
-  if(!pon&&c0&&c0!==' ')pd=''; /* overwrite: dead burst */
+  if(pd&&!pon&&c0!==a0)pd=''; /* not echo, not anchor-time char: dead */
   const px=Math.min(cols-1,pon?px0+pd.length:S.x),r=G[S.y],w=r&&r.l[px]&128?2:1;
   const ph=pon?[...pd].map((c,i)=>'<span style="position:absolute;left:'+((px0+i)*cw).toFixed(2)+'px;top:'+py0*chh+'px">'+esc(c)+'</span>').join(''):'';
   if(ph!==polast){po.innerHTML=ph;polast=ph;} /* only-on-change: no reflow */
@@ -367,9 +367,9 @@ function key(e){
   if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);
   else if(pd){pd=k==='Backspace'&&!e.altKey?pd.slice(0,-1):'';if(!raf)raf=requestAnimationFrame(paint);}
 }
-/* local echo, no per-key reconcile: pd = typed chars at (px0,py0) — echo paints the same glyphs beneath; controls clear, edge drops (wrap = app layout), backspace pops, row/scroll/overwrite invalidate; hidden until the grid shows pd[0] = password-safe */
-function pred(k){if(pd===''){px0=S.x;py0=S.y;}pd=px0+pd.length>=cols?'':pd+k;
-  cancelAnimationFrame(raf);raf=0;paint();} /* char in DOM this key */
+/* local echo, no per-key reconcile: pd = typed chars at (px0,py0) — echo paints the same glyphs beneath; controls clear, edge drops, backspace pops, row/scroll/overwrite invalidate; hidden until the grid shows pd[0] = password-safe */
+function pred(k){if(pd===''){px0=S.x;py0=S.y;a0=G[py0].t[px0];}pd=px0+pd.length>=cols?'':pd+k;
+  cancelAnimationFrame(raf);raf=0;paint();}
 addEventListener('keydown',key);
 kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); 
 kb.addEventListener('paste',e=>{
