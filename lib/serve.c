@@ -421,7 +421,8 @@ static void handle(int c){
         while(x<tl&&x<e2+300&&!(strchr(".!?",txt[x-1])&&(txt[x]==' '||txt[x]=='\n')))x++;
         if(x<tl)e2=x;
         char*ch=malloc(e2-o+1);memcpy(ch,txt+o,e2-o);ch[e2-o]=0;free(txt);
-        if(strstr(req,"txt=1")){sresp(c,200,"text/plain; charset=utf-8",ch,(int)(e2-o));free(ch);return;}   /* apk speaks it (A.say) */
+        if(strstr(req,"txt=1")){char hh[192];int hn=snprintf(hh,192,"HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nContent-Length:%zu\r\nX-Next:%zu\r\nConnection:close\r\n\r\n",e2-o,e2);   /* apk speaks it (A.say); X-Next chains chunks */
+            (void)!write(c,hh,(size_t)hn);(void)!write(c,ch,e2-o);free(ch);return;}
         pid_t k=fork();
         if(!k){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
             signal(SIGCHLD,SIG_DFL);execlp("a","a","say",ch,(char*)0);_exit(127);}
@@ -523,7 +524,7 @@ static void handle(int c){
             "#tr a{color:#fff;text-decoration:none;padding:0 26px;font:48px/100px ui-monospace,monospace}"
             "#hud{margin-left:auto;color:#999;font:20px ui-monospace,monospace;padding:0 12px}"
             "#mp{display:none;position:fixed;bottom:100px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px ui-monospace,monospace;z-index:9}"
-            "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}</style>"
+            "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}::highlight(spk){background:#764;color:#fff}</style>"
             "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
@@ -558,12 +559,15 @@ static void handle(int c){
             "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
             "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
-            /* speak: apk in-app (A.say=GBD narrator, A.media=shade notif, shade keys land on #p) else server-side a say */
-            "var sp=0;function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}}"
-            "window._sdone=function(){sp=0;UP()};"
-            "function SP(x){var q='/booksay?n='+encodeURIComponent(N);"
-            "if(window.A&&A.say){if(x){A.shush();_sdone()}else fetch(q+'&pos='+O()+'&txt=1').then(function(r){return r.text()}).then(function(t){A.say(t);sp=1;UP()});return}"
-            "fetch(q+(x?'&stop=1':'&pos='+O())).then(function(r){return r.text()}).then(function(t){sp=t=='on'?1:0;UP()},function(){sp=0;UP()})}"
+            /* speak: apk in-app (A.say=GBD narrator, A.media=shade notif, shade keys land on #p) else server-side a say.
+               apk live-follow: engine word ranges (_srng) highlight the spoken words + auto-flip the page; _sdone + X-Next chain chunks to book end */
+            "var sp=0,cs=0,nx=0;function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}}"
+            "function SPN(p){fetch('/booksay?n='+encodeURIComponent(N)+'&pos='+p+'&txt=1').then(function(r){nx=+r.headers.get('x-next')||0;return r.text()}).then(function(t){var i=TX.indexOf(t.slice(0,60),Math.max(0,p-800));cs=i<0?p:i;A.say(t);sp=1;UP()})}"
+            "window._sdone=function(){if(sp&&nx&&nx<TX.length)SPN(nx);else{sp=0;UP()}};"
+            "function RG(a,b){var g=document.createRange(),i=ns.length-1;while(i>0&&a<bs[i])i--;g.setStart(ns[i],Math.min(a-bs[i],ns[i].length));i=ns.length-1;while(i>0&&b<bs[i])i--;g.setEnd(ns[i],Math.min(b-bs[i],ns[i].length));return g}"
+            "window._srng=function(s,e){try{var g=RG(cs+s,cs+e);CSS.highlights.set('spk',new Highlight(g));var r=g.getBoundingClientRect(),k=K.getBoundingClientRect();if(r.bottom>k.bottom||r.top<k.top){R(cs+s);G(Math.round(K.scrollTop/ph()))}}catch(x){}};"
+            "function SP(x){if(window.A&&A.say){if(x){A.shush();sp=0;UP();CSS.highlights&&CSS.highlights.delete('spk')}else SPN(O());return}"
+            "fetch('/booksay?n='+encodeURIComponent(N)+(x?'&stop=1':'&pos='+O())).then(function(r){return r.text()}).then(function(t){sp=t=='on'?1:0;UP()},function(){sp=0;UP()})}"
             "ms.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();SP(sp)});"
             "tr.addEventListener('pointerdown',function(e){e.stopPropagation()});"
             "var pe=document.createElement('b');pe.id='p';pe.play=function(){SP(0)};pe.pause=function(){SP(1)};document.body.appendChild(pe);"

@@ -59,7 +59,8 @@ if(pl)try{startForegroundService(Intent(this,Ms::class.java))}catch(e:Exception)
 private var tt:android.speech.tts.TextToSpeech?=null
 @JavascriptInterface fun say(t:String){h.post{
 if(tt==null)tt=android.speech.tts.TextToSpeech(this,android.speech.tts.TextToSpeech.OnInitListener{st->if(st==android.speech.tts.TextToSpeech.SUCCESS){val x=tt!!;x.voices?.firstOrNull{it.name=="en-gb-x-gbd-network"}?.let{x.setVoice(it)};x.setPitch(0.48f)
-x.setOnUtteranceProgressListener(object:android.speech.tts.UtteranceProgressListener(){override fun onStart(id:String){};override fun onDone(id:String){jsEval("window._sdone&&_sdone()")};override fun onError(id:String){jsEval("window._sdone&&_sdone()")}})
+x.setOnUtteranceProgressListener(object:android.speech.tts.UtteranceProgressListener(){override fun onStart(id:String){};override fun onDone(id:String){jsEval("window._sdone&&_sdone()")};override fun onError(id:String){jsEval("window._sdone&&_sdone()")}
+override fun onRangeStart(id:String,s:Int,e:Int,f:Int){jsEval("window._srng&&_srng($s,$e)")}})
 x.speak(t,android.speech.tts.TextToSpeech.QUEUE_FLUSH,null,"a")}})
 else tt!!.speak(t,android.speech.tts.TextToSpeech.QUEUE_FLUSH,null,"a")}}
 @JavascriptInterface fun shush(){h.post{tt?.stop()}}
