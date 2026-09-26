@@ -421,6 +421,7 @@ static void handle(int c){
         while(x<tl&&x<e2+300&&!(strchr(".!?",txt[x-1])&&(txt[x]==' '||txt[x]=='\n')))x++;
         if(x<tl)e2=x;
         char*ch=malloc(e2-o+1);memcpy(ch,txt+o,e2-o);ch[e2-o]=0;free(txt);
+        if(strstr(req,"txt=1")){sresp(c,200,"text/plain; charset=utf-8",ch,(int)(e2-o));free(ch);return;}   /* apk speaks it (A.say) */
         pid_t k=fork();
         if(!k){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
             signal(SIGCHLD,SIG_DFL);execlp("a","a","say",ch,(char*)0);_exit(127);}
@@ -517,11 +518,11 @@ static void handle(int c){
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
             "<style>html,body{margin:0;background:#0b0b0b;overflow:hidden;height:100%%;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}"
             /* #bk = the reading area; floor(clientHeight/lh) lines, scrollTop steps land on line boundaries */
-            "#bk{position:fixed;top:40px;bottom:24px;left:0;right:0;max-width:680px;margin:0 auto;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:21px/1.85 Georgia,serif;padding:0 32px;box-sizing:border-box}"
-            "#tr{position:fixed;top:0;left:0;right:0;height:34px;display:flex;align-items:center;background:#000;z-index:9}"
-            "#tr a{color:#fff;text-decoration:none;padding:7px 13px;font:15px ui-monospace,monospace}"
-            "#hud{margin-left:auto;color:#999;font:12px ui-monospace,monospace;padding:0 12px}"
-            "#mp{display:none;position:fixed;top:34px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:14px ui-monospace,monospace;z-index:9}"
+            "#bk{position:fixed;top:12px;bottom:108px;left:0;right:0;max-width:680px;margin:0 auto;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:21px/1.85 Georgia,serif;padding:0 32px;box-sizing:border-box}"
+            "#tr{position:fixed;bottom:0;left:0;right:0;height:100px;display:flex;align-items:center;background:#000;z-index:9}"
+            "#tr a{color:#fff;text-decoration:none;padding:0 26px;font:48px/100px ui-monospace,monospace}"
+            "#hud{margin-left:auto;color:#999;font:20px ui-monospace,monospace;padding:0 12px}"
+            "#mp{display:none;position:fixed;bottom:100px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px ui-monospace,monospace;z-index:9}"
             "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}</style>"
             "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
@@ -536,7 +537,7 @@ static void handle(int c){
             "function save(){var b='pos='+O(),u='/book?n='+encodeURIComponent(N);navigator.sendBeacon?navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'})):fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
             /* whole-screen pages via scrollTop (sync, sub-ms); flip on pointerdown/wheel/keys */
             "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,st;"
-            "function fit(){K.style.bottom='24px';K.style.bottom=(24+K.clientHeight%%lh)+'px';}"   /* whole-line snap (%% = JS modulo in this fmt) */
+            "function fit(){K.style.bottom='108px';K.style.bottom=(108+K.clientHeight%%lh)+'px';}"   /* whole-line snap (%% = JS modulo in this fmt) */
             "function ph(){return Math.max(lh,Math.floor(K.clientHeight/lh)*lh);}"
             "function NP(){return Math.max(0,Math.ceil((K.scrollHeight-K.clientHeight)/ph()));}"
             "function G(p){p=Math.max(0,Math.min(p,NP()));K.scrollTop=p*ph();pg=p;U();clearTimeout(st);st=setTimeout(save,500);}"
@@ -557,9 +558,15 @@ static void handle(int c){
             "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
             "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
-            /* speak via server-side a say; reply = state */
-            "var sp=0;ms.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();"
-            "fetch('/booksay?n='+encodeURIComponent(N)+(sp?'&stop=1':'&pos='+O())).then(function(r){return r.text()}).then(function(t){sp=t=='on'?1:0;ms.textContent=sp?'\\u25a0':'\\u25b6'},function(){sp=0;ms.textContent='\\u25b6'})});"
+            /* speak: apk in-app (A.say=GBD narrator, A.media=shade notif, shade keys land on #p) else server-side a say */
+            "var sp=0;function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}}"
+            "window._sdone=function(){sp=0;UP()};"
+            "function SP(x){var q='/booksay?n='+encodeURIComponent(N);"
+            "if(window.A&&A.say){if(x){A.shush();_sdone()}else fetch(q+'&pos='+O()+'&txt=1').then(function(r){return r.text()}).then(function(t){A.say(t);sp=1;UP()});return}"
+            "fetch(q+(x?'&stop=1':'&pos='+O())).then(function(r){return r.text()}).then(function(t){sp=t=='on'?1:0;UP()},function(){sp=0;UP()})}"
+            "ms.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();SP(sp)});"
+            "tr.addEventListener('pointerdown',function(e){e.stopPropagation()});"
+            "var pe=document.createElement('b');pe.id='p';pe.play=function(){SP(0)};pe.pause=function(){SP(1)};document.body.appendChild(pe);"
             "</script>",nm,pos);
         sdoc(c,pg,hl);free(pg);return;}
     if(!strncmp(req,"GET /bookfile",13)){char nm[128];qn(req,nm);  /* raw book asset with real mime → pdf opens in the browser's viewer */

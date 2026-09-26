@@ -55,6 +55,14 @@ ms!!.setMetadata(android.media.MediaMetadata.Builder().putString(android.media.M
 ms!!.setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE).setState(if(pl)PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,-1L,1f).build())
 ms!!.isActive=true;Ms.tok=ms!!.sessionToken;Ms.title=title;Ms.playing=pl
 if(pl)try{startForegroundService(Intent(this,Ms::class.java))}catch(e:Exception){} else{Ms.inst?.stopForeground(2);Ms.upd(this)}}}   /* paused: drop FGS, keep notif so controls stay */
+/* in-app narrator: GBD voice @0.48 (= say.sh/Rdr picks); backgrounded termux can't am-start the TTS apk, which lost this voice */
+private var tt:android.speech.tts.TextToSpeech?=null
+@JavascriptInterface fun say(t:String){h.post{
+if(tt==null)tt=android.speech.tts.TextToSpeech(this,android.speech.tts.TextToSpeech.OnInitListener{st->if(st==android.speech.tts.TextToSpeech.SUCCESS){val x=tt!!;x.voices?.firstOrNull{it.name=="en-gb-x-gbd-network"}?.let{x.setVoice(it)};x.setPitch(0.48f)
+x.setOnUtteranceProgressListener(object:android.speech.tts.UtteranceProgressListener(){override fun onStart(id:String){};override fun onDone(id:String){jsEval("window._sdone&&_sdone()")};override fun onError(id:String){jsEval("window._sdone&&_sdone()")}})
+x.speak(t,android.speech.tts.TextToSpeech.QUEUE_FLUSH,null,"a")}})
+else tt!!.speak(t,android.speech.tts.TextToSpeech.QUEUE_FLUSH,null,"a")}}
+@JavascriptInterface fun shush(){h.post{tt?.stop()}}
 private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this;this.readyState=0;this.send=function(d){A.wsSend(d+'')};this.close=function(){this.readyState=3};A.wsOpen(url)};window._wsOpen=function(){if(_w){_w.readyState=1;if(_w.onopen)_w.onopen()}};window._wsMsg=function(d){if(_w&&_w.onmessage)_w.onmessage({data:d})};window._wsClose=function(c){if(_w){_w.readyState=3;if(_w.onclose)_w.onclose({code:c,wasClean:false})}}})()"
 private var openMenu:(()->Unit)?=null;private var backB:(()->Unit)?=null;private var nav:((String)->Unit)?=null
 /* programmatic menu control: am start -n com.aios.a/.M --es nav note   (or --ez menu true to open the menu) */
@@ -66,7 +74,7 @@ override fun onNewIntent(i:Intent){super.onNewIntent(i);setIntent(i);applyNav(i)
 private fun goMenu(){val f=backB;if(f!=null)f() else moveTaskToBack(true)}   // back = menu; NEVER finish (thrown-out-of-app bug)
 override fun onBackPressed(){goMenu()}
 override fun onResume(){val _wt=android.os.SystemClock.elapsedRealtime();super.onResume();if(!su){su=true;setup()};spawn();startWd(this);if(!loaded){n=0;h.postDelayed({if(!loaded)w.loadUrl(cur)},700)};rt?.post{android.util.Log.i("aPerf","warm: resume->frame "+(android.os.SystemClock.elapsedRealtime()-_wt)+"ms")}}
-override fun onDestroy(){try{ms?.release()}catch(e:Exception){};Ms.tok=null;Ms.playing=false;stopService(Intent(this,Ms::class.java));Ms.nm(this).cancel(9);super.onDestroy()}   /* task swiped = player gone: no zombie "playing" notification */
+override fun onDestroy(){try{ms?.release()}catch(e:Exception){};try{tt?.shutdown()}catch(e:Exception){};Ms.tok=null;Ms.playing=false;stopService(Intent(this,Ms::class.java));Ms.nm(this).cancel(9);super.onDestroy()}   /* task swiped = player gone: no zombie "playing" notification */
 private val nl by lazy{applicationInfo.nativeLibraryDir}
 private fun setup(){val ui=File(filesDir,"lib");ui.mkdirs();val up=File(ui,"ui_full.html");assets.open("ui_full.html").use{i->up.outputStream().use{o->i.copyTo(o)}}  /* always refresh: reinstall must update the UI */
 val ti=File(filesDir,"terminfo");if(!File(ti,"x/xterm-256color").exists()){ti.deleteRecursively();ti.mkdirs();val src=File(filesDir,"terminfo.src");if(!src.exists())assets.open("terminfo.src").use{i->src.outputStream().use{o->i.copyTo(o)}}
