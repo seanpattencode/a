@@ -524,8 +524,10 @@ static void handle(int c){
             "#tr a{color:#fff;text-decoration:none;padding:0 26px;font:48px/100px ui-monospace,monospace}"
             "#hud{margin-left:auto;color:#999;font:20px ui-monospace,monospace;padding:0 12px}"
             "#mp{display:none;position:fixed;bottom:100px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px ui-monospace,monospace;z-index:9}"
-            "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}::highlight(spk){background:#764;color:#fff}</style>"
-            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><div id=hud></div></div><div id=mp></div><pre id=bk>");
+            "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}::highlight(spk){background:#764;color:#fff}::highlight(fnd){background:#a80;color:#000}"
+            "#fp{display:none;position:fixed;bottom:100px;left:0;right:0;max-width:680px;margin:0 auto;background:#000;z-index:9;padding:10px 12px;box-sizing:border-box}"
+            "#fq{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px ui-monospace,monospace;padding:8px 10px}#fc{color:#999;font:22px ui-monospace,monospace;padding-left:12px}</style>"
+            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a><div id=hud></div></div><div id=mp></div><div id=fp><input id=fq placeholder=find><span id=fc></span></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,ns=[].slice.call(K.childNodes),T=0,bs=[];"
@@ -544,7 +546,7 @@ static void handle(int c){
             "function G(p){p=Math.max(0,Math.min(p,NP()));K.scrollTop=p*ph();pg=p;U();clearTimeout(st);st=setTimeout(save,500);}"
             "addEventListener('pointerdown',function(e){G(pg+(e.clientX<innerWidth/3?-1:1));e.preventDefault();});"
             "addEventListener('wheel',function(e){G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
-            "addEventListener('keydown',function(e){var k=e.key;if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
+            "addEventListener('keydown',function(e){var k=e.key;if(((e.ctrlKey||e.metaKey)&&(k==='f'||k==='F'))||k==='/'){FT(1);e.preventDefault();return}if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
             "addEventListener('resize',function(){fit();G(pg);});"
             "requestAnimationFrame(function(){fit();if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
             "addEventListener('pagehide',save);addEventListener('visibilitychange',function(){if(document.hidden)save();});"
@@ -559,6 +561,15 @@ static void handle(int c){
             "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
             "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
+            /* find (Ctrl-F, /, ⌕): native find can't scroll the hidden-overflow pager nor match across hard wraps — fold case/dashes/whitespace runs over TX, jump = the mark pattern */
+            "var FH=[],FI=-1,FV=null;"
+            "function FN(v){FH=[];FI=-1;if(!/\\S/.test(v))return;var q=v.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&').replace(/[\\s\\u2014\\u2013-]+/g,'[\\\\s\\\\u2014\\\\u2013-]+'),rx=new RegExp(q,'gi'),m;while((m=rx.exec(TX))&&FH.length<500)FH.push([m.index,m.index+m[0].length])}"
+            "function FG(d){if(!FH.length){fc.textContent='0/0';return}FI=((FI+d)%%FH.length+FH.length)%%FH.length;var h=FH[FI];try{CSS.highlights.set('fnd',new Highlight(RG(h[0],h[1])))}catch(x){}"
+            "R(h[0]);U();fc.textContent=(FI+1)+'/'+FH.length;clearTimeout(st);st=setTimeout(save,500)}"
+            "function FT(s){fp.style.display=s?'block':'none';if(s){fq.focus();fq.select()}else{fq.blur();try{CSS.highlights.delete('fnd')}catch(x){}}}"
+            "mf.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();FT(fp.style.display!='block')});"
+            "fp.addEventListener('pointerdown',function(e){e.stopPropagation()});"
+            "fq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Enter'){if(fq.value!==FV){FV=fq.value;FN(FV)}FG(e.shiftKey?-1:1)}else if(e.key==='Escape')FT(0)});"
             /* speak: apk in-app (A.say=GBD narrator, A.media=shade notif, shade keys land on #p) else server-side a say.
                apk live-follow: engine word ranges (_srng) highlight the spoken words + auto-flip the page; _sdone + X-Next chain chunks to book end */
             "var sp=0,cs=0,nx=0;function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}}"
