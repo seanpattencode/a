@@ -22,13 +22,13 @@ body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:
 #q{flex:1 1 90px;min-width:70px;margin:8px 2px;background:#000;color:#fff;border:1px solid #333;border-radius:6px;padding:5px 8px;font:19px system-ui}
 .w i{display:block;color:#888;font-size:13px;overflow:hidden;text-overflow:ellipsis}
 [hidden]{display:none!important}
-#cur{flex:1;min-width:0;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#cw{flex:1;min-width:0;color:#888;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
-<div id=top><b>a fleet</b><div id=cur></div><span id=ms>scanning fleet…</span><span style=color:#555>tap Shift = find — never reaches the shell</span></div>
+<div id=top><b>a fleet</b><div id=cw></div><span id=ms>scanning fleet…</span><span style=color:#555>tap Shift = find — never reaches the shell</span></div>
 <div id=main><div id=tw></div><div id=s>…</div></div>
 <div id=nav><button class=nb id=tg>☰</button><input id=q placeholder="find any session"><button class=nb id=pv>◀</button><button class=nb id=nx>▶</button></div>
 <script>
-var S=document.getElementById('s'),Q=document.getElementById('q'),BAG={},lq='',fms='',TW=document.getElementById('tw'),MS=document.getElementById('ms');
+var S=s,Q=q,TW=tw,MS=ms,BAG={},lq='',fms='';   /* bare ids = window globals, as tg/pv/nx below */
 var cur='',sel='',rows=[],ci=0;   /* cur = shown (empty at boot) · sel = highlight */
 /* prerender +4/-1 hidden iframes: switch = visibility swap */
 var FR={},V=null;
@@ -46,7 +46,7 @@ function ensure(){if(!rows.length)return;var want={},n=rows.length;
 var clt=0;
 function claimAll(){var t=Date.now();if(t-clt<250)return;clt=t;
   for(var k in FR)if(FR[k]!==V)try{FR[k].contentWindow.claim()}catch(e){}}
-onfocus=claimAll;document.onvisibilitychange=()=>{document.hidden||claimAll()};
+onfocus=claimAll;document.onvisibilitychange=()=>{document.hidden||claimAll();poll();};
 var swms='',inms='',rtms='',wn2=0,krt=0;   /* meters: sw=switch in=key lag rtt=echo */
 function hdr(){MS.textContent=(wn2?wn2+' win':'')+(fms?' · find '+fms:'')+(swms?' · sw '+swms:'')+(inms?' · in '+inms:'')+(rtms?' · rtt '+rtms:'')+'ms';}
 function readr(){try{var m=V.contentDocument.getElementById('sb').textContent.match(/r([\d.]+)/);if(m){rtms=m[1];hdr();}}catch(e){}}
@@ -57,7 +57,7 @@ function open_(tg){var t0=performance.now();
 function setsel(tg){sel=localStorage.fwsel=tg;hl();}
 function hl(){rows.forEach((r,i)=>{var s=r.dataset.t===sel;r.classList.toggle('sel',s);
   if(s){ci=i;var g=r.previousElementSibling;while(g&&g.className!=='g')g=g.previousElementSibling;
-    document.getElementById('cur').textContent=(g?g.textContent+' · ':'')+r.firstChild.textContent;}});}
+    cw.textContent=(g?g.textContent+' · ':'')+r.firstChild.textContent;}});}
 /* window switched INSIDE the terminal: the highlighted status cell says which — re-key the frame to it */
 function sync(){var ae=document.activeElement;
   if(ae&&ae.className==='tf')foc();   
@@ -78,7 +78,8 @@ function render(txt){var g='',dev='',n=0;
   var nu=g!==last;if(nu){last=g;S.innerHTML=g||'<div class=g>no windows — reachable?</div>';}   /* same list = no rebuild (4s rebuilds flickered); text in BAG */
   filt();if(nu&&rows.length&&cur!=='@'&&!rows.some(r=>r.dataset.t===sel))open_(rows[0].dataset.t);   /* '@': never yank the working shell */
   wn2=n;hdr();}
-S.onclick=e=>{var r=e.target.closest('.w');if(r)open_(r.dataset.t);};
+function pick(t){open_(t);setlist(0);foc();}   /* explicit pick CLOSES the list (Sean 2026-09-25); render()'s auto-open must not */
+S.onclick=e=>{var r=e.target.closest('.w');if(r)pick(r.dataset.t);};
 /* find = local substring over label+pane text, <1ms */
 function filt(){var t0=performance.now(),q=Q.value.toLowerCase(),h;rows=[];
   S.hidden=!q&&localStorage.fwlist!=='1';
@@ -89,15 +90,15 @@ function filt(){var t0=performance.now(),q=Q.value.toLowerCase(),h;rows=[];
   if(q!==lq){lq=q;ci=0;}ci=Math.min(ci,rows.length-1);
   q?mark():hl();fms=(performance.now()-t0).toFixed(2);hdr();}
 function mark(){rows.forEach((r,i)=>r.classList.toggle('sel',i===ci));if(rows[ci])rows[ci].scrollIntoView({block:'nearest'});}
-Q.oninput=filt;
+Q.oninput=filt;Q.onfocus=()=>poll(1);   /* find = fresh rows even if the list was closed */
 function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);}
 open_(new URLSearchParams(location.search).get('w')||localStorage.fwsel||'@');   /* ?w=<target> preselects (tasks-board stream press); else last window, else bare local tmux — a live shell at t=0 */
-function poll(){fetch('/fwins').then(r=>r.text()).then(render).catch(()=>{});}
-poll();setInterval(poll,4000);
+function poll(f){(f||!(S.hidden||document.hidden))&&fetch('/fwins').then(r=>r.text()).then(render).catch(()=>{});}   /* network only while the list is SHOWN + page visible (Sean 2026-09-25: no always-on poll); f=1 forces (boot needs rows for ◀▶) */
+poll(1);setInterval(poll,4000);
 document.addEventListener('keydown',e=>{var k=e.key,d={j:1,ArrowDown:1,k:-1,ArrowUp:-1}[k],inq=e.target===Q;
   if(inq&&k==='Escape'){Q.value='';filt();foc();}
   if(!rows.length||inq&&k!=='Enter'&&k[0]!=='A')return;   /* letters typed in the box stay in the box */
-  if(k==='Enter')return open_(rows[ci].dataset.t);
+  if(k==='Enter')return pick(rows[ci].dataset.t);
   if(d){e.preventDefault();ci=Math.max(0,Math.min(ci+d,rows.length-1));mark();}});
 /* bare Shift tap = find; any key between down/up disarms. Bare Ctrl INERT (aborted combos read as taps). Hooked into the iframe too */
 function move(d){if(!rows.length)return;ci=(ci+d+rows.length)%rows.length;open_(rows[ci].dataset.t);mark();}
@@ -116,7 +117,7 @@ function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('
 hook(window);
 pv.onpointerdown=e=>{e.preventDefault();move(-1);};   
 nx.onpointerdown=e=>{e.preventDefault();move(1);};
-function setlist(on){localStorage.fwlist=on?'1':'0';filt();}   /* ☰ toggle persisted; find forces the list open */
+function setlist(on){localStorage.fwlist=on?'1':'0';Q.value='';filt();on&&poll();}   /* ☰ toggle persisted; find forces the list open; opening = fetch */
 setlist(localStorage.fwlist?localStorage.fwlist==='1':innerWidth>640);
-tg.onpointerdown=e=>{e.preventDefault();Q.value='';setlist(S.hidden);};
+tg.onpointerdown=e=>{e.preventDefault();setlist(S.hidden);};
 </script>
