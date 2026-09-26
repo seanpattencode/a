@@ -12,7 +12,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden}#scr{top:16px} /*
 .r span{position:absolute;top:0;white-space:pre}
 #cur{position:absolute;margin-top:16px;background:#ccc;mix-blend-mode:difference;pointer-events:none}
 #sb{position:fixed;top:2px;right:6px;font:11px monospace;color:#fff;background:#000b;padding:1px 5px;z-index:9;pointer-events:none}
-#kb{position:fixed;bottom:0;left:0;width:40%;height:1px;opacity:0;border:0;padding:0;resize:none;background:none}
+#kb{position:absolute;margin:0;border:0;padding:0;resize:none;overflow:hidden;background:none;color:#ccc;caret-color:transparent;white-space:pre-wrap;word-break:break-all;z-index:8;outline:none}
 </style>
 <body>
 <div id=scr></div><div id=po></div><div id=cur></div>
@@ -34,7 +34,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,polast='',curlast='',pd='',px0=0,py0=0,a0=' ';
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,curlast='',px0=0,py0=0,snt=0,yt=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -53,7 +53,7 @@ function clr(y,x0,x1){
   drow(y);
 }
 function scrl(n,dn){ /* scroll region top..bot; dn=reverse */
-  pd='';
+  if(kb.value)ckb();
   while(n-->0){G.splice(dn?S.bot:S.top,1);G.splice(dn?S.top:S.bot,0,newRow());}
   for(let y=S.top;y<=S.bot;y++)drow(y);
 }
@@ -100,7 +100,7 @@ function feed(d){
     else if(c!==0x7f)put(S.cs0&&ACS[ch]?ACS[ch]:ch,wcw(c));
   }
   pt=performance.now()-t0;
-  if(pd&&S.y!==py0)pd='';
+  if(kb.value){if(S.y!==py0||S.x>=px0+kb.value.length)ckb();else clearTimeout(yt);} /* echo caught up/row moved -> grid owns it; else echoing, cancel echo-off timer */
   if(!raf)raf=requestAnimationFrame(paint);
 }
 function title(){ /* OSC 0/2 -> window pin; OSC 52 -> clipboard */
@@ -268,19 +268,15 @@ function paint(){
   const t0=performance.now();
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
-  const c0=pd&&G[py0]&&G[py0].t[px0],pon=c0===pd[0];
-  if(pd&&!pon&&c0!==a0)pd=''; /* not echo, not anchor-time char: dead */
-  const px=Math.min(cols-1,pon?px0+pd.length:S.x),r=G[S.y],w=r&&r.l[px]&128?2:1;
-  const ph=pon?[...pd].map((c,i)=>'<span style="position:absolute;left:'+((px0+i)*cw).toFixed(2)+'px;top:'+py0*chh+'px">'+esc(c)+'</span>').join(''):'';
-  if(ph!==polast){po.innerHTML=ph;polast=ph;} /* only-on-change: no reflow */
-  if(kf&&(pon||!kt)){sm=performance.now()-ks;kf=0;} /* s = key->visible */
-  const cs='left:'+(px*cw).toFixed(2)+'px;top:'+S.y*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
+  const cx=kb.value?Math.min(cols-1,px0+kb.value.length):S.x,cy=kb.value?py0:S.y,r=G[cy],w=r&&r.l[cx]&128?2:1;
+  if(kf){sm=performance.now()-ks;kf=0;} /* s = key->visible (native #kb echo) */
+  const cs='left:'+(cx*cw).toFixed(2)+'px;top:'+cy*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none'); /* block cursor at the ahead end (native caret hidden) */
   if(cs!==curlast){cur.style.cssText=cs;curlast=cs;}
   dt=performance.now()-t0;
   stat();
 }
 function stat(){ /* p=parse d=draw s=key->shown r=echo */
-  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(pd?' P'+pd.length:'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
+  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(kb.value?' K'+kb.value.length:'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
   while(g.length<rows)g.push(newRow());
@@ -293,6 +289,7 @@ function fit(){
   e.textContent='0'.repeat(100);
   scr.style.font=FS+'px/'+LH+'px '+FONT;
   po.style.cssText='position:absolute;left:0;top:16px;color:#ccc;pointer-events:none;font:'+FS+'px/'+LH+'px '+FONT;
+  kb.style.font=FS+'px/'+LH+'px '+FONT; /* match grid metrics: aligns + wraps at grid columns */
   scr.appendChild(e);
   cw=e.getBoundingClientRect().width/100; 
   e.remove();
@@ -342,7 +339,10 @@ const KM={ArrowUp:'A',ArrowDown:'B',ArrowRight:'C',ArrowLeft:'D',Home:'H',End:'F
 const KN={Delete:3,PageUp:5,PageDown:6};
 function key(e){
   if(e.isComposing)return;
-  const M=(e.shiftKey?1:0)|(e.altKey?2:0)|(e.ctrlKey?4:0),k=e.key;
+  const k=e.key;
+  /* plain printable: browser echoes into #kb natively (0 JS/round-trip, no jump, like the :1111 box); input event sends it to the pty */
+  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(!kb.value)kbpos();kt=ks=performance.now();kf=1;return;}
+  const M=(e.shiftKey?1:0)|(e.altKey?2:0)|(e.ctrlKey?4:0);
   let s=null;
   if(KM[k])s=M?'\x1b[1;'+(M+1)+KM[k]:(S.ckm?'\x1bO':'\x1b[')+KM[k];
   else if(KN[k])s='\x1b['+KN[k]+(M?';'+(M+1):'')+'~';
@@ -351,27 +351,23 @@ function key(e){
   else if(k==='Tab')s=e.shiftKey?'\x1b[Z':'\t';
   else if(k==='Escape')s='\x1b';
   else if(k.length===1&&!e.metaKey){
-    if(e.ctrlKey&&e.shiftKey)return; 
-    if(e.ctrlKey){
-      const c=k.toUpperCase().charCodeAt(0);
-      if(k===' ')s='\x00';
-      else if(c>=64&&c<=95)s=String.fromCharCode(c-64);
-      else return;
-      if(e.altKey)s='\x1b'+s;
-    }else s=e.altKey?'\x1b'+k:k;
+    if(e.ctrlKey&&e.shiftKey)return;
+    if(e.ctrlKey){const c=k.toUpperCase().charCodeAt(0);if(k===' ')s='\x00';else if(c>=64&&c<=95)s=String.fromCharCode(c-64);else return;if(e.altKey)s='\x1b'+s;}
+    else s='\x1b'+k;
   }
   else return;
   e.preventDefault();
-  if(s.length===1){kt=ks=performance.now();kf=1;}
   tx(s);
-  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey)pred(k);
-  else if(pd){pd=k==='Backspace'&&!e.altKey?pd.slice(0,-1):'';if(!raf)raf=requestAnimationFrame(paint);}
+  if(k==='Backspace'&&!e.altKey&&kb.value){kb.value=kb.value.slice(0,-1);snt=kb.value.length;cancelAnimationFrame(raf);raf=0;paint();} /* native delete of the ahead-buffer; move cursor back */
+  else ckb(); /* Enter/arrows/tab/esc/ctrl: the ahead-buffer is done */
 }
-/* local echo, no per-key reconcile: pd = typed chars at (px0,py0) — echo paints the same glyphs beneath; controls clear, edge drops, backspace pops, row/scroll/overwrite invalidate; hidden until the grid shows pd[0] = password-safe */
-function pred(k){if(pd===''){px0=S.x;py0=S.y;a0=G[py0].t[px0];}pd=px0+pd.length>=cols?'':pd+k;
-  cancelAnimationFrame(raf);raf=0;paint();}
+/* local echo = native #kb overlay: printables render + wrap in the textarea (no JS = no jump), sent to the pty on input; the ahead-buffer clears when the echo catches up, on a control key, or after a no-echo grace (password) */
+function ckb(){kb.value='';snt=0;clearTimeout(yt);}
+function kbpos(){px0=S.x;py0=S.y;kb.style.left=px0*cw+'px';kb.style.top=(16+py0*chh)+'px';kb.style.width=(cols-px0)*cw+'px';kb.style.height=chh*4+'px';}
 addEventListener('keydown',key);
-kb.addEventListener('input',()=>{if(kb.value){tx(kb.value);kb.value='';}}); 
+kb.addEventListener('input',()=>{const v=kb.value;if(v.length>snt)tx(v.slice(snt));snt=v.length;
+  cancelAnimationFrame(raf);raf=0;paint(); /* move the block cursor to the ahead end */
+  clearTimeout(yt);if(v)yt=setTimeout(ckb,kr?Math.min(1000,Math.max(250,kr*3)):600);}); /* echo-off (password) self-clears after grace = 3x RTT */
 kb.addEventListener('paste',e=>{
   e.preventDefault();
   const t=e.clipboardData.getData('text');
