@@ -30,9 +30,7 @@ static const char*mime(const char*p,const char*d){const char*e=strrchr(p,'.');e=
     return !strcmp(e,"html")?"text/html; charset=utf-8":!strcmp(e,"css")?"text/css":!strcmp(e,"js")?"text/javascript":
         !strcmp(e,"png")?"image/png":!strcmp(e,"svg")?"image/svg+xml":!strcmp(e,"jpg")||!strcmp(e,"jpeg")?"image/jpeg":
         !strcmp(e,"ico")?"image/x-icon":!strcmp(e,"json")?"application/json":!strcmp(e,"pdf")?"application/pdf":!strcmp(e,"epub")?"application/epub+zip":!strcmp(e,"txt")?"text/plain; charset=utf-8":d;}
-static void sfile(int c,const char*ct,const char*b,size_t bl,const char*cache){   /* body looped: one write() may be short */
-    char h[224];int hl=snprintf(h,224,"HTTP/1.1 200 OK\r\nContent-Type:%s\r\nContent-Length:%zu\r\nConnection:close\r\nCache-Control:%s\r\n\r\n",ct,bl,cache);
-    (void)!write(c,h,(size_t)hl);for(size_t o=0;o<bl;){ssize_t w=write(c,b+o,bl-o);if(w<=0)break;o+=(size_t)w;}}
+#define sfile(c,t,b,l,x) sresph(c,200,t,b,(int)(l),x)
 #define SYNC_HTML "<span style=color:#888>sync <span class=sa>%s</span></span> <button style=\"background:#000;color:#888;border:1px solid #333;padding:0 6px;font:inherit;cursor:pointer\" onclick=\"fetch('/api/sync',{method:'POST'});let p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{document.querySelectorAll('.sa').forEach(s=>s.textContent=t);if(t!='syncing')clearInterval(p)}),1000)\">sync</button>"
 /* ARCH #32: navigate on pointerdown; delegated; skips #/onclick */
 #define TAPJS "<script>addEventListener('pointerdown',function(e){var a=e.target.closest('a[href]');if(a&&!a.onclick&&a.getAttribute('href')[0]!='#'){e.preventDefault();a.click()}},true)</script>"
@@ -94,15 +92,12 @@ static void html_gen(void){
 }
 static void sresph(int c,int code,const char*ct,const char*body,int bl,const char*cache){
     char h[256];int hl=snprintf(h,256,"HTTP/1.1 %d OK\r\nContent-Type:%s\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:%s\r\nAccess-Control-Allow-Origin:*\r\n\r\n",code,ct,bl,cache);
-    (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
+    (void)!write(c,h,(size_t)hl);for(int o=0;o<bl;){ssize_t w=write(c,body+o,(size_t)(bl-o));if(w<=0)break;o+=(int)w;}   /* body looped: one write() may be short */
 }
 /* no-cache (not no-store): bfcache restores instantly */
 static void sresp(int c,int code,const char*ct,const char*body,int bl){sresph(c,code,ct,body,bl,"no-store");}
 /* /op,/fw only: COOP+COEP -> crossOriginIsolated -> perf.now() 5us not 100us; never global (COEP breaks cross-origin subresources) */
-static void siso(int c,const char*body,int bl){
-    char h[320];int hl=snprintf(h,320,"HTTP/1.1 200 OK\r\nContent-Type:text/html\r\nContent-Length:%d\r\nConnection:close\r\nCache-Control:no-store\r\nCross-Origin-Opener-Policy:same-origin\r\nCross-Origin-Embedder-Policy:require-corp\r\n\r\n",bl);
-    (void)!write(c,h,(size_t)hl);if(bl)(void)!write(c,body,(size_t)bl);
-}
+static void siso(int c,const char*body,int bl){sresph(c,200,"text/html",body,bl,"no-store\r\nCross-Origin-Opener-Policy:same-origin\r\nCross-Origin-Embedder-Policy:require-corp");}
 static void sdoc(int c,const char*body,int bl){sresph(c,200,"text/html; charset=utf-8",body,bl,"no-cache");}
 static int scmp(const void*a,const void*b){return strcmp((const char*)a,(const char*)b);}
 static const int*g_bc;   /* /book freq sort: serve.log opens desc, tie=alpha */
@@ -262,6 +257,8 @@ static void handle(int c){
         if(!fd2){snprintf(fp,P*2,"%s/%s/index.html",sdr,rel);fd2=readf(fp,&fl);} /* /x -> /x/index.html */
         if(!fd2){sresp(c,404,"text/plain","not found",9);return;}
         sresph(c,200,mime(fp,"text/plain"),fd2,(int)fl,"no-cache");free(fd2);return;}
+    {char*o=strcasestr(req,"\nOrigin: "),*h=strcasestr(req,"\nHost: ");int n=h?(int)strcspn(h+=7,"\r"):0;if(o)o=strchr(o,'\r');   /* browser-set: Sec-Fetch-Site (fetch/img/nav), Origin (ws) */
+     if(strcasestr(req,"\nSec-Fetch-Site: cross-site")||(o&&h&&(o-req<n+2||strncasecmp(o-n,h,(size_t)n)||o[-n-1]!='/'))){sresp(c,403,"text/plain","cross-site",10);return;}}
     /* new page = GET handler here + nav link in ui_full.html */
     if(!strncmp(req,"GET /tasks",10)&&(req[10]==' '||req[10]=='?')){char cmd[P];snprintf(cmd,P,"python3 '%s/lib/task.py' page",SDIR);FILE*pp=popen(cmd,"r");size_t oc=1<<22,ol=0;char*o=malloc(oc);if(pp){ol=fread(o,1,oc-1,pp);pclose(pp);}o[ol]=0;sdoc(c,o,(int)ol);free(o);return;}   /* task board = lib/task.py page() */
     if(!strncmp(req,"POST /tasks/",12)||!strncmp(req,"GET /tasks/spawn?n=",19)||!strncmp(req,"GET /tasks/resume?n=",20)){   /* board actions, all a-side: run <cmd> | set N <text> -> lib/task.py web|set on stdin · spawn N | resume N */
@@ -328,7 +325,6 @@ static void handle(int c){
             if(qw[i]=='%'&&qw[i+1]&&qw[i+2]){char x[3]={qw[i+1],qw[i+2],0};tgt[j++]=(char)strtol(x,NULL,16);i+=2;}
             else tgt[j++]=qw[i]=='+'?' ':qw[i];}tgt[j]=0;}
         if(ws_upgrade(c,req))ws_term(c,tgt);return;}
-    if(!strncmp(req,"GET /api/u-status",17)){sresp(c,200,"application/json","{\"ok\":true}",11);return;}
     if(!strncmp(req,"GET /bm",7)&&(req[7]==' '||req[7]=='?')){const char*q=req+7;int js=!strncmp(q,"?js",3),tx=!strncmp(q,"?txt",4),cr=!strncmp(q,"?chrome",7);char fp[P];
         snprintf(fp,P,cr?"%s/local/bm_chrome.json":tx?"%s/bookmarks.txt":js?"%s/common/bm.js":"%s/common/bm.html",cr?AROOT:SROOT);
         size_t fl=0;char*d=readf(fp,&fl);if(!d){sresp(c,404,"text/plain","x",1);return;}
@@ -695,11 +691,11 @@ static void handle(int c){
             if(!pass)ol+=(size_t)snprintf(o+ol,oc-ol,"\n\n");}
         if(!ok)ol+=(size_t)snprintf(o+ol,oc-ol,"no &lt;diff&gt; files on that a done");free(raw);free(rl);sresp(c,200,"text/html; charset=utf-8",o,(int)ol);free(o);return;}
     if(!strncmp(req,"GET /review/doc?n=",18)){int N=atoi(req+18);const char*kq=strstr(req,"&k=");int K=kq?atoi(kq+3):0;char fp[P]="";rvpath(N,K,fp,P);size_t bl=0;char*b=fp[0]?readf(fp,&bl):0;if(!b){sresp(c,404,"text/plain","no such document",16);return;}   /* only paths an a done recorded: the server is on the LAN */
-        const char*ct=mime(fp,"text/plain; charset=utf-8");
+        const char*ct=mime(fp,"text/plain; charset=utf-8"),*cc=strncmp(ct,"text/h",6)?"no-cache":"no-cache\r\nContent-Security-Policy:sandbox allow-scripts";   /* opaque origin */
         if(!strncmp(ct,"text/plain",10)&&!strstr(req,"&raw=1")){size_t oc=bl*6+512;char*o=malloc(oc);int ol=snprintf(o,oc,"<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>body{margin:0;padding:16px 16px 80px;background:#000;color:#fff;font:18px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word}</style>");
             for(size_t q=0;q<bl&&ol<(int)oc-8;q++){char ch=b[q];if(ch=='<')ol+=snprintf(o+ol,oc-(size_t)ol,"&lt;");else if(ch=='>')ol+=snprintf(o+ol,oc-(size_t)ol,"&gt;");else if(ch=='&')ol+=snprintf(o+ol,oc-(size_t)ol,"&amp;");else o[ol++]=ch;}
             free(b);b=o;bl=(size_t)ol;ct="text/html; charset=utf-8";}   /* wrap text files dark: transparent body was black-on-black */
-        sfile(c,ct,b,bl,"no-cache");free(b);return;}
+        sfile(c,ct,b,bl,cc);free(b);return;}
     if(!strncmp(req,"GET /review/wsz?w=",18)){int w=atoi(req+18);char tc[160],sz[32]="";snprintf(tc,160,"tmux display-message -p -t a:%d '#{window_width} #{window_height}' 2>/dev/null",w);FILE*pp=popen(tc,"r");if(pp){if(fgets(sz,32,pp))sz[strcspn(sz,"\n")]=0;pclose(pp);}sresp(c,200,"text/plain",sz,(int)strlen(sz));return;}   /* host window size for the pull-up's fit-width */
     if(!strncmp(req,"GET /review/live?n=",19)){static const char SEH[]="HTTP/1.1 200 OK\r\nContent-Type:text/event-stream\r\nCache-Control:no-store\r\nConnection:close\r\n\r\n";   /* live box stream: exec res.py watch with the socket as stdout — pushes only on real events (pidfd/inotify), no polling */
         (void)!write(c,SEH,sizeof SEH-1);dup2(c,1);if(c>2)close(c);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL);
