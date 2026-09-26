@@ -364,10 +364,15 @@ def _row(n):
     try: f = open(LOC + '/done.log').read().splitlines()[int(n)].split('\t', 4); return f[2], f[3], int(f[0]), f[4][-50:]
     except Exception: return '', '', 0, ''
 
-def _first(t, k):  # first prompt of the transcript with k before t
-    try:
-        return next(json.loads(re.search(r'"user","content":("(?!<)([^"\\]|\\.)*")', s)[1]) for f in glob.glob(PROJ + '/*/*.jsonl')
-                    if os.path.getmtime(f) >= t and k in (s := open(f).read()) and any(k in l and json.loads(l)['timestamp'] < time.strftime('%FT%T', time.gmtime(t + 9)) for l in s.splitlines()))
+def _tr(t, k, d):  # (path, text) of the transcript under d that logged k by done-time t; later sessions merely quoting k don't count
+    for f in glob.glob(d + '/*.jsonl'):
+        try:
+            if os.path.getmtime(f) >= t and k in (s := open(f, errors='ignore').read()) and any(k in l and json.loads(l)['timestamp'] < time.strftime('%FT%T', time.gmtime(t + 9)) for l in s.splitlines()): return f, s
+        except Exception: pass
+    return '', ''
+
+def _first(t, k):  # first prompt of that transcript, any project
+    try: return json.loads(re.search(r'"user","content":("(?!<)([^"\\]|\\.)*")', _tr(t, k, PROJ + '/*')[1])[1])
     except Exception: return ''
 
 def watch(n):                                         # /review SSE: push on events only (pidfd exit, transcript/snapshot inotify)
@@ -393,12 +398,8 @@ def review(n, revive=False):
     live = [p.split('\t') for p in panes if agent([p.split('\t')[1]])[0]]
     try: saved = [j for j in json.load(open(SNAP))['jobs'] if j['window'] == name and j['cwd'] == cwd and j['cmd']]
     except (OSError, ValueError): saved = []
-    if not live and not saved:   # snapshot forgets closed windows — fall back to the auto-collected transcript; _first's at-done-time gate keeps later quoters out, newest hit = resumed continuation
-        for f in sorted(glob.glob(f'{PD(cwd)}/*.jsonl'), key=os.path.getmtime, reverse=True):
-            try:
-                if os.path.getmtime(f) >= t and m in (s := open(f, errors='ignore').read()) and any(m in l and json.loads(l)['timestamp'] < time.strftime('%FT%T', time.gmtime(t + 9)) for l in s.splitlines()):
-                    sid = os.path.basename(f)[:-6]; saved = [{'cmd': RESUME['claude'] % sid, 'preview': _preview(sid)}]; break
-            except Exception: pass
+    if not live and not saved and (f := _tr(t, m, PD(cwd))[0]):   # snapshot forgets closed windows: resume from the transcript
+        sid = os.path.basename(f)[:-6]; saved = [{'cmd': RESUME['claude'] % sid, 'preview': _preview(sid)}]
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
     if len(live) == 1:
         p, _, win = live[0]; state = 'ALIVE'
