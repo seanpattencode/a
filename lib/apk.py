@@ -552,7 +552,7 @@ JF(void,nRender)(JNIEnv*e,jclass c,jintArray arr){(void)c;
   for(int i=0;i<nkeys;i++){
    int ix=(int)KB[i][0],iy=(int)KB[i][1],iw=(int)(KB[i][2]-KB[i][0]),ih=(int)(KB[i][3]-KB[i][1]);
    const char*lb=lbl(kch(i));int lw=(int)strlen(lb)*FN.cw;
-   uint32_t col=(i==pressed)?0xFFFF3333:(ctrl_stk&&lb[0]=='C'&&lb[1]=='T')?0xFFFF8844:0xFFFFFFFF;
+   uint32_t col=(ctrl_stk&&lb[0]=='C'&&lb[1]=='T')?0xFFFF8844:0xFFFFFFFF;
    if(i==selkey)for(int dy=0;dy<ih;dy++)for(int dx=0;dx<iw;dx++){int fx=ix+dx,fy=iy+dy;if((unsigned)fx<(unsigned)W&&(unsigned)fy<(unsigned)H)((uint32_t*)p)[fy*stride+fx]=0xFFFFFFFF;}
    int tx=ix+(iw-lw)/2,ty=iy+(ih-FN.ch)/2;
    drawstr((uint32_t*)p,stride,&FN,lb,tx,ty,i==selkey?0xFF000000:col);
@@ -902,14 +902,14 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
     int mx = nf * rh - lh; if (mx < 0) mx = 0;
     if (scr < 0) scr = 0; if (scr > mx) scr = mx;
 
-    if (ql > 0 && F[2].px) { char q[65]; memcpy(q, Q, ql); q[ql] = 0; drawstr((uint32_t*)p, stride, &F[2], q, 32, ky - 60, 0xFFFF00); }
+    if (ql > 0 && F[2].px) { char q[65]; memcpy(q, Q, ql); q[ql] = 0; drawstr((uint32_t*)p, stride, &F[2], q, 32, ky - 60, 0xFFFFFF); }
 
     if (F[0].px) {
         if (nf == 0 && ql > 0) {
             static const char* LBL[2] = {"Google: ", "Play Store: "};
             for (int j = 0; j < 2; j++) { char buf[80]; int l = (int)strlen(LBL[j]);
                 memcpy(buf, LBL[j], l); memcpy(buf+l, Q, ql); buf[l+ql] = 0;
-                drawcenter((uint32_t*)p, stride, &F[0], buf, lh - rh*(j+1) + rh/2 - F[0].ch/2, 0xFFFF00); }
+                drawcenter((uint32_t*)p, stride, &F[0], buf, lh - rh*(j+1) + rh/2 - F[0].ch/2, 0xFFFFFF); }
         } else for (int i = 0; i < nf; i++) {
             int y = lh - rh * (i+1) + scr;
             if (y < -rh || y > lh) continue;
@@ -929,12 +929,11 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
         int ki = 0;
         for (int r = 0; r < 5; r++) for (int i = 0; KR[r][i]; i++, ki++) {
             char ch = KR[r][i]; if (ch == ' ') continue;
-            uint32_t col = ki == pressed ? 0xFF3333 : 0xFFFFFF;
             char lbl = ch;
             if (ch == '\b') lbl = '<'; else if (ch == '\n') lbl = '>';
             else if (ch == '\x01') lbl = '*'; else if (ch == '\x02') lbl = 'i';
             float cx = (KB[ki][0] + KB[ki][2]) / 2, cy = (KB[ki][1] + KB[ki][3]) / 2;
-            drawch((uint32_t*)p, stride, &F[1], cx - F[1].cw/2, cy - F[1].ch/2, lbl, col);
+            drawch((uint32_t*)p, stride, &F[1], cx - F[1].cw/2, cy - F[1].ch/2, lbl, 0xFFFFFF);
         }
     }
     (*e)->ReleaseIntArrayElements(e, arr, p, 0);
@@ -1094,7 +1093,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
     private val keyPaint = Paint().apply { color = 0xFF000000.toInt() }
     private val pressPaint = Paint()
     private val textPaint = Paint().apply { color = Color.WHITE; textSize = 48f; textAlign = Paint.Align.CENTER; isAntiAlias = true }
-    private fun updatePressPaint() { pressPaint.color = if (prefs.getBoolean("debug_red", true)) 0xFFFF0000.toInt() else 0xFF606060.toInt() }
+    private fun updatePressPaint() { pressPaint.color = if (prefs.getBoolean("debug_red", true)) 0xFFFFFFFF.toInt() else 0xFF606060.toInt() }
     private val bounds = FloatArray(48 * 4)
     private val handler = Handler(Looper.getMainLooper())
     private val holdCheck = object : Runnable { override fun run() {
@@ -1171,6 +1170,7 @@ class NdkKeyboardView(private val svc: InstantNdkService) : View(svc) {
             if (isPressed && debugRed) canvas.drawRoundRect(bounds[b] - hf, bounds[b+1] + rf, bounds[b+2] + hf, bounds[b+3] + rf, 8f, 8f, pressPaint)
             else canvas.drawRoundRect(bounds[b]+4, bounds[b+1]+4, bounds[b+2]-4, bounds[b+3]-4, 8f, 8f, if (isPressed) pressPaint else keyPaint)
             val label = when (val ch = labels[i]) { '\b' -> "⌫"; '\n' -> "↵"; ' ' -> ""; '\u0001' -> if (mode == 1) "ABC" else "?123"; '\u0002' -> "⇧"; '\u0003' -> if (rec.listening) "●" else "🎤"; '\u0004' -> "📋"; '\u0005' -> "⏭"; else -> ch.toString() }
+            textPaint.color = if (isPressed) Color.BLACK else Color.WHITE
             canvas.drawText(label, (bounds[b] + bounds[b+2]) / 2, (bounds[b+1] + bounds[b+3]) / 2 + 16, textPaint)
             inRow++; if (row < rowSizes.size && inRow >= rowSizes[row]) { row++; inRow = 0 }
         }
