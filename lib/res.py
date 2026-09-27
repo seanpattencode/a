@@ -94,13 +94,12 @@ def windows():                                        # [name, cwd, pane pids, s
 
 
 def save():
+    if os.popen("tmux show -gv @res 2>/dev/null").read().strip()!="1":restore();os.system("tmux set -g @res 1");return  # @res gate: restore before a save can overwrite the snapshot (fresh server = @res unset)
     if not LINUX: _ps()                               # macOS: snapshot the process table once
-    cur = subprocess.run(["tmux", "display-message", "-p", "#{window_id}"], capture_output=True,
-                         text=True).stdout.strip() if os.environ.get("TMUX") else ""
     info = [(wid, n, cwd, *agent(pid), sc) for wid, n, cwd, pid, sc in windows()]  # (id, name, cwd, kind, sid, sc)
     if not info: print("x no windows — snapshot kept"); return []  # don't clobber with emptiness
     claimed = {sid for _w, _n, _c, k, sid, _s in info if k == "claude" and have(sid)}  # claude ids with a transcript
-    used, jobs, here = set(), [], []
+    used, jobs = set(), []
     for wid, name, cwd, kind, sid, sc in info:
         if "while a i" in sc: continue                             # skip a's session-keeper window
         cmd = s = ""                                               # unknown window → shell
@@ -111,7 +110,6 @@ def save():
         elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name   # ssh window → reconnect
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
                      "preview": (_preview(s) if s else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
-        here.append("→" if wid == cur else " ")                    # the window you're running this from
     os.makedirs(SNAPDIR, exist_ok=True)
     gui = gui_save()
     if not gui:                                       # sway down mid-save — keep last known gui (don't clobber with emptiness)
@@ -120,9 +118,9 @@ def save():
     if os.path.exists(SNAP): os.replace(SNAP, SNAP + ".prev")   # one-step undo
     json.dump({"host": DEV, "session": TMS, "jobs": jobs, "gui": gui}, open(SNAP, "w"), indent=1)
     print(f"✓ snapshot {len(jobs)} window(s) + {len(gui)} gui · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
-    for m, j in zip(here, jobs):
+    for j in jobs:
         tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"       # what respawns: claude/codex/agy/a/(shell)
-        print(f" {m} {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
+        print(f"   {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
     return jobs
 
 
