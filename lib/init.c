@@ -1,6 +1,11 @@
 /* init */
 static void init_paths(void) {
-    const char *h = getenv("HOME"); if (!h) h = "/tmp";
+    const char *h = getenv("HOME");
+#ifdef __CYGWIN__
+    static char hb[80];const char*hu=getenv("USERNAME");  /* PS/cmd launch: Windows env has no HOME */
+    if(!h&&hu){snprintf(hb,80,"/home/%s",hu);setenv("HOME",hb,1);h=hb;}
+#endif
+    if (!h) h = "/tmp";
     snprintf(HOME, P, "%s", h);
     {const char*t=getenv("TMPDIR");snprintf(TMP,P,"%s",t&&*t?t:"/tmp");}
 #ifdef __APPLE__
