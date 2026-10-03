@@ -401,7 +401,7 @@ def review(n, revive=False):
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
     if len(live) == 1:
         p, _, win = live[0]; state = 'ALIVE'
-        preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-30'], capture_output=True, text=True).stdout.rstrip(); preview = '\n'.join([l.rstrip() for l in preview.splitlines() if any(c.isalnum() for c in l) and 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)][-8:])
+        preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-300'], capture_output=True, text=True).stdout.rstrip(); preview = '\n'.join([l.rstrip() for l in preview.splitlines() if any(c.isalnum() for c in l) and 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)])
     elif not live and len(ws) < 2 and len(saved) == 1:
         state, preview = 'RESUMABLE', 'Saved output: ' + saved[0].get('preview', '')
         if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', saved[0]['cmd']], check=True); state = 'RESUMING'
