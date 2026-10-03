@@ -585,6 +585,7 @@ if __name__ == "__main__":
               "a book yt <great> <url>  append youtube talk/interview transcripts to that great's corpus\n"
               "a book list | index | serve [start|stop] | sync\n"
               "a book next <name> [A-B|page]  unread chunk → read.log; read.html live page\n"
+              "a book note <name> [@N[-M]] [text]  note/mark at offset or section; bare=list\n"
               "a book archive <substr>  toggle hidden .<name>: saved, not listed")
         sys.exit(0)
 
@@ -630,6 +631,14 @@ if __name__ == "__main__":
         body = "".join(f'<div class="l{" r" if i in rd else ""}{" n" if i == la else ""}"><b>{i}</b>{E(l)}</div>' for i, l in enumerate(L))
         (b/"read.html").write_text('<!doctype html><meta charset=utf-8><title>%s</title><style>body{background:#000;color:#fff;font:17px monospace;padding:24px;max-width:900px}.d{color:#888;font-size:14px}.l{color:#666;margin:7px 0;padding:2px 0 2px 10px;border-left:4px solid #222}.l.r{color:#fff;border-left:4px solid #fff;background:#222}.l.n{outline:2px dashed #fff}.l.n b:before{content:"\u25b6 "}.l b{color:#555;font-size:12px;margin-right:8px}.l.r b{color:#fff}</style><h3>%s — %d/%d read · %d%%</h3><div class=d>WHITE = read · dashed \u25b6 = being spoken</div>%s<script>let C=0;setInterval(async()=>{const t=await(await fetch(location.href,{cache:"no-store"})).text();if(C&&t.length!=C){const s=scrollY;document.body.innerHTML=t.split("</st"+"yle>")[1];scrollTo(0,s)}C=t.length},2000)</script>' % (b.name, b.name, len(rd), len(L), pct, body))
         print(f"[{'page' if pg else '%d-%d ->log' % (x, y)} · {len(rd)}/{len(L)} read]")
+    elif cmd == "note":  # no slash-star
+        n = args[2] if len(args) > 2 else sys.exit("a book note <name> [@N[-M]] [text]")
+        m = [d for d in DATA_DIR.iterdir() if d.is_dir() and n in d.name]; m = [d for d in m if d.name == n] or m
+        if len(m) != 1: sys.exit(f"x {len(m)} matches")
+        NF = ADATA/"git"/"books"/"notes.txt"; r = args[3:]
+        pos, r = (r[0][1:], r[1:]) if r and r[0][:1]=="@" else ("", r); t = " ".join(r)
+        if t or pos: open(NF, "a").write(f"{time.strftime('%F %H:%M')}\t{m[0].name}\t{pos}\t{t}\n"); print("+", m[0].name, "@" + pos, t)
+        else: print(*(l for l in (NF.read_text() if NF.exists() else "").splitlines() if f"\t{m[0].name}\t" in l), sep="\n")
     elif cmd == "lib":
         import json; subprocess.run("pkill -9 -f /opt/calibre;sleep 2",shell=True); p=os.path.expanduser('~/.config/calibre/global.py.json'); json.dump({**json.load(open(p)),'library_path':os.path.expanduser('~/calibre-lib')},open(p,'w'))
     elif cmd == "serve": w=Path.home()/'.local/bin/calibre'; w.exists() or (w.parent.mkdir(parents=True,exist_ok=True),w.write_text('#!/bin/sh\nsystemctl --user stop calibre-server 2>/dev/null\n/usr/bin/calibre "$@"\nsystemctl --user start calibre-server 2>/dev/null\n'),w.chmod(0o755)); subprocess.run(["systemctl","--user","--no-pager",args[2] if len(args)>2 else "status","calibre-server"])
