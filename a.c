@@ -420,7 +420,6 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/tok.c"
 #include "lib/m.c"
 #include "lib/h.c"
-#include "lib/pedal.c"
 #include "lib/grep.c"
 #include "lib/fleet.c"
 
@@ -597,7 +596,7 @@ static const cmd_t CMDS[] = {
     {"m",cmd_m},{"mono",cmd_cat},{"monolith",cmd_cat},{"move",cmd_move},
     {"n",cmd_note},{"new",cmd_new},{"note",cmd_note},
     {"o",cmd_op},{"op",cmd_op},{"operator",cmd_op},
-    {"p",cmd_push},{"pedal",cmd_pedal},{"perf",cmd_perf},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
+    {"p",cmd_push},{"perf",cmd_perf},{"pow",cmd_pow},{"pr",cmd_pr},{"prompt",cmd_prompt},
     {"pull",cmd_pull},{"push",cmd_push},
     {"remove",cmd_remove},{"repo",cmd_create},{"resume",cmd_resume},{"revert",cmd_revert},{"review",cmd_review},
     {"rm",cmd_remove},{"scan",cmd_scan},{"scp",cmd_scp},{"search",cmd_search},{"serve",cmd_serve},
@@ -655,6 +654,7 @@ int main(int argc, char **argv) {
      if(fexists(pf)){char m[P];snprintf(m,P,"%s/__init__",arg);fallback_py(m,argc,argv);}
      #define RL {int r=run_lab(pf,argv);if(r>=0)return r;}
      for(int i=2;EXT[i];i++){snprintf(pf,P,"%s/lib/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
+     for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/aext/%s%s",HOME,arg,EXT[i]);if(fexists(pf))RL}  /* ~/aext: extension repo */
      snprintf(pf,P,"%s/my/%s",SDIR,arg);
      if(strrchr(arg,'.')&&fexists(pf))RL
      for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
