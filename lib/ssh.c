@@ -4,43 +4,39 @@
 #define IP_CMD "ip route get 8.8.8.8 2>/dev/null|awk '{print $7}';ipconfig getifaddr en0 2>/dev/null"
 /* live-filter picker, bottom-anchored (absolute rows); caller sets raw mode */
 static int m_pick(const char *cat,const char *const *items,int n,char *out,size_t osz){
-    struct winsize ws; ioctl(1,TIOCGWINSZ,&ws); int rows=ws.ws_row?ws.ws_row:24;
-    int rsv=n+2; if(rsv>rows-1)rsv=rows-1; if(rsv>20)rsv=20;
-    int top=rows-rsv+1;
+    struct winsize ws;int rows,rsv,top,r=-1;
     #define CLR() printf("\033[%d;1H\033[J",top)
-    char f[48]=""; int fl=0,sel=0;
-    struct timespec pk;clock_gettime(CLOCK_MONOTONIC,&pk);  /* 1MS MANDATE: key→painted (first frame = cold render), shown live */
+    char f[48]="";int fl=0,sel=0;
+    struct timespec pk;clock_gettime(CLOCK_MONOTONIC,&pk);  /* 1MS: key→painted, shown live */
+    printf("\033[?7l");   /* autowrap OFF: a wrap scrolls+shears the layout */
     for(;;){
+        ioctl(1,TIOCGWINSZ,&ws);rows=ws.ws_row?ws.ws_row:24;
+        rsv=n+2>rows-1?rows-1:n+2;if(rsv>20)rsv=20;top=rows-rsv+1;
         int fm[64],nf=0;
-        for(int i=0;i<n&&nf<64;i++) if(!fl||strcasestr(items[i],f)) fm[nf++]=i;
-        if(sel>=nf)sel=nf?nf-1:0; if(sel<0)sel=0;
+        for(int i=0;i<n&&nf<64;i++)if(strcasestr(items[i],f))fm[nf++]=i;
+        if(sel>=nf)sel=nf-1;if(sel<0)sel=0;
+        int off=sel>rsv-2?sel-rsv+2:0,x=(int)strlen(cat)+3+fl;
         CLR();
         printf("\033[36m%s:\033[0m %s",cat,f);
-        for(int i=0;i<nf&&i<rsv-1;i++){
-            const char *it=items[fm[i]]; const char *t=strchr(it,'\t');
-            int cl=t?(int)(t-it):(int)strlen(it);
-            printf("\n  %s%.*s%s",i==sel?"\033[7m> ":"  ",cl,it,i==sel?"\033[0m":"");
-            if(t)printf("  \033[90m%s\033[0m",t+1);
+        for(int i=off;i<nf&&i<off+rsv-1;i++){
+            const char*it=items[fm[i]],*t=strchr(it,'\t');
+            printf("\n  %s%.*s\033[0m  \033[90m%s\033[0m",i==sel?"\033[7m> ":"  ",t?(int)(t-it):(int)strlen(it),it,t?t+1:"");
         }
         {struct timespec pn;clock_gettime(CLOCK_MONOTONIC,&pn);
-         printf("\033[%d;%dH\033[2m%.3fms\033[0m",top,(int)strlen(cat)+5+fl,(double)(pn.tv_sec-pk.tv_sec)*1e3+(double)(pn.tv_nsec-pk.tv_nsec)/1e6);}
-        printf("\033[%d;%dH",top,(int)strlen(cat)+3+fl); fflush(stdout);
-        unsigned char c; if(read(0,&c,1)!=1){CLR();return -1;}
+         printf("\033[%d;%dH\033[2m%.3fms\033[0m\033[%d;%dH",top,x+2,(double)(pn.tv_sec-pk.tv_sec)*1e3+(double)(pn.tv_nsec-pk.tv_nsec)/1e6,top,x);fflush(stdout);}
+        unsigned char c;if(read(0,&c,1)<1)break;
         clock_gettime(CLOCK_MONOTONIC,&pk);
-        if(c==27){int av; usleep(2000); ioctl(0,FIONREAD,&av);
-            if(av>=2){char s[2]; (void)!read(0,s,2);
-                if(s[0]=='['||s[0]=='O'){
-                    if(s[1]=='A'){if(sel>0)sel--;continue;}
-                    if(s[1]=='B'){sel++;continue;}
-                }}
-            CLR();return -1;}
-        if(c==3){CLR();return -1;}
-        if(c==9){CLR();return 0;}
-        if(c==21){f[0]=0;fl=0;sel=0;continue;}
-        if(c=='\r'||c=='\n'){if(!nf)continue; CLR(); snprintf(out,osz,"%s",items[fm[sel]]); return 1;}
-        if(c==127||c==8||c==0xff){if(fl){f[--fl]=0; sel=0;} else {CLR(); return -1;}}
-        else if(c>=' '&&c<127&&fl<47){f[fl++]=(char)c;f[fl]=0;sel=0;}
+        if(c==27){int av;usleep(2000);ioctl(0,FIONREAD,&av);char s[2];
+            if(av<1||read(0,s,1)<1||!strchr("[O",s[0])||read(0,s+1,1)<1)break;
+            sel+=(s[1]=='B')-(s[1]=='A');continue;}
+        if(c==3)break;
+        if(c==21){f[0]=0;fl=sel=0;}
+        if((c=='\r'||c=='\n')&&nf){snprintf(out,osz,"%s",items[fm[sel]]);r=1;break;}
+        if(c==127||c==8){if(!fl)break;f[--fl]=0;sel=0;}
+        if(c>=' '&&c<127&&fl<47){f[fl++]=(char)c;f[fl]=0;sel=0;}
     }
+    CLR();printf("\033[?7h");fflush(stdout);
+    return r;
     #undef CLR
 }
 static void ssh_parse(const char*h,char*hp,char*port){
