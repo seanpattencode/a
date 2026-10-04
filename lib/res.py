@@ -401,7 +401,14 @@ def review(n, revive=False):
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
     if len(live) == 1:
         p, _, win = live[0]; state = 'ALIVE'
-        preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-300'], capture_output=True, text=True).stdout.rstrip(); preview = '\n'.join([l.rstrip() for l in preview.splitlines() if any(c.isalnum() for c in l) and 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)])
+        preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-300'], capture_output=True, text=True).stdout.rstrip(); L = [l.rstrip() for l in preview.splitlines() if 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)]
+        W = max(map(len, L), default=0); P = []; n = 0   # re-flow lines the TUI hard-wrapped at pane width (= longest line) so the box reads edge to edge; blank, bullet and table lines break
+        for l in L:
+            if not re.search(r'\w', l): n = 0; continue
+            if n >= W - 12 and not re.match(r'\s*([-•●⏺✓✗*>$│⎿]|\d+\.)\s', l): P[-1] += ('' if n == W and len(P[-1].rsplit(' ', 1)[-1]) > 16 else ' ') + l.strip()   # full line cut inside a long token: no space
+            else: P.append(l)
+            n = len(l)
+        preview = '\n'.join(P)
     elif not live and len(ws) < 2 and len(saved) == 1:
         state, preview = 'RESUMABLE', 'Saved output: ' + saved[0].get('preview', '')
         if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', saved[0]['cmd']], check=True); state = 'RESUMING'
