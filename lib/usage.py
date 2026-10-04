@@ -33,7 +33,7 @@ def fit(k,m,p,t):  # drops reset before it'd wrap W; bolds pct at 100%+
     pc=f'{p:>3}%';c=f'{k:<14} {m:<5} {pc}'
     if t and len(c)+len(t)+5<=W:c+="  "+t
     return c.replace(pc,f'\033[1;31m{pc}\033[0m',1) if p>=100 else c
-S=[]
+S=[];cand=[]  # (email,weekly%,resetISO);✗=dead
 rows=[(f"{me or 'main'} (active)",mf)]
 for f in sorted(glob.glob(H+"/.claude-*/.credentials.json")):
     d=os.path.dirname(f);e=em_of(d)
@@ -47,11 +47,14 @@ for n,f in rows:
             o.update(accessToken=t["access_token"],refreshToken=t.get("refresh_token",o["refreshToken"]),expiresAt=int((time.time()+t["expires_in"])*1000))
             aw(f,json.dumps(c))
         u=J("https://api.anthropic.com/api/oauth/usage",h={"Authorization":"Bearer "+o["accessToken"]})
+        p9=r9=None
         for l in u["limits"]:
             m=((l.get("scope") or {}).get("model") or {}).get("display_name") or "all";t=""
             if l["resets_at"]:t=R(dt.datetime.fromisoformat(l["resets_at"]))
             L.append(fit(l["kind"],m,l["percent"],t))
-    except Exception as e:L.append(f"x {e}"+("  — dead refresh token; heal by running claude logged into THIS account once" if "400" in str(e) else ""))
+            if "week" in l["kind"]:p9=max(p9 or 0,l["percent"]);r9=min(r9 or"z",l["resets_at"]or"z")
+        cand.append((n.split()[0],p9 or 0,r9 or"z"))
+    except Exception as e:L.append(f"x {e}"+("  — dead refresh token; heal by running claude logged into THIS account once" if "400" in str(e) else ""));cand.append((n.split()[0]+"✗",100,"z"))
     S.append((n,L))
 try:  # codex (~/.codex, self-refreshes on codex use). UA spoof: cloudflare 403s python-urllib. TUI: /status (shows % LEFT), not /usage
     t=json.load(open(H+"/.codex/auth.json"))["tokens"]
@@ -68,13 +71,20 @@ try:  # grok: no usage api for cli oauth tokens — rest api rejects them, ratel
     S.append(("grok "+list(json.load(open(H+"/.grok/auth.json")).values())[0]["email"],["no usage api"]))
 except Exception:pass
 
+TTY=sys.stdin.isatty()and sys.stdout.isatty()
 rule="─"*min(W-1,58)
 for i,(hdr,L) in enumerate(S):
     if i:print(rule)
-    print(hdr)
+    print(f"[{i+1}] {hdr}" if TTY and i<len(cand) else hdr)
     for l in L:print("  "+l)
 # Snapshot the ACTIVE account LAST. The loop above refreshes it IN PLACE and the endpoint rotates the
 # refresh token, so a copy taken before it holds a token that is already dead — the snapshot then 400s
 # forever once that account stops being active. That is self-inflicted, not "the CLI rotated behind us".
 snap()
 if len(rows)<2:print("(one account so far — swap logins as usual; every account a usage sees gets kept + auto-refreshed)")
+if TTY and len(cand)>1:  # auto=open, soonest weekly reset (ISO sorts);✗=dead
+    b=min(cand,key=lambda c:(c[1]>=100,c[2]))
+    print(f"1-{len(cand)}=switch a=auto→{b[0]} else quit")
+    import termios as T,tty;o=T.tcgetattr(0);tty.setcbreak(0);k=sys.stdin.read(1);T.tcsetattr(0,T.TCSADRAIN,o)
+    c=b if k=="a"else cand[int(k)-1]if k in"123456789"[:len(cand)]else None
+    if c and c[0]!=me:os.execvp("a",["a","usage","switch",c[0]])
