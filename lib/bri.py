@@ -297,16 +297,18 @@ def _openall(urls, to):  # bg tabs, capped + RAM-guarded
         except Exception: pass
         _send({'action': 'open', 'url': u, 'bg': 1, 'fresh': 1}, to); print(f'+ {u}', flush=True)
 
+def _aid():return re.sub(r'\W','',os.environ.get('BRI_ID')or os.environ.get('TMUX_PANE')or f'p{os.getppid()}')[-8:]or'bri'  # stable per-caller id: concurrent agents keep own tabs via `a bri new $(a bri id)`
 def client(args):
     to = args[0][1:] if args and args[0].startswith('@') else ''   # @firefox / @chrome / @all / @firefox/145 — target a browser (CLI default: firefox)
     if to: args = args[1:]
     to_exp = bool(to or os.environ.get('BRI_TO'))   # explicit target — read-only listings default to all browsers instead
     to = to or os.environ.get('BRI_TO') or 'firefox'
     a = args[0] if args else ''
+    if a=='id':print(_aid());return
+    if a:sys.stderr.write(f'[bri {_aid()}{""if to=="firefox"else" @"+to}] {a}\n')
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
-    if a == 'new':  # open a new job tab tagged in the URL; drive it with `a bri hint brijob=<id>`
-        if len(args) < 2: sys.stderr.write('usage: a bri new <id> [url]   (default url: chatgpt.com)\n'); sys.exit(1)
-        jid, url = args[1], (args[2] if len(args) > 2 else 'chatgpt.com')
+    if a == 'new':  # tag a job tab in the URL; drive it with `a bri hint brijob=<id>`. bare id = this caller's (_aid)
+        r=args[1:];jid=r.pop(0)if r and not r[0].startswith(('http','www','chatgpt'))else _aid();url=r[0]if r else'chatgpt.com'
         if not url.startswith(('http://','https://')): url = 'https://' + url
         url += ('&' if '#' in url else '#') + 'brijob=' + jid
         subprocess.Popen(['firefox-nightly','--new-tab',url], env=_ffenv(), stdout=-3, stderr=-3, start_new_session=True)
@@ -479,6 +481,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per 
   restart          quit + relaunch FF Nightly
   screen [name|-]  list outputs / pin FF to sway output (no arg=show, -=clear)
   mon              bri.py + FF CPU/RAM/tabs snapshot
+  id               caller's stable id (BRI_ID>pane>ppid); a bri new $(a bri id) <url> = own tab, no focus-steal
   tail [name]      record bridge traffic → adata/tmp/bri-<name>.log (Ctrl-C stops)
   <N>              open Nth recent research URL (1..4) in default browser
   <url>            navigate (http/https detected)
