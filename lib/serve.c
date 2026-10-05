@@ -26,7 +26,7 @@ static void sha1(const unsigned char*d,size_t n,unsigned char out[20]){
 }
 static char shtml[4<<20];static int shlen;static time_t sgen_t;
 static char sdr[P]; /* a serve <port> <dir> = static site only; UI (incl /ws shell) never exposed */
-static char RB[512];static int RL,rmt,sport;   /* red REMOTE banner (RL bytes), rmt = RL when the viewer is remote (Sean 2026-10-03); sport = our port */
+static char RB[512];static int RL,rmt;   /* red REMOTE banner (RL bytes), rmt = RL when the viewer is remote (Sean 2026-10-03) */
 static const char*mime(const char*p,const char*d){const char*e=strrchr(p,'.');e=e?e+1:"";   /* d = type for an unknown extension */
     return !strcmp(e,"html")?"text/html; charset=utf-8":!strcmp(e,"css")?"text/css":!strcmp(e,"js")?"text/javascript":
         !strcmp(e,"png")?"image/png":!strcmp(e,"svg")?"image/svg+xml":!strcmp(e,"jpg")||!strcmp(e,"jpeg")?"image/jpeg":
@@ -262,18 +262,18 @@ static void handle(int c){
         sresph(c,200,mime(fp,"text/plain"),fd2,(int)fl,"no-cache");free(fd2);return;}
     {char*o=strcasestr(req,"\nOrigin: "),*h=strcasestr(req,"\nHost: ");int n=h?(int)strcspn(h+=7,"\r"):0;if(o)o=strchr(o,'\r');   /* browser-set: Sec-Fetch-Site (fetch/img/nav), Origin (ws) */
      if(strcasestr(req,"\nSec-Fetch-Site: cross-site")||(o&&h&&(o-req<n+2||strncasecmp(o-n,h,(size_t)n)||o[-n-1]!='/'))){sresp(c,403,"text/plain","cross-site",10);return;}}
-    {char rf[P];snprintf(rf,P,"%s/local/remote",AROOT);   /* serving from another device (Sean 2026-10-04): rf names it, a ssh tunnel ... bg holds 127.0.0.1:11111 -> its serve, every request is pumped through */
-        if(strstr(req," /api/remote")){char h[64];qp(req,"host=",h,64);   /* GET = engaged host; POST ?host= engages, empty disengages; reply = what is engaged now */
-            if(*req=='P'){signal(SIGCHLD,SIG_DFL);(void)!system("pkill -f 'L 11111:127.0.0.[2]'");unlink(rf);char cmd[B];snprintf(cmd,B,"a ssh tunnel '%s' %d 11111 bg",h,sport);if(h[0]&&!system(cmd))writef(rf,h);}
+    {char rf[P];snprintf(rf,P,"%s/local/remote",AROOT);   /* serving from another device (Sean 2026-10-04): rf names it, a ssh tunnel ... bg holds 127.0.0.1:11111 -> its :1111, every request is pumped through */
+        if(strstr(req," /api/remote")){char h[64];qp(req,"host=",h,64);   /* GET = engaged host; POST ?host= (local viewer only) engages, empty disengages; reply = what is engaged now */
+            if(*req=='P'&&!rmt){signal(SIGCHLD,SIG_DFL);(void)!system("pkill -f 'L 11111:127.0.0.[2]'");unlink(rf);char cmd[B];snprintf(cmd,B,"a ssh tunnel '%s' 1111 11111 bg",h);if(h[0]&&!system(cmd))writef(rf,h);}
             char*cur=readf(rf,NULL);sresp(c,200,"text/plain",cur?cur:"",cur?(int)strlen(cur):0);free(cur);return;}
         if(!access(rf,F_OK)){int r=socket(AF_INET,SOCK_STREAM,0);struct sockaddr_in t={.sin_family=AF_INET,.sin_port=htons(11111),.sin_addr.s_addr=htonl(INADDR_LOOPBACK)};
             if(connect(r,(void*)&t,sizeof t))unlink(rf);   /* tunnel gone: back to local */
-            else{(void)!write(r,req,(size_t)rn);char b[65536];struct pollfd q[2]={{c,POLLIN,0},{r,POLLIN,0}};
-                for(;;){if(poll(q,2,-1)<0)break;int i=q[0].revents?0:1;ssize_t k=read(i?r:c,b,sizeof b);if(k<=0)break;   /* 0 browser->tunnel, 1 tunnel->browser; http + websocket alike */
+            else{(void)!write(r,req,(size_t)rn);char b[65536];struct pollfd q[2]={{c,POLLIN,0},{r,POLLIN,0}};int got=0;
+                for(;;){if(poll(q,2,-1)<0)break;int i=q[0].revents?0:1;ssize_t k=read(i?r:c,b,sizeof b);if(k<=0){if(i&&!got){unlink(rf);close(r);goto local;}break;}got|=i;   /* 0 browser->tunnel, 1 tunnel->browser; http + websocket alike. closed with nothing sent = that serve is down: answer locally */
                     for(ssize_t o=0,w;o<k;o+=w)if((w=write(i?c:r,b+o,(size_t)(k-o)))<=0)goto out;}
                 out:close(r);return;}
             close(r);}}
-    /* new page = GET handler here + nav link in ui_full.html */
+    local:   /* new page = GET handler here + nav link in ui_full.html */
     if(!strncmp(req,"GET /tasks",10)&&(req[10]==' '||req[10]=='?')){char cmd[P];snprintf(cmd,P,"python3 '%s/lib/task.py' page",SDIR);FILE*pp=popen(cmd,"r");size_t oc=1<<22,ol=0;char*o=malloc(oc);if(pp){ol=fread(o,1,oc-1,pp);pclose(pp);}o[ol]=0;sdoc(c,o,(int)ol);free(o);return;}   /* task board = lib/task.py page() */
     if(!strncmp(req,"POST /tasks/",12)||!strncmp(req,"GET /tasks/spawn?n=",19)||!strncmp(req,"GET /tasks/resume?n=",20)){   /* board actions, all a-side: run <cmd> | set N <text> -> lib/task.py web|set on stdin · spawn N | resume N */
         char*bd=strstr(req,"\r\n\r\n");bd=bd?bd+4:(char*)"";char v[B*4]="",cmd[P],tf[P]="",*p;int n=0;
@@ -876,12 +876,12 @@ static int cmd_ui(int c,char**v){  /* cygwin: lib/ui is python (hangs there): re
     return puts("\xe2\x9c\x93 http://localhost:1111 (stop: a ui off)")<0;}
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     {const char*op=getenv("PATH");if(!op)op="";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
-    int port=argc>2?atoi(argv[2]):1111;sport=port;
+    int port=argc>2?atoi(argv[2]):1111;
     int fd=socket(AF_INET,SOCK_STREAM,0);fcntl(fd,F_SETFD,FD_CLOEXEC);
     setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,&(int){1},4);
     struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons((uint16_t)port),.sin_addr.s_addr=htonl(CYG*INADDR_LOOPBACK)};  /* cygwin: loopback = no firewall prompt */
     if(bind(fd,(void*)&a,sizeof a)<0){printf("x bind :%d: %s%s\n",port,strerror(errno),errno==EADDRINUSE?" — another a serve has it (win+wsl share localhost)":"");return 1;}  /* bind before html_gen: a lost port race exits fast + loud; early connects queue in the backlog */
-    listen(fd,64);RL=snprintf(RB,sizeof RB,"<div style=\"position:fixed;inset:0 0 auto;z-index:99999;background:#c00;color:#fff;font:bold 15px/26px sans-serif;text-align:center;pointer-events:none\">REMOTE \xc2\xb7 %s <button onclick=\"fetch((u='http://localhost:%d/')+'api/remote',{method:'POST'}).finally(()=>location=u)\" style=\"pointer-events:auto;margin-left:12px;font:inherit;color:#c00;border:0;border-radius:4px;padding:0 10px\">disengage</button></div>",DEV,sport);
+    listen(fd,64);RL=snprintf(RB,sizeof RB,"<div style=\"position:fixed;inset:0 0 auto;z-index:99999;background:#c00;color:#fff;font:bold 15px/26px sans-serif;text-align:center;pointer-events:none\">REMOTE \xc2\xb7 %s <button onclick=\"fetch('/api/remote',{method:'POST'}).finally(()=>location='/')\" style=\"pointer-events:auto;margin-left:12px;font:inherit;color:#c00;border:0;border-radius:4px;padding:0 10px\">disengage</button></div>",DEV);
     if(argc>3){if(!realpath(argv[3],sdr)||!dexists(sdr)){printf("x no dir %s\n",argv[3]);return 1;}
         printf("+ site %s\n",sdr);}
     else{printf("> generating HTML...\n");html_gen();
