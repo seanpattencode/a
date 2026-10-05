@@ -104,8 +104,8 @@ _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=0 d=unknown k v;read -r
 _tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen (human-only caps): .tokrule ramp + tok.txt static
     c="$HOME/i/lib/tokcap/tokcap.py";[ -f "$c" ]&&r=$(python3 "$c" cap "$D" 2>/dev/null||:)  # no ~/i: no python, ramp skips
     if [[ "$r" =~ ^[0-9]+$ ]]; then t=$(( $(git -C "$D" ls-files -z 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
-        echo "tok repo $t/$r b/4 ($(( t<=r ? r-t : t-r )) $([[ $t -le $r ]] && echo left || echo over) · ramp: i tokcap $D)" >&2
-        [[ $t -le $r ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: repo $t > cap $r b/4 — simplify, don't raise (.tokrule)" >&2;sed 1d "$D/.tokrule" >&2 2>/dev/null;exit 1; }; fi
+        if [[ $t -le $r ]]; then echo "$(python3 "$c" line "$t" "$D" 2>/dev/null||echo "tok repo $t/$r b/4")" >&2   # line carries the ⚠ WARN in the warn..cap breathing zone (same path /i uses); only >cap stops — surge then cut (Sean 09-28)
+        else echo -e "\033[31m✗ TOK KILL\033[0m: repo $t > cap $r b/4 — simplify, don't raise (.tokrule)" >&2;sed 1d "$D/.tokrule" >&2 2>/dev/null;exit 1; fi; fi
     read -r c <"$f" 2>/dev/null||:
     [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file -> floor; never fail open
     t=$(( $(git -C "$D" ls-files -z a.c lib 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ));[[ $t -le $c ]]&&r=left||r=over
@@ -411,7 +411,6 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/file.c"
 #include "lib/cmd.c"
 #include "lib/perf.c"
-#include "lib/work.c"
 #include "lib/sess.c"
 #include "lib/vm.c"
 #include "lib/new.c"
@@ -461,7 +460,7 @@ static int cmd_freq(int c,char**v){perf_disarm();
     if(tk)printf("\n%ld uses, %ldK code, %ld u/K overall\n",tu,tk,tk?tu/tk:0);
     puts("\033[33m! includes bot/auto use\033[0m");
     return 0;}
-static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest files first, whole under A_CB bytes (default 1.2MB), 10+5-line stubs past it; the digit is ignored (old callers) */
+static int cmd_cat(int c,char**v){perf_disarm();  /* newest first, whole under A_CB, then 10+5-line stubs */
     int di=2;if(c>2&&v[2][0]>='1'&&v[2][0]<='3'&&!v[2][1])di=3;
     if(c>di&&chdir(v[di]))return 1;
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
@@ -506,7 +505,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* a cat [1|3] [dir]: newest f
     if(!d)return 1;d[l]=0;
     char tf[P];snprintf(tf,P,"%s/local/a_cat.txt",AROOT);writef(tf,d);
     {int lc=0;for(size_t i=0;i<l;i++)if(d[i]=='\n')lc++;dprintf(1,"Read %s (%d lines) in full. CONTEXT %s: %d files, %d /a as map (10+5 lines), %d stubbed (A_CB=%zu)\n\n",tf,lc,nst?"INCOMPLETE":"COMPLETE",nf,nam,nst,bud);}
-    (void)!write(1,d,l);to_clip(d);
+    (void)!write(1,d,l);if(isatty(1))to_clip(d);
     fprintf(stderr,"✓ %d files %zu+%zuprompt tok cat %s\n  context: %s/\n",nf,cl2/4,(l-cl2)/4,tf,ctd);
     free(d);}
     #undef GA
@@ -608,7 +607,6 @@ static const cmd_t CMDS[] = {
     {"tmux",cmd_tmux},{"tok",cmd_tok},{"tutorial",cmd_tutorial},{"u",cmd_update},{"ui",cmd_ui},
     {"uninstall",cmd_uninstall},{"update",cmd_update},
     {"vm",cmd_vm},
-    {"w",cmd_w},{"work",cmd_w},
     {"x",cmd_x},
 };
 #define NCMDS (sizeof(CMDS)/sizeof(*CMDS))
