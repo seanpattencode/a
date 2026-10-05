@@ -55,7 +55,7 @@ try { browser.runtime.getBrowserInfo().then(i => { let c = /a\d/.test(i.version)
 const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({chan:BRI_CHAN, ...d})}).catch(()=>{});
 
 // openTab deduped by NORMALIZED url (origin+path): pages mutate their URLs, exact-match dupes
-const _opening = new Map();
+const _opening = new Map(), _tag = new Map();   // _tag: cmd.tag -> tab id
 const _norm = u => { try { const x = new URL(u); return x.origin + x.pathname.replace(/\/+$/,''); }
                      catch (e) { return u.split(/[?#]/)[0].replace(/\/+$/,''); } };
 function openTab(url, bg, fresh) {     // dedup by origin+path; hit → navigate to exact url
@@ -81,8 +81,13 @@ browser.tabs.onCreated.addListener(async t => {
 
 async function run(cmd) {
   const id = cmd.id;
-  if (cmd.action === 'open') {
-    try { return post({id, src:'background', ok:true, value: await openTab(cmd.url, cmd.bg, cmd.fresh)}); }
+  if (cmd.action === 'open') {   // cmd.tag: gnews redirects rewrite the tab url, its id survives; i q/scan pre-opens bg by tag, enter/u switches to it, e closes it (map lost in the win:/nofocus revert, back 10-05)
+    try { let v = null;
+      if (cmd.tag && _tag.has(cmd.tag)) { try { const t = await browser.tabs.get(_tag.get(cmd.tag));
+        if (!cmd.bg) { await browser.tabs.update(t.id, {active:true}); await browser.windows.update(t.windowId, {focused:true}); }
+        v = {id:t.id, focused:!cmd.bg}; } catch (e) { _tag.delete(cmd.tag); } }
+      if (!v) { v = await openTab(cmd.url, cmd.bg, cmd.fresh); if (cmd.tag) _tag.set(cmd.tag, v.id); }
+      return post({id, src:'background', ok:true, value:v}); }
     catch (e) { return post({id, src:'background', error:String(e)}); }
   }
   if (cmd.action === 'screenshot') {
