@@ -35,6 +35,10 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     snprintf(acmd,B,"%s%s%s",cmd?cmd:"",sid[0]?" --session-id ":"",sid);
     char wcmd[B*2],ctxf[P]="",csuf[512]="";
     int is_claude=ai&&strstr(acmd,"claude"),is_agy=ai&&strstr(acmd,"agy"),is_codex=ai&&strstr(acmd,"codex"),is_grok=ai&&strstr(acmd,"grok");
+    for(int k=0;k<2;k++){const char*v=getenv(k?"A_EFFORT":"A_MODEL");if(!v||!*v||!(is_claude||is_codex||is_agy))continue;   /* per-launch model/effort (home chips via omni &m= &e=, or A_MODEL=x A_EFFORT=y a c ..): swap the session's flag, else append */
+        const char*f=!k?" --model ":is_codex?" -c model_reasoning_effort=":" --effort ";char*p=strstr(acmd,f),t[B];
+        if(p){p+=strlen(f);snprintf(t,B,"%s",p+strcspn(p," "));snprintf(p,(size_t)(acmd+B-p),"%s%s",v,t);}
+        else{size_t l=strlen(acmd);snprintf(acmd+l,B-l,"%s%s",f,v);}}
     if(ai){snprintf(ctxf,P,"%s/a_ctx_%d.txt",TMP,(int)getpid());
         /* claude/grok: ctx file + positional extra; agy: extra in ctx; codex: extra only */
         if(!is_codex)write_prompt_file(ctxf,wd,is_agy?extra:NULL);

@@ -84,6 +84,7 @@ static void html_gen(void){
                             ?snprintf(o,640,"<option value=\"%s\">%s → %s</option>",dln,dln,hbr)
                             :snprintf(o,640,"<option>%s</option>",dln);EMIT(o,ol)}if(df)pclose(df);}
                 else if(!strcmp(tag,"NO")){static char nb[131072];int nl2=notes_build(nb,131072);EMIT(nb,nl2)}
+                else if(!strcmp(tag,"MF"))EMIT("1",1)   /* capability: this binary honors &m= &e= */
                 else{EMIT(p,(int)(end+2-p))p=end+2;continue;}
                 p=end+2;continue;}}
         EMIT(p,1)p++;
@@ -651,6 +652,7 @@ static void handle(int c){
     if(!strncmp(req,"POST /api/omni",14)||!strncmp(req,"POST /note",10)){
         char*body=strstr(req,"\r\n\r\n");if(!body){sresp(c,400,"text/plain","bad",3);return;}
         body+=4;char*dq=strstr(body,"&d=");int dn=dq&&dq[3]>='0'?atoi(dq+3):-1;   /* &d=<project #>: the box's folder */
+        char mv[64],ev[64];qp(body,"&m=",mv,64);qp(body,"&e=",ev,64);   /* &m= &e=: model + effort chips -> A_MODEL/A_EFFORT (create_sess) */
         int isnote=!strncmp(req,"POST /note",10);
         char*q=strstr(body,isnote?"c=":"q=");if(!q){sresp(c,400,"text/plain","no param",8);return;}
         q+=2;char*cmd=q,*w=q;   /* in-place: decoded ≤ encoded */
@@ -664,6 +666,7 @@ static void handle(int c){
         int pp[2];pipe(pp);pid_t ch=fork();
         if(!ch){close(pp[0]);dup2(pp[1],1);dup2(pp[1],2);close(pp[1]);
             signal(SIGALRM,SIG_DFL);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL); /* SIG_DFL: child git must waitpid */
+            if(mv[0])setenv("A_MODEL",mv,1);if(ev[0])setenv("A_EFFORT",ev,1);
             if(dn>=0){load_proj();if(dn>=NPJ||chdir(PJ[dn].path)){dprintf(1,"x no folder: project %d\n",dn);_exit(1);}dprintf(1,"in %s\n",PJ[dn].path);}
             char*args[32]={"a"};int ac=1;char*p2=cmd;
             while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(*p2)*p2++=0;}
