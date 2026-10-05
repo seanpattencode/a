@@ -1,25 +1,12 @@
-"""a app [path] — own-window web UI; native flash window first, title=cold ms."""
-import sys,os,time
-A=os.path.dirname(os.path.dirname(os.path.abspath(__file__)));B=A+'/adata/local/flash'
-if'A_FLASH'not in os.environ:  # once (file re-runs after the execv below): flash NOW, gi+GTK+WebKit boot behind it
- try:
-  if os.stat(B).st_mtime<=os.stat(A+'/lib/flash.c').st_mtime:raise OSError
-  os.environ['A_FLASH']=str(os.posix_spawn(B,[B],os.environ))
- except OSError:os.environ['A_FLASH']='';os.posix_spawn('/bin/sh',['sh','-c',"X=/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml;cd ${TMPDIR:-/tmp}&&wayland-scanner client-header $X xs.h&&wayland-scanner private-code $X xs.c&&{ tcc -w -I. -o '%s' '%s' xs.c -lwayland-client||/usr/bin/gcc -B/usr/bin -O2 -w -I. -o '%s' '%s' xs.c -lwayland-client;} 2>/dev/null"%(B,A+'/lib/flash.c',B,A+'/lib/flash.c')],os.environ)  # build once; flash joins next launch
-T=int(open('/proc/self/stat').read().split()[21])  # pre-fork; execv-safe
-try:import gi
-except:os.execv('/usr/bin/python3',['/usr/bin/python3']+sys.argv)  # a's python lacks gi
-gi.require_version('Gtk','4.0');gi.require_version('WebKit','6.0')  # before detach
-os.fork()and os._exit(0);os.setsid();os.dup2(os.open(os.devnull,2),2)
-from gi.repository import Gtk,WebKit,GLib
-GLib.set_prgname('a-app')
-v=WebKit.WebView();v.load_uri('http://localhost:1111'+''.join(sys.argv[2:]))
-w=Gtk.Window(title='a');w.set_child(v)
-F=os.environ.get('A_FLASH');F and w.connect('map',lambda*_:os.kill(int(F),15))  # real window mapped -> flash dies
-v.connect('load-changed',lambda v,e:e==3 and w.set_title('a %d0ms'%(time.clock_gettime(7)*100-T)))  # 7=BOOTTIME
-def key(_c,kv,kc,st):  # F11 fullscreen; Ctrl+R / F5 = hard reload (WebKitGTK binds none)
- if kv==65480:(w.unfullscreen if w.is_fullscreen() else w.fullscreen)();return True
- if kv==65474 or(st&4 and kv in(114,82)):v.reload_bypass_cache();return True  # 65474=F5, 114/82=r/R, st&4=Ctrl
- return False
-k=Gtk.EventControllerKey();k.connect('key-pressed',key);w.add_controller(k)
-w.connect('close-request',lambda*_:os._exit(0));w.present();GLib.MainLoop().run()
+"""a app [path] — own-window web UI as a real Chrome app window (--app=, own profile).
+GTK4+WebKitGTK dropped 2026-10-01, don't go back: GTK4's default Vulkan GSK on NVIDIA/Wayland
+missed 26/700 frames (VK_SUBOPTIMAL_KHR on every present, 57ms hitches) and WebKitGTK pins
+~60fps on a 144Hz panel; chrome --app on the same scroll rig: 141fps, 1 drop in 1692.
+GSK_RENDERER=gl only trims the hitches — the 60fps cap stays. Stable chrome, never canary
+(canary ignores sway resizes, window frozen at birth size)."""
+import os,sys
+A=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+U='http://localhost:1111'+''.join(sys.argv[2:])
+if os.fork():print('→ chrome --app '+U,flush=True);os._exit(0)
+os.setsid();d=os.open(os.devnull,os.O_RDWR);os.dup2(d,0);os.dup2(d,1);os.dup2(d,2)
+os.execvp('google-chrome',['google-chrome','--user-data-dir='+A+'/adata/local/appchrome','--no-first-run','--no-default-browser-check','--ozone-platform=wayland','--app='+U])
