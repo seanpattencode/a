@@ -34,7 +34,7 @@ const S=Object.assign({},DEF);
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
-let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,kt=0,kr=0,sm=0,ks=0,kf=0,curlast='',px0=0,py0=0,snt=0,yt=0;
+let dirty=new Set(),raf=0,pt=0,dt=0,unk=0,wsOk=false,W=null,ty=0,rt=0,wn=Q.get('w')||'',ct=0,rd=1e3,kt=0,kr=0,sm=0,ks=0,kf=0,curlast='',px0=0,py0=0,snt=0,yt=0;
 function drow(y){
   dirty.add(y);
   if(!raf)raf=requestAnimationFrame(paint);
@@ -320,9 +320,9 @@ function connect(){
   const host=Q.get('host')||location.host;
   W=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+host+'/ws'+(wn?'?w='+encodeURIComponent(wn):''));
   W.binaryType='arraybuffer';
-  W.onopen=()=>{wsOk=true;ct=performance.now();W.send(JSON.stringify({cols,rows}));stat();};
+  W.onopen=()=>{wsOk=true;ct=performance.now();rd=1e3;W.send(JSON.stringify({cols,rows}));stat();};
   W.onmessage=e=>feed(typeof e.data==='string'?e.data:new Uint8Array(e.data));
-  W.onclose=W.onerror=()=>{wsOk=false;stat();if(ct&&performance.now()-ct<1500)wn=Q.get('w')||'';setTimeout(connect,1000);}; 
+  W.onclose=W.onerror=()=>{wsOk=false;stat();setTimeout(connect,rd=Math.min(rd*2,3e4));};
 }
 function tx(s){
   if(Q.get('test')){T.sent.push(s);return;}

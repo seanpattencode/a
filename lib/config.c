@@ -82,6 +82,7 @@ static int prompt_tui(const char*d){char p[64][P];int n=listdir(d,p,64);if(n<1){
             else{snprintf(x,sizeof x,"less -- '%s'",p[s]);(void)!system(x);}
             raw_enter();}}
     raw_exit();printf("\033[H\033[2J");return 0;}
+static char* note_save(const char*,const char*);   /* note.c, later in a.c's include order */
 static int cmd_prompt(int argc, char **argv) {
     init_db();load_cfg();
     char d[P]; snprintf(d,P,"%s/common/prompts",SROOT);
@@ -92,11 +93,7 @@ static int cmd_prompt(int argc, char **argv) {
     if(!strcmp(sub,"c")||!strcmp(sub,"cand")){perf_disarm();
         char cd[P];snprintf(cd,P,"%s/prompts",SROOT);mkdirp(cd);
         if(argc>3){char t[B]="";ajoin(t,B,argc,argv,3);
-            struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);char ts[32],fn[P],buf[B];
-            strftime(ts,32,"%Y%m%dT%H%M%S",localtime(&tp.tv_sec));
-            snprintf(fn,P,"%s/%08x_%s.%09ld.txt",cd,(unsigned)(tp.tv_nsec^(unsigned)tp.tv_sec),ts,tp.tv_nsec);
-            snprintf(buf,B,"Text: %s\nStatus: pending\nDevice: %s\nCreated: %s\n",t,DEV,ts);writef(fn,buf);
-            puts("✓ candidate saved");return 0;}
+            note_save(cd,t);puts("✓ candidate saved");return 0;}
         char pp[256][P];int n=listdir(cd,pp,256);printf("%d prompt candidates  (add: a prompt c <text>)\n",n);
         for(int i=0;i<n;i++){size_t l;char*ck=readf(pp[i],&l);if(!ck)continue;
             if(!strncmp(ck,"Text: ",6)){char*nl=strchr(ck,'\n');if(nl)*nl=0;printf("  %s\n",ck+6);}free(ck);}

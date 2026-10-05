@@ -359,8 +359,8 @@ def remote(host):                                     # review one box's agent w
 
 
 def _row(n):
-    try: f = open(LOC + '/done.log').read().splitlines()[int(n)].split('\t', 4); return f[2], f[3], int(f[0]), f[4][-50:]
-    except Exception: return '', '', 0, ''
+    try: f = open(LOC + '/done.log').read().splitlines()[int(n)].split('\t'); return f[2], f[3], int(f[0]), f[4][-50:], f[5] if len(f) > 5 else ''
+    except Exception: return '', '', 0, '', ''
 
 def _tr(t, k, d):  # (path, text) of the transcript under d that logged k by done-time t; later sessions merely quoting k don't count
     for f in glob.glob(d + '/*.jsonl'):
@@ -375,7 +375,7 @@ def _first(t, k):  # first prompt of that transcript, any project
 
 def watch(n):                                         # /review SSE: push on events only (pidfd exit, transcript/snapshot inotify)
     import select, ctypes, signal; signal.signal(signal.SIGPIPE, signal.SIG_DFL); C = ctypes.CDLL(None); last = ''
-    name, cwd, t, m = _row(n); p = None
+    name, cwd, t, m, _ = _row(n); p = None
     while True:
         s = 'data: %s\n' % json.dumps(dict(review(n), prompt=p or ''))
         if s != last: last = s; print(s, flush=True)
@@ -389,15 +389,14 @@ def watch(n):                                         # /review SSE: push on eve
         os.close(ifd); pfd and os.close(pfd)
 
 def review(n, revive=False):
-    name, cwd, t, m = _row(n)
+    name, cwd, t, m, rid = _row(n)
     if not LINUX: _ps()
     ws = [w for w in windows() if w[1:3] == [name, cwd]]
     panes = subprocess.run(['tmux', 'list-panes', '-t', ws[0][0], '-F', '#{pane_id}\t#{pane_pid}\t#{window_index}'], capture_output=True, text=True).stdout.splitlines() if len(ws) == 1 else []
     live = [p.split('\t') for p in panes if agent([p.split('\t')[1]])[0]]
-    try: saved = [j for j in json.load(open(SNAP))['jobs'] if j['window'] == name and j['cwd'] == cwd and j['cmd']]
-    except (OSError, ValueError): saved = []
-    if not live and not saved and (f := _tr(t, m, PD(cwd))[0]):   # snapshot forgets closed windows: resume from the transcript
-        sid = os.path.basename(f)[:-6]; saved = [{'cmd': RESUME['claude'] % sid, 'preview': _preview(sid)}]
+    saved = []   # recorded sid (done.log f6) beats cwd/name drift; else transcript text-match (pre-sid rows)
+    if not live and (sid := rid if have(rid) else os.path.basename(_tr(t, m, PD(cwd))[0])[:-6]):
+        saved = [{'cmd': RESUME['claude'] % sid, 'preview': _preview(sid)}]
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
     if len(live) == 1:
         p, _, win = live[0]; state = 'ALIVE'
@@ -409,8 +408,8 @@ def review(n, revive=False):
             else: P.append(l)
             n = len(l)
         preview = '\n'.join(P)
-    elif not live and len(ws) < 2 and len(saved) == 1:
-        state, preview = 'RESUMABLE', 'Saved output: ' + saved[0].get('preview', '')
+    elif not live and len(ws) < 2 and saved:
+        state, preview = 'RESUMABLE', 'Saved output: ' + saved[0]['preview']
         if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', saved[0]['cmd']], check=True); state = 'RESUMING'
     return dict(state=state, preview=preview, window=win)
 

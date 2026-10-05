@@ -128,7 +128,7 @@ static void tm_ensure_conf(void) {
 #undef WH
         "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] ,#[fg=#000000 bg=#ffffff bold] #I:#W #[default] }\"\n"
         /* C-Tab impossible: Tab=0x09=C-i */
-#define SSHIF "if-shell 'ps -o comm= -t #{pane_tty} 2>/dev/null|grep -qE \"^ssh\"' "
+#define SSHIF "if -F '#{m/r:^ssh,#{pane_current_command}}' "
         "bind -n M-Right " SSHIF "'if-shell \"a fl n #{pane_id}\" next-window' 'next-window'\n"
         "bind -n M-Left " SSHIF "'if-shell \"a fl p #{pane_id}\" previous-window' 'previous-window'\n"
         "bind -n C-k " SSHIF "'send C-k' 'next-window'\n"
