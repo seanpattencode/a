@@ -428,6 +428,7 @@ def sweep(kind, dry=False):   # /review bulk clear; kinds: serve.c route
                 if 'nothing pending' in last[-99:].lower(): hit |= {i for i, r in op.items() if r[1] == cwd and r[3] in s}
     if not dry: open(f'{LOC}/review_closed.txt', 'a').write(''.join(f'{op[i][2]}\t{op[i][0]}\n' for i in hit))
     print(f"{len(hit)}/{len(op)} {'would be ' if dry else ''}archived — undo: edit adata/local/review_closed.txt")
+    for i in sorted(hit): print(f'  ✓ {op[i][0] or "(no window)"} · {os.path.basename(op[i][1])} · {op[i][3]}')
 
 def main(a):
     via = a[0] if a and a[0] in ("res", "resume", "snap") else ""   # how we were invoked

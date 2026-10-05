@@ -20,8 +20,9 @@ function fitApply(){if(!HW)return;var t=performance.now(),f=FIT&&HC?font():0,s=1
 function op(b){DOCU='';HC=HR=0;TR=0;HN=b.dataset.n;HW=b.dataset.w;pull.style.display='flex';fitApply();pd.hidden=true;pf.hidden=false;pf.removeAttribute('srcdoc');pf.src='/op?w='+HW+'&all';
   fetch('/review/wsz?w='+HW).then(r=>r.text()).then((x)=>{var a=x.split(' ');HC=+a[0]||0;HR=+a[1]||0;fitApply()});pf.onload=()=>{setTimeout(fitApply,300)}}
 function armed(){fetch('/review/armed').then(r=>r.text()).then((x)=>{armp.textContent=x?'\u26a1 ARMED: the next Attach click in any browser attaches '+x:'\u2717 unarmed: the next Attach click opens the e picker'})}armed();
-/* bulk archive buttons; kinds: serve.c sweep route */
-function sw(b,k){var t=performance.now();b.disabled=1;armp.textContent='archiving\u2026';fetch('/review/sweep?k='+k).then(r=>r.text()).then(x=>{armp.textContent=x.trim()+' \u00b7 '+(performance.now()-t).toFixed(0)+'ms';setTimeout(()=>location.reload(),900)},()=>{b.disabled=0;armp.textContent='\u2717 failed \u2014 stale tab? reload'})}
+/* bulk archive buttons; kinds: serve.c sweep route. success = the CLI receipt (count + each closed row) in the pull-up so the sweep is confirmable; close/Esc reloads the list */
+var SWP=0;
+function sw(b,k){var t=performance.now();b.disabled=1;armp.textContent='archiving\u2026';fetch('/review/sweep?k='+k).then(r=>r.text()).then(x=>{SWP=1;pdo('','archive receipt \u00b7 '+(performance.now()-t).toFixed(0)+'ms \u00b7 close reloads the list');pd.textContent=x},()=>{b.disabled=0;armp.textContent='\u2717 failed \u2014 stale tab? reload'})}
 /* device stamp: which box runs these agents; server truth, tunnel URLs lie (Sean 2026-09-22) */
 var DEVN='';fetch('/api/omni',{method:'POST',body:'q=cmd cat ~/a/adata/local/.device 2>/dev/null||hostname'}).then(r=>r.text()).then(t=>{DEVN=t.replace(/<[^>]*>/g,'').trim().replace(/\d+(\.\d+)?us$/,'');dvc.textContent=DEVN;document.title=DEVN+' \u00b7 a review';RW.length&&fshow(0,performance.now())});
 /* stale-tab guard: file changed on disk -> reload on focus, not polled (Sean 2026-09-22) */
@@ -40,7 +41,7 @@ function pu(b){var t=performance.now(),d=RW[K].querySelectorAll('.hd span')[1].t
  fetch('/review/push?n='+b.dataset.n).then(r=>r.text()).then(x=>{var ok=x.indexOf('PUSHED_OK')>=0;
   pd.textContent=(ok?'✓ PUSHED':'✗ NOT PUSHED')+'\n\nran: '+c+'\n\n'+x+(ok?'':'\n\nRefused as run above: size gate = TOK INCREASE RULE; PUSH_CONFLICT/rejected = origin moved or other agents\' hunks share the files.\nFix: [p] the agent pushes only its own hunks, or [w] by hand.');
   pt.textContent='direct push · '+(ok?'pushed':'failed');tm((ok?'PUSHED ✓ ':'NOT PUSHED ✗ see pull-up ')+c,t)})}
-function cl(){var t=performance.now();pull.style.display='none';pf.src='about:blank';pd.textContent='';tm('closed',t)}
+function cl(){if(SWP)return location.reload();var t=performance.now();pull.style.display='none';pf.src='about:blank';pd.textContent='';tm('closed',t)}
 function pdo(h,t){pull.style.display='flex';pf.hidden=true;pd.hidden=false;pd.innerHTML=h;pt.textContent=t}   /* pull-up showing text, not a frame */
 /* row's tok under the message (Sean 2026-09-22); red = tok-rule hit; by row number so unbracketed dones get it; feeds the diff box too */
 function tok(k){var r=RW[k];if(!r||!r.dataset.n)return;var s=r.querySelector('.tk')||r.insertBefore(Object.assign(document.createElement('div'),{className:'tk'}),r.querySelector(':scope>div:not(.hd):not(#av)'));
