@@ -453,7 +453,7 @@ static void handle(int c){
         sresp(c,fd<0||write(fd,bp+4,(size_t)(rn-(bp+4-req)))<0?400:200,"text/plain","",0);return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];qn(req,nm);
         if(!nm[0]){
-            int au=!!strstr(req,"sort=author"),alp=!!strstr(req,"sort=name");   /* default = most-opened first; ?sort=name | ?sort=author */
+            int au=!!strstr(req,"sort=author"),alp=!!strstr(req,"sort=name"),rc=!!strstr(req,"sort=recent");   /* default = most-opened first; ?sort=name | ?sort=author | ?sort=recent = last opened first (Sean 10-04) */
             char bd[P];snprintf(bd,P,"%s/books",AROOT);
             static char names[4096][128];int n=0;DIR*d=opendir(bd);struct dirent*e;
             if(d){while((e=readdir(d))&&n<4096){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
@@ -468,12 +468,12 @@ static void handle(int c){
             static int idx[4096];   /* author mode sorts an index by resolved-author key (book.c) */
             if(au){bk_resolve(names,n);g_ak=bk_ak;for(int i=0;i<n;i++)idx[i]=i;qsort(idx,(size_t)n,sizeof(int),g_akcmp);}
             else{qsort(names,(size_t)n,128,scmp);for(int i=0;i<n;i++)idx[i]=i;
-                if(!alp){static int cnt[4096];   /* fork-per-conn: fresh zeroed copy each request */
-                    char lp[P];snprintf(lp,P,"%s/local/serve.log",AROOT);char*lg=readf(lp,NULL);
-                    if(lg){for(char*p=lg;(p=strstr(p,"GET /book?n="));){p+=12;char bn[128];int j=0;
+                if(!alp){static int cnt[4096],lst[4096],k;   /* fork-per-conn: fresh zeroed copy each request; lst = open sequence, highest = seen last */
+                    char lp[P];snprintf(lp,P,"%s/local/serve.log",AROOT);size_t ll=0;char*lg=readf(lp,&ll);
+                    if(lg){for(char*p=lg;(p=memmem(p,(size_t)(lg+ll-p),"GET /book?n=",12));){p+=12;   /* memmem: the log holds NULs, strstr stopped at the first one (half the opens were never counted) */char bn[128];int j=0;
                         for(;*p&&*p!=' '&&*p!='&'&&j<127;p++){if(*p=='%'&&p[1]&&p[2]){char x[3]={p[1],p[2],0};bn[j++]=(char)strtol(x,0,16);p+=2;}else bn[j++]=*p;}
-                        bn[j]=0;for(int i=0;i<n;i++)if(!strcmp(names[i],bn)){cnt[i]++;break;}}
-                    free(lg);}g_bc=cnt;qsort(idx,(size_t)n,sizeof(int),g_bccmp);}}
+                        bn[j]=0;for(int i=0;i<n;i++)if(!strcmp(names[i],bn)){cnt[i]++;lst[i]=++k;break;}}
+                    free(lg);}g_bc=rc?lst:cnt;qsort(idx,(size_t)n,sizeof(int),g_bccmp);}}
             int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
                 "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
                 "<style>body{background:#0b0b0b;color:#ddd;margin:0 0 160px;font:18px/1.35 system-ui}h3{color:#fff;padding:14px 16px 6px;margin:0}"
@@ -487,7 +487,7 @@ static void handle(int c){
                 "if(e.type!='pointerdown')return;fetch(a.href).then(function(r){if(r.ok){a.closest('.r').style.opacity=.35;a.outerHTML='<span class=c>\xe2\x9c\x93 archived</span>'}else a.textContent='\xe2\x9c\x97'},function(){a.textContent='\xe2\x9c\x97'})}"
                 "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true);"
                 "addEventListener('pointerdown',function(e){var o=e.target.closest('.o'),m=o&&o.nextSibling,w=m&&m.classList.contains('on');if(!o&&e.target.closest('.m'))return;document.querySelectorAll('.m.on').forEach(function(x){x.classList.remove('on')});if(o){e.preventDefault();if(!w)m.classList.add('on')}},true)</script>" TAPJS
-                "<h3>books (%d)</h3><div id=bb><div class=nav><a%s href=\"/book\">by freq</a><a%s href=\"/book?sort=name\">by name</a><a%s href=\"/book?sort=author\">by author</a><span id=qms></span></div>"
+                "<h3>books (%d)</h3><div id=bb><div class=nav><a%s href=\"/book\">by freq</a><a%s href=\"/book?sort=name\">by name</a><a%s href=\"/book?sort=author\">by author</a><a%s href=\"/book?sort=recent\">recent</a><span id=qms></span></div>"
                 "<button id=ab onpointerdown=af.click()>+ add book</button><input id=q placeholder=\"type to search\" autofocus></div>"
                 "<script>q.oninput=function(){var t0=performance.now(),v=q.value.toLowerCase(),hd=0,vn=0,ht='';"
                 "document.querySelectorAll('.h,.r').forEach(function(e){if(e.className=='h'){if(hd)hd.style.display=vn?'':'none';hd=e;ht=e.textContent.toLowerCase();vn=0}"
@@ -497,7 +497,7 @@ static void handle(int c){
                 "onkeydown=function(e){if(document.activeElement!=q&&!e.ctrlKey&&!e.metaKey&&(e.key.length==1||e.key=='Backspace'))q.focus()}</script>"
                 "<input id=af type=file multiple hidden><script>async function up(fs){for(var f of fs){var m=f.name.replace(/[^\\w.]+/g,'-');for(var o=0;o<f.size;o+=2e5)await fetch('/up?s='+ +!o+'&n='+m,{method:'POST',body:f.slice(o,o+2e5)}),ab.textContent=m+' '+o;navigator.sendBeacon('/api/omni','q=cmd+a+book+add+${TMPDIR:-/tmp}/'+m)}setTimeout(\"location=''\",999)}af.onchange=()=>up(af.files);"
                 "ondragover=e=>{e.preventDefault();ab.textContent='drop to add book'};ondragleave=e=>{if(!e.relatedTarget)ab.textContent='+ add book'};ondrop=e=>{e.preventDefault();ab.textContent='+ add book';if(e.dataTransfer.files.length)up(e.dataTransfer.files)}</script>",
-                n,(au||alp)?"":" class=on",alp?" class=on":"",au?" class=on":"");
+                n,(au||alp||rc)?"":" class=on",alp?" class=on":"",au?" class=on":"",rc?" class=on":"");
             const char*ex[]={"pdf","epub","azw3","mobi","docx",0};char pk[96]="";
             for(int ii=0;ii<n&&hl<cap-2048;ii++){int i=idx[ii];
                 if(au&&strcmp(bk_ak[i],pk)){strcpy(pk,bk_ak[i]);   /* sticky author header per run */
