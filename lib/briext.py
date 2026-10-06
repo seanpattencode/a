@@ -347,7 +347,7 @@ loop();
 ''',
 "wake.js": r'''chrome.runtime.sendMessage({bri:'wake'}).catch(()=>{});  // page-load ping wakes the SW → it (re)creates the offscreen poller''',
 }
-NT={  # new tab: Ctrl+T pins focus to the url bar (FF bug 1411465, Chrome by design); only a tabs.create'd tab focuses content (Chrome's iframe/redirect/SW versions never did)
+NT={  # Ctrl+T pins focus to the url bar (FF bug 1411465, Chrome by design); only a tabs.create'd tab focuses content
 "newtab.html": r'''<!doctype html><style>html,body{margin:0;height:100vh;background:#000}</style><script src="newtab.js"></script>''',
 "newtab.js": r'''chrome.tabs.getCurrent(t=>chrome.tabs.create({url:'http://localhost:1111/',index:t.index+1},()=>chrome.tabs.remove(t.id)))''',
 }
@@ -389,7 +389,7 @@ def chrome_uninstall():
     print("\u2713 removed force-install policy (restart Chrome to drop the extension)")
 
 def chrome_restart(chrome='google-chrome-canary'):
-    # kill the default-profile browser only (not renderers/crashpad/other --user-data-dir instances: the pad kiosk), relaunch with the session env a bare shell lacks — no WAYLAND_DISPLAY: ozone picks X11 and Chrome exits; no DBUS: a keyring prompt stalls every load
+    # kill only the default-profile browser (not renderers/crashpad/other --user-data-dir: the pad kiosk); relaunch with the session env: no WAYLAND_DISPLAY = ozone picks X11 and exits, no DBUS = a keyring prompt stalls every load
     import subprocess,select,ctypes
     pr=lambda *a:subprocess.run(['pgrep',*a],capture_output=True,text=True).stdout.split()
     ps=[int(p) for p in pr('-f','^/opt/google/chrome-canary/chrome( |$)') if not any(x in open('/proc/%s/cmdline'%p).read() for x in('--type=','--user-data-dir='))]

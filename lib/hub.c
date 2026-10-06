@@ -76,7 +76,7 @@ static void hub_timer(hub_t *j, int on) {
         char svc[P]; snprintf(svc,P,"%s/a-%s.service",sd,j->n); writef(svc,buf);
         if(bt)snprintf(buf,B*2,"systemctl --user daemon-reload;systemctl --user enable a-%s.service >/dev/null 2>&1;systemctl --user restart a-%s.service",j->n,j->n);
         else{
-        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Timer]\nOnCalendar=%s\nAccuracySec=1us\nPersistent=true\n[Install]\nWantedBy=timers.target\n",j->n,j->s); /* max precision (Sean 2026-08-31): systemd default AccuracySec=1min drifts fires; 1us floor measured +1.16ms actual. HH:MM:SS scheds pass straight through */
+        snprintf(buf,B*2,"[Unit]\nDescription=a:%s\n[Timer]\nOnCalendar=%s\nAccuracySec=1us\nPersistent=true\n[Install]\nWantedBy=timers.target\n",j->n,j->s); /* max precision (Sean 2026-08-31): default AccuracySec=1min drifts fires; 1us floor measured +1.16ms */
         char tmr[P]; snprintf(tmr,P,"%s/a-%s.timer",sd,j->n); writef(tmr,buf);
         /* stop+stamp=now, else Persistent catch-up fires a rescheduled live timer instantly */
         snprintf(buf,B*2,"systemctl --user stop a-%s.timer 2>/dev/null;touch %s/.local/share/systemd/timers/stamp-a-%s.timer 2>/dev/null;systemctl --user daemon-reload;systemctl --user enable --now a-%s.timer >/dev/null 2>&1",j->n,HOME,j->n,j->n);}

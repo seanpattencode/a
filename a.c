@@ -68,7 +68,7 @@ a() {
 }
 aio() { a "$@"; }
 ai() { a "$@"; }
-# a-tmux-env-fix: pull live graphical env from tmux global (session may explicitly unset DISPLAY/WAYLAND_DISPLAY); tmux global may lack it too (compositor never pushed it) -> probe the wayland socket
+# graphical env: tmux global (a session may unset DISPLAY/WAYLAND_DISPLAY), then probe the wayland socket (the compositor may never have pushed it)
 [ -n "$TMUX" ] && [ -z "$WAYLAND_DISPLAY$DISPLAY" ] && eval "$(tmux show-environment -g 2>/dev/null|grep -E '^(WAYLAND_DISPLAY|DISPLAY|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR)='|sed 's/^/export /')"; [ -z "$WAYLAND_DISPLAY$DISPLAY" ] && for _s in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/wayland-*; do [ -S "$_s" ] && export WAYLAND_DISPLAY="${_s##*/}" && break; done
 AFUNC
     done
@@ -101,7 +101,7 @@ _perf_chk() { local e=$(( ${EPOCHREALTIME/./} - _PT )) l=0 d=unknown k v;read -r
 _tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen (human-only caps): .tokrule ramp + tok.txt static
     c="$HOME/i/lib/tokcap/tokcap.py";[ -f "$c" ]&&r=$(python3 "$c" cap "$D" 2>/dev/null||:)  # no ~/i: no python, ramp skips
     if [[ "$r" =~ ^[0-9]+$ ]]; then t=$(( $(git -C "$D" ls-files -z 2>/dev/null|xargs -0 cat 2>/dev/null|wc -c)/4 ))
-        if [[ $t -le $r ]]; then echo "$(python3 "$c" line "$t" "$D" 2>/dev/null||echo "tok repo $t/$r b/4")" >&2   # line carries the ⚠ WARN in the warn..cap breathing zone (same path /i uses); only >cap stops — surge then cut (Sean 09-28)
+        if [[ $t -le $r ]]; then echo "$(python3 "$c" line "$t" "$D" 2>/dev/null||echo "tok repo $t/$r b/4")" >&2   # WARN in the warn..cap zone, only >cap stops — surge then cut (Sean 09-28)
         else echo -e "\033[31m✗ TOK KILL\033[0m: repo $t > cap $r b/4 — simplify, don't raise (.tokrule)" >&2;sed 1d "$D/.tokrule" >&2 2>/dev/null;exit 1; fi; fi
     read -r c <"$f" 2>/dev/null||:
     [[ "$c" =~ ^[0-9]+$ ]] || c=300000  # no cap file -> floor; never fail open
@@ -141,10 +141,10 @@ build) _PT=${EPOCHREALTIME/./}
     else
         _ensure_cc; E=$($CC $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
-    [[ -z $TCT && ! -x $HOME/.local/bin/tcc && ! -d /data/data/com.termux && $OSTYPE != cygwin ]]&&{ (T_=$(mktemp -d)&&git clone -q --depth 1 https://github.com/TinyCC/tinycc.git $T_&&cd $T_&&./configure --prefix=$HOME/.local&&make -j8&&make install;rm -rf $T_) >/dev/null 2>&1 & }  # no working tcc: build mob once, in bg
+    [[ -z $TCT && ! -x $HOME/.local/bin/tcc && ! -d /data/data/com.termux && $OSTYPE != cygwin ]]&&{ (T_=$(mktemp -d)&&git clone -q --depth 1 https://github.com/TinyCC/tinycc.git $T_&&cd $T_&&./configure --prefix=$HOME/.local&&make -j8&&make install;rm -rf $T_) >/dev/null 2>&1 & }
     [[ "$ABIN" == */adata/local && ! "$BIN/a" -ef "$ABIN/a" ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
     { rm -f "$ABIN/i_cache.txt";"$ABIN/a" i; } </dev/null >/dev/null 2>&1 &  # bg menu-cache regen: next a <1ms
-    [[ $OSTYPE == cygwin ]]&&{ if timeout -k 4 3 /usr/bin/python3 -c pass 2>/dev/null;then rm -f "$ABIN/python3";else printf '#!/bin/sh\necho "x python3 hangs on this cygwin (A_PYOK=1 unblocks)">&2;exit 1\n'>"$ABIN/python3";chmod +x "$ABIN/python3";fi;("$ABIN/a" ui reload >&- 2>&- &); }  # probe the real python3 (startup-hang, win 29667): healthy drops the shim, hung keeps it — stderr-only so panes/web popen stay clean · serve's forks crash on a new exe: restart
+    [[ $OSTYPE == cygwin ]]&&{ if timeout -k 4 3 /usr/bin/python3 -c pass 2>/dev/null;then rm -f "$ABIN/python3";else printf '#!/bin/sh\necho "x python3 hangs on this cygwin (A_PYOK=1 unblocks)">&2;exit 1\n'>"$ABIN/python3";chmod +x "$ABIN/python3";fi;("$ABIN/a" ui reload >&- 2>&- &); }  # python3 startup-hang (win 29667): healthy drops the shim, hung keeps it; stderr-only so popen stays clean; serve's forks crash on a new exe: restart
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
     (
         rm -f "$ABIN/.chk";T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A="$_QT"
@@ -246,10 +246,10 @@ install)
                 $SUDO dnf install -y --skip-unavailable --setopt=install_weak_deps=False python3-pip sshpass rclone rsync tcc cppcheck frama-c 2>/dev/null || :
             else install_node; command -v tmux &>/dev/null || warn "tmux needs: sudo dnf install tmux"; fi ;;
         termux) pkg update -y && pkg upgrade -y -o Dpkg::Options::=--force-confold && pkg install -y build-essential tcc tmux nodejs git python openssh sshpass fzf gh rclone rsync cronie termux-services android-tools ffmpeg && mkdir -p ~/.gyp && echo "{'variables':{'android_ndk_path':''}}" > ~/.gyp/include.gypi && ok "pkgs" ;;
-        cygwin)  # native Windows via the cygwin POSIX layer: deps by setup.exe (-B = zero UAC)
+        cygwin)  # cygwin: setup.exe -B = zero UAC
             curl -fsSL -o "$(cygpath -m ~/cygsetup.exe)" https://www.cygwin.com/setup-x86_64.exe; chmod +x ~/cygsetup.exe
             ~/cygsetup.exe -q -B -R "$(cygpath -w /)" -s https://mirrors.kernel.org/sourceware/cygwin/ -l "$(cygpath -w ~/cygpkg)" -P git,curl,gcc-core,unzip,python3 >/dev/null 2>&1 && ok "cygwin pkgs (git curl gcc unzip python3)"
-            printf '%s\n' '$w=[Environment]::GetEnvironmentVariable("Path","User");foreach($b in @("'"$(cygpath -w "$D/adata/local")"'","'"$(cygpath -w /bin)"'")){if($w -notlike "*$b*"){$w=$w.TrimEnd(";")+";"+$b}};[Environment]::SetEnvironmentVariable("Path",$w,"User")' > ~/addpath.ps1   # a.exe + cygwin1.dll dirs on user PATH: PowerShell/cmd run a.exe directly, no shim (bash layer cost ~40ms, cmd batch ~30ms)
+            printf '%s\n' '$w=[Environment]::GetEnvironmentVariable("Path","User");foreach($b in @("'"$(cygpath -w "$D/adata/local")"'","'"$(cygpath -w /bin)"'")){if($w -notlike "*$b*"){$w=$w.TrimEnd(";")+";"+$b}};[Environment]::SetEnvironmentVariable("Path",$w,"User")' > ~/addpath.ps1   # a.exe + cygwin1.dll on user PATH: no shim (bash layer ~40ms, cmd batch ~30ms)
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/addpath.ps1)" >/dev/null 2>&1 && ok "PowerShell/cmd: a (a.exe on user PATH, new terminals)"
             W="$(cygpath -w "$D/adata/local")";PF="$(cygpath "$(powershell.exe -NoProfile -c '$PROFILE'|tr -d '\r')")";mkdir -p "${PF%/*}"  # profile fn paints the cached frame in-process (~0.8ms) while a.exe spends ~170ms in cygwin init
             sed -i '/# a-paint/d' "$PF" 2>/dev/null;: >"$D/adata/local/.warm"
@@ -460,7 +460,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* newest first, whole under A
     #define GA(p,n) if(l+(n)>=cap){cap=(l+(n)+8192)*2;d=realloc(d,cap);}memcpy(d+l,p,n);l+=(n)
     {char cm[B];init_db();load_cfg();CWD(wc);size_t sl=strlen(SDIR);
     int ia=!strcmp(cfget("cat_a"),"on")&&(strncmp(wc,SDIR,sl)||(wc[sl]&&wc[sl]!='/'));
-    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null|tr '\\n' '\\0'|xargs -0 -r ls -t 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* cwd repo + cat_more + /a stubs, newest first · -r: no input must NOT ls the cwd (non-repo cwd dumped 35M NTUSER.DAT on win) */
+    snprintf(cm,B,"A='%s';{ git grep -lI '';for d in %s;do git -C \"$d\" grep -lI ''|sed \"s|^|$d/|\";done;%s } 2>/dev/null|tr '\\n' '\\0'|xargs -0 -r ls -t 2>/dev/null",SDIR,cfget("cat_more"),ia?"git -C \"$A\" grep -lI ''|sed \"s|^|$A/|\";":"");  /* -r: no input must NOT ls the cwd (non-repo cwd dumped 35M NTUSER.DAT on win) */
     size_t l=0,cap=0;char*d=NULL,b[8192];size_t n;int nf=0,nst=0,nam=0;
     size_t bud=getenv("A_CB")?(size_t)atol(getenv("A_CB")):1200000;
     FILE*fl=popen(cm,"r");char fb[65536];size_t fl2=0;

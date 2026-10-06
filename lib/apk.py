@@ -1,11 +1,8 @@
 """a apk — build+install the phone app. a apk [path] [serial] [noauth] | build|self [abi] | auth [serial]
-WHY over termux (keep the division — termux owns ALL logic+HTML): the apk = thin shell for what a termux script can't do:
-1) the GUI 2) termux dies on Android, the durable apk restarts it 3) OS surfaces only an installed apk reaches. All else
-shells out to termux `a`. Install auto-provisions termux with this box's gh+rclone creds via RUN_COMMAND (adb can't reach
-termux home; idempotent, sets remote only); noauth skips, `a apk auth` re-pushes. Debug the live UI: adb forward tcp:9112
-tcp:1112 then curl localhost:9112/ (chrome://inspect too). Drive it: am start -n com.aios.a/.M --es nav <note|term|...>
-(--ez menu true). Assistant: Cap handles ACTION_ASSIST (role via Settings/adb; gesture sim: input keyevent 219).
-ui_full.html re-copied from assets every launch, so reinstall always updates the UI."""
+WHY over termux (keep the division — termux owns ALL logic+HTML): the apk = thin shell for what a termux script can't do: the GUI,
+restarting termux when Android kills it, OS surfaces only an installed apk reaches. Install auto-provisions termux with this box's
+gh+rclone creds via RUN_COMMAND (adb can't reach termux home); noauth skips, `a apk auth` re-pushes. Drive: am start -n com.aios.a/.M
+--es nav <note|term|...> (--ez menu true); debug: adb forward tcp:9112 tcp:1112. ui_full.html re-copied from assets every launch."""
 import os,subprocess as S,shutil,glob,sys
 SELF="self" in sys.argv[2:]   # a apk self: parallel-installable variant — self-built signature can't UPDATE the installed app, so coexist under own id+label
 P="com.aios.a.self" if SELF else "com.aios.a"

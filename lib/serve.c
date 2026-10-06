@@ -27,7 +27,7 @@ static void sha1(const unsigned char*d,size_t n,unsigned char out[20]){
 static char shtml[4<<20];static int shlen;static time_t sgen_t;
 static char sdr[P]; /* a serve <port> <dir> = static site only; UI (incl /ws shell) never exposed */
 static char RB[512];static int RL,rmt;   /* red REMOTE banner (RL bytes), rmt = RL when the viewer is remote (Sean 2026-10-03) */
-static const char*mime(const char*p,const char*d){const char*e=strrchr(p,'.');e=e?e+1:"";   /* d = type for an unknown extension */
+static const char*mime(const char*p,const char*d){const char*e=strrchr(p,'.');e=e?e+1:"";
     return !strcmp(e,"html")?"text/html; charset=utf-8":!strcmp(e,"css")?"text/css":!strcmp(e,"js")?"text/javascript":
         !strcmp(e,"png")?"image/png":!strcmp(e,"svg")?"image/svg+xml":!strcmp(e,"jpg")||!strcmp(e,"jpeg")?"image/jpeg":
         !strcmp(e,"ico")?"image/x-icon":!strcmp(e,"json")?"application/json":!strcmp(e,"pdf")?"application/pdf":!strcmp(e,"epub")?"application/epub+zip":!strcmp(e,"txt")?"text/plain; charset=utf-8":d;}
@@ -262,7 +262,7 @@ static void handle(int c){
         sresph(c,200,mime(fp,"text/plain"),fd2,(int)fl,"no-cache");free(fd2);return;}
     {char*o=strcasestr(req,"\nOrigin: "),*h=strcasestr(req,"\nHost: ");int n=h?(int)strcspn(h+=7,"\r"):0;if(o)o=strchr(o,'\r');   /* browser-set: Sec-Fetch-Site (fetch/img/nav), Origin (ws) */
      if(strcasestr(req,"\nSec-Fetch-Site: cross-site")||(o&&h&&(o-req<n+2||strncasecmp(o-n,h,(size_t)n)||o[-n-1]!='/'))){sresp(c,403,"text/plain","cross-site",10);return;}}
-    {char rf[P];snprintf(rf,P,"%s/local/remote",AROOT);   /* serving from another device (Sean 2026-10-04): rf names it, a ssh tunnel ... bg holds 127.0.0.1:11111 -> its :1111, every request is pumped through */
+    {char rf[P];snprintf(rf,P,"%s/local/remote",AROOT);   /* serving from another device (Sean 2026-10-04): rf names it; a ssh tunnel ... bg holds 127.0.0.1:11111 -> its :1111 */
         if(strstr(req," /api/remote")){char h[64];qp(req,"host=",h,64);   /* GET = engaged host; POST ?host= (local viewer only) engages, empty disengages; reply = what is engaged now */
             if(*req=='P'&&!rmt){signal(SIGCHLD,SIG_DFL);(void)!system("pkill -f 'L 11111:127.0.0.[2]'");unlink(rf);char cmd[B];snprintf(cmd,B,"a ssh tunnel '%s' 1111 11111 bg",h);if(h[0]&&!system(cmd))writef(rf,h);}
             char*cur=readf(rf,NULL);sresp(c,200,"text/plain",cur?cur:"",cur?(int)strlen(cur):0);free(cur);return;}
@@ -575,7 +575,7 @@ static void handle(int c){
             "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
             "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
-            /* find (Ctrl-F, /, ⌕): native find can't scroll the hidden-overflow pager nor match across hard wraps — fold case/dashes/whitespace runs over TX, jump = the mark pattern */
+            /* find: native find can't scroll the hidden-overflow pager nor match across hard wraps — fold case/dashes/whitespace over TX, jump = the mark pattern */
             "var FH=[],FI=-1,FV=null;"
             "function FN(v){FH=[];FI=-1;if(!/\\S/.test(v))return;var q=v.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&').replace(/[\\s\\u2014\\u2013-]+/g,'[\\\\s\\\\u2014\\\\u2013-]+'),rx=new RegExp(q,'gi'),m;while((m=rx.exec(TX))&&FH.length<500)FH.push([m.index,m.index+m[0].length])}"
             "function FG(d){if(!FH.length){fc.textContent='0/0';return}FI=((FI+d)%%FH.length+FH.length)%%FH.length;var h=FH[FI];try{CSS.highlights.set('fnd',new Highlight(RG(h[0],h[1])))}catch(x){}"
@@ -583,7 +583,7 @@ static void handle(int c){
             "function FT(s){fp.style.display=s?'block':'none';if(s){fq.focus();fq.select()}else{fq.blur();try{CSS.highlights.delete('fnd')}catch(x){}}}"
             "mf.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();FT(fp.style.display!='block')});"
             "fp.addEventListener('pointerdown',function(e){e.stopPropagation()});"
-            /* overflow #op = needed-not-essential (+mark, marks, find); items stop pointerdown, pointerup closes it. note: Enter = a book note <book> @<offset> <text> via omni (argv), receipt in hud */
+            /* overflow #op = needed-not-essential; items stop pointerdown, pointerup closes it; note receipt in hud */
             "mo.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();op.style.display=op.style.display=='block'?'none':'block'});"
             "op.addEventListener('pointerdown',function(e){e.stopPropagation()});op.addEventListener('pointerup',function(){op.style.display='none'});"
             "mn.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var s=np.style.display!='block';np.style.display=s?'block':'none';if(s)nq.focus()});"
@@ -654,8 +654,8 @@ static void handle(int c){
         sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"POST /api/omni",14)||!strncmp(req,"POST /note",10)){
         char*body=strstr(req,"\r\n\r\n");if(!body){sresp(c,400,"text/plain","bad",3);return;}
-        body+=4;char*dq=strstr(body,"&d=");int dn=dq&&dq[3]>='0'?atoi(dq+3):-1;   /* &d=<project #>: the box's folder */
-        char mv[64],ev[64];qp(body,"&m=",mv,64);qp(body,"&e=",ev,64);   /* &m= &e=: model + effort chips -> A_MODEL/A_EFFORT (create_sess) */
+        body+=4;char*dq=strstr(body,"&d=");int dn=dq&&dq[3]>='0'?atoi(dq+3):-1;
+        char mv[64],ev[64];qp(body,"&m=",mv,64);qp(body,"&e=",ev,64);
         int isnote=!strncmp(req,"POST /note",10);
         char*q=strstr(body,isnote?"c=":"q=");if(!q){sresp(c,400,"text/plain","no param",8);return;}
         q+=2;char*cmd=q,*w=q;   /* in-place: decoded ≤ encoded */
@@ -716,7 +716,7 @@ static void handle(int c){
     if(!strncmp(req,"GET /review/tell?w=",19)){int w=atoi(req+19);char cmd[B],out[128];snprintf(cmd,B,"tmux send -t a:%d -X cancel 2>/dev/null;tmux send -t a:%d -l '%s'&&sleep 0.4&&tmux send -t a:%d Enter",w,w,PP,w);   /* cancel copy-mode first */
         strncat(cmd,"&&echo SENT",B-strlen(cmd)-1);FILE*pp=popen(cmd,"r");char r[16]="";if(pp){if(!fgets(r,16,pp))r[0]=0;pclose(pp);}   /* popen+marker: SIGCHLD=IGN makes system() rc -1 even on success */
         snprintf(out,128,strstr(r,"SENT")?"told window %d: push just these changes":"x tmux window %d not reachable",w);sresp(c,200,"text/plain; charset=utf-8",out,(int)strlen(out));return;}
-    if(!strncmp(req,"GET /review/go?w=",17)||!strncmp(req,"GET /problems/go?w=",19)){int w=atoi(strchr(req,'=')+1);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}\t#{client_termname}' 2>/dev/null|sort -n|awk -F'\t' '{a=$0}$4==\"foot\"{f=$0}END{print f?f:a}'","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* newest REAL terminal (foot) beats newest client: web /op clients are also tmux clients and were stealing the switch */
+    if(!strncmp(req,"GET /review/go?w=",17)||!strncmp(req,"GET /problems/go?w=",19)){int w=atoi(strchr(req,'=')+1);char ln[256]="",out[512];FILE*pp=popen("tmux list-clients -F '#{client_activity}\t#{client_name}\t#{client_session}\t#{client_termname}' 2>/dev/null|sort -n|awk -F'\t' '{a=$0}$4==\"foot\"{f=$0}END{print f?f:a}'","r");if(pp){if(!fgets(ln,256,pp))ln[0]=0;pclose(pp);}ln[strcspn(ln,"\n")]=0;   /* newest REAL terminal (foot) beats newest client: web /op clients are tmux clients too and stole the switch */
         char*cn=strchr(ln,'\t'),*cs=cn?strchr(cn+1,'\t'):0,*ct=cs?strchr(cs+1,'\t'):0;if(ct)*ct=0;if(!cs)snprintf(out,512,"no attached local terminal: tmux switch-client -t :%d",w);
         else{*cn=0;*cs=0;char cmd[600],er[200]="";snprintf(cmd,600,"tmux switch-client -c '%s' -t '%s:%d' 2>&1 && SWAYSOCK=$(ls -t /run/user/$(id -u)/sway-ipc.* 2>/dev/null|head -1) swaymsg '[app_id=foot] focus' >/dev/null 2>&1",cn+1,cs+1,w);FILE*p2=popen(cmd,"r");if(p2){if(!fgets(er,200,p2))er[0]=0;pclose(p2);}er[strcspn(er,"\n")]=0;
             if(er[0])snprintf(out,512,"x %s",er);else snprintf(out,512,"window %d in %s on %s",w,cs+1,cn+1);}
@@ -856,7 +856,7 @@ static void handle(int c){
         sresp(c,200,"text/plain","ok",2);return;}
     if(!strncmp(req,"GET /op",7)&&(req[7]==' '||req[7]=='?'||req[7]=='\r')){
         const char*qw=strstr(req,"?w=");int idx=(qw&&isdigit((unsigned char)qw[3])&&!strstr(req,"&all"))?atoi(qw+3):-1;
-        if(idx>=0){char tc[256];   /* gate = the WINDOW exists (comm-name allowlist lied: codex's comm is "node", 09-21); a dead agent's pane still shows — its last output beats "no agent" */
+        if(idx>=0){char tc[256];   /* gate = the WINDOW exists (comm-name allowlist lied: codex's comm is node, 09-21); a dead agent's pane still shows */
             snprintf(tc,256,"tmux display-message -t a:%d -p ok 2>/dev/null",idx);
             FILE*pp=popen(tc,"r");char nm[8]={0};
             if(pp){(void)!fgets(nm,8,pp);pclose(pp);}
@@ -873,12 +873,12 @@ static void handle(int c){
 static int cmd_ui(int c,char**v){  /* cygwin: lib/ui is python (hangs there): restart a serve detached + open the browser */
     if(!CYG)fallback_py("ui/__init__",c,v);
     perf_disarm();int up=!system("p=$(" PSAS "{print $2}');kill $p 2>/dev/null;sleep .2;[ -n \"$p\" ]");const char*o=c>2?v[2]:"";
-    if(*o=='k'||!strcmp(o,"off")||(*o=='r'&&!up))return puts("\xe2\x9c\x93 ui off")<0;   /* reload (sh a.c): only if running */
+    if(*o=='k'||!strcmp(o,"off")||(*o=='r'&&!up))return puts("\xe2\x9c\x93 ui off")<0;
     bg_exec(*v,"serve");
-    if(system("sleep .6;" PSAS "{f=1}END{exit !f}'"))return puts("x serve exited — :1111 held by another a (win+wsl share localhost)")<0;  /* our serve gone = it lost the port */
+    if(system("sleep .6;" PSAS "{f=1}END{exit !f}'"))return puts("x serve exited — :1111 held by another a (win+wsl share localhost)")<0;
     const char*u="http://localhost:1111";
-    if(!*o)bg_exec(OPENER,u);  /* bare a ui: open now */
-    else if(isatty(0)){printf("open %s in the default browser? [Y/n] ",u);fflush(stdout);char b[8];if(fgets(b,8,stdin)&&(*b=='\n'||(*b|32)=='y'))bg_exec(OPENER,u);}  /* a ui on: offer it */
+    if(!*o)bg_exec(OPENER,u);
+    else if(isatty(0)){printf("open %s in the default browser? [Y/n] ",u);fflush(stdout);char b[8];if(fgets(b,8,stdin)&&(*b=='\n'||(*b|32)=='y'))bg_exec(OPENER,u);}
     return puts("\xe2\x9c\x93 http://localhost:1111 (stop: a ui off)")<0;}
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     {const char*op=getenv("PATH");if(!op)op="";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}

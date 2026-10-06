@@ -19,8 +19,8 @@ function fitApply(){if(!HW)return;var t=performance.now(),f=FIT&&HC?font():0,s=1
   if(FIT&&HC&&!f&&TR++<12)setTimeout(fitApply,250)}
 function op(b){DOCU='';HC=HR=0;TR=0;HN=b.dataset.n;HW=b.dataset.w;pull.style.display='flex';fitApply();pd.hidden=true;pf.hidden=false;pf.removeAttribute('srcdoc');pf.src='/op?w='+HW+'&all';
   fetch('/review/wsz?w='+HW).then(r=>r.text()).then((x)=>{var a=x.split(' ');HC=+a[0]||0;HR=+a[1]||0;fitApply()});pf.onload=()=>{setTimeout(fitApply,300)}}
-function armed(){fetch('/review/armed').then(r=>r.text()).then((x)=>{armp.textContent=x?'\u26a1 ARMED: the next Attach click in any browser attaches '+x:''})}armed();   /* unarmed shows NOTHING (Sean 2026-10-05); we may need a notification area here to indicate attach + other stuff later \u2014 not now */
-/* bulk archive buttons; kinds: serve.c sweep route. success = the CLI receipt (count + each closed row) in the pull-up so the sweep is confirmable; close/Esc reloads the list */
+function armed(){fetch('/review/armed').then(r=>r.text()).then((x)=>{armp.textContent=x?'\u26a1 ARMED: the next Attach click in any browser attaches '+x:''})}armed();   /* unarmed shows NOTHING (Sean 2026-10-05) */
+/* success = the CLI receipt in the pull-up so the sweep is confirmable */
 var SWP=0;
 function sw(b,k){var t=performance.now();b.disabled=1;armp.textContent='archiving\u2026';fetch('/review/sweep?k='+k).then(r=>r.text()).then(x=>{SWP=1;pdo('','archive receipt \u00b7 '+(performance.now()-t).toFixed(0)+'ms \u00b7 close reloads the list');pd.textContent=x},()=>{b.disabled=0;armp.textContent='\u2717 failed \u2014 stale tab? reload'})}
 /* device stamp: which box runs these agents; server truth, tunnel URLs lie (Sean 2026-09-22) */

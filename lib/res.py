@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""a res — resume agents: bare = interactive pick; save/show/restore = tmux snapshot across a reboot (same cmd: a resume/a snap).
-Window -> (name,cwd,cmd): claude/codex/agy/grok resume their session (claude launch id goes stale on compaction), `a ssh` host
-windows reconnect, rest reopen as shells. Restore fires on session-create (tm_ensure_sess); A_SNAP_SESSION overrides.
-GUI (sway): reopen AT MOST ONE foot+firefox, never the saved count (5 foots squashed ws1, 9/11); no sway -> tmux only."""
+"""a res — resume agents: bare = interactive pick; save/show/restore = tmux snapshot across a reboot (a resume/a snap = same cmd).
+claude/codex/agy/grok resume their session (claude launch id goes stale on compaction), `a ssh` host windows reconnect, rest reopen
+as shells. Restore fires on session-create (tm_ensure_sess); A_SNAP_SESSION overrides. sway: AT MOST ONE foot+firefox (5 foots squashed ws1, 9/11)."""
 import sys, os, json, glob, re, socket, subprocess, time
 
 DEV = socket.gethostname()
@@ -95,19 +94,19 @@ def windows():                                        # all panes: claude may be
 
 def save():
     if os.popen("tmux show -gv @res 2>/dev/null").read().strip()!="1":restore();os.system("tmux set -g @res 1");return  # @res gate: restore before a save can overwrite the snapshot (fresh server = @res unset)
-    if not LINUX: _ps()                               # macOS: snapshot the process table once
-    info = [(wid, n, cwd, *agent(pid), sc) for wid, n, cwd, pid, sc in windows()]  # (id, name, cwd, kind, sid, sc)
-    if not info: print("x no windows — snapshot kept"); return []  # don't clobber with emptiness
-    claimed = {sid for _w, _n, _c, k, sid, _s in info if k == "claude" and have(sid)}  # claude ids with a transcript
+    if not LINUX: _ps()
+    info = [(wid, n, cwd, *agent(pid), sc) for wid, n, cwd, pid, sc in windows()]
+    if not info: print("x no windows — snapshot kept"); return []
+    claimed = {sid for _w, _n, _c, k, sid, _s in info if k == "claude" and have(sid)}
     used, jobs = set(), []
     for wid, name, cwd, kind, sid, sc in info:
-        if "while a i" in sc: continue                             # skip a's session-keeper window
-        cmd = s = ""                                               # unknown window → shell
-        if kind == "claude":                                       # claude → resume its real transcript
+        if "while a i" in sc: continue
+        cmd = s = ""
+        if kind == "claude":
             s = sid if have(sid) else newest_in(cwd, claimed | used)
             if s and s not in used: used.add(s); cmd = RESUME["claude"] % s
-        elif kind in ("codex", "agy", "grok"): cmd = RESUME[kind]   # native resume
-        elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name   # ssh window → reconnect
+        elif kind in ("codex", "agy", "grok"): cmd = RESUME[kind]
+        elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
                      "preview": (_preview(s) if s else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
     os.makedirs(SNAPDIR, exist_ok=True)
@@ -115,11 +114,11 @@ def save():
     if not gui:                                       # sway down mid-save — keep last known gui (don't clobber with emptiness)
         try: gui = json.load(open(SNAP)).get("gui", [])
         except (OSError, ValueError): gui = []
-    if os.path.exists(SNAP): os.replace(SNAP, SNAP + ".prev")   # one-step undo
+    if os.path.exists(SNAP): os.replace(SNAP, SNAP + ".prev")
     json.dump({"host": DEV, "session": TMS, "jobs": jobs, "gui": gui}, open(SNAP, "w"), indent=1)
     print(f"✓ snapshot {len(jobs)} window(s) + {len(gui)} gui · {time.strftime('%Y-%m-%d %H:%M')} → {SNAP}")
     for j in jobs:
-        tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"       # what respawns: claude/codex/agy/a/(shell)
+        tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"
         print(f"   {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
     return jobs
 
@@ -385,7 +384,7 @@ def watch(n):                                         # /review SSE: push on eve
         pfd = max(0, C.syscall(434, ap, 0)); ifd = C.inotify_init1(0)   # micromamba py lacks os.pidfd_open
         for d in (PD(cwd), SNAPDIR): C.inotify_add_watch(ifd, d.encode(), 0x3c2)
         if select.select([ifd] + [pfd] * (pfd > 0), [], [], 240)[0]: time.sleep(0.6)
-        else: print(':\n', flush=True)                # dead-client reap
+        else: print(':\n', flush=True)
         os.close(ifd); pfd and os.close(pfd)
 
 def review(n, revive=False):
@@ -401,7 +400,7 @@ def review(n, revive=False):
     if len(live) == 1:
         p, _, win = live[0]; state = 'ALIVE'
         preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-300'], capture_output=True, text=True).stdout.rstrip(); L = [l.rstrip() for l in preview.splitlines() if 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)]
-        W = max(map(len, L), default=0); P = []; n = 0   # re-flow lines the TUI hard-wrapped at pane width (= longest line) so the box reads edge to edge; blank, bullet and table lines break
+        W = max(map(len, L), default=0); P = []; n = 0   # re-flow TUI hard-wraps (pane width = longest line); blank, bullet and table lines break
         for l in L:
             if not re.search(r'\w', l): n = 0; continue
             if n >= W - 12 and not re.match(r'\s*([-•●⏺✓✗*>$│⎿]|\d+\.)\s', l): P[-1] += ('' if n == W and len(P[-1].rsplit(' ', 1)[-1]) > 16 else ' ') + l.strip()   # full line cut inside a long token: no space
@@ -413,7 +412,7 @@ def review(n, revive=False):
         if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', saved[0]['cmd']], check=True); state = 'RESUMING'
     return dict(state=state, preview=preview, window=win)
 
-def sweep(kind, dry=False):   # /review bulk clear; kinds: serve.c route
+def sweep(kind, dry=False):
     rd = lambda p: os.path.exists(p) and open(p).read() or ''
     cz, hit = rd(f'{LOC}/review_closed.txt'), set()
     op = {i: r for i in range(rd(f'{LOC}/done.log').count('\n') + 1) if (r := _row(i))[1] and f'{r[2]}\t{r[0]}\n' not in cz}
@@ -431,7 +430,7 @@ def sweep(kind, dry=False):   # /review bulk clear; kinds: serve.c route
     for i in sorted(hit): print(f'  ✓ {op[i][0] or "(no window)"} · {os.path.basename(op[i][1])} · {op[i][3]}')
 
 def main(a):
-    via = a[0] if a and a[0] in ("res", "resume", "snap") else ""   # how we were invoked
+    via = a[0] if a and a[0] in ("res", "resume", "snap") else ""
     if via: a = a[1:]
     cmd = a[0] if a else ("save" if via == "snap" else "")          # bare `a snap` = save (back-compat); res/resume = pick
     if cmd in ("save", "s"): save()

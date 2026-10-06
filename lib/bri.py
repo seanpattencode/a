@@ -1,24 +1,22 @@
 #!/usr/bin/env python3
 # experimental
-"""bri — drive Chrome/Firefox tabs over an HTTP long-poll bridge (:1234 poll/resp, :1235 push); extension context = CSP-immune (claude.ai/chatgpt ok).
-ONE page-side client per browser (two double-execute + interleave replies): FF = lib/bri-ext (a bri deploy = build+install+restart), Chrome = lib/bri-chrome.
-No Marionette/CDP: navigator.webdriver trips Google sign-in; launch FF WITHOUT -marionette, sign in once — cookies persist, bridge drives unattended.
-`a bri` bare prints the MENU. NO hardcoded per-site selectors (they drift + break SILENTLY — a script acts but can't perceive): drive as an AGENT off
-hint / screenshot / hint-click, confirming each step; keep discovered recipes in agent memory, not here. Rendered text can LIE on signed-in apps
-(Keep: content-visibility truncates off-screen notes) — parse the page's data blob (a bri html + lib/bri/keepx.py), data layer beats DOM.
-OAuth buttons sit in cross-origin gsi iframes: click once by hand per provider. Custom-element editors need a descendant [contenteditable].
-Prefer ONE html/text read over selector-poking; text = PAINTED nodes only. One response per connected frame: pick your origin's row,
-ogs/gsi/"EvalError" rows are subframes, not failure. Stream: tail -f /tmp/bri.log"""
+"""bri — drive Chrome/Firefox tabs over an HTTP long-poll bridge (:1234 poll/resp, :1235 push); extension context = CSP-immune.
+ONE page-side client per browser (two double-execute + interleave replies): FF = lib/bri-ext (a bri deploy), Chrome = lib/bri-chrome.
+No Marionette/CDP: navigator.webdriver trips Google sign-in; sign in once, cookies persist. NO hardcoded per-site selectors (they drift
+and break SILENTLY): drive as an AGENT off hint / screenshot / hint-click, confirm each step, keep recipes in agent memory. Rendered text
+can LIE on signed-in apps (Keep truncates off-screen notes): parse the data blob (a bri html + lib/bri/keepx.py). OAuth buttons sit in
+cross-origin gsi iframes: click by hand once per provider. Custom-element editors need a descendant [contenteditable]. text = PAINTED
+nodes only; one response per connected frame (ogs/gsi/"EvalError" rows are subframes, not failure). Stream: tail -f /tmp/bri.log"""
 import socket, threading, queue, json, sys, time, os, re, glob, subprocess
 
 PORT, CMD, LOG = 1234, 1235, '/tmp/bri.log'
 FF = '^((/usr/(bin|lib)/)?firefox-nightly|/Applications/Firefox Nightly.app/Contents/MacOS/firefox( .*)?)'
 FFP = ['pgrep','-f',FF+'$']
 FFB = ['open','-a','Firefox Nightly'] if sys.platform=='darwin' else ['firefox-nightly']   # mac: a bare exec over ssh has no WindowServer
-pollers, pending = [], {}  # pollers: list[(Queue, browser)]  pending: id -> Queue
-backlog = []  # (ts, msg, tgt) no-id cmds that matched zero pollers: the ext's poll re-registration leaves a gap that silently ate bursts (i q pre-open) — held 60s, delivered on the next /poll; id'd cmds keep fail-fast (a late run would double-execute under caller retries)
+pollers, pending = [], {}
+backlog = []  # no-id cmds that matched zero pollers: the ext's poll re-registration gap silently ate bursts — held 60s, delivered on the next /poll; id'd cmds stay fail-fast (a late run would double-execute under retries)
 
-def _bid(ua):  # browser/version from UA
+def _bid(ua):
     m = re.search(r'Firefox/([\d.]+)', ua)
     if m: return 'firefox/' + m.group(1)
     m = re.search(r'(?:Chrome|Chromium)/([\d.]+)', ua)
@@ -209,7 +207,7 @@ def _ffup():   # auto-start Firefox when it is not running, wait 5s for bri-ext;
         time.sleep(1); s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
         if 'firefox' in r.split('connected:')[-1]: return
     sys.exit('x bri: Firefox did not start or bri-ext did not connect in 5s (no GUI session? try: a bri serve ff)')
-def _ffwatch(expect, hl=False):  # nightly is always crashing (Sean 2026-09-15): "if its dead there is no point in not restarting it" — on by default, `serve ... nowatch` disables; expect=1 (serve ff) restarts from birth, else only death-after-life (a no-FF box stays no-FF)
+def _ffwatch(expect, hl=False):  # watchdog on by default (Sean 2026-09-15: "if its dead there is no point in not restarting it"); nowatch disables; expect=1 restarts from birth, else only death-after-life
     while True:
         time.sleep(20)
         if subprocess.run(FFP,stdout=-3).returncode == 0: expect = 1
@@ -515,11 +513,11 @@ if __name__=='__main__':
     if not args:
         up = not socket.socket().connect_ex(('127.0.0.1',PORT))
         print(f"[{'running' if up else 'stopped'}] :1234")
-        if up:  # show connected browsers + target
+        if up:
             s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
             m = re.search(r'connected: [^)\n]*', r)
             print(f"  target: firefox by default (@chrome @all or BRI_TO override) · {m.group(0) if m else '?'}")
-        # recent saved URLs; a bri <N> opens; URL on its own line = clickable
+        # URL on its own line = clickable
         try:
             with open(os.path.expanduser('~/a/adata/git/urls.txt')) as f:
                 ln = [l.strip() for l in f if l.strip()][-4:]
