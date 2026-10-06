@@ -26,9 +26,8 @@ static const char*tm_name(const char*pre,const char*base,time_t t){static char b
     for(char*q=b;*q;q++)if(*q=='.'||*q==':')*q='-';   /* '.' ':' = tmux target seps */
     b[n]=(char)ap;b[n+1]=0;if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c",l->tm_sec,ap);if(tm_has(b))snprintf(b+n,256-(size_t)n,"%02d%c-%d",l->tm_sec,ap,(int)getpid());return b;}
 static void tm_go(const char *w) {
-    perf_disarm();tm_ensure_sess();char g[64];snprintf(g,64,TMS"-%d",(int)getpid());
-    char c[B];const char*op=getenv("TMUX")?"switch-client":"attach-session";
-    snprintf(c,B,"exec tmux new-session -d -t '"TMS"' -s '%s' \\; %s -t '%s%s%s'",g,op,g,w?":":"",w?w:"");
+    perf_disarm();tm_ensure_sess();char c[B];
+    snprintf(c,B,"exec tmux -u new -d -t "TMS" \\; %s -t ':%s'",getenv("TMUX")?"switchc":"attach",w?w:"");
     execl("/bin/sh","sh","-c",c,(char*)0);}
 static void tm_rename(const char*n){char c[200];snprintf(c,200,"tmux rename-window -t \"$TMUX_PANE\" '%s'",n);(void)!system(c);}  /* -t pane: bare rename hits the session-current window */
 static void ram_park(void){                                             /* low RAM -> park LRU agent window (resumable: a res); gate MemAvailable / mac vm_stat; neither -> no-op */
