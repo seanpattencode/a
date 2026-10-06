@@ -476,28 +476,29 @@ static void handle(int c){
                     free(lg);}g_bc=cnt;qsort(idx,(size_t)n,sizeof(int),g_bccmp);}}
             int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
                 "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
-                "<style>body{background:#0b0b0b;color:#ddd;margin:0;font:18px/1.35 system-ui}h3{color:#fff;padding:14px 16px 6px;margin:0}"
+                "<style>body{background:#0b0b0b;color:#ddd;margin:0 0 160px;font:18px/1.35 system-ui}h3{color:#fff;padding:14px 16px 6px;margin:0}"
                 ".r{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid #1a1a1a}.r:hover{background:#161616}"
-                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none}.r.x .t{color:#666}.r.x .s:before{content:\"no txt\";color:#c33;margin-right:7px}"
-                ".c{flex:none;color:#999;text-decoration:none;font-size:18px}.s{flex:none;min-width:48px;text-align:right;color:#666;font:13px ui-monospace,monospace;text-transform:uppercase}.s a{color:#666;text-decoration:none}.s a:hover{color:#fff}"
+                ".t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none}.r.x .t{color:#666}.r.x .t:after{content:\" \xc2\xb7 no txt\";color:#c33}"
+                ".c{flex:none;color:#999;font-size:26px;padding:0 10px}.m{display:none}.m.on{display:flex;flex-wrap:wrap;gap:8px;position:fixed;left:0;right:0;bottom:152px;padding:12px 16px;background:#161616;border-top:1px solid #333;z-index:9}.m a{color:#fff;text-decoration:none;padding:10px 16px;border:1px solid #444;border-radius:8px;font-size:18px}"
                 ".h{position:sticky;top:0;background:#0b0b0b;color:#fff;font-weight:700;font-size:15px;letter-spacing:.09em;text-transform:uppercase;padding:16px 16px 5px;border-bottom:1px solid #1a1a1a}"
-                ".r.in{padding-left:30px}.nav{padding:4px 16px 10px;font-size:17px}.nav a{color:#888;text-decoration:none;margin-right:14px}.nav a.on{color:#fff;font-weight:600}"
-                "#q,#ab{display:block;box-sizing:border-box;width:calc(100%% - 32px);margin:2px 16px 8px;padding:9px 12px;background:#161616;color:#fff;border:1px solid #2a2a2a;border-radius:8px;font:18px system-ui;outline:none}#qms{float:right;color:#555;font:11px ui-monospace,monospace}</style>"
+                ".r.in{padding-left:30px}#bb{position:fixed;left:0;right:0;bottom:0;padding:4px 16px 10px;background:#0b0b0b;border-top:1px solid #1a1a1a;z-index:9}.nav{padding:4px 0;font-size:17px}.nav a{color:#888;text-decoration:none;margin-right:14px}.nav a.on{color:#fff;font-weight:600}"
+                "#q,#ab{display:block;box-sizing:border-box;width:100%%;margin:6px 0;padding:9px 12px;background:#161616;color:#fff;border:1px solid #2a2a2a;border-radius:8px;font:18px system-ui;outline:none}#qms{float:right;color:#555;font:11px ui-monospace,monospace}</style>"
                 "<script>function _ax(e){var a=e.target.closest('a.x');if(!a)return;e.preventDefault();e.stopImmediatePropagation();"
                 "if(e.type!='pointerdown')return;fetch(a.href).then(function(r){if(r.ok){a.closest('.r').style.opacity=.35;a.outerHTML='<span class=c>\xe2\x9c\x93 archived</span>'}else a.textContent='\xe2\x9c\x97'},function(){a.textContent='\xe2\x9c\x97'})}"
-                "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true)</script>" TAPJS
-                "<h3>books (%d)</h3><div class=nav><a%s href=\"/book\">by freq</a><a%s href=\"/book?sort=name\">by name</a><a%s href=\"/book?sort=author\">by author</a><span id=qms></span></div>"
-                "<input id=q placeholder=\"type to search\" autofocus>"
+                "addEventListener('pointerdown',_ax,true);addEventListener('click',_ax,true);"
+                "addEventListener('pointerdown',function(e){var o=e.target.closest('.o'),m=o&&o.nextSibling,w=m&&m.classList.contains('on');if(!o&&e.target.closest('.m'))return;document.querySelectorAll('.m.on').forEach(function(x){x.classList.remove('on')});if(o){e.preventDefault();if(!w)m.classList.add('on')}},true)</script>" TAPJS
+                "<h3>books (%d)</h3><div id=bb><div class=nav><a%s href=\"/book\">by freq</a><a%s href=\"/book?sort=name\">by name</a><a%s href=\"/book?sort=author\">by author</a><span id=qms></span></div>"
+                "<button id=ab onpointerdown=af.click()>+ add book</button><input id=q placeholder=\"type to search\" autofocus></div>"
                 "<script>q.oninput=function(){var t0=performance.now(),v=q.value.toLowerCase(),hd=0,vn=0,ht='';"
                 "document.querySelectorAll('.h,.r').forEach(function(e){if(e.className=='h'){if(hd)hd.style.display=vn?'':'none';hd=e;ht=e.textContent.toLowerCase();vn=0}"
                 "else{var m=(e.textContent+' '+ht).toLowerCase().indexOf(v)>=0;e.style.display=m?'':'none';vn+=m}});"
                 "if(hd)hd.style.display=vn?'':'none';qms.textContent=(performance.now()-t0).toFixed(2)+'ms'};"
                 "q.onkeydown=function(e){if(e.key=='Enter'){var r=document.querySelector('.r:not([style*=none]) a.t');if(r)location=r.href}};"
                 "onkeydown=function(e){if(document.activeElement!=q&&!e.ctrlKey&&!e.metaKey&&(e.key.length==1||e.key=='Backspace'))q.focus()}</script>"
-                "<button id=ab onpointerdown=af.click()>+ add book</button><input id=af type=file multiple hidden><script>async function up(fs){for(var f of fs){var m=f.name.replace(/[^\\w.]+/g,'-');for(var o=0;o<f.size;o+=2e5)await fetch('/up?s='+ +!o+'&n='+m,{method:'POST',body:f.slice(o,o+2e5)}),ab.textContent=m+' '+o;navigator.sendBeacon('/api/omni','q=cmd+a+book+add+${TMPDIR:-/tmp}/'+m)}setTimeout(\"location=''\",999)}af.onchange=()=>up(af.files);"
+                "<input id=af type=file multiple hidden><script>async function up(fs){for(var f of fs){var m=f.name.replace(/[^\\w.]+/g,'-');for(var o=0;o<f.size;o+=2e5)await fetch('/up?s='+ +!o+'&n='+m,{method:'POST',body:f.slice(o,o+2e5)}),ab.textContent=m+' '+o;navigator.sendBeacon('/api/omni','q=cmd+a+book+add+${TMPDIR:-/tmp}/'+m)}setTimeout(\"location=''\",999)}af.onchange=()=>up(af.files);"
                 "ondragover=e=>{e.preventDefault();ab.textContent='drop to add book'};ondragleave=e=>{if(!e.relatedTarget)ab.textContent='+ add book'};ondrop=e=>{e.preventDefault();ab.textContent='+ add book';if(e.dataTransfer.files.length)up(e.dataTransfer.files)}</script>",
                 n,(au||alp)?"":" class=on",alp?" class=on":"",au?" class=on":"");
-            const char*ex[]={"txt","pdf","epub","azw3","mobi","docx",0};char pk[96]="";
+            const char*ex[]={"pdf","epub","azw3","mobi","docx",0};char pk[96]="";
             for(int ii=0;ii<n&&hl<cap-2048;ii++){int i=idx[ii];
                 if(au&&strcmp(bk_ak[i],pk)){strcpy(pk,bk_ak[i]);   /* sticky author header per run */
                     char ah[128];const char*a=bk_ad[i];int j=0;for(;a[j]&&j<120;j++)ah[j]=a[j]=='-'?' ':a[j];ah[j]=0;
@@ -510,7 +511,7 @@ static void handle(int c){
                 for(int k=0;ex[k];k++){snprintf(tf,P,"%s/%s/source.%s",bd,names[i],ex[k]);
                     if(!access(tf,R_OK))xl+=snprintf(xt+xl,(size_t)(512-xl),"<a href=\"/bookfile?n=%s&f=source.%s\">%s</a> ",names[i],ex[k],ex[k]);}
                 char lb[360];snprintf(lb,360,"%s",names[i]);bk_mid(lb,96);
-                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=c href=\"/bookdir?n=%s\" title=\"all versions (file manager)\">\xf0\x9f\x97\x82</a><a class=c href=\"/bookcloud?n=%s\" title=\"open in cloud\">\xe2\x98\x81</a><a class=\"c x\" href=\"/bookarchive?n=%s\" title=\"archive (restorable)\">\xf0\x9f\x97\x84</a><span class=s>%s</span></div>",has?"":"x",au?"in":"",names[i],lb,names[i],names[i],names[i],xt);}
+                hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=\"c o\">\xe2\x8b\xaf</a><div class=m><a href=\"/book?n=%s\">txt</a>%s<a href=\"/bookdir?n=%s\">folder</a><a href=\"/bookcloud?n=%s\">cloud</a><a class=x href=\"/bookarchive?n=%s\">archive</a></div></div>",has?"":"x",au?"in":"",names[i],lb,names[i],xt,names[i],names[i],names[i]);}
             sdoc(c,h,hl);free(h);return;}
         if(!bkok(nm)){sresp(c,400,"text/plain","bad book",8);return;}
         char tf[P];bkfile(nm,tf);
@@ -534,15 +535,15 @@ static void handle(int c){
             "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1\">"
             "<style>html,body{margin:0;background:#0b0b0b;overflow:hidden;height:100%%;touch-action:none;overscroll-behavior:none}::-webkit-scrollbar{display:none}"
             /* #bk = the reading area; floor(clientHeight/lh) lines, scrollTop steps land on line boundaries */
-            "#bk{position:fixed;top:12px;bottom:108px;left:0;right:0;max-width:680px;margin:0 auto;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:21px/1.85 Georgia,serif;padding:0 32px;box-sizing:border-box}"
-            "#tr{position:fixed;bottom:0;left:0;right:0;height:100px;display:flex;align-items:center;background:#000;z-index:9}"
-            "#tr a{color:#fff;text-decoration:none;padding:0 26px;font:48px/100px ui-monospace,monospace}"
-            "#hud{margin-left:auto;color:#999;font:20px ui-monospace,monospace;padding:0 12px}"
-            "#mp{display:none;position:fixed;bottom:100px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px ui-monospace,monospace;z-index:9}"
+            "#bk{position:fixed;top:12px;bottom:120px;left:0;right:0;max-width:680px;margin:0 auto;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:21px/1.85 Georgia,serif;padding:0 32px;box-sizing:border-box}"
+            "#tr{position:fixed;bottom:0;left:0;right:0;height:112px;display:flex;align-items:center;background:#000;z-index:9}"
+            "#tr a,#op a{color:#fff;text-decoration:none;padding:0 18px;font:56px/112px ui-monospace,monospace}"
+            "#hud{margin-left:auto;min-width:0;overflow:hidden;color:#999;font:16px ui-monospace,monospace;padding:0 12px}"
+            "#mp{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px ui-monospace,monospace;z-index:9}"
             "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}::highlight(spk){background:#764;color:#fff}::highlight(fnd){background:#a80;color:#000}"
-            "#fp{display:none;position:fixed;bottom:100px;left:0;right:0;max-width:680px;margin:0 auto;background:#000;z-index:9;padding:10px 12px;box-sizing:border-box}"
-            "#fq{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px ui-monospace,monospace;padding:8px 10px}#fc{color:#999;font:22px ui-monospace,monospace;padding-left:12px}</style>"
-            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a><div id=hud></div></div><div id=mp></div><div id=fp><input id=fq placeholder=find><span id=fc></span></div><pre id=bk>");
+            "#fp,#op,#np{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;background:#000;z-index:9;padding:10px 12px;box-sizing:border-box}"
+            "#fq,#nq{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px ui-monospace,monospace;padding:8px 10px}#fc{color:#999;font:22px ui-monospace,monospace;padding-left:12px}</style>"
+            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=mn>\xe2\x9c\x8e</a><a id=mo>\xe2\x8b\xaf</a><div id=hud></div></div><div id=mp></div><div id=op><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a></div><div id=fp><input id=fq placeholder=find><span id=fc></span></div><div id=np><input id=nq placeholder=note></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,ns=[].slice.call(K.childNodes),T=0,bs=[];"
@@ -555,7 +556,7 @@ static void handle(int c){
             "function save(){var b='pos='+O(),u='/book?n='+encodeURIComponent(N);navigator.sendBeacon?navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'})):fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
             /* whole-screen pages via scrollTop (sync, sub-ms); flip on pointerdown/wheel/keys */
             "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,st;"
-            "function fit(){K.style.bottom='108px';K.style.bottom=(108+K.clientHeight%%lh)+'px';}"   /* whole-line snap (%% = JS modulo in this fmt) */
+            "function fit(){K.style.bottom='120px';K.style.bottom=(120+K.clientHeight%%lh)+'px';}"   /* whole-line snap (%% = JS modulo in this fmt) */
             "function ph(){return Math.max(lh,Math.floor(K.clientHeight/lh)*lh);}"
             "function NP(){return Math.max(0,Math.ceil((K.scrollHeight-K.clientHeight)/ph()));}"
             "function G(p){p=Math.max(0,Math.min(p,NP()));K.scrollTop=p*ph();pg=p;U();clearTimeout(st);st=setTimeout(save,500);}"
@@ -584,6 +585,12 @@ static void handle(int c){
             "function FT(s){fp.style.display=s?'block':'none';if(s){fq.focus();fq.select()}else{fq.blur();try{CSS.highlights.delete('fnd')}catch(x){}}}"
             "mf.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();FT(fp.style.display!='block')});"
             "fp.addEventListener('pointerdown',function(e){e.stopPropagation()});"
+            /* overflow #op = needed-not-essential (+mark, marks, find); items stop pointerdown, pointerup closes it. note: Enter = a book note <book> @<offset> <text> via omni (argv), receipt in hud */
+            "mo.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();op.style.display=op.style.display=='block'?'none':'block'});"
+            "op.addEventListener('pointerdown',function(e){e.stopPropagation()});op.addEventListener('pointerup',function(){op.style.display='none'});"
+            "mn.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var s=np.style.display!='block';np.style.display=s?'block':'none';if(s)nq.focus()});"
+            "np.addEventListener('pointerdown',function(e){e.stopPropagation()});"
+            "nq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Escape')np.style.display='none';else if(e.key==='Enter'&&nq.value.trim()){fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent('book note '+N+' @'+O()+' '+nq.value.trim())}).then(function(r){return r.text()}).then(function(t){hud.textContent=t.replace(/<[^>]*>/g,'').trim().slice(0,40);setTimeout(U,3000)});nq.value='';np.style.display='none'}});"
             "fq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Enter'){if(fq.value!==FV){FV=fq.value;FN(FV)}FG(e.shiftKey?-1:1)}else if(e.key==='Escape')FT(0)});"
             /* speak: apk in-app (A.say=GBD narrator, A.media=shade notif, shade keys land on #p) else server-side a say.
                apk live-follow: engine word ranges (_srng) highlight the spoken words + auto-flip the page; _sdone + X-Next chain chunks to book end */
