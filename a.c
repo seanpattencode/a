@@ -1,14 +1,11 @@
 #if 0
 # -- a.c - agent manager & human-AI accelerator. sh a.c [build|install|analyze|shell|clean]
 # Polyglot: shell sees # as comments; C preprocessor skips #if 0..#endif.
-# Fixes: fewer tokens, same speed+. Features: cut until it breaks.
-# Read codebase: a cat [dir]: newest files first, whole under A_CB bytes (1.2MB = ~570k Fable tokens), 10-line stubs past it; header line says CONTEXT COMPLETE|INCOMPLETE; copies to clipboard
 # Context: a c/j preloads a cat (auto mode 3) into claude's system prompt via --append-system-prompt-file
 # TERMUX: set CLAUDE_CODE_TMPDIR=$HOME/.tmp; build with clang directly.
 case "$0" in *a.c) [ -z "$BASH_VERSION" ] && exec bash "$0" "$@";; *)
     set -e; A="$HOME/a"
     # bootstrap git: ARCHITECTURE #40 - `curl ... | sh` must succeed on a bare OS with no prereqs.
-    # detect package manager and install. sudo is auto-applied where root is needed.
     command -v git >/dev/null || { S=""; [ "$EUID" != 0 ] && command -v sudo >/dev/null && S="sudo"
         if [[ "$OSTYPE" == darwin* ]]; then command -v brew &>/dev/null || { /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; }; brew install git &>/dev/null
         elif [ -f /data/data/com.termux/files/usr/bin/bash ]; then pkg install -y git
@@ -266,7 +263,7 @@ install)
     _SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12"/><text x="32" y="50" font-family="monospace" font-size="52" fill="#fff" text-anchor="middle">a</text></svg>'  # launcher icon so users SEE a exists
     [[ "$OS" == debian || "$OS" == arch || "$OS" == fedora ]] && { mkdir -p ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps; printf %s "$_SVG" >~/.local/share/icons/hicolor/scalable/apps/a.svg; printf '[Desktop Entry]\nType=Application\nName=a\nComment=agent manager\nExec=a\nTerminal=true\nIcon=a\nCategories=Development;\n' >~/.local/share/applications/a.desktop; ok "app icon"; }
     [[ "$OS" == mac ]] && { AP=~/Applications/a.app;IS=$(mktemp -d);mkdir -p "$AP/Contents/MacOS" "$AP/Contents/Resources" "$IS/a.iconset";printf %s "$_SVG" >"$IS/a.svg";qlmanage -t -s 1024 -o "$IS" "$IS/a.svg" &>/dev/null&&mv "$IS/a.svg.png" "$IS/a.iconset/icon_512x512@2x.png"&&iconutil -c icns "$IS/a.iconset" -o "$AP/Contents/Resources/a.icns"||:;printf '<plist version="1.0"><dict><key>CFBundleExecutable</key><string>a</string><key>CFBundleIconFile</key><string>a</string><key>CFBundleIdentifier</key><string>com.seanpatten.a</string><key>CFBundleName</key><string>a</string></dict></plist>' >"$AP/Contents/Info.plist";printf %s 'import Cocoa;import WebKit;let a=NSApplication.shared;a.setActivationPolicy(.regular);let w=NSWindow(contentRect:.init(x:0,y:0,width:1280,height:820),styleMask:.init(rawValue:15),backing:.buffered,defer:false);w.title="a";w.center();w.appearance=NSAppearance(named:.darkAqua);w.titlebarAppearsTransparent=true;w.backgroundColor=NSColor.black;let v=WKWebView(frame:w.contentView!.bounds);v.autoresizingMask=[.width,.height];v.load(URLRequest(url:URL(string:"http://localhost:1111")!));w.contentView!.addSubview(v);NotificationCenter.default.addObserver(forName:NSWindow.willCloseNotification,object:w,queue:nil){_ in exit(0)};try? Process.run(URL(fileURLWithPath:"/usr/bin/osascript"),arguments:["-e","tell app \"Terminal\" to do script \"a\""]);w.makeKeyAndOrderFront(nil);a.activate(ignoringOtherApps:true);a.run()' >"$IS/a.swift";swiftc "$IS/a.swift" -o "$AP/Contents/MacOS/a" 2>/dev/null||:;rm -rf "$IS";/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$AP" 2>/dev/null||:;ok "a.app"; }  # Mach-O required or Spotlight hides it
-    [[ "$OS" == cygwin ]] && { printf '%s\n' "\$W='$(cygpath -w "$D/adata/local")';\$ico=\"\$W\\a.ico\";Add-Type -AssemblyName System.Drawing" '$b=[Drawing.Bitmap]::new(256,256);$g=[Drawing.Graphics]::FromImage($b);$g.SmoothingMode="AntiAlias";$g.TextRenderingHint="AntiAliasGridFit";$p=[Drawing.Drawing2D.GraphicsPath]::new();$r=48;$p.AddArc(0,0,$r,$r,180,90);$p.AddArc(256-$r,0,$r,$r,270,90);$p.AddArc(256-$r,256-$r,$r,$r,0,90);$p.AddArc(0,256-$r,$r,$r,90,90);$p.CloseFigure();$g.FillPath([Drawing.Brushes]::Black,$p)' '$f=[Drawing.Font]::new("Consolas",200,[Drawing.FontStyle]::Regular,[Drawing.GraphicsUnit]::Pixel);$sf=[Drawing.StringFormat]::new();$sf.Alignment="Center";$sf.LineAlignment="Center";$g.DrawString("a",$f,[Drawing.Brushes]::White,[Drawing.RectangleF]::new(0,-14,256,256),$sf);$g.Dispose()' '$m=[IO.MemoryStream]::new();$b.Save($m,[Drawing.Imaging.ImageFormat]::Png);$d=$m.ToArray();[IO.File]::WriteAllBytes($ico,[byte[]](0,0,1,0,1,0,0,0,0,0,1,0,32,0)+[BitConverter]::GetBytes([int]$d.Length)+[BitConverter]::GetBytes([int]22)+$d)' '$sh=New-Object -ComObject WScript.Shell;foreach($dir in @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs",[Environment]::GetFolderPath("Desktop"))){$s=$sh.CreateShortcut("$dir\a.lnk");$s.TargetPath="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe";$s.Arguments="-NoExit -Command a";$s.IconLocation="$ico,0";$s.WorkingDirectory=$env:USERPROFILE;$s.Save()}' >~/aapp.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/aapp.ps1)" >/dev/null 2>&1 && ok "a app (Start menu + Desktop a.lnk -> powershell -NoExit a, icon a.ico)"; }  # windows twin of .desktop/a.app: the svg's a mark drawn by System.Drawing -> PNG-in-ICO (256px, 3KB, no imagemagick); Start-menu search finds "a"
+    [[ "$OS" == cygwin ]] && { printf '%s\n' "\$W='$(cygpath -w "$D/adata/local")';\$ico=\"\$W\\a.ico\";Add-Type -AssemblyName System.Drawing" '$b=[Drawing.Bitmap]::new(256,256);$g=[Drawing.Graphics]::FromImage($b);$g.SmoothingMode="AntiAlias";$g.TextRenderingHint="AntiAliasGridFit";$p=[Drawing.Drawing2D.GraphicsPath]::new();$r=48;$p.AddArc(0,0,$r,$r,180,90);$p.AddArc(256-$r,0,$r,$r,270,90);$p.AddArc(256-$r,256-$r,$r,$r,0,90);$p.AddArc(0,256-$r,$r,$r,90,90);$p.CloseFigure();$g.FillPath([Drawing.Brushes]::Black,$p)' '$f=[Drawing.Font]::new("Consolas",200,[Drawing.FontStyle]::Regular,[Drawing.GraphicsUnit]::Pixel);$sf=[Drawing.StringFormat]::new();$sf.Alignment="Center";$sf.LineAlignment="Center";$g.DrawString("a",$f,[Drawing.Brushes]::White,[Drawing.RectangleF]::new(0,-14,256,256),$sf);$g.Dispose()' '$m=[IO.MemoryStream]::new();$b.Save($m,[Drawing.Imaging.ImageFormat]::Png);$d=$m.ToArray();[IO.File]::WriteAllBytes($ico,[byte[]](0,0,1,0,1,0,0,0,0,0,1,0,32,0)+[BitConverter]::GetBytes([int]$d.Length)+[BitConverter]::GetBytes([int]22)+$d)' '$sh=New-Object -ComObject WScript.Shell;foreach($dir in @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs",[Environment]::GetFolderPath("Desktop"))){$s=$sh.CreateShortcut("$dir\a.lnk");$s.TargetPath="$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe";$s.Arguments="-NoExit -Command a";$s.IconLocation="$ico,0";$s.WorkingDirectory=$env:USERPROFILE;$s.Save()}' >~/aapp.ps1; powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w ~/aapp.ps1)" >/dev/null 2>&1 && ok "a app (Start menu + Desktop a.lnk -> powershell -NoExit a, icon a.ico)"; }  # windows twin of .desktop/a.app: a mark via System.Drawing -> PNG-in-ICO (no imagemagick)
     install_cli() {
         local pkg="$1" cmd="$2" p=$(command -v "$cmd" 2>/dev/null)
         [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && "$cmd" --version &>/dev/null && { ok "$cmd"; return; }
@@ -300,7 +297,7 @@ install)
     fi
     # tame adata/git repacks: freeze >200m base pack + no reactive maintenance (HDD repack-storm fix)
     [[ -d "$SROOT/.git" ]]&&{ git -C "$SROOT" config maintenance.auto false;git -C "$SROOT" config gc.bigPackThreshold 200m;git -C "$SROOT" config fetch.unpackLimit 1;ok "adata/git tuned";}
-    # install synced fleet ssh key so `a ssh <host>` authenticates out-of-box (don't clobber an existing device key)
+    # fleet ssh key: never clobber an existing device key
     [[ -f "$SROOT/ssh/id_ed25519" && ! -f "$HOME/.ssh/id_ed25519" ]]&&{ mkdir -p "$HOME/.ssh";cp "$SROOT/ssh/id_ed25519" "$SROOT/ssh/id_ed25519.pub" "$HOME/.ssh/" 2>/dev/null;chmod 600 "$HOME/.ssh/id_ed25519";ok "fleet ssh key";}
     # extra user repos: adata/git/repos.txt "owner/name [target]" per line — synced manifest, clone-only
     [[ -f "$SROOT/repos.txt" ]]&&while IFS= read -r ln;do ln="${ln%%#*}";set -- $ln;[[ -z "$1" ]]&&continue
@@ -330,7 +327,6 @@ deb) T=$(mktemp -d);mkdir "$T/DEBIAN";printf 'Package: a\nVersion: 1.0\nArchitec
 esac
 exit 0
 #endif
-/* a.c — self-compiling agent manager. sh a.c && a <args> to test. */
 #ifndef __APPLE__
 #define _GNU_SOURCE
 #endif
@@ -376,7 +372,6 @@ exit 0
 #define AB if(getenv("A_BENCH"))return 0
 #define CWD(w) char w[P];if(!getcwd(w,P))snprintf(w,P,"%s",HOME)
 
-/* a.c: cmd_freq,cmd_cat,cmd_j,cmd_tmux,cmd_tutorial,CMDS[],perf,main */
 static void mkdirp(const char *p);
 static void alog(const char *cmd, const char *cwd);
 static void perf_disarm(void);
@@ -486,7 +481,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* newest first, whole under A
         fclose(f);p=e+1;}
     CWD(cd);const char*actx=getenv("A_CTX");char ctd[P];
     if(actx&&actx[0]=='/')snprintf(ctd,P,"%s",actx);else snprintf(ctd,P,"%s/context/%s",AROOT,actx&&actx[0]?actx:bname(cd));
-    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=l>bud;  /* bud gates context too */\
+    #define CTX_EMIT(FP,HDR) {FILE*cf=fopen(FP,"r");if(cf){size_t sr=fread(b,1,512,cf);int bin=l>bud; \
         for(size_t i=0;i<sr&&!bin;i++)if((unsigned char)b[i]<32&&b[i]!=9&&b[i]!=10&&b[i]!=13)bin=1;\
         {size_t hl=(size_t)snprintf(b,8192,"\n==> context%s: %s <==\n",bin?" doc":"",bin?FP:HDR);GA(b,hl);}\
         if(bin)fclose(cf);else{rewind(cf);while(fgets(b,512,cf)){size_t bl=strlen(b);GA(b,bl);}fclose(cf);}nf++;}}
@@ -511,7 +506,7 @@ static int cmd_cat(int c,char**v){perf_disarm();  /* newest first, whole under A
     return 0;}
 static int cmd_j(int c,char**v){
     if(c<3||!strcmp(v[2],"rm")||!strcmp(v[2],"watch")||!strcmp(v[2],"-r")||(c==3&&isdigit(*v[2])))return cmd_jobs(c,v);
-    if(c>2&&!strcmp(v[2],"-q")){perf_disarm();char ln[B],ob[4096];  /* each line = detached claude win */
+    if(c>2&&!strcmp(v[2],"-q")){perf_disarm();char ln[B],ob[4096];
         for(fputs("j> ",stdout),fflush(stdout);fgets(ln,B,stdin);fputs("j> ",stdout),fflush(stdout)){
             ln[strcspn(ln,"\n")]=0;if(!*ln)continue;int p[2];if(pipe(p))continue;
             if(!fork()){dup2(p[1],1);dup2(p[1],2);close(p[0]);execlp("a","a","j",ln,(char*)0);_exit(127);}
@@ -523,7 +518,7 @@ static int cmd_j(int c,char**v){
         {char nd[P];FILE*f=fopen(cf,"w");if(f){
             snprintf(nd,P,"%s/notes",SROOT);int nn=load_notes(nd,NULL);
             for(int i=0;i<nn;i++)fprintf(f,"%d. %s\n",i+1,gn[i].t);
-            fputs("\n",f);snprintf(nd,P,"%s/tasks.txt",SROOT);char*tt=readf(nd,NULL);int k=0;   /* task board headers (lib/task.py) */
+            fputs("\n",f);snprintf(nd,P,"%s/tasks.txt",SROOT);char*tt=readf(nd,NULL);int k=0;
             for(char*l=tt;l&&*l;){int L=(int)strcspn(l,"\n");if(!strncmp(l,"== ",3))fprintf(f,"%d. %.*s\n",++k,L,l);l+=L+(l[L]=='\n');}
             free(tt);fclose(f);}}
         snprintf(pr,B,"%s/common/prompts/job.txt",SROOT);
@@ -545,7 +540,7 @@ static int cmd_j(int c,char**v){
     int si=2,wt=0;if(c>3&&isdigit(*v[2])){int idx=atoi(v[2]);if(idx<NPJ)snprintf(wd,P,"%s",PJ[idx].path);si++;}
     /* jobs run on main by default. --wt opts into fork isolation. agents work in parallel, push only their files. */
     char pr[B]="";int pl=0;for(int i=si;i<c;i++){if(!strcmp(v[i],"--wt")){wt=1;continue;}if(!strcmp(v[i],"--no-wt"))continue;pl+=snprintf(pr+pl,(size_t)(B-pl),"%s%s",pl?" ":"",v[i]);}
-    {struct stat pf;const char*dt=strrchr(pr,'.');   /* whole prompt = existing .txt/.md path → load file as the prompt */
+    {struct stat pf;const char*dt=strrchr(pr,'.');
      if(dt&&(!strcmp(dt,".txt")||!strcmp(dt,".md"))&&!stat(pr,&pf)&&S_ISREG(pf.st_mode)){char*fc=readf(pr,NULL);if(fc){
         if(strlen(fc)>(size_t)B-200){printf("x %s: >%d bytes, too big for j\n",pr,B-200);free(fc);return 1;}
         printf("+ prompt ← %s\n",pr);pl=snprintf(pr,B,"%s",fc);free(fc);}}}
@@ -632,8 +627,8 @@ int main(int argc, char **argv) {
     init_paths();
 
     clock_gettime(CLOCK_MONOTONIC,&gt0);atexit(gt_print);
-    if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);  /* multicall: h = home */
-    if (argc < 2) { int t=isatty(1);if(t)ifr_blast(); perf_arm("i"); return (t?cmd_i:cmd_help)(argc, argv); }  /* blast cached frame pre-init */
+    if(!strcmp(bname(argv[0]),"h"))return cmd_h(argc,argv);
+    if (argc < 2) { int t=isatty(1);if(t)ifr_blast(); perf_arm("i"); return (t?cmd_i:cmd_help)(argc, argv); }
     init_dev();char acmd[B]="";ajoin(acmd,B,argc,argv,1);
     CWD(wd);
     alog(acmd, wd);
@@ -654,7 +649,7 @@ int main(int argc, char **argv) {
      if(fexists(pf)){char m[P];snprintf(m,P,"%s/__init__",arg);fallback_py(m,argc,argv);}
      #define RL {int r=run_lab(pf,argv);if(r>=0)return r;}
      for(int i=2;EXT[i];i++){snprintf(pf,P,"%s/lib/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}
-     for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/aext/%s%s",HOME,arg,EXT[i]);if(fexists(pf))RL}  /* ~/aext: extension repo */
+     for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/aext/%s%s",HOME,arg,EXT[i]);if(fexists(pf))RL}
      snprintf(pf,P,"%s/my/%s",SDIR,arg);
      if(strrchr(arg,'.')&&fexists(pf))RL
      for(int i=1;EXT[i];i++){snprintf(pf,P,"%s/my/%s%s",SDIR,arg,EXT[i]);if(fexists(pf))RL}

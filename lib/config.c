@@ -60,7 +60,7 @@ static int cmd_config(int argc, char **argv) {
     return 0;
 }
 
-static void prompt_preview(const char*path){ /* preview: first 6 + last 3 lines */
+static void prompt_preview(const char*path){
     size_t n=0;char*d=readf(path,&n);if(!d){puts("  (empty)");return;}
     int tot=0;for(size_t i=0;i<n;i++)tot+=d[i]=='\n';
     if(tot<10){fputs(d,stdout);if(n&&d[n-1]!='\n')putchar('\n');free(d);return;}
@@ -68,7 +68,6 @@ static void prompt_preview(const char*path){ /* preview: first 6 + last 3 lines 
     printf("\033[2m  ... (%d lines) ...\033[0m\n",tot-9);
     char*q=d;for(int c=0;*q&&c<tot-3;q++)c+=*q=='\n';
     fputs(q,stdout);if(n&&d[n-1]!='\n')putchar('\n');free(d);}
-/* bare tty = viewer TUI: j/k o=view u=unified e=edit q; view = less */
 static int prompt_tui(const char*d){char p[64][P];int n=listdir(d,p,64);if(n<1){puts("no prompts");return 0;}int s=0;raw_enter();
     for(int c;;){struct winsize w={0,0,0,0};ioctl(1,TIOCGWINSZ,&w);
         printf("\033[H\033[2J  prompt files\033[K\n\n");
@@ -134,7 +133,6 @@ static int cmd_add(int argc, char **argv) {
         writef(f,data);
         printf("✓ Added: %s\n",name); list_all(1,0); return 0;
     }
-    /* Project add */
     char path[P], *a = args[0];
     if (!strcmp(a,".")) { if(!getcwd(path,P)) strcpy(path,"."); }
     else if (a[0]=='~') snprintf(path,P,"%s%s",HOME,a+1);
@@ -181,7 +179,6 @@ static int cmd_remove(int argc, char **argv) {
     printf("x Not found: %s\n", sel); list_all(0, 0); return 1;
 }
 
-/* ── move ── reorder projects, persist Order: N to .txt files */
 static int cmd_move(int argc, char **argv) {
     if (argc < 4) { puts("Usage: a move <from> <to>"); return 1; }
     int fr = atoi(argv[2]), to = atoi(argv[3]);

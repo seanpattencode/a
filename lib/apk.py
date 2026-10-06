@@ -1421,7 +1421,7 @@ CML='cmake_minimum_required(VERSION 3.22)\nproject(anative)\nadd_compile_options
 MF='<manifest xmlns:android="http://schemas.android.com/apk/res/android"><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/><uses-permission android:name="android.permission.RECORD_AUDIO"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/><uses-permission android:name="android.permission.POST_NOTIFICATIONS"/><uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/><uses-permission android:name="com.termux.permission.RUN_COMMAND"/><uses-permission android:name="moe.shizuku.manager.permission.API_V23"/><queries><package android:name="moe.shizuku.privileged.api"/></queries><application android:usesCleartextTraffic="true" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:extractNativeLibs="true" android:networkSecurityConfig="@xml/nsc" android:label="a app"><provider android:name="rikka.shizuku.ShizukuProvider" android:authorities="com.aios.a.shizuku" android:multiprocess="false" android:enabled="true" android:exported="true" android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"/><activity android:name=".M" android:exported="true" android:launchMode="singleTop" android:taskAffinity="com.aios.a.m" android:windowSoftInputMode="adjustResize"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter><meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/></activity><activity android:name=".Home" android:exported="true" android:launchMode="singleTask" android:stateNotNeeded="true" android:theme="@style/T"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.HOME"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".InstantNdkService" android:label="a kb" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><service android:name=".VoiceLineService" android:label="a voice line" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true"><intent-filter><action android:name="android.view.InputMethod"/></intent-filter><meta-data android:name="android.view.im" android:resource="@xml/method"/></service><activity android:name=".SettingsActivity" android:exported="true"/><activity android:name=".Cap" android:exported="true" android:launchMode="singleTask" android:taskAffinity="com.aios.a.cap" android:excludeFromRecents="true" android:windowSoftInputMode="stateAlwaysVisible|adjustResize"><intent-filter><action android:name="android.intent.action.ASSIST"/><category android:name="android.intent.category.DEFAULT"/></intent-filter></activity><service android:name=".Wd" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="serve"/></service><service android:name=".Ms" android:exported="false" android:foregroundServiceType="mediaPlayback"/><receiver android:name=".Boot" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter></receiver></application></manifest>'
 if SELF:MF=MF.replace('android:label="a app"','android:label="a (self)"').replace('com.aios.a.shizuku','com.aios.a.self.shizuku')   # unique label + provider authority (duplicate authority = INSTALL_FAILED_CONFLICTING_PROVIDER, blocks side-by-side)
 NSC='<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">127.0.0.1</domain><domain includeSubdomains="true">localhost</domain></domain-config></network-security-config>'
-# launcher deep-links: each web box = manifest shortcut "a <box>" -> .M --es nav <box> (sync with KT `web`); a-Home + Pixel launcher search both surface these
+# launcher shortcuts per web box -> .M --es nav <box> (keep in sync with KT `web`)
 BOX="note task term home op music book docs".split()
 SC='<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">'+''.join(f'<shortcut android:shortcutId="{b}" android:shortcutShortLabel="@string/s_{b}"><intent android:action="android.intent.action.MAIN" android:targetPackage="{P}" android:targetClass="com.aios.a.M"><extra android:name="nav" android:value="{b}"/></intent></shortcut>' for b in BOX)+'</shortcuts>'
 STR='<resources>'+''.join(f'<string name="s_{b}">a {b}</string>' for b in BOX)+'</resources>'
@@ -1441,7 +1441,6 @@ def w(p,s):os.makedirs(os.path.dirname(p),exist_ok=True);open(p,"w").write(s)
 def adb(*a,serial=None):return S.run(["adb"]+(["-s",serial] if serial else[])+list(a),capture_output=True,text=True)
 def devlist():return[l.split('\t')[0] for l in adb("devices").stdout.strip().split('\n')[1:] if '\tdevice' in l]
 def _self_adb():
-    """On Termux, try wireless adb to self-install. Returns serial or None."""
     if not IT:return None
     adb("connect","localhost:5555")
     out=adb("devices").stdout
@@ -1482,7 +1481,6 @@ def shizuku_pair():
     S.check_call(["adb","-s",f"{ip}:{dp}","shell",f'L=$(dirname $(pm path moe.shizuku.privileged.api|head -1|sed s/package://))/lib/{sub}/libshizuku.so; "$L"'])
     print("\n✓ Shizuku service started. After reboot: re-run this command (pairing persists).")
 def _rish_install(apk_path,pkg,serial=None):
-    """Silent install via Shizuku rish. Works from Linux (adb shell) AND Termux self-install."""
     in_tmx=IT and not serial
     rid="com.termux" if in_tmx else "moe.shizuku.privileged.api"
     R=f"RISH_APPLICATION_ID={rid} /system/bin/sh /data/local/tmp/rish"
@@ -1515,7 +1513,7 @@ def _rish_install(apk_path,pkg,serial=None):
 
 
 def _provision(serial,pkg):
-    """push gh+rclone creds via /data/local/tmp + --ez prov (only the apk holds the RUN_COMMAND grant); staging wiped; returns names"""
+    """creds via /data/local/tmp + --ez prov: only the apk holds the RUN_COMMAND grant; staging wiped"""
     import time;staged=[]
     for src,dst,nm in[("~/.config/gh/hosts.yml","/data/local/tmp/a_gh","gh"),("~/.config/rclone/rclone.conf","/data/local/tmp/a_rc","rclone")]:
         p=os.path.expanduser(src)
@@ -1533,7 +1531,7 @@ def _apk_auth(serial):
         serial=ds[0] if len(ds)==1 else pick(ds)
     names=_provision(serial,P)
     print(f"✓ provisioned termux on {serial}: {', '.join(names)}" if names else "! no gh/rclone creds on this dev box to push")
-def _adb_install(apk,pkg,serial):   # install -r -g; on INSTALL_FAILED uninstall + clean install
+def _adb_install(apk,pkg,serial):
     r=adb("install","-r","-g",apk,serial=serial)
     if "INSTALL_FAILED" in r.stdout+r.stderr:
         if pkg:adb("uninstall",pkg,serial=serial)
@@ -1568,8 +1566,8 @@ def run():
     if "pair" in sys.argv[1:]:return shizuku_pair()
     if "auth" in sys.argv[1:]:return _apk_auth(next((a for a in sys.argv[2:] if a!="auth"),None))
     auth_on="noauth" not in sys.argv[2:]
-    up_on="noup" not in sys.argv[2:]   # default: bring termux a to latest + restart its serve after install
-    bo=SELF or "build" in sys.argv[2:]   # build-only: skip every adb/install/auth step (deploy path when adb is absent/flaky)
+    up_on="noup" not in sys.argv[2:]
+    bo=SELF or "build" in sys.argv[2:]
     AMAP={"arm":"armeabi-v7a","v7a":"armeabi-v7a","armeabi-v7a":"armeabi-v7a","arm64":"arm64-v8a","v8a":"arm64-v8a","arm64-v8a":"arm64-v8a"}
     proj=serial=ABI=None
     for a in sys.argv[2:]:
@@ -1614,7 +1612,7 @@ def run():
         _res=D+"/app/src/main/res";_ico=''
         try:
             sys.path.insert(0,R+"/lib");import logo as _lg
-            _fg=_lg.SVG.replace('<rect width="108" height="108" rx="20"/>','')   # foreground = same a, no rect (black comes from the bg layer)
+            _fg=_lg.SVG.replace('<rect width="108" height="108" rx="20"/>','')
             for _d,_s in(("mdpi",48),("hdpi",72),("xhdpi",96),("xxhdpi",144),("xxxhdpi",192)):
                 os.makedirs(f"{_res}/mipmap-{_d}",exist_ok=True);_lg.png(_s,f"{_res}/mipmap-{_d}/ic_launcher.png");_lg.png(_s*9//4,f"{_res}/mipmap-{_d}/ic_fg.png",_fg)
             os.makedirs(f"{_res}/mipmap-anydpi-v26",exist_ok=True)
@@ -1634,7 +1632,7 @@ def run():
         else:
             for fn,src,_l,_m in NLIBS:w(D+"/app/src/main/cpp/"+fn,src)
             w(D+"/app/src/main/cpp/CMakeLists.txt",CML.replace("-O3 -flto",cf))
-        # Stage bundled bins + terminfo source (prebuilt under SRCD; the droidtmux.py builder is in git history)
+        # prebuilt bins under SRCD; the droidtmux.py builder lives in git history
         sf=D+"/app/src/main/jniLibs/"+ABI;os.makedirs(sf,exist_ok=True)
         ad=D+"/app/src/main/assets";os.makedirs(ad,exist_ok=True)
         stage={ADROID:"liba.so",f"{SRCD}/tmux-build-a/tmux":"libtmux.so",f"{SRCD}/ncurses-6.4/progs/tic":"libtic.so"}
@@ -1665,7 +1663,7 @@ def run():
         os.chdir(D);S.run(["./gradlew","--no-configuration-cache","assembleDebug"],check=True)
         apk=D+"/app/build/outputs/apk/debug/app-debug.apk";pkg=P
     if bo:
-        if SELF:apk=shutil.copy(apk,os.path.dirname(apk)+"/a-self.apk")   # coexists with the default's app-debug.apk
+        if SELF:apk=shutil.copy(apk,os.path.dirname(apk)+"/a-self.apk")
         ip=S.run(["sh","-c","ip route get 8.8.8.8 2>/dev/null|awk '{print $7;exit}'"],capture_output=True,text=True).stdout.strip() or "<this-box-ip>"
         fn="a-self.apk" if SELF else "a.apk"
         print(f"✓ built: {apk}\n  serve it:      python3 -m http.server 8999 -d {os.path.dirname(apk)}\n  phone termux:  curl -o {fn} http://{ip}:8999/{os.path.basename(apk)} && termux-open {fn}   # Termux needs 'Install unknown apps' once")
@@ -1687,7 +1685,7 @@ def run():
             ds=devlist()
             if not ds:sys.exit("No devices")
             serial=pick(ds)
-        _st_pull(serial,pkg)   # freq/★ snapshot before ANY install path can wipe
+        _st_pull(serial,pkg)
         if _rish_install(apk,pkg,serial=serial):
             _st_push(serial,pkg); _roles(serial,pkg)
             names=_provision(serial,pkg) if auth_on else []

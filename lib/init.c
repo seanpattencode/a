@@ -35,7 +35,7 @@ static void init_paths(void) {
     if(!getenv("A_PYOK")){static char p[B*4];snprintf(p,sizeof p,"PATH=%s:%s",DDIR,getenv("PATH"));for(char**e=environ;*e;e++)if(!strncmp(*e,"PATH=",5))*e=p;}
 #endif
 }
-static void init_dev(void) {  /* menu: after frame 1 */
+static void init_dev(void) {
     char df[P]; snprintf(df, P, "%s/.device", DDIR);
     FILE *f = fopen(df, "r");
     if (f) { if (fgets(DEV, 128, f)) DEV[strcspn(DEV, "\n")] = 0; fclose(f); }

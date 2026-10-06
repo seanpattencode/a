@@ -6,25 +6,25 @@ GUI (sway): reopen AT MOST ONE foot+firefox, never the saved count (5 foots squa
 import sys, os, json, glob, re, socket, subprocess, time
 
 DEV = socket.gethostname()
-TMS = os.environ.get("A_SNAP_SESSION", "a")          # a's tmux session (overridable for testing)
+TMS = os.environ.get("A_SNAP_SESSION", "a")
 GIT = os.path.expanduser("~/a/adata/git")
 LOC = os.path.expanduser("~/a/adata/local")
 SNAPDIR = f"{LOC}/sessions"                           # machine-rewritten: local, never git (Sean 09-11); .prev = undo
 SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
-PD = lambda cwd: PROJ + "/" + "".join(c if c.isalnum() else "-" for c in cwd)   # cwd -> its transcript dir
-ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")   # session id on a claude cmdline
+PD = lambda cwd: PROJ + "/" + "".join(c if c.isalnum() else "-" for c in cwd)
+ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")
 try: C = dict(re.findall(r"^m_(\w+): *(.*)", open(f"{GIT}/workspace/config.txt").read(), re.M))
 except OSError: C = {}
 MF = "".join(f" --{k} {C[k]}" for k in ("model", "effort") if C.get(k)) if C.get("agent", "claude") == "claude" else ""
-RESUME = {"claude": f"claude --dangerously-skip-permissions{MF} --resume %s; exec bash",  # %s=sid; no MF → settings.json default
+RESUME = {"claude": f"claude --dangerously-skip-permissions{MF} --resume %s; exec bash",
           "codex": "codex resume --last; exec bash", "agy": "agy --dangerously-skip-permissions -c; exec bash",
-          "grok": "grok --always-approve --continue; exec bash"}   # --continue = cwd's newest session
-HOST = f"{GIT}/ssh/%s.txt"                            # a ssh host registry
+          "grok": "grok --always-approve --continue; exec bash"}
+HOST = f"{GIT}/ssh/%s.txt"
 
 
 LINUX = os.path.isdir("/proc")
-PS = {}                                               # macOS/BSD: {pid: (ppid, command)} from one `ps`
+PS = {}
 
 
 def _ps():                                            # populate PS on platforms without /proc (macOS)
@@ -36,21 +36,21 @@ def _ps():                                            # populate PS on platforms
         if len(p) >= 2: PS[p[0]] = (p[1], p[2] if len(p) > 2 else "")
 
 
-def _children(pid):                                   # direct children of pid — /proc on Linux, ps map elsewhere
+def _children(pid):
     if LINUX:
         try: return open(f"/proc/{pid}/task/{pid}/children").read().split()
         except OSError: return []
     return [p for p, (pp, _c) in PS.items() if pp == pid]
 
 
-def _cmdline(pid):                                    # full command line of pid
+def _cmdline(pid):
     if LINUX:
         try: return open(f"/proc/{pid}/cmdline", "rb").read().decode("utf-8", "replace")
         except OSError: return ""
     return PS.get(str(pid), ("", ""))[1]
 
 
-def tree(pid):                                        # pid + all descendants
+def tree(pid):
     seen, i = [str(pid)], 0
     while i < len(seen):
         for c in _children(seen[i]):
@@ -59,9 +59,9 @@ def tree(pid):                                        # pid + all descendants
     return seen
 
 
-AEXE = {"claude", "codex", "agy", "grok"}          # agent binaries we revive natively
+AEXE = {"claude", "codex", "agy", "grok"}
 
-def agent(pids):                                      # (kind, sid) of the agent under these panes; (None, "") if none
+def agent(pids):
     for p in (t for pid in pids for t in tree(pid)):  # match the LAUNCHED BINARY, never a prompt substring:
         cl = _cmdline(p)                              # every agent carries the tool-list in argv, so "x in cl" false-matches
         for tk in cl.split("\0")[:2]:                 # argv[0:2] = exe (+ `node <script>`); the prompt sits later
@@ -75,14 +75,14 @@ def agent(pids):                                      # (kind, sid) of the agent
 def have(sid): return bool(sid and glob.glob(f"{PROJ}/*/{sid}.jsonl"))
 
 
-def newest_in(cwd, skip):                             # newest claude transcript in cwd's project dir not already owned
+def newest_in(cwd, skip):
     for j in sorted(glob.glob(f"{PD(cwd)}/*.jsonl"), key=os.path.getmtime, reverse=True):
         s = os.path.basename(j)[:-6]
         if s not in skip: return s
     return None
 
 
-def windows():                                        # [name, cwd, pane pids, start cmd] — all panes (claude may be off the active pane after `a done` splits)
+def windows():                                        # all panes: claude may be off the active pane after `a done` splits
     r = subprocess.run(["tmux", "list-panes", "-s", "-t", TMS, "-F",
                         "#{window_id}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{pane_start_command}"],
                        capture_output=True, text=True)
@@ -124,7 +124,7 @@ def save():
     return jobs
 
 
-def _sway(*args):                                     # swaymsg passthrough (socket auto-discovered); None if no sway
+def _sway(*args):
     s = os.environ.get("SWAYSOCK") or (sorted(glob.glob(f"/run/user/{os.getuid()}/sway-ipc.*.sock"),
                                               key=os.path.getmtime, reverse=True) or [None])[0]
     if not s: return None
@@ -134,7 +134,7 @@ def _sway(*args):                                     # swaymsg passthrough (soc
     except OSError: return None
 
 
-GAPPS = {"foot", "firefox"}                           # gui apps we snapshot/reopen (sway app_ids)
+GAPPS = {"foot", "firefox"}
 
 def _gwalk(n, ws, acc):                               # (app family, ws) per real gui window; firefox-nightly counts as firefox
     if n.get("type") == "workspace": ws = n.get("name", ws)
@@ -143,7 +143,7 @@ def _gwalk(n, ws, acc):                               # (app family, ws) per rea
     for c in n.get("nodes", []) + n.get("floating_nodes", []): _gwalk(c, ws, acc)
 
 
-def gui_save():                                       # sway gui windows on record; restore caps at one of each
+def gui_save():
     t = _sway("-t", "get_tree")
     if not t: return []
     acc = []
@@ -164,15 +164,15 @@ def gui_restore(gui, dry=False):                      # AT MOST ONE foot + one f
         if not dry: _sway(f'workspace {g["ws"]}; exec {run}')
 
 
-def _pane_tail(wid):                                  # last non-blank visible line of a window → identifies shells
+def _pane_tail(wid):
     r = subprocess.run(["tmux", "capture-pane", "-p", "-t", wid], capture_output=True, text=True)
     for l in reversed(r.stdout.splitlines()):
-        if any(c.isalnum() for c in l) and "⏵" not in l and "shift+tab" not in l:  # skip claude chrome/separators
+        if any(c.isalnum() for c in l) and "⏵" not in l and "shift+tab" not in l:
             return re.sub(r"\s+", " ", l.strip())[:60]
     return ""
 
 
-def _preview(sid):                                   # tail (last 64KB) of a claude transcript → last human line = "what it's about"
+def _preview(sid):
     for fp in glob.glob(f"{PROJ}/*/{sid}*.jsonl"):
         try:
             with open(fp, "rb") as fh:
@@ -182,12 +182,12 @@ def _preview(sid):                                   # tail (last 64KB) of a cla
     return ""
 
 
-def _live():                                         # names of currently-open local tmux windows (● = live)
+def _live():
     r = subprocess.run(["tmux", "list-windows", "-t", TMS, "-F", "#{window_name}"], capture_output=True, text=True)
     return set(r.stdout.split())
 
 
-def show(flt=""):                                     # per-device saved windows (local; live remote: a res <host>)
+def show(flt=""):
     files = sorted(glob.glob(f"{SNAPDIR}/*.json"), key=os.path.getmtime, reverse=True)
     if not files: print("(no snapshots — run `a res save` on a device)"); return
     live, n = _live(), 0
@@ -202,7 +202,7 @@ def show(flt=""):                                     # per-device saved windows
             sid = ID.search(j["cmd"])
             mark = "●" if here and j["window"] in live else "⏸"
             desc = (_preview(sid[1]) if here and sid else "") or j.get("preview", "") \
-                or (("claude " + sid[1][:7]) if sid else (j["cmd"][:44] or "(shell)"))   # what it's about
+                or (("claude " + sid[1][:7]) if sid else (j["cmd"][:44] or "(shell)"))
             print(f"  {mark} {j['window']:15.15} {os.path.basename(j['cwd']):<8} {desc[:58]}"); n += 1
     print(f"\n{n} window(s) · {len(files)} device(s){'  /'+flt if flt else '   search: a res show <text>'}")
 
@@ -217,7 +217,7 @@ def restore(dry=False):
     n = 0
     for j in jobs:
         if j["window"] in seen: seen.remove(j["window"]); continue  # absorb one open window per name; dups still restore
-        cwd = j["cwd"] if os.path.isdir(j["cwd"]) else os.path.expanduser("~")  # cwd may be gone
+        cwd = j["cwd"] if os.path.isdir(j["cwd"]) else os.path.expanduser("~")
         verb = ["new-session", "-d", "-s", TMS] if fresh and not n else ["new-window", "-d", "-t", TMS + ":"]  # ':' = session target (bare name can hit a like-named window)
         argv = ["tmux"] + verb + ["-n", j["window"], "-c", cwd] + ([j["cmd"]] if j["cmd"] else [])
         print("  $ " + " ".join(argv)) if dry else subprocess.run(argv, check=False); n += 1
@@ -230,7 +230,7 @@ def _age(s):
     s = int(s); return f"{s//60}m" if s < 3600 else (f"{s//3600}h" if s < 86400 else f"{s//86400}d")
 
 
-def _snip(ut, q, w):                                  # the line that MATCHED, match underlined; no q → last message
+def _snip(ut, q, w):
     i = ut.lower().find(q or "\0")
     s = re.sub(r"\s+", " ", ut[max(0, i - 22):i + w] if i >= 0 else ut.rsplit("\n", 1)[-1]).strip()[:max(10, w)]
     j = s.lower().find(q or "\0")
@@ -238,14 +238,14 @@ def _snip(ut, q, w):                                  # the line that MATCHED, m
 
 
 def _stamp(t): l = time.localtime(t); return f"{time.strftime('%b', l)}{l.tm_mday}-{l.tm_hour % 12 or 12}{l.tm_min:02d}{'ap'[l.tm_hour > 11]}"   # Sep4-346p = tm_name (tmux.c): the WHEN in every agent window name
-def _claunch(r):                                      # resume one claude transcript row [mt, sid, cwd, ..] in a window named by ITS date
+def _claunch(r):
     subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(r[2])}-{_stamp(r[0])}", "-c", r[2], RESUME["claude"] % r[1]])
 
 
 def _hum(t): return [x for x in re.findall(r'"role":"user","content":"([^"]{2,400})', t) if not x.startswith(("<", "[Request"))]
 
 
-def _load(cut=0):                                     # rows [mt, sid, cwd, turns, text]; typed sessions only (claude -p = sdk-cli); cut=mtime floor else newest 150
+def _load(cut=0):                                     # typed sessions only (claude -p = sdk-cli); cut = mtime floor else newest 150
     rows = []
     for f in sorted(glob.glob(f"{PROJ}/*/*.jsonl"), key=os.path.getmtime, reverse=True)[:None if cut else 150]:
         if os.path.getmtime(f) < cut: break
@@ -260,7 +260,7 @@ def _load(cut=0):                                     # rows [mt, sid, cwd, turn
 
 
 
-def pick():                                           # resume picker: menu keys by default; [/]=search, [h]=revive ≤hrs
+def pick():
     if not os.environ.get("TMUX"): print("x need tmux"); return
     import termios, tty, select
     t1 = time.perf_counter_ns(); rows = _load()       # his words, not tool blobs
@@ -292,7 +292,7 @@ def pick():                                           # resume picker: menu keys
             o += (st + f" · {(time.perf_counter_ns()-t1)/1e6:.4f}ms")[:W] + "\x1b[K"
             sys.stdout.write(o); sys.stdout.flush()
             b = os.read(0, 1); t1 = time.perf_counter_ns()
-            if b in b"\x03\x04": return               # b""=EOF exits
+            if b in b"\x03\x04": return
             if b == b"\x1b":
                 if not select.select([0], [], [], 0.02)[0]:
                     if mode: mode = q = ""; continue
@@ -333,7 +333,7 @@ def _resume_attach(host, live, cwd, sid, mt):         # parked → resume into t
     os.execvp("a", ["a", "ssh", host])
 
 
-def _scan(host):                                      # live agent work on one box (None=local): [(host,live,cwd,sid,mtime,desc)]
+def _scan(host):
     cmd = ["bash", "-c", RQ] if host is None else ["a", "ssh", host, RQ]
     try: out = subprocess.run(cmd, capture_output=True, text=True, timeout=15).stdout
     except Exception: return []
@@ -345,7 +345,7 @@ def _scan(host):                                      # live agent work on one b
     return res
 
 
-def remote(host):                                     # review one box's agent work LIVE over ssh; pick → resume(killed)/attach(live)
+def remote(host):
     rows = _scan(host)
     if not rows: print(f"(no agent transcripts on {host} — reachable?)"); return
     print(f"\n\033[1m{host}\033[0m — agent work  (● live=attach · ⏸ parked=resume):")
@@ -362,7 +362,7 @@ def _row(n):
     try: f = open(LOC + '/done.log').read().splitlines()[int(n)].split('\t'); return f[2], f[3], int(f[0]), f[4][-50:], f[5] if len(f) > 5 else ''
     except Exception: return '', '', 0, '', ''
 
-def _tr(t, k, d):  # (path, text) of the transcript under d that logged k by done-time t; later sessions merely quoting k don't count
+def _tr(t, k, d):  # later sessions merely quoting k don't count
     for f in glob.glob(d + '/*.jsonl'):
         try:
             if os.path.getmtime(f) >= t and k in (s := open(f, errors='ignore').read()) and any(k in l and json.loads(l)['timestamp'] < time.strftime('%FT%T', time.gmtime(t + 9)) for l in s.splitlines()): return f, s

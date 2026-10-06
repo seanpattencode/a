@@ -1,4 +1,3 @@
-/* fallback py */
 __attribute__((noreturn))
 static void fallback_py(const char *mod, int argc, char **argv) {
     if (getenv("A_BENCH")) _exit(0);
@@ -26,7 +25,6 @@ static void sess_log(const char *sn, const char *wd) {
     snprintf(c,B,"session:%s log:%s",sn,lf);alog(c,wd);
 }
 
-/* session create — returns 1 if window already existed, 0 if created */
 static int create_sess(const char *sn, const char *wd, const char *cmd, const char *extra) {
     int ai = cmd && (strstr(cmd,"claude") || strstr(cmd,"codex") || strstr(cmd,"agy") || strstr(cmd,"aider") || strstr(cmd,"grok"));
     char sid[64]="",acmd[B];
@@ -57,7 +55,6 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     }
     /* ctx as file (E2BIG at 128KB/arg) */
     char src_pfx[P+32]="";if(is_claude&&SRC_ON)snprintf(src_pfx,sizeof(src_pfx),"%s >>%s 2>/dev/null;",ACAT,ctxf);
-    /* pre-accept claude's per-dir trust check */
     char tpfx[P+48]="";if(is_claude)snprintf(tpfx,sizeof(tpfx),"python3 \"%s/lib/trust.py\" 2>/dev/null;",SDIR);
     if (ai) snprintf(wcmd, sizeof(wcmd),
         "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%s%stmux wait-for -S rdy-%s;for _ in 1 2 3;do %s%s&&exit;echo \"$(date) $? $(pwd)\">>%s/crashes.log;sleep 1;done;exec bash", tpfx,src_pfx,sn,acmd,csuf,LOGDIR);
@@ -68,5 +65,5 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     return r;
 }
 
-/* a resume / a res — resume agents (interactive pick or reboot save/restore); merged into lib/res.py */
+/* a resume / a res -> lib/res.py */
 static int cmd_resume(int c,char**v){fallback_py("res",c,v);return 0;}

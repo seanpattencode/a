@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# experimental — promoted from my/auto/ after working end-to-end on Claude.ai.
+# experimental
 """bri — drive Chrome/Firefox tabs over an HTTP long-poll bridge (:1234 poll/resp, :1235 push); extension context = CSP-immune (claude.ai/chatgpt ok).
 ONE page-side client per browser (two double-execute + interleave replies): FF = lib/bri-ext (a bri deploy = build+install+restart), Chrome = lib/bri-chrome.
 No Marionette/CDP: navigator.webdriver trips Google sign-in; launch FF WITHOUT -marionette, sign in once — cookies persist, bridge drives unattended.
@@ -51,7 +51,7 @@ def handle(c, addr):
     method, path, *_ = (head.split(b'\r\n',1)[0].decode(errors='replace').split() + ['',''])
     if method == 'GET' and path == '/poll':
         b = _chan(head) or _bid(_ua(head))
-        q = queue.Queue(); entry = (q, b); pollers.append(entry)   # remember which exact browser this poller is
+        q = queue.Queue(); entry = (q, b); pollers.append(entry)
         now = time.time(); backlog[:] = [x for x in backlog if now - x[0] < 60]
         for i, (_, m2, t2) in enumerate(backlog):
             if t2 in ('all','any','*') or b == '?' or b.startswith(t2): q.put(backlog.pop(i)[1]); break
@@ -74,7 +74,7 @@ def handle(c, addr):
         m = body.decode(errors='replace')
         log(f'<< {m}')
         try:
-            obj = json.loads(m); obj['br'] = obj.get('chan') or _chan(head) or _bid(_ua(head)); m = json.dumps(obj)   # tag which exact browser answered
+            obj = json.loads(m); obj['br'] = obj.get('chan') or _chan(head) or _bid(_ua(head)); m = json.dumps(obj)
             rid = obj.get('id')
             if rid in pending: pending[rid].put(m)
         except Exception: pass
@@ -117,7 +117,7 @@ def cmd_serve():
         c.close()
 
 def main(browser='none', watch=True):
-    import briext; briext.build()  # regenerate BOTH extensions from lib/briext.py — the auto-update
+    import briext; briext.build()
     # bridge is browser-agnostic; serve launches NO browser (only FF needs the managed -marionette-free launch: `serve ff`)
     hl = browser == 'ffh'   # HEADLESS FF: same profile/ext/sign-ins; EXCLUSIVE with GUI FF (two FFs double-execute); `serve ff` switches back
     ff = hl or browser in ('ff', 'firefox')
@@ -179,7 +179,7 @@ def _ff_restart(headless=False):
     # restart is SAFE and the right way to reload bri-ext: prefs restore every tab; stale wayland-0 in env = FF invisible
     for _p in glob.glob(os.path.expanduser('~/.mozilla/firefox/*default-nightly'))+[d for d in glob.glob(os.path.expanduser('~/Library/Application Support/Firefox/Profiles/*')) if 'nightly' in d.lower()]:
         _u=os.path.join(_p,'user.js')
-        if 'max_resumed_crashes' not in (open(_u).read() if os.path.exists(_u) else ''):   # -1 = never show the "Nightly closed unexpectedly" Troubleshoot-Mode gate — it stalls every restart pre-extension awaiting a human press (recent_crashes was 17; Sean 2026-09-15: auto dismiss this and have firefox actually open)
+        if 'max_resumed_crashes' not in (open(_u).read() if os.path.exists(_u) else ''):   # -1 = never show the Troubleshoot-Mode gate: it stalls every restart awaiting a human press (Sean 2026-09-15: auto dismiss, have firefox actually open)
             open(_u,'a').write('\nuser_pref("browser.sessionstore.resume_from_crash", true);\nuser_pref("browser.startup.page", 3);\nuser_pref("toolkit.startup.max_resumed_crashes", -1);\nuser_pref("browser.sessionstore.max_resumed_crashes", -1);\n')
     # many-tab restart spikes RAM -> OOM killer targets THIS bridge: require y/N
     _nt = subprocess.run(['pgrep','-fc','firefox.*-isForBrowser'],capture_output=True,text=True).stdout.strip()
@@ -227,7 +227,7 @@ def _mon():
     if os.path.exists(LOG): print(f'bri.log  {os.path.getsize(LOG)/1024:.0f}KB')
     print(f'/poll    active long-poll holds: {max(0, len(run(["lsof","-iTCP:1234","-sTCP:ESTABLISHED"]).split(chr(10)))-2)}')
 
-# Set-of-Mark: hint = label clickables, hint-click <CODE> re-enumerates identically (codes stable); walks open shadow roots
+# Set-of-Mark: hint-click re-enumerates identically (codes stable); walks open shadow roots
 _HL_SEL = ('a[href],button,input,textarea,select,summary,[role=button],[role=menuitem],'
   '[role=menuitemradio],[role=menuitemcheckbox],[role=tab],[role=switch],[role=option],'
   '[onclick],[contenteditable=""],[contenteditable="true"],[tabindex]:not([tabindex="-1"])')
@@ -258,7 +258,6 @@ def _hl(host='', code=None):
     body = (_HL_HINT if code is None else _HL_CLICK).replace('__GUARD__', g).replace('__ENUM__', _HL_ENUM.replace('__SEL__', json.dumps(_HL_SEL)))
     return body if code is None else body.replace('__CODE__', json.dumps(code.upper()))
 
-# --- link fan-out (human deep research): links/openall/tabs/grabs/closeall/research ---
 def _send(j, to=None):
     j.setdefault('id', int(time.time()*1000) % 10**9)
     if to and to != 'all': j['to'] = to
@@ -281,7 +280,7 @@ def _unwrap(u):  # bing /ck/a + ddg /l/ + google /url redirect wrappers -> the r
     if h.endswith('duckduckgo.com') and p.path.startswith('/l/'): return unquote(q.get('uddg', [''])[0]) or None
     if h.endswith('google.com') and p.path == '/url': return q.get('q', [''])[0] or None
     return u
-def _links(match, to, raw=False):  # links of matching tabs: unwrap redirects, drop engine chrome, dedupe
+def _links(match, to, raw=False):
     seen, out = set(), []
     for r in _send({'action': 'links', 'match': match, 'host': match}, to):
         for h, t in (r.get('value') or []):
@@ -290,7 +289,7 @@ def _links(match, to, raw=False):  # links of matching tabs: unwrap redirects, d
             k = re.sub(r'[?#].*', '', u).rstrip('/')
             if k not in seen: seen.add(k); out.append((u, t))
     return out
-def _openall(urls, to):  # bg tabs, capped + RAM-guarded
+def _openall(urls, to):
     mx = int(os.environ.get('BRI_OPEN_MAX', '20'))
     if len(urls) > mx: sys.stderr.write(f'! capped {len(urls)} -> {mx} tabs (BRI_OPEN_MAX)\n'); urls = urls[:mx]
     for i, u in enumerate(urls):
@@ -310,18 +309,18 @@ def client(args):
     if a=='id':print(_aid());return
     if a:sys.stderr.write(f'[bri {_aid()}{""if to=="firefox"else" @"+to}] {a}\n')
     if a == 'restart': _ff_restart(); print('restarted Firefox Nightly'); return
-    if a == 'new':  # tag a job tab in the URL; drive it with `a bri hint brijob=<id>`. bare id = this caller's (_aid)
+    if a == 'new':
         r=args[1:];jid=r.pop(0)if r and not r[0].startswith(('http','www','chatgpt'))else _aid();url=r[0]if r else'chatgpt.com'
         if not url.startswith(('http://','https://')): url = 'https://' + url
         url += ('&' if '#' in url else '#') + 'brijob=' + jid
         subprocess.Popen(['firefox-nightly','--new-tab',url], env=_ffenv(), stdout=-3, stderr=-3, start_new_session=True)
         sys.stdout.write(f'+ job tab: {url}\n  drive: a bri hint brijob={jid} | hint-click <C> brijob={jid} | save <url>\n'); return
     if a == 'mon':     _mon(); return
-    if a in ('grab', 'copy'):  # full innerText (--html = DOM) of the tab whose URL contains <host>
+    if a in ('grab', 'copy'):
         host = next((x for x in args[1:] if not x.startswith('--')), '')
         prop = 'document.documentElement.outerHTML' if '--html' in args else 'document.body.innerText'
         guard = (f'if(!location.href.toLowerCase().includes({json.dumps(host.lower())}))return null;'
-                 if host else 'if(!document.hasFocus())return null;')   # no host → the focused tab
+                 if host else 'if(!document.hasFocus())return null;')
         code = f'(()=>{{if(window.top!==window)return null;{guard}return {prop};}})()'
         best = ''   # longest reply = the target tab
         rs = _send({'action': 'eval', 'code': code}, to)
@@ -370,7 +369,7 @@ def client(args):
         _openall([u for u, _t in ls], to)
         print(f"next: a bri grabs <url-substring> | a bri tabs | a bri closeall '?q={q[:40]}'")
         return
-    if a == 'save':  # URL log; a bri <N> reopens
+    if a == 'save':
         import datetime, urllib.parse
         if len(args) < 2: sys.stderr.write('usage: a bri save <url> [note...]\n'); sys.exit(1)
         src = urllib.parse.urlparse(args[1]).hostname or 'web'
@@ -394,7 +393,7 @@ def client(args):
                         rc=o['rect']; print(f"  {o['name']:<10} {o.get('make','')[:10]:<10} {o.get('model','')[:18]:<18} pos=({rc['x']},{rc['y']}) {rc['width']}x{rc['height']}")
             print('set: a bri screen <name>   clear: a bri screen -')
         return
-    if a.isdigit():  # Nth recent URL
+    if a.isdigit():
         p = os.path.expanduser('~/a/adata/git/urls.txt')
         if not os.path.exists(p): print('no urls.txt'); return
         ln = [l.strip() for l in open(p) if l.strip()][-4:]; n = int(a)
@@ -403,16 +402,16 @@ def client(args):
         if not url: print('no url in that entry'); return
         subprocess.Popen(['xdg-open', url], stdout=-3, stderr=-3); print(f'+ {url}'); return
     if a == 'tail':
-        # record bridge traffic while driving by hand; the recording = ground truth an LLM compiles into a replay script
+        # the recording = ground truth an LLM compiles into a replay script
         import datetime as dt
         d = os.path.expanduser('~/a/adata/tmp'); os.makedirs(d, exist_ok=True)
         name = args[1] if len(args) > 1 else dt.datetime.now().strftime('%Y%m%d-%H%M%S')
         f = f'{d}/bri-{name}.log'
         print(f'+ recording → {f}\n  drive workflow in another shell with `a bri <cmd>` then Ctrl-C\n')
         os.execvp('sh', ['sh', '-c', f'tail -F -n 0 {LOG} | tee {f!r}']); return
-    if a == 'deploy':  # zero-click rebuild+install of the FF ext + Firefox restart
+    if a == 'deploy':
         import shutil, briext
-        briext.build()  # regenerate from single source
+        briext.build()
         extdir = os.path.join(briext.OUT, 'bri-ext')
         subprocess.check_call(['zip','-jq', f'{extdir}/a-bridge.xpi']
                               + [f for f in glob.glob(f'{extdir}/*') if not f.endswith('.xpi')])
@@ -429,7 +428,7 @@ def client(args):
         shutil.rmtree(f'{prof[0]}/startupCache', ignore_errors=True)   # else FF re-runs STALE ext bytecode: 3 correct deploys silently no-op'd (2026-08-24)
         _ff_restart()
         print(f'deployed bri-ext v{json.load(open(f"{extdir}/manifest.json"))["version"]}'); return
-    if a == 'get':  # save the ACTIVE tab's largest <video>/<img> (or <sel>): bytes fetched IN the tab (its session) or yt-dlp with its cookies
+    if a == 'get':  # bytes fetched IN the tab (its session), else yt-dlp with its cookies
         import base64, urllib.parse
         sel = args[1] if len(args) > 1 else 'video,img'
         code = ('(async()=>{if(top!==self||document.hidden)return null;const e=[...document.querySelectorAll(%s)].sort((a,b)=>b.offsetWidth*b.offsetHeight-a.offsetWidth*a.offsetHeight)[0];if(!e)return null;const u=e.currentSrc||e.src,r=[u,location.href];'
@@ -440,7 +439,7 @@ def client(args):
         if len(v) > 2:
             out = args[2] if len(args) > 2 else f'{dl}/' + ((urllib.parse.unquote(os.path.basename(v[0].split('?')[0])) if h else '') or f'bri-{int(time.time())}.' + v[2].split(';')[0].split('/')[1])
             open(out, 'wb').write(base64.b64decode(v[2].split(',', 1)[1])); print(f'{out}  ← {v[0]}'); return
-        prof = glob.glob(os.path.expanduser('~/.mozilla/firefox/*default-nightly'))   # the agent FF's cookies
+        prof = glob.glob(os.path.expanduser('~/.mozilla/firefox/*default-nightly'))
         os.execvp('yt-dlp', ['yt-dlp', '--js-runtimes', 'node', '-P', dl] + (['--cookies-from-browser', 'firefox:' + prof[0]] if prof else []) + (['-o', args[2]] if len(args) > 2 else []) + [v[0] if h else v[1]])
     if a.startswith('{'):  # raw JSON, default-targeted (bare broadcast once double-ran every eval); explicit 'to' wins
         try:
@@ -449,8 +448,8 @@ def client(args):
             msg = json.dumps(jr)
         except ValueError: msg = a
     else:
-        RID = int(time.time()*1000) % 10**9          # unique id: reuse cross-routed slow frames' replies
-        if a.startswith(('http://','https://')): j = {'action':'navigate','url':a}  # no id: page unloads
+        RID = int(time.time()*1000) % 10**9
+        if a.startswith(('http://','https://')): j = {'action':'navigate','url':a}
         elif a=='text':  j = {'id':RID,'action':'text','sel':args[1] if len(args)>1 else 'body'}
         elif a=='click': j = {'id':RID,'action':'click','sel':args[1]}
         elif a=='type':  j = {'id':RID,'action':'type','sel':args[1],'text':args[2]}
@@ -470,7 +469,7 @@ def client(args):
                     print(out); return
             sys.stderr.write('x no image returned (ext loaded? a bri deploy)\n'); sys.exit(1)
         else: sys.stderr.write(MENU+'\n'); sys.exit(1)   # one maintained list, not a second stale copy
-        if to != 'all': j['to'] = to   # CLI targets firefox by default; @all (or BRI_TO=all) broadcasts to every browser
+        if to != 'all': j['to'] = to
         msg = json.dumps(j)
     if to in ('firefox','all'): _ffup()
     s = _sock(); s.sendall((msg+'\n').encode()); r = b''

@@ -1,4 +1,4 @@
-/* a music [term|yt q|play id|play stop|get id|pre id..|trim id|cfg|rm id] — cache-first gdrive+youtube. tty: digits play, [s]earch→digit save+play, [a]rchive rm local. piped: yt prints id<TAB>title rows, play <id> detaches (next play/stop replaces). termux deps: yt-dlp rclone termux-api ffmpeg */
+/* a music [term|yt q|play id|play stop|get id|pre id..|trim id|cfg|rm id] — cache-first gdrive+youtube; piped: yt prints id<TAB>title, play <id> detaches. termux deps: yt-dlp rclone termux-api ffmpeg */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -90,7 +90,7 @@ int main(int ac,char**av){
     char q[512]="";for(int i=s;i<ac;i++)snprintf(q+strlen(q),512-strlen(q),"%s%s",i>s?" ":"",av[i]);
     if(s==2&&av[1][0]=='y'){srch(q);return 0;}
     if(s==2&&av[1][0]=='c'){cfg(ac>2?av[2]:0);prune();return 0;}
-    if(s==2&&av[1][0]=='r'){char*nm=res(q),b[300];   /* rm <id|file>: clear local bytes; .index keeps the how-to-get */
+    if(s==2&&av[1][0]=='r'){char*nm=res(q),b[300];
         int r1=!remove(fp(nm));snprintf(b,300,"%s.part",nm);int r2=!remove(fp(b));
         printf(r1||r2?"cleared %s%s\n":"x nothing local: %s%s\n",nm,r2?" (+part)":"");return 0;}
     if(s==2&&av[1][0]=='t'){char*nm=res(q),*x=fp(nm);
@@ -98,14 +98,14 @@ int main(int ac,char**av){
         setenv("I",q,1);
         sh("cd \"%s\";[ -s .cfg ]&&[ \"$(cut -d' ' -f2 .cfg)\" = 0 ]&&{ echo '0 0';exit 0; };"
            "awk -v k=\"$I\" 'substr($0,1,length(k)+1)==k\" \"{print $(NF-1),$NF;exit}' \"%s/.trim\" 2>&-",C,C);return 0;}
-    if(s==2&&av[1][0]=='p'&&av[1][1]=='l'){killf(".play");   /* play <id>|stop: tty = esc stops, piped = detach + receipt; new play replaces old */
+    if(s==2&&av[1][0]=='p'&&av[1][1]=='l'){killf(".play");
         if(!strcmp(q,"stop")){puts("stopped");return 0;}
         char*f=get(q);
         if(isatty(0))play(f,"pick");
         pid_t ch=bg();if(!ch)ff(fp(f));
         FILE*w=fopen(fp(".play"),"w");if(w){fprintf(w,"%d\n",ch);fclose(w);}
         printf("playing: %s\nstop: a music play stop\n",f);return 0;}
-    if(s==2&&av[1][0]=='p'){killf(".pre");   /* pre <id...>: prefetch every hit, first first; next search kills the batch */
+    if(s==2&&av[1][0]=='p'){killf(".pre");   /* next search kills the prefetch batch */
         FILE*w=fopen(fp(".pre"),"w");
         for(int i=2;i<ac;i++){pid_t ch=bg();
             if(!ch){head(av[i]);_exit(0);}
