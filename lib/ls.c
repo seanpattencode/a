@@ -1,4 +1,3 @@
-/* tmux window list helper */
 static int tm_list(char out[B], char *lines[], int max) {
     char c[B];snprintf(c,B,"tmux list-windows -t '%s' -F '#{window_name}' 2>/dev/null",TMS);
     pcmd(c, out, B);
@@ -33,7 +32,6 @@ static int cmd_kill(int argc, char **argv) {
         (void)!system("pkill -9 tmux 2>/dev/null; sleep 1");
         (void)!system("clear"); puts("✓"); return 0;
     }
-    /* combine intelligently: numeric selector = tmux window; bare or a name = app process killer (a kil) */
     if (!sel || sel[0] < '0' || sel[0] > '9') {
         char c[B]; int o = snprintf(c, B, "a kil");
         for (int i = 2; i < argc && o < B; i++) o += snprintf(c+o, (size_t)(B-o), " '%s'", argv[i]);
@@ -52,14 +50,13 @@ static int cmd_kill(int argc, char **argv) {
     puts("\nSelect:\n  a kill 0\n  a kill all"); return 0;
 }
 
-static int cmd_copy(int c,char**v){char o[B];int ol=0;const char*k=clip_cmd();if(!k){puts("x No clipboard");return 1;}   /* a copy FILE | cmd|a copy | a copy (in tmux: last output) */
+static int cmd_copy(int c,char**v){char o[B];int ol=0;const char*k=clip_cmd();if(!k){puts("x No clipboard");return 1;}
     if(c>2||!isatty(0)){int fd=c>2?open(v[2],O_RDONLY):0;if(fd<0){printf("x no file %s\n",v[2]);return 1;}   /* file|pipe: fd -> clip tool, detached: wl-copy needs ~60ms, the perf gate 1.9 */
         if(!fork()){setsid();dup2(fd,0);execl("/bin/sh","sh","-c",k,(char*)0);_exit(127);}printf("✓ %s → %s\n",c>2?v[2]:"stdin",k);return 0;}
     if(getenv("TMUX")){pcmd("tmux capture-pane -pJ -S-99|awk '/[$@].*[$@]|❯/{b=s;s=\"\";next}{s=s?s\"\\n\"$0:$0}END{printf\"%s\",b}'",o,B);ol=(int)strlen(o);}
     else{puts("x Pipe or tmux");return 1;}
     if(ol<1){puts("x No output");return 0;}o[ol]=0;if(to_clip(o)){puts("x Needs tmux");return 1;}printf("✓ %.50s\n",o);return 0;}
 
-/* ── jobs ── active panes (local+remote) + review worktrees */
 typedef struct{char sn[64],pid[32],cmd[32],p[128],dev[32];}jpane_t;
 static int cmd_jobs(int argc, char **argv) {
     const char *sel=NULL,*rm=NULL;
@@ -68,7 +65,6 @@ static int cmd_jobs(int argc, char **argv) {
         else if(strcmp(argv[i],"-r")&&strcmp(argv[i],"--running"))sel=argv[i];}
     init_db();load_cfg();
     jpane_t A[64]={0};int na=0;
-    /* Local windows */
     char out[B*2];pcmd("tmux list-windows -a -F '#{session_name}\t#{window_id}\t#{pane_current_command}\t#{pane_current_path}' 2>/dev/null",out,B*2);
     for(char*p=out;*p&&na<64;){char*e=strchr(p,'\n');if(e)*e=0;
         char*t1=strchr(p,'\t'),*t2=t1?strchr(t1+1,'\t'):0,*t3=t2?strchr(t2+1,'\t'):0;
@@ -76,7 +72,6 @@ static int cmd_jobs(int argc, char **argv) {
             snprintf(A[na].sn,64,"%s",p);snprintf(A[na].pid,32,"%s",t1+1);
             snprintf(A[na].cmd,32,"%s",t2+1);snprintf(A[na].p,128,"%s",bname(t3+1));snprintf(A[na].dev,32,"%s",DEV);na++;}
         if(e)p=e+1;else break;}
-    /* Remote panes: read cache, bg refresh */
     {char cf[P];snprintf(cf,P,"%s/job_remote.cache",DDIR);
     char*dat=readf(cf,NULL);if(dat){
         for(char*rp=dat;*rp&&na<64;){char*re=strchr(rp,'\n');if(re)*re=0;

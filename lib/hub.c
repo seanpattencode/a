@@ -118,7 +118,6 @@ static hub_t *hub_find(const char *s) {
     return NULL;
 }
 
-/* MM-DD HH:MM of last trigger, local jobs only (systemctl is local) */
 static void hub_last(hub_t*j,char*out){out[0]=0;
     if(strcmp(j->d,DEV))return;
 #if !defined(__ANDROID__) && !defined(__APPLE__)
@@ -146,9 +145,7 @@ static int hub_list(int all,const char*q){
     printf("a cron <#>      run now\na cron on/off # toggle\na cron add|rm   create/delete (sched = systemd OnCalendar, not crontab 5-field)\na cron log [#]  journalctl\na cron sync     re-register this device\na cron all      show disabled\n");
     return 0;}
 
-/* a cron — the fleet scheduler (cron, but fleet-wide: per-device jobs, table, logs, boot jobs). Named cron because
-   that's what it is; `a hub` is a TRANSITIONAL alias — "hub" is ambiguous, "cron" says scheduler — recommended for
-   all future work; hub support will drop eventually (Sean 2026-09-11). */
+/* a cron is the name; a hub = TRANSITIONAL alias, drops eventually (Sean 2026-09-11) */
 static int cmd_hub(int argc, char **argv) {
     if(!strcmp(argv[1],"hub"))fprintf(stderr,"\033[2mnote: a hub -> a cron (transitional alias, will drop; use a cron)\033[0m\n");
     init_db(); hub_load();
@@ -208,5 +205,5 @@ static int cmd_hub(int argc, char **argv) {
         return system(c);
     }
 
-    return hub_list(1,sub); /* unknown sub = search */
+    return hub_list(1,sub);
 }

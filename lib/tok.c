@@ -1,4 +1,4 @@
-/* tok — bytes/4 per entry. Bare tty = drill-down TUI (mem/tui.md); piped + arg output frozen (agents parse it). */
+/* piped + arg output FROZEN: agents parse it (mem/tui.md) */
 typedef struct{const char*n;int nl,dir;long s;}TKC;
 static int tkcmp(const void*A,const void*b){const TKC*x=A,*y=b;
     if(x->s!=y->s)return y->s>x->s?1:-1;
@@ -62,7 +62,7 @@ static int cmd_tok(int c,char**v){perf_disarm();
         char k;if(read(0,&k,1)!=1)break;
         if(k==27){char sq[2]={0,0};struct termios r2=r;r2.c_cc[VMIN]=0;r2.c_cc[VTIME]=1;tcsetattr(0,TCSANOW,&r2);
             ssize_t sn=read(0,sq,2);tcsetattr(0,TCSANOW,&r);
-            if(sn<2||(sq[0]!='['&&sq[0]!='O'))break;   /* bare ESC = quit */
+            if(sn<2||(sq[0]!='['&&sq[0]!='O'))break;
             k=sq[1]=='A'?'k':sq[1]=='B'?'j':sq[1]=='C'?'o':sq[1]=='D'?'u':0;}
         if(k=='q'||k==3)break;
         size_t pl=strlen(pf);

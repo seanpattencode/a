@@ -1,5 +1,4 @@
-/* a fleet — status table (sync/agents/ram), rows stream as boxes answer; ssh+adb race, ssh wins (adb buffers
-   until its ssh sibling settles); cache adata/local/fleet.txt mirrors to GET /fleet. */
+/* ssh+adb race: ssh wins, adb buffers until its ssh sibling settles; cache adata/local/fleet.txt mirrors GET /fleet */
 #define FWIRE 4096                                                       /* a ssh's remote buffer = the scanner ceiling */
 static int f_b64(const char *in, char *out, size_t cap) {
     static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -42,9 +41,9 @@ static const char *FLQ =
 "elif [ \"$b\" = 0 ]&&[ \"$a\" = 0 ];then echo synced;else echo \"$a to push, $b to pull\";fi;}||echo no-adata)\n"
 "printf '%s|%s|%s\\n' \"$s\" \"$ag\" \"$m\"";
 
-typedef struct { int fd, typ, st; char h[40], buf[160]; } FLCH;          /* typ 0=ssh 1=adb · st 0=pend 1=shown 2=fail 3=buf */
+typedef struct { int fd, typ, st; char h[40], buf[160]; } FLCH;
 static FLCH fchn[64]; static int fln; static FILE *flcf;
-static void fl_row(const char *nm, int typ, char *b) {                   /* b = "sync|agents|ram" */
+static void fl_row(const char *nm, int typ, char *b) {
     char *q1 = strchr(b, '|'), *q2 = q1 ? strchr(q1 + 1, '|') : 0;
     const char *via = typ ? "adb" : (strcmp(nm, DEV) ? "ssh" : "loc");
     #define FROW(...) do { printf(__VA_ARGS__); if (flcf) fprintf(flcf, __VA_ARGS__); } while (0)
@@ -63,13 +62,13 @@ static int cmd_fleet(int argc, char **argv) { (void)argc; (void)argv; perf_disar
     init_db(); load_cfg();                                               
     fln = 0; char cmd[B], ln[128];
     int fdl = f_sh(DEV, FLQ); if (fdl >= 0) { fchn[fln].fd = fdl; fchn[fln].typ = 0; fchn[fln].st = 0; snprintf(fchn[fln].h, 40, "%s", DEV); fln++; }
-    snprintf(cmd, B, "grep -h '^Name:' %s/ssh/*.txt 2>/dev/null|sed 's/Name: //'|sed -E 's/-(lan|wan|usb|hot|relay)$//'|sort -fu", SROOT);   /* -f: case-fold dupes */
+    snprintf(cmd, B, "grep -h '^Name:' %s/ssh/*.txt 2>/dev/null|sed 's/Name: //'|sed -E 's/-(lan|wan|usb|hot|relay)$//'|sort -fu", SROOT);
     FILE *p = popen(cmd, "r");
     while (p && fgets(ln, 128, p) && fln < 48) { ln[strcspn(ln, "\n")] = 0;
         if (!ln[0] || !strcasecmp(ln, DEV)) continue;
         int fd = f_sh(ln, FLQ); if (fd >= 0) { fchn[fln].fd = fd; fchn[fln].typ = 0; fchn[fln].st = 0; snprintf(fchn[fln].h, 40, "%s", ln); fln++; } }
     if (p) pclose(p);
-    snprintf(cmd, B, "ls %s/adb/*.txt 2>/dev/null", SROOT); p = popen(cmd, "r");   /* adb probes launch at t0 too */
+    snprintf(cmd, B, "ls %s/adb/*.txt 2>/dev/null", SROOT); p = popen(cmd, "r");
     while (p && fgets(ln, 128, p) && fln < 64) { ln[strcspn(ln, "\n")] = 0;
         char nm[40] = "", sr[64] = "", wl[64] = ""; FILE *df = fopen(ln, "r"); if (!df) continue;
         char l2[128]; while (fgets(l2, 128, df)) { sscanf(l2, "Name: %39s", nm); sscanf(l2, "Serial: %63s", sr); sscanf(l2, "Wireless: %63[0-9.:]", wl); }
@@ -93,12 +92,12 @@ static int cmd_fleet(int argc, char **argv) { (void)argc; (void)argv; perf_disar
             char b[256]; int r = (int)read(x->fd, b, 255); close(x->fd); x->fd = -1; open_--;
             FLCH *s = fl_sib(x);
             if (r > 0) { b[r] = 0; b[strcspn(b, "\n")] = 0;
-                if (x->typ == 0) { if (!fl_shown(x->h)) { fl_row(x->h, 0, b); x->st = 1; } }   /* ssh wins */
+                if (x->typ == 0) { if (!fl_shown(x->h)) { fl_row(x->h, 0, b); x->st = 1; } }
                 else if (fl_shown(x->h)) x->st = 2;
                 else if (s && s->st == 0) { snprintf(x->buf, 160, "%s", b); x->st = 3; }       
                 else { fl_row(x->h, 1, b); x->st = 1; } }
             else { x->st = 2;
-                if (x->typ == 0) { if (s && s->st == 3) { fl_row(s->h, 1, s->buf); s->st = 1; }   /* ssh dead -> show buffered adb */
+                if (x->typ == 0) { if (s && s->st == 3) { fl_row(s->h, 1, s->buf); s->st = 1; }
                     else if (!s) fl_off(x, 0); else if (s->st == 2) fl_off(x, 1); }
                 else if (s && s->st == 2) fl_off(x, 1); } } }
     for (int i = 0; i < fln; i++) { FLCH *x = &fchn[i]; if (x->fd >= 0) { close(x->fd); x->st = 2; } }

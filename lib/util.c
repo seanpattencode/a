@@ -1,4 +1,3 @@
-/* utilities */
 #ifdef __ANDROID__
 #define OPENER "termux-open"
 #define APP_CMD "CLASSPATH=/data/data/com.termux/files/usr/libexec/termux-am/am.apk /system/bin/app_process / com.termux.termuxam.Am start --user 0 -n"
@@ -67,7 +66,7 @@ static const char *bname(const char *p) { const char *s = strrchr(p, '/'); retur
 
 static int ajoin(char*b,int sz,int argc,char**argv,int from){int l=0;for(int i=from;i<argc;i++)l+=snprintf(b+l,(size_t)(sz-l),"%s%s",i>from?" ":"",argv[i]);return l;}
 
-/* rapid input loop: empty/ESC/ctrl-c exits; bracketed paste = ONE note, any length, echoed count+tail */
+/* bracketed paste = ONE note, any length */
 static void rapid(const char *prompt, void (*fn)(const char*)) {
     if (!isatty(STDIN_FILENO)) return; perf_disarm();
     struct termios o,r;tcgetattr(0,&o);r=o;r.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);r.c_cc[VMIN]=1;r.c_cc[VTIME]=0;tcsetattr(0,TCSAFLUSH,&r);
@@ -79,11 +78,11 @@ static void rapid(const char *prompt, void (*fn)(const char*)) {
         for(;;){if(read(0,&c,1)!=1||c==3){quit=1;break;}                  
             if(c=='\n'||c=='\r')break;
             if(c==127||c==8){if(n){n--;(void)!write(1,"\b \b",3);}continue;} 
-            if(c==27){struct pollfd p={0,POLLIN,0};                       /* ESC: lone=quit, else CSI seq */
+            if(c==27){struct pollfd p={0,POLLIN,0};
                 if(poll(&p,1,40)<=0){quit=1;break;}
                 char s[8];int sl=0;(void)!read(0,&c,1);                   
                 while(read(0,&c,1)==1){if(sl<7)s[sl++]=(char)c;if(c>=64&&c<127)break;}s[sl]=0;
-                if(!strcmp(s,"200~")){                                    /* bracketed paste = one note */
+                if(!strcmp(s,"200~")){
                     while(read(0,&c,1)==1){
                         if(c==27){(void)!read(0,&c,1);while(read(0,&c,1)==1&&!(c>=64&&c<127)){}break;} 
                         RFIT;b[n++]=(char)c;}
@@ -91,7 +90,7 @@ static void rapid(const char *prompt, void (*fn)(const char*)) {
                      for(size_t k=ts;k<n;k++)tl[j++]=(char)(b[k]=='\n'||b[k]=='\t'?' ':b[k]);tl[j]=0;
                      if(ts)printf("\033[2m%zuc…\033[0m",n);fputs(tl,stdout);}
                     break;}
-                continue;}                                               /* ignore arrows etc */
+                continue;}
             RFIT;b[n++]=(char)c;(void)!write(1,&c,1);}
         (void)!write(1,"\n",1);b[n]=0;if(quit||!n)break;fn(b);}
     (void)!write(1,"\x1b[?2004l\n",9);tcsetattr(0,TCSAFLUSH,&o);

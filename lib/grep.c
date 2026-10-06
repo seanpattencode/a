@@ -1,5 +1,4 @@
-/* a grep [term] — indexed all-repo search; tty bare = live TUI (⏎ = e at hit / cd), args = one-shot, `index` rebuilds; repos: my/grep.repos.
-   idx = [orig][\2][lowercase]; "\1path\n"+content, ⎇ logs LAST; display order = blob order (zero ranking); rarest-byte memchr, threaded. */
+/* idx = [orig][\2][lowercase]; "\1path\n"+content, ⎇ logs last; display = blob order (no ranking); rarest-byte memchr, threaded */
 #include <pthread.h>
 #include <termios.h>
 #include <dirent.h>
@@ -29,7 +28,7 @@ static int gp_build(void){
     char tmp[512],cmd[600],path[2048],fp[2600];snprintf(tmp,512,"%s.tmp",gp_idx);
     FILE*o=fopen(tmp,"w");if(!o){perror(tmp);return 1;}
     size_t cap=8u<<20,len=0;char*all=malloc(cap);if(!all){fclose(o);return 1;}int nf=0;
-    for(int i=0;i<gp_nrepo;i++){                           /* pass 1: files first */
+    for(int i=0;i<gp_nrepo;i++){
         snprintf(cmd,600,"git -C '%s' ls-files -z 2>/dev/null",gp_repo[i]);
         FILE*p=popen(cmd,"r");if(!p)continue;
         size_t r0=len,pl=0;int ch,capped=0;
@@ -50,7 +49,7 @@ static int gp_build(void){
         pclose(p);
         fprintf(stderr,"  %-28s %6.2fMB%s\n",gp_rel(gp_repo[i]),(len-r0)/1e6,capped?"  (CAPPED at 12MB — grep.repos to tune)":"");
     }
-    for(int i=0;i<gp_nrepo;i++){                           /* pass 2: logs last */
+    for(int i=0;i<gp_nrepo;i++){
         snprintf(cmd,600,"git -C '%s' log --format='%%h %%s' 2>/dev/null",gp_repo[i]);
         FILE*lg=popen(cmd,"r");if(!lg)continue;
         while(cap<len+(1u<<20)+4096){cap*=2;all=realloc(all,cap);}
@@ -174,7 +173,6 @@ static int gp_srch(const char*need0){
     return shown?0:1;
 }
 
-/* ---- live TUI ---- */
 typedef struct{int ok,n,na,capped,full,ci;size_t off[HKEEP];}GPRS;
 static struct termios gp_tsav;static int gp_traw=0;
 static void gp_trest(void){if(gp_traw){tcsetattr(0,TCSANOW,&gp_tsav);(void)!write(1,"\033[?1049l\033[?25h",14);gp_traw=0;}}
@@ -280,7 +278,7 @@ static int gp_tui(void){
                 if(gp_lsn[sel][255]){gp_cdt(abs);return 0;}
                 return gp_eo(abs,0);}
             GPHIT h;gp_dec(m,half,disp[sel],hl,&h);
-            if(h.islog){char dir[2200];int nml=h.fpl-4;const char*nm=h.fp+4;   /* skip "⎇ " */
+            if(h.islog){char dir[2200];int nml=h.fpl-4;const char*nm=h.fp+4;
                 if(nml>0&&nm[0]=='/')snprintf(dir,2200,"%.*s",nml,nm);
                 else snprintf(dir,2200,"%s/%.*s",HOME,nml>0?nml:1,nml>0?nm:".");
                 gp_cdt(dir);return 0;}

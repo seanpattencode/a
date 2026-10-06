@@ -20,7 +20,6 @@ static int cmd_sess(int argc, char **argv) {
         if (wda[0] == '~') snprintf(wd, P, "%s%s", HOME, wda+1);
         else snprintf(wd, P, "%s", wda);
     }
-    /* Build prompt from remaining args */
     char prompt[B]=""; int is_prompt=0,pl=0;
     int start = wda ? 3 : 2;
     if (wda && !(wda[0]>='0'&&wda[0]<='9') && !dexists(wda)) { start = 2; is_prompt = 1; }
@@ -64,11 +63,10 @@ static int fqhead[256];static int fqnext[1024];static unsigned char fqlen[1024];
 static void fq_index(void){for(int z=0;z<256;z++)fqhead[z]=-1;
     for(int i=0;i<nfq;i++){fqlen[i]=(unsigned char)strlen(fq[i].n);int c=(unsigned char)fq[i].n[0];if(c>='A'&&c<='Z')c+=32;fqnext[i]=fqhead[c];fqhead[c]=i;}}
 static int fq_get(const char*s){int b=0,bl=0;int c=(unsigned char)s[0];if(c>='A'&&c<='Z')c+=32;
-    for(int i=fqhead[c];i>=0;i=fqnext[i]){int l=fqlen[i];if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return !strncmp(s,"home\t",5)?0x7fffffff:strstr(s,"\tproject")||(s[0]>='0'&&s[0]<='9'&&strstr(s,"\tcmd"))?(1<<30)-atoi(s):b;}  /* numbered user cmds pin with projects */
+    for(int i=fqhead[c];i>=0;i=fqnext[i]){int l=fqlen[i];if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return !strncmp(s,"home\t",5)?0x7fffffff:strstr(s,"\tproject")||(s[0]>='0'&&s[0]<='9'&&strstr(s,"\tcmd"))?(1<<30)-atoi(s):b;}
 typedef struct{char*s;int k,i;}LNK;  /* decorate-sort: fq_get once per line */
 static int lnk_cmp(const void*a,const void*b){const LNK*x=a,*y=b;return x->k!=y->k?y->k-x->k:x->i-y->i;}
-/* win-rows regen, detached; called POST-PAINT only — the fork (~30ms on cygwin) must never sit on the key→frame path.
-   .t stamp gates attempts to <=1/s; the data file's mtime moves only when content changed, so renders rarely rebuild. */
+/* POST-PAINT only: the fork (~30ms on cygwin) must never sit on the key→frame path; .t stamp gates to <=1/s */
 static void wc_spawn(const char*wc){
     char sp[P];snprintf(sp,P,"%s.t",wc);struct stat st;
     if(!stat(sp,&st)&&time(0)-st.st_mtime<1)return;
@@ -79,7 +77,7 @@ static void wc_spawn(const char*wc){
         "[ \"$i\" = \"$li\" ]&&continue;li=$i;"
         "st=$(ps -o lstart= -p \"$p\" 2>/dev/null|awk -v td=\"$td\" '{split($4,T,\":\");h=T[1]+0;a=h<12?\"a\":\"p\";h=h%%12;if(!h)h=12;t=sprintf(\"%%d%%02d%%s\",h,T[2],a);if(($2 $3)==td)print t;else print $2 $3\" \"t}');"
         "tl=$(tmux capturep -pJt \"$d\" -S -50 2>/dev/null|awk '{gsub(/^ +| +$/,\"\")}!/[a-z]/||/tokens|bypass|esc to interrupt|for shortcuts/{next}/^[^a-zA-Z0-9]/&&/ for [0-9]+[ms]/{next}{L[++i]=$0}END{s=\"\";for(j=i>8?i-7:1;j<=i;j++)s=s (s==\"\"?\"\":\" \")L[j];gsub(/\\(disable recaps in \\/config\\)/,\"\",s);gsub(/current: [0-9.]+ · latest: [0-9.]+/,\"\",s);gsub(/  +/,\" \",s);gsub(/ +$/,\"\",s);n=length(s);b=200;if(n>b){p=n-b+2;q=index(substr(s,p,30),\" \");if(q)p+=q;print \"…\"substr(s,p)}else print s}');"
-        "sid=$(printf %%s \"$sc\"|grep -oE '[0-9a-f-]{36}'|head -1);sb=;"  /* convo-word bag mid-desc: filter sees, elision hides; sid argv -> transcript words, else scrollback */
+        "sid=$(printf %%s \"$sc\"|grep -oE '[0-9a-f-]{36}'|head -1);sb=;"
         "[ -n \"$sid\" ]&&sb=$(tail -c 400000 \"$HOME\"/.claude/projects/*/\"$sid\".jsonl 2>/dev/null|grep -o '\"role\":\"user\",\"content\":\"[^\"]\\{3,200\\}'|tail -25|cut -c26-|tr -cs 'A-Za-z0-9' '\\n'|awk '!s[$0]++'|tr '\\n' ' '|cut -c1-900);"
         "[ -n \"$sb\" ]||sb=$(tmux capturep -pJt \"$d\" -S -1500 2>/dev/null|tr -cs 'A-Za-z0-9' ' '|tail -c 400);"
         "printf '%%s\twin\t%%s%%s · %%s %%s\n' \"$w\" \"$i\" \"${st:+ $st}\" \"$sb\" \"$tl\";done >'%s.%ld';:>'%s.t';cmp -s '%s.%ld' '%s' 2>/dev/null&&rm -f '%s.%ld'||mv '%s.%ld' '%s'",
@@ -93,7 +91,7 @@ static void twrite(const void*b,size_t n){static int c=-1;static void*h;unsigned
 #define WSZ(w) ioctl(1,TIOCGWINSZ,&w);
 #endif
 /* i_frame: cached first frame blasted pre-init (~0.3ms visible); real render overwrites ~1ms later */
-static int ifr_on;static double ifr_ms;  /* ifr_ms = pixels-on-pty time, shown as "seen" */
+static int ifr_on;static double ifr_ms;
 static void ifr_blast(void){struct winsize w;char p[P];size_t l;
     if((ifr_on=getenv("A_PSSEEN")!=0)||CYG||ioctl(1,TIOCGWINSZ,&w))return;  /* PS painted it; cygwin: blast costs ~0.9ms */snprintf(p,P,"%s/i_frame.%dx%d",DDIR,w.ws_row,w.ws_col);char*f=readf(p,&l);
     if(f&&l){twrite(f,l);ifr_on=1;
@@ -111,12 +109,12 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;}
     int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="",lastnote[P]="";time_t lastfire=0;
     static char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
-    struct timespec tk=T0; const char*act="render";  /* tk = per-frame timer (cold, then key->repaint); act = what it measured */
+    struct timespec tk=T0; const char*act="render";
     /* regen when any source newer (>= = same-second; %.0s eats SROOT); tty checks after frame 1 */
     #define ISTALE {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications"};\
         if(!stat(cache,&c))for(int i=0;i<6;i++){snprintf(q,P,F[i],SROOT,HOME);if(!stat(q,&s)&&s.st_mtime>=c.st_mtime){unlink(cache);goto bld;}}}
     if(!isatty(0))ISTALE
-    bld:n=nfq=0;  /* i_cache, freq+web, win rows (tab = row, name:count = freq); detached regen lands after our read: mtime flip re-enters, typed buf survives */
+    bld:n=nfq=0;  /* detached regen lands after our read: mtime flip re-enters, typed buf survives */
     {static char*rd[3];char*F[]={cache,fc,wc},*p,*e,*c;size_t l;
      for(int f=0;f<3;f++){free(rd[f]);l=0;p=rd[f]=readf(F[f],&l);
         if(!p&&!f){gen_icache();p=rd[0]=readf(cache,&l);if(!p)return 1;}
@@ -139,16 +137,16 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(tl>63)tl=63;memcpy(tg,t+1,tl);tg[tl]=0;
         if(strstr(ft0,tg))lines[j++]=lines[i];}}n=j;}}
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);return 0;}
-    #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)  /* heap buf: any paste */
-    #define SNIP do{int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}while(0)  /* receipt snippet, UTF-8-safe */
+    #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)
+    #define SNIP do{int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}while(0)
     #define IRST twrite("\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);twrite("\033[?1049l",8);free(buf)
     while (1) {
         {struct stat st;if(!sv&&!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
-        WSZ(ws)int maxshow=ws.ws_row>8?ws.ws_row-5:10;  /* +2: box rules */
+        WSZ(ws)int maxshow=ws.ws_row>8?ws.ws_row-5:10;
         char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
-        char*fb=buf;int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' '){fb+=2;fl-=2;}  /* "a app" head-matches `app` */
+        char*fb=buf;int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' '){fb+=2;fl-=2;}
         if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],fb))continue;fm[nm++]=ICFG[i];}}
-        else for (int i=0;i<n&&nm<2048&&blen<256;i++) {  /* paste-scale buf: prompt row only */
+        else for (int i=0;i<n&&nm<2048&&blen<256;i++) {
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||(!strncmp(lines[i],"web ",4)&&!strstr(lines[i]," · bm"))))continue;
             if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,fb);int ok=1;
@@ -157,13 +155,13 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             fm[nm++]=lines[i];
         }
         const char*ag=cfget("i_agent");if(!*ag)ag="claude";const char*ef=cfget("i_effort");if(!*ef)ef=strstr(ag,"codex")?"xhigh":"max";
-        int na=(lastwin[0]&&!cfgmode&&!blen&&!plen)?1:0,nn=(lastnote[0]&&!cfgmode&&!blen&&!plen)?2:0,pv=(blen&&!plen&&!cfgmode)?4:0,vo=na+nn+pv,tot=nm+vo;  /* virtual rows: switch OR receipt OR prompt actions; na/nn exclusive */
-        if(rotate){sel=nm==pnm?sel+1:vo;if(!nm)sel=0;rotate=0;}pnm=nm;  /* rotate: same nm -> next candidate; narrowed -> first; none -> claude row */
+        int na=(lastwin[0]&&!cfgmode&&!blen&&!plen)?1:0,nn=(lastnote[0]&&!cfgmode&&!blen&&!plen)?2:0,pv=(blen&&!plen&&!cfgmode)?4:0,vo=na+nn+pv,tot=nm+vo;
+        if(rotate){sel=nm==pnm?sel+1:vo;if(!nm)sel=0;rotate=0;}pnm=nm;
         if(sel>=tot)sel=tot?tot-1:0;
-        int fresh=lastfire&&time(0)-lastfire<180;if(!fresh)ltl[0]=0;  /* fired-win tail: 2 pane lines, live 3min */
+        int fresh=lastfire&&time(0)-lastfire<180;if(!fresh)ltl[0]=0;
         char*tl1=0,*tl2=0;int ll1=0,ll2=0;if(na){char*p2=ltl;while(*p2&&!tl2){char*e2=strchr(p2,'\n');int L2=e2?(int)(e2-p2):(int)strlen(p2);
             if(L2){if(!tl1){tl1=p2;ll1=L2;}else{tl2=p2;ll2=L2;}}if(!e2)break;p2=e2+1;}}
-        int xtra=na?(tl2?2:(tl1||fresh)?1:0):0;  /* receipt rows under the switch row */
+        int xtra=na?(tl2?2:(tl1||fresh)?1:0):0;
         int Wc=ws.ws_col?ws.ws_col:80;
         int avail=maxshow-vo-xtra>0?maxshow-vo-xtra:1,ms=sel-vo,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
         int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
@@ -171,7 +169,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         {char rb[B*4];int rl=0;
         #define FP(...) rl+=snprintf(rb+rl,rl<B*4?(size_t)(B*4-rl):0,__VA_ARGS__)
         FP("%s\033[H\033[?25l",sv&&!ifr_on?"\033[?1049h\033[?1000h\033[?1006h\033[?2004h":"");  /* alt screen rides frame 1's write */
-        int Wr=ws.ws_col>8?ws.ws_col:80,ccol=plen+blen+3;char hint[320]="";  /* input box: rules above+below the > line */
+        int Wr=ws.ws_col>8?ws.ws_col:80,ccol=plen+blen+3;char hint[320]="";
         #define RULE do{for(int _r=0;_r<Wr;_r++)FP("─");FP("\033[K\n");}while(0)
         RULE;
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
@@ -183,11 +181,11 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(blen>aw){cw=snprintf(cnt,24,"%dc…",blen)-2;aw-=cw;if(aw<8)aw=8;off=blen-aw;while(off<blen&&(buf[off]&0xC0)==0x80)off++;}
             char vis[512];int vl=0;for(int k=off;k<blen;k++,vl++)vis[vl]=(char)(buf[k]=='\n'||buf[k]=='\t'?' ':buf[k]);vis[vl]=0;
             FP("%s> \033[90m%s\033[0m%s\033[K\n",plen?prefix:"",cnt,vis);ccol=plen+3+cw+vl;
-            if(!plen){int hw=W-31-(int)strlen(ag)-(int)strlen(ef);if(hw<8)hw=8;if(hw>vl)hw=vl;  /* live tail-follow */
+            if(!plen){int hw=W-31-(int)strlen(ag)-(int)strlen(ef);if(hw<8)hw=8;if(hw>vl)hw=vl;
                 snprintf(hint,320,"↵ new tmux win → %s eff=%s : \"%s%s\"",ag,ef,blen>hw?"…":"",vis+vl-hw);}}
         RULE;
         #undef RULE
-        if(hint[0]){FP("%s \033[%dm%s\033[0m\033[K\n",sel?"  ":" >",sel?90:37,hint);  /* prompt row */
+        if(hint[0]){FP("%s \033[%dm%s\033[0m\033[K\n",sel?"  ":" >",sel?90:37,hint);
             static const char*PV[]={"✎ save note","☐ add task","⌕ web search"};
             for(int r=1;r<pv;r++)FP("%s \033[%dm%s\033[0m\033[K\n",sel==r?" >":"  ",sel==r?37:90,PV[r-1]);}
         if(na){int pl2=(int)strlen(lastpr),mx=Wc-22;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}
@@ -195,7 +193,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(!tl1&&fresh)FP("   \033[90m(no output yet)\033[0m\033[K\n");
             for(int r=0;r<2;r++){char*t3=r?tl2:tl1;int L3=r?ll2:ll1,mw=Wc-4;if(!t3)continue;if(mw<8)mw=8;
                 if(L3>mw){L3=mw;while(L3>0&&(t3[L3]&0xC0)==0x80)L3--;}FP("   \033[90m%.*s\033[0m\033[K\n",L3,t3);}}
-        if(nn){int pl2=(int)strlen(lastpr),mx=Wc-12;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}  /* note receipt: row 0 = editor, row 1 = web */
+        if(nn){int pl2=(int)strlen(lastpr),mx=Wc-12;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}
             FP("%s ✓ %s · %.*s%s\033[K\n",sel==0?" >":"  ",strstr(lastnote,"/notes/")?"✎ note":"☐ task",pl2,lastpr,cut?"…":"");
             FP("%s \033[%dm⌕ open in web\033[0m\033[K\n",sel==1?" >":"  ",sel==1?37:90);}
         for(int i=0;i<show;i++){int j=top+i,gj=j+vo,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
@@ -209,14 +207,14 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 if(hit&&hit>=desc+hd){char*st2=hit-20;if(st2<desc+hd)st2=desc+hd;while((*st2&0xC0)==0x80)st2++;  /* filter hit: snippet around the first matched word (shows WHY) */
                     int pre=(int)(hit-st2),rm=dc-hd-pre-wl2-4,tw=(int)strlen(hit+wl2);if(rm<0)rm=0;if(tw>rm)tw=rm;while(tw>0&&(hit[wl2+tw]&0xC0)==0x80)tw--;
                     snprintf(db,320,"%.*s%s%.*s\033[7m%.*s\033[27m%.*s",hd,desc,st2>desc+hd?"…":"",pre,st2,wl2,hit,tw,hit+wl2);desc=db;hm=9;}
-                else if((int)strlen(desc)>dc&&mm){int rm=dc-hd-3;if(rm>8){char*tp=desc+strlen(desc)-(size_t)rm;while((*tp&0xC0)==0x80)tp++;snprintf(db,320,"%.*s…%s",hd,desc,tp);desc=db;}}}  /* no hit: head + tail end */
+                else if((int)strlen(desc)>dc&&mm){int rm=dc-hd-3;if(rm>8){char*tp=desc+strlen(desc)-(size_t)rm;while((*tp&0xC0)==0x80)tp++;snprintf(db,320,"%.*s…%s",hd,desc,tp);desc=db;}}}
             int dl=(int)strnlen(desc,(size_t)dc+(size_t)hm),dv;while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;dv=dl-hm;  /* never cut mid-UTF-8 */
             FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dv,dl,desc);FP("\n");}
-        FP("\033[J\033[2;%dH\033[?25h",ccol);  /* +1: top rule of input box */
+        FP("\033[J\033[2;%dH\033[?25h",ccol);
         #undef FP
         twrite(rb,(size_t)rl);
-        if(sv){sv=0;tcsetattr(0,TCSANOW,&raw_t);init_dev();init_db();load_cfg();  /* frame 1 is out */
+        if(sv){sv=0;tcsetattr(0,TCSANOW,&raw_t);init_dev();init_db();load_cfg();
             if(!ft0){char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames; torn read = one cosmetic frame */
             if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",ifr_on?32:0);(void)!write(fd,rb,(size_t)rl);close(fd);}}
             ISTALE}}
@@ -228,42 +226,42 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 pcmd(q2,ltl,(int)sizeof ltl);act="live";
                 clock_gettime(CLOCK_MONOTONIC,&tk);continue;} if(pr<0)break;}
         rd: if(read(0,&ch,1)!=1) break;
-        clock_gettime(CLOCK_MONOTONIC,&tk);  /* key arrived → time the repaint it triggers */
+        clock_gettime(CLOCK_MONOTONIC,&tk);
         int do_pick=0;
         if(ch=='\x1b'){int av;ioctl(0,FIONREAD,&av);if(!av){usleep(2000);ioctl(0,FIONREAD,&av);}  /* buffered arrow seqs instant; lone ESC waits 2ms */
             if(!av){if(prefix[0]||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
             char seq[2];if(read(0,seq,1)!=1)break;
             if(seq[0]=='['){if(read(0,seq+1,1)!=1)break;
-                if(seq[1]=='A'){if(sel>0)sel=sel==vo?0:sel-1;act="↑";}  /* ↑ from first match = prompt row */
+                if(seq[1]=='A'){if(sel>0)sel=sel==vo?0:sel-1;act="↑";}
                 else if(seq[1]=='B'){if(sel<tot-1)sel++;act="↓";}
                 else if(seq[1]=='<'){int mb=0,my=0;char mc;act="mouse";
                     while(read(0,&mc,1)==1&&mc!=';')mb=mb*10+mc-'0';
                     while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
-                    if(mc=='M'){if(!mb){int rr=my-4;if(rr>=0&&rr<vo){sel=rr;do_pick=1;}  /* -4 = box rows + 1-based; tail rows not clickable */
+                    if(mc=='M'){if(!mb){int rr=my-4;if(rr>=0&&rr<vo){sel=rr;do_pick=1;}
                         else{int ci=top+rr-vo-xtra;if(rr>=vo+xtra&&ci>=0&&ci<nm){sel=ci+vo;do_pick=1;}}}
                     else if(mb==64&&sel>0){sel--;}else if(mb==65&&sel<tot-1){sel++;}}}
-                else if(seq[1]=='2'){char d0=0,d1=0;act="paste";  /* bracketed paste marks \033[200~ / \033[201~ */
+                else if(seq[1]=='2'){char d0=0,d1=0;act="paste";
                     if(read(0,&d0,1)==1&&d0!='~'&&read(0,&d1,1)==1){char t=d1;while(t!='~'&&read(0,&t,1)==1);
                         if(d0=='0'&&d1=='0')paste=1;else if(d0=='0'&&d1=='1')paste=0;}}
             } else if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;act="esc";} else break;
         } else if(ch=='\t'&&!paste){if(sel<tot-1)sel++;act="↓";}
-        else if(ch=='\x7f'||ch=='\b'){while(blen&&(buf[blen-1]&0xC0)==0x80)blen--;if(blen)buf[--blen]=0;if(blen&&!prefix[0]&&!cfgmode){rotate=1;pnm=-2;}else sel=0;act="⌫";}  /* pnm=-2: re-resolve sel next frame */
+        else if(ch=='\x7f'||ch=='\b'){while(blen&&(buf[blen-1]&0xC0)==0x80)blen--;if(blen)buf[--blen]=0;if(blen&&!prefix[0]&&!cfgmode){rotate=1;pnm=-2;}else sel=0;act="⌫";}
         else if(ch=='\r'||ch=='\n'){if(paste){if(blen){BFIT;buf[blen++]='\n';buf[blen]=0;}}else do_pick=1;}  /* pasted \n literal, never Enter */
         else if(ch==7&&!cfgmode){cfgmode=1;sel=0;buf[0]=0;blen=0;act="config";(void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
         else if(ch==3){if(prefix[0]||blen||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;}else break;}
         else if(ch==4)break;
-        else if((unsigned char)ch>=32||(paste&&ch=='\t')){BFIT;buf[blen++]=ch;buf[blen]=0;rotate=1;act="filter";}  /* any byte; rotate resolves next frame */
+        else if((unsigned char)ch>=32||(paste&&ch=='\t')){BFIT;buf[blen++]=ch;buf[blen]=0;rotate=1;act="filter";}
         if(paste){int av=0;ioctl(0,FIONREAD,&av);if(av>0)goto rd;}  /* drain paste before repaint */
         if(do_pick&&cfgmode&&nm&&sel<nm){char fld[16]="",val[32]="",ck[24];
             sscanf(fm[sel],"%15s %31s",fld,val);snprintf(ck,24,"i_%s",fld);cfset(ck,val);load_cfg();
             buf[0]=0;blen=0;sel=0;continue;}
-        if(do_pick&&!cfgmode&&!prefix[0]&&blen&&sel<vo){  /* prompt-action rows: 0=agent 1=note 2=task 3=web */
+        if(do_pick&&!cfgmode&&!prefix[0]&&blen&&sel<vo){
             if(sel==1||sel==2){char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);
                 if(sel==1)snprintf(lastnote,P,"%s",note_save(nd,buf));else{task_py("add",buf);snprintf(lastnote,P,"%s/tasks.txt",SROOT);}sync_bg();SNIP;
                 snprintf(jstat,sizeof jstat,"✓ %s saved",sel==1?"note":"task");
-                lastwin[0]=0;buf[0]=0;blen=0;sel=-1;continue;}  /* stay in loop: rapid capture; receipt row replaces the tail */
-            if(sel==3){char u[B*3];int l=snprintf(u,sizeof u,"https://google.com/search?q=");  /* %%-encode any bytes into a valid query */
+                lastwin[0]=0;buf[0]=0;blen=0;sel=-1;continue;}
+            if(sel==3){char u[B*3];int l=snprintf(u,sizeof u,"https://google.com/search?q=");
                 for(int k=0;k<blen&&l<(int)sizeof u-4;k++){unsigned char c2=(unsigned char)buf[k];
                     if(c2==' '||c2=='\n'||c2=='\t')u[l++]='+';
                     else if(isalnum(c2)||strchr("-_.~",c2))u[l++]=(char)c2;
@@ -277,15 +275,15 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             snprintf(cm,sizeof cm,"tmux new-window -dP -F '#{window_index} #{window_id}' -c '%s' '%s;exec bash'",cwd,run);
             pcmd(cm,wi,16);sscanf(wi,"%7s %15s",lastidx,lastwin);SNIP;
             ltl[0]=0;lastnote[0]=0;lastfire=time(0);
-            snprintf(jstat,sizeof jstat,"→ win %s · %s/%s",lastidx,ia,ie);buf[0]=0;blen=0;sel=-1;continue;}  /* sel=-1: one ↓ lands on the switch row */
+            snprintf(jstat,sizeof jstat,"→ win %s · %s/%s",lastidx,ia,ie);buf[0]=0;blen=0;sel=-1;continue;}
         if(do_pick&&na&&sel==0){IRST;char c[64];snprintf(c,64,"tmux select-window -t %s",lastwin);(void)!system(c);return 0;}
         if(do_pick&&nn&&sel>=0&&sel<nn){IRST;
-            if(sel){char u[P+40];snprintf(u,sizeof u,"http://localhost:1111/doc?f=%s",lastnote+strlen(SROOT)+1);  /* /doc = serve's per-file editor page */
+            if(sel){char u[P+40];snprintf(u,sizeof u,"http://localhost:1111/doc?f=%s",lastnote+strlen(SROOT)+1);
                 (void)!system("a ui on >/dev/null 2>&1");bg_exec(OPENER,u);return 0;}
             execvp("a",(char*[]){"a",lastnote,NULL});return 0;}
         if(do_pick&&nm&&sel>=vo&&sel-vo<nm){char*m=fm[sel-vo],cmd[256];
             {char*wt=strstr(m,"\twin\t@");if(wt){IRST;char sw[64];snprintf(sw,64,"tmux selectw -t %.*s",(int)strcspn(wt+5," "),wt+5);(void)!system(sw);
-                if(!getenv("TMUX"))execlp("tmux","tmux","attach","-t",TMS,(char*)0);return 0;}}  /* outside tmux: attach */
+                if(!getenv("TMUX"))execlp("tmux","tmux","attach","-t",TMS,(char*)0);return 0;}}
             char*tab=strchr(m,'\t'),*colon=strchr(m,':');
             if(colon&&(!tab||colon<tab)&&strncmp(m,"web ",4)){snprintf(cmd,256,"%.*s",(int)(colon-m),m);char*s=cmd;while(*s==' ')s++;memmove(cmd,s,strlen(s)+1);}
             else{int cl=tab?(int)(tab-m):(int)strlen(m);snprintf(cmd,256,"%.*s",cl,m);}

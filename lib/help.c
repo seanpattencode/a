@@ -1,4 +1,3 @@
-/* help */
 static const char *HELP_SHORT =
     "a j \"prompt\"     Job: worktree + agent\n"
     "a a|c|co|g      Default/claude/codex/agy\n"
@@ -30,7 +29,6 @@ static void list_all(int cache, int quiet) {
         snprintf(cf,P,"%s/i_cache.txt",DDIR);unlink(cf);}
 }
 
-/* file's 1st comment -> "<=4-word desc · t" */
 static void d4(const char*d,const char*n,const char*t,char*o){char fp[P],l[256],c[256]="",*p,*s;snprintf(fp,P,"%s/%s",d,n);FILE*f=fopen(fp,"r");
     for(int i=0;f&&i<3&&fgets(l,256,f);i++){int q=!strncmp(l,"\"\"\"",3);
         if(q||(!*c&&((*l=='#'&&l[1]==' ')||(*l=='/'&&strchr("/*",l[1]))))){strcpy(c,l+2+q);if(q)break;}}
@@ -56,12 +54,10 @@ static void gen_icache(void){
     {char ad[P];snprintf(ad,P,"%s/lib/platonic_agents",SDIR);DIR*d=opendir(ad);struct dirent*e;
     if(d){while((e=readdir(d))){char*p=strrchr(e->d_name,'.');
         if(p&&(p[1]=='p'||p[1]=='c')){*p=0;fprintf(f,"agent run %s\tagent\n",e->d_name);}}closedir(d);}}
-    /* auto-discover lib .py — extract docstring desc */
     {char ld[P];snprintf(ld,P,"%s/lib",SDIR);DIR*d=opendir(ld);struct dirent*e;
     if(d){while((e=readdir(d))){char*dot=strrchr(e->d_name,'.');
         if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;d4(ld,e->d_name,"cmd",ds);*dot=0;
         fprintf(f,"%s\t%s\n",e->d_name,ds);}closedir(d);}}
-    /* auto-discover my + lab + repos scripts */
     {const char*sr[]={SROOT,SDIR,HOME};const char*sl[]={"my","lab","aext"};
     for(int si=0;si<3;si++){char md[P];snprintf(md,P,"%s/%s",sr[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
     if(d){while((e=readdir(d))){if(e->d_name[0]=='.'||e->d_name[0]=='_')continue;
@@ -69,7 +65,6 @@ static void gen_icache(void){
         if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;
         const char*tg=!si&&dot&&!strcmp(dot,".html")?"page":sl[si];if(si!=1&&dot)*dot=0;
         d4(md,e->d_name,tg,ds);fprintf(f,"%s\t%s\n",nm,ds);}closedir(d);}}
-    /* repos: scan adata/repos/ scripts */
     {char rd[P];snprintf(rd,P,"%s/repos",AROOT);DIR*d=opendir(rd);struct dirent*re;
     if(d){while((re=readdir(d))){if(re->d_name[0]=='.')continue;
         char rp[P];snprintf(rp,P,"%s/%s",rd,re->d_name);DIR*sd=opendir(rp);struct dirent*se;
@@ -197,7 +192,7 @@ static int cmd_done(int argc,char**argv){AB;
         char np[P];int dp=(int)getpid(); /* per-invocation names: a later a done must not clobber this pane's keys */
         snprintf(sp,P,"%s/a_done_%d.sh",DDIR,dp);snprintf(np,P,"%s/a_next_%d.sh",DDIR,dp);
         FILE*sf=fopen(sp,"w");
-        /* default = header p e d o; [o] only expands, each body prints on its own key; g grows the pane (Sean 2026-09-25: panel too large) */
+        /* [o] only expands; g grows the pane (Sean 2026-09-25: panel too large) */
         if(sf){fprintf(sf,"trap 'rm -f %s %s' EXIT\nAP='%s'\nw(){ printf '\\033[2many key to close\\033[0m';read -rsn1 </dev/tty;}\ng(){ tmux resizep -t \"$TMUX_PANE\" -y 70%%;}\nf(){ a diff%s%s;}\n",sp,np,tp?tp:"",dl[0]?" -- ":"",dl);
             {FILE*nf=fopen(np,"w");if(nf){
                 fprintf(nf,"EF=max;BOOK=\"\";BD='%s/books'\n[ \"$1\" = -i ]&&{ BOOK=$(ls -1 \"$BD\" 2>/dev/null|grep -v book.py|fzf --prompt='book (esc=none)> ' --height=40%% 2>/dev/null);read -p 'effort [max]: ' EF </dev/tty;EF=${EF:-max}; }\nprintf '\\033[1;36mgathering context, asking fable 5 (%%s)...\\033[0m\\n' \"$EF\"\n{ echo '=== CODE STATE ==='; a cat; echo; echo '=== DIFF ==='; a diff%s%s; echo; echo '=== PREVIOUS USER PROMPTS ==='; PJ=~/.claude/projects/$(pwd|sed 's#/#-#g'); ls -t \"$PJ\"/*.jsonl 2>/dev/null|head -1|xargs -r jq -r 'select(.type==\"user\" and (.message.content|type==\"string\"))|.message.content' 2>/dev/null; [ -n \"$BOOK\" ]&&{ echo; echo \"=== BOOK: $BOOK ===\"; cat \"$BD/$BOOK/output/explained.txt\" 2>/dev/null||cat \"$BD/$BOOK/output/transcript.txt\" 2>/dev/null; };",AROOT,dl[0]?" -- ":"",dl);
@@ -210,7 +205,7 @@ static int cmd_done(int argc,char**argv){AB;
             if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent to push\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;37m[e]\\033[0m talk to agent\\n'\n",sf);
             fputs("printf '\\033[1;37m[d]\\033[0m view diff · %s\\n' \"$TK\"\nif [ -z \"$M\" ];then printf '\\033[1;37m[o]\\033[0m more\\n';else\n",sf);
-            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m push these files only: %s\\n'\n",dl);   /* [y] = the human's paths-only push */
+            if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m push these files only: %s\\n'\n",dl);
             if(tp)fputs("printf '\\033[1;37m[c]\\033[0m crunch the code\\n'\n",sf);
             fprintf(sf,"printf '\\033[1;37m[v]\\033[0m edit: %%s/%.*s\\n' \"$PWD\"\n",fl,dl);
             for(int i=0;i<ncu;i++)fprintf(sf,"printf '\\033[1;37m[%c]\\033[0m %%s: %%s\\n' '%s' '%s'\n",ck[i],cc[i],cx[i]);
@@ -230,7 +225,6 @@ static int cmd_done(int argc,char**argv){AB;
             fputs("case \"$k\" in [odrnbvaf]) ;; *) break;; esac\ndone\n",sf);
             fclose(sf);
             char c[P*2];
-            /* one pane: clear old outputs, split fresh */
             if(tp){snprintf(c,P*2,"tmux killp -a -t '%s' 2>/dev/null",tp);(void)!system(c);}
             snprintf(c,P*2,"tmux splitw -v -l 7 -t '%s' 'bash %s' 2>/dev/null",tp?tp:"",sp);(void)!system(c);}}
     (void)!write(STDERR_FILENO,"\a",1);

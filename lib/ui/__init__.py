@@ -97,7 +97,7 @@ def run():
         elif _TERMUX: _r(['sv', 'restart', 'a-ui'])
         if had:
             time.sleep(.4)  # let the manager's fresh child appear before deciding it isn't coming
-            if _r(['pgrep', '-f', pat]).returncode: S.Popen([_A, 'serve', str(PORT)], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL)  # ran unmanaged -> respawn (no browser)
+            if _r(['pgrep', '-f', pat]).returncode: S.Popen([_A, 'serve', str(PORT)], start_new_session=True, stdout=S.DEVNULL, stderr=S.DEVNULL)
     else:
         p = int(a[0]) if a and a[0].isdigit() else PORT
         _kill(); _bg(p)

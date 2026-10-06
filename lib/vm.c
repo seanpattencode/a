@@ -27,7 +27,6 @@ static const vmos_t*vm_find(const char*n){for(int i=0;i<(int)NVMOS;i++)if(!strcm
 static int cmd_vm(int argc, char **argv) {
     if(argc>2&&!strcmp(argv[2],"android")){perf_disarm();return vm_android();}
     const char*sub=argc>2?argv[2]:"run";
-    /* find OS arg */
     char*osn="debian";
     for(int i=2;i<argc;i++)for(int j=0;j<(int)NVMOS;j++)if(!strcmp(argv[i],VMOS[j].name)){osn=argv[i];break;}
     const vmos_t*os=vm_find(osn);

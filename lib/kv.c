@@ -1,4 +1,3 @@
-/* kv parser */
 typedef struct { char k[32], v[512]; } kv_t;
 typedef struct { kv_t i[16]; int n; } kvs_t;
 

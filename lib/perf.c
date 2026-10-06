@@ -144,7 +144,7 @@ static int cmd_perf(int argc, char **argv) {
             if (proposed < 500) proposed = 500;
             unsigned old = res[i].old_lim; int tight = 0;
             res[i].new_lim = old;
-            if (killed) { /* keep old */ }
+            if (killed) { }
             else if (!old || proposed < old) { res[i].new_lim = proposed; tight = 1; }
             if (!killed) passed++;
             if (tight) tightened++;

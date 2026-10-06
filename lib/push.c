@@ -1,8 +1,8 @@
 #define PUSHCMD "{ git push -u origin HEAD 2>&1||{ git pull --rebase --autostash origin HEAD 2>&1&&git push -u origin HEAD 2>&1||{ git rebase --abort 2>/dev/null;echo PUSH_CONFLICT;};}; }"
-/* tok rule vs origin/main (b/4): new file <=200; extend <= max(200,5%); module <=50k. Fills v[], returns count. Override: A_TOK_OK=1 */
+/* tok rule vs origin/main (b/4): new file <=200; extend <= max(200,5%); module <=50k; override A_TOK_OK=1 */
 static const char *TOK_RULE_MSG =
     "If a change is vs main a new file, it cannot be more than 200 tok. If extending existing, it cannot be over 200 tok or 5% of the existing module, whichever is larger. No module is allowed over 50k tok in /lib. This forces simplicity and increases maintainability. Changes that are too large are too likely to contain error and or be too complex to maintian for the long term. Simplify the code or the problem if you hit these limits, or split into smaller modules of independent /lib components if that is impossible. This also ensures that the add drop ability to add and remove /lib should work with greater reliability, but care should be taken to ensure that they follow the pattern of independently able to do useful work but can be combined to do more useful things as the unix philosophy recommends. Try to shorten and simplify its practically always possible, and stop and ask human if it is something that cannot be resolved after that.";
-static int tok_rule(const char *cwd, char *v, int vsz, const char *only) {   /* only = a direct push's files; NULL = whole tree */
+static int tok_rule(const char *cwd, char *v, int vsz, const char *only) {
     v[0]=0; int vl=0,n=0; char c[B],o[64];
     const char *br="origin/main";
     snprintf(c,B,"cd '%s'&&git rev-parse --verify -q origin/main >/dev/null 2>&1&&echo y",cwd);
@@ -53,7 +53,7 @@ static int cmd_push(int argc, char **argv) { AB;
         char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
         if(!nl){puts("x no .commit (after a done)");free(cs);return 1;}
         *nl=0;char*f=nl+1;f[strcspn(f,"\n")]=0;char c[B*2],vo[B];if(gate(cwd,f)){free(cs);return 1;}
-        snprintf(c,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -m \"%s\" -- %s; }&&" PUSHCMD,cwd,f,f,cs,f);pcmd(c,vo,B);   /* already committed -> just push */
+        snprintf(c,B*2,"cd '%s'&&git add -- %s&&{ git diff --quiet HEAD -- %s||git commit -m \"%s\" -- %s; }&&" PUSHCMD,cwd,f,f,cs,f);pcmd(c,vo,B);
         if(strstr(vo,"PUSH_CONFLICT")){printf("✗ %s: rebase conflict with origin — aborted, tree restored (commit kept local).\n  Same lines changed by another agent. Merge by hand: git pull --rebase, resolve, a push -f\n",cs);free(cs);return 1;}
         snprintf(c,B*2,"cd '%s'&&git fetch origin -q 2>/dev/null;git branch -r --contains HEAD 2>/dev/null|grep -q origin&&{ u=$(git config remote.origin.url);u=${u#https://github.com/};u=${u#git@github.com:};u=${u%%.git};echo https://github.com/$u/commit/$(git rev-parse --short HEAD);}",cwd);
         pcmd(c,vo,B);vo[strcspn(vo,"\n")]=0;
@@ -63,7 +63,6 @@ static int cmd_push(int argc, char **argv) { AB;
     if(gate(cwd,NULL))return 1;
     char msg[B]="",ps[P]="";
     if(argc>2)ajoin(msg,B,argc,argv,2);
-    /* no-arg tty: pick a dirty file, push just it */
     else if(isatty(0)&&isatty(1)&&git_in_repo(cwd)){
         char ls[B*2],out[128];const char*fn[32];long mt[32];int nf=0;struct stat st;
         pcmd("git status --porcelain",ls,sizeof(ls));
@@ -78,7 +77,6 @@ static int cmd_push(int argc, char **argv) { AB;
     if(!msg[0])snprintf(msg, B, "Update %s", bname(cwd));
 
     if (!git_in_repo(cwd)) {
-        /* fork without .git: init+commit+push branch */
         if(in_fork(cwd)){char c[B],br[128],rf[P];
             snprintf(rf,P,"%s/.fork_remote",cwd);char*remote=readf(rf,NULL);
             if(!remote||!*remote){free(remote);puts("x No .fork_remote");return 1;}
@@ -131,7 +129,6 @@ static int cmd_push(int argc, char **argv) { AB;
     mkdirp(DDIR);snprintf(c,B,"%s/logs",DDIR);mkdirp(c);
     {int fd=open(ok,O_CREAT|O_WRONLY|O_TRUNC,0644);if(fd>=0)close(fd);}
     printf("%s %s%s\n",tag,msg,strstr(out,"rebase")?" (rebased)":"");
-    /* verify: our diff landed on origin */
     {snprintf(c,B,"cd '%s'&&git fetch origin -q 2>/dev/null&&git diff HEAD origin/HEAD --name-only 2>/dev/null",cwd);
     char vf[B];pcmd(c,vf,B);if(vf[0]){printf("✗ WARN: push succeeded but origin differs:\n%s  Another agent may have overwritten. Re-run: a push\n",vf);
     system("a done 'push verify FAILED — changes lost on origin, re-push needed'");}}
@@ -148,7 +145,6 @@ static int cmd_pr(int argc, char **argv) {
     char title[256]=""; if(argc>2)ajoin(title,256,argc,argv,2);
     else snprintf(title,256,"%s",br);
     char qt[512],qb[512]; sq(title,qt,512); sq(br,qb,512);
-    /* commit + push if needed */
     char dirty[64]=""; pcmd("git status --porcelain 2>/dev/null",dirty,64);
     if(dirty[0]){char c[B];snprintf(c,B,"git add -A && git commit -m %s",qt);(void)!system(c);}
     char c[B]; snprintf(c,B,"git push -u origin %s 2>&1",br);

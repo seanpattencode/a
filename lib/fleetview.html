@@ -1,7 +1,7 @@
 <!doctype html><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>a fleet</title>
-<!-- fleet tmux view: all devices' windows (/fwins via lib/fwins.sh), one re-pointing /op terminal -->
+<!-- fleet tmux view: all devices' windows (/fwins), one re-pointing /op terminal -->
 <style>
 html,body{margin:0;height:100%}
 body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:column;overflow:hidden}
@@ -28,8 +28,8 @@ body{background:#000;color:#eee;font:14px system-ui;display:flex;flex-direction:
 <div id=main><div id=tw></div><div id=s>…</div></div>
 <div id=nav><button class=nb id=tg>☰</button><input id=q placeholder="find any session"><button class=nb id=pv>◀</button><button class=nb id=nx>▶</button></div>
 <script>
-var S=s,Q=q,TW=tw,MS=ms,BAG={},lq='',fms='';   /* bare ids = window globals, as tg/pv/nx below */
-var cur='',sel='',rows=[],ci=0;   /* cur = shown (empty at boot) · sel = highlight */
+var S=s,Q=q,TW=tw,MS=ms,BAG={},lq='',fms='';
+var cur='',sel='',rows=[],ci=0;
 /* prerender +4/-1 hidden iframes: switch = visibility swap */
 var FR={},V=null;
 function frameFor(tg){if(FR[tg])return FR[tg];
@@ -85,12 +85,12 @@ function filt(){var t0=performance.now(),q=Q.value.toLowerCase(),h;rows=[];
   S.hidden=!q&&localStorage.fwlist!=='1';
   for(var e of S.children){if(e.className==='g'){h=e;h.hidden=q;continue;}
     var bg=(BAG[e.dataset.t]||'').trim(),b=e.firstChild.textContent+' '+bg,i=q?b.toLowerCase().indexOf(q):-1;
-    e.hidden=q&&i<0;e.lastChild.textContent=q?i<0?'':'…'+b.substr(i>24?i-24:0,90):bg.slice(-(innerWidth/6|0));   /* idle rows tail their pane */
+    e.hidden=q&&i<0;e.lastChild.textContent=q?i<0?'':'…'+b.substr(i>24?i-24:0,90):bg.slice(-(innerWidth/6|0));
     if(!e.hidden){rows.push(e);h.hidden=0;}}
   if(q!==lq){lq=q;ci=0;}ci=Math.min(ci,rows.length-1);
   q?mark():hl();fms=(performance.now()-t0).toFixed(2);hdr();}
 function mark(){rows.forEach((r,i)=>r.classList.toggle('sel',i===ci));if(rows[ci])rows[ci].scrollIntoView({block:'nearest'});}
-Q.oninput=filt;Q.onfocus=()=>poll(1);   /* find = fresh rows even if the list was closed */
+Q.oninput=filt;Q.onfocus=()=>poll(1);
 function esc(s){return s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);}
 open_(new URLSearchParams(location.search).get('w')||localStorage.fwsel||'@');   /* ?w=<target> preselects (tasks-board stream press); else last window, else bare local tmux — a live shell at t=0 */
 function poll(f){(f||!(S.hidden||document.hidden))&&fetch('/fwins').then(r=>r.text()).then(render).catch(()=>{});}   /* network only while the list is SHOWN + page visible (Sean 2026-09-25: no always-on poll); f=1 forces (boot needs rows for ◀▶) */
@@ -117,7 +117,7 @@ function hook(w){try{w.addEventListener('keydown',tap,true);w.addEventListener('
 hook(window);
 pv.onpointerdown=e=>{e.preventDefault();move(-1);};   
 nx.onpointerdown=e=>{e.preventDefault();move(1);};
-function setlist(on){localStorage.fwlist=on?'1':'0';Q.value='';filt();on&&poll();}   /* ☰ toggle persisted; find forces the list open; opening = fetch */
+function setlist(on){localStorage.fwlist=on?'1':'0';Q.value='';filt();on&&poll();}
 setlist(localStorage.fwlist?localStorage.fwlist==='1':innerWidth>640);
 tg.onpointerdown=e=>{e.preventDefault();setlist(S.hidden);};
 </script>

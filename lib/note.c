@@ -17,7 +17,7 @@ static void task_py(const char*a,const char*b){char p[P];snprintf(p,P,"%s/lib/ta
     if(!k){int n=open("/dev/null",O_WRONLY);if(n>=0)dup2(n,1);execlp("python3","python3",p,a,b,(char*)0);_exit(127);}if(k>0)waitpid(k,0,0);}
 static int cmd_task(int c,char**v){fallback_py("task",c,v);return 0;}
 static void ts_human(const char*,char*,size_t);
-static FILE**nfs;static int nfn; /* background receipts, displayed on exit */
+static FILE**nfs;static int nfn;
 static void rapid_note(const char*t){char*f=note_save(rdir,t);if(!f)return;size_t n=strlen(t);
     printf("  ✓ saved locally · syncing: %.240s\n",t);if(n>240)printf("  … %zu bytes … %s\n",n,t+n-120);fflush(NULL);
     int p[2];if(pipe(p)){perror("sync pipe");return;}pid_t k=fork();
@@ -56,7 +56,7 @@ static int cmd_note(int argc, char **argv) {
         char lb[B];if(!fgets(lb,B,stdin)){putchar('\n');return 0;}lb[strcspn(lb,"\n")]=0;
         for(int i=0;i<cw;i++)fputs("─",stdout);putchar('\n');        
         if(!lb[0])return 0;
-        if(lb[0]=='/')lb[0]='?';   /* /x = search */
+        if(lb[0]=='/')lb[0]='?';
         execvp("a",(char*[]){"a","n",lb,NULL});return 0;}
     if(argv[2][0]=='?'||!strcmp(argv[2],"r")||!strcmp(argv[2],"review")){
         const char *f=argv[2][0]=='?'?argv[2]+1:NULL;int n=load_notes(dir,f);

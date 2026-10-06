@@ -1,7 +1,5 @@
 <!doctype html>
-<!-- direct-DOM terminal for /ws (tmux-backed), served at /op. Runs at col*cw, glyphs clipped to cells = alignment by
-     construction; zero deps. ?w= ?fs= ?host= · verify: adata/git/my/term/test.py · out of scope until screamed (unk counts):
-     F-keys, combining marks, DECOM, 47/1047/1048, SO/SI G1 -->
+<!-- direct-DOM terminal: col*cw grid, glyphs clipped to cells = alignment by construction; zero deps. verify: adata/git/my/term/test.py · out of scope until screamed: F-keys, combining marks, DECOM, 47/1047/1048, SO/SI G1 -->
 <meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>a term</title>
@@ -183,14 +181,14 @@ function csi(p,f){
   else if(f==='h'||f==='l'){
     for(const s of a)mode(priv,parseInt(s)||0,f==='h');
   }
-  else if(f==='m'){if(!priv)sgr(a);} /* >4;2m = modifyOtherKeys */
+  else if(f==='m'){if(!priv)sgr(a);}
   else if(f==='n'&&n0(0)===6)tx('\x1b['+(S.y+1)+';'+(S.x+1)+'R');
   else if(f==='c')tx(p[0]==='>'?'\x1b[>1;10;0c':'\x1b[?6c');
   else if(f!=='t'&&f!=='q'&&f!=='n')unk++;
 }
 const MODES={1:'ckm',7:'wrap',25:'vis',1006:'sgrm',2004:'paste'};
 function mode(priv,v,on){
-  if(!priv){if(v!==34)unk++;return;} /* 34 = cursor-blink */
+  if(!priv){if(v!==34)unk++;return;}
   if(MODES[v]){
     S[MODES[v]]=on;
     if(v===25)drow(S.y);
@@ -251,7 +249,7 @@ function rowhtml(r){
   while(i<cols){
     const f=r.f[i],b=r.b[i],l=r.l[i];
     if(l&512){i++;continue;}
-    if(l&128||!flow(r.t[i]||' ')){ /* wide/untrusted: own clipped span */
+    if(l&128||!flow(r.t[i]||' ')){
       h+='<span style="'+style(i,f,b,l,l&128?2:1)+'">'+esc(r.t[i])+'</span>';
       i+=l&128?2:1;
       continue;
@@ -269,13 +267,13 @@ function paint(){
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
   const cx=kb.value?Math.min(cols-1,px0+kb.value.length):S.x,cy=kb.value?py0:S.y,r=G[cy],w=r&&r.l[cx]&128?2:1;
-  if(kf){sm=performance.now()-ks;kf=0;} /* s = key->visible (native #kb echo) */
-  const cs='left:'+(cx*cw).toFixed(2)+'px;top:'+cy*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none'); /* block cursor at the ahead end (native caret hidden) */
+  if(kf){sm=performance.now()-ks;kf=0;}
+  const cs='left:'+(cx*cw).toFixed(2)+'px;top:'+cy*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
   if(cs!==curlast){cur.style.cssText=cs;curlast=cs;}
   dt=performance.now()-t0;
   stat();
 }
-function stat(){ /* p=parse d=draw s=key->shown r=echo */
+function stat(){
   sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(kb.value?' K'+kb.value.length:'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
@@ -289,7 +287,7 @@ function fit(){
   e.textContent='0'.repeat(100);
   scr.style.font=FS+'px/'+LH+'px '+FONT;
   po.style.cssText='position:absolute;left:0;top:16px;color:#ccc;pointer-events:none;font:'+FS+'px/'+LH+'px '+FONT;
-  kb.style.font=FS+'px/'+LH+'px '+FONT; /* match grid metrics: aligns + wraps at grid columns */
+  kb.style.font=FS+'px/'+LH+'px '+FONT;
   scr.appendChild(e);
   cw=e.getBoundingClientRect().width/100; 
   e.remove();
@@ -340,7 +338,7 @@ const KN={Delete:3,PageUp:5,PageDown:6};
 function key(e){
   if(e.isComposing)return;
   const k=e.key;
-  /* plain printable: browser echoes into #kb natively (0 JS/round-trip, no jump, like the :1111 box); input event sends it to the pty */
+  /* native #kb echo: 0 JS round-trip, no jump */
   if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(!kb.value)kbpos();kt=ks=performance.now();kf=1;return;}
   const M=(e.shiftKey?1:0)|(e.altKey?2:0)|(e.ctrlKey?4:0);
   let s=null;
@@ -358,15 +356,15 @@ function key(e){
   else return;
   e.preventDefault();
   tx(s);
-  if(k==='Backspace'&&!e.altKey&&kb.value){kb.value=kb.value.slice(0,-1);snt=kb.value.length;cancelAnimationFrame(raf);raf=0;paint();} /* native delete of the ahead-buffer; move cursor back */
-  else ckb(); /* Enter/arrows/tab/esc/ctrl: the ahead-buffer is done */
+  if(k==='Backspace'&&!e.altKey&&kb.value){kb.value=kb.value.slice(0,-1);snt=kb.value.length;cancelAnimationFrame(raf);raf=0;paint();}
+  else ckb();
 }
-/* local echo = native #kb overlay: printables render + wrap in the textarea (no JS = no jump), sent to the pty on input; the ahead-buffer clears when the echo catches up, on a control key, or after a no-echo grace (password) */
+/* ahead-buffer clears when the echo catches up, on a control key, or after a no-echo grace (password) */
 function ckb(){kb.value='';snt=0;clearTimeout(yt);}
 function kbpos(){px0=S.x;py0=S.y;kb.style.left=px0*cw+'px';kb.style.top=(16+py0*chh)+'px';kb.style.width=(cols-px0)*cw+'px';kb.style.height=chh*4+'px';}
 addEventListener('keydown',key);
 kb.addEventListener('input',()=>{const v=kb.value;if(v.length>snt)tx(v.slice(snt));snt=v.length;
-  cancelAnimationFrame(raf);raf=0;paint(); /* move the block cursor to the ahead end */
+  cancelAnimationFrame(raf);raf=0;paint();
   clearTimeout(yt);if(v)yt=setTimeout(ckb,kr?Math.min(1000,Math.max(250,kr*3)):600);}); /* echo-off (password) self-clears after grace = 3x RTT */
 kb.addEventListener('paste',e=>{
   e.preventDefault();
@@ -384,7 +382,7 @@ scr.addEventListener('pointerdown',e=>{
   if(e.pointerType!=='touch'&&mev(e.button===2?2:e.button,e.clientX,e.clientY,false))e.preventDefault();
 });
 scr.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')mev(e.button===2?2:e.button,e.clientX,e.clientY,true);});
-scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);}); /* drag -> tmux selection; release = copy */
+scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);});
 scr.addEventListener('contextmenu',e=>{if(S.mouse)e.preventDefault();});
 /* scroll at the CURSOR row, never the status bar (wheel there = selectw) */
 addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,(S.y+.5)*chh,false))e.preventDefault();},{passive:false});

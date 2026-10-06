@@ -1,9 +1,6 @@
 #!/bin/sh
-# a agent labels — the super-simple agent↔problem registry (Sean 2026-08-05).
-#   sh ~/a/lib/label.sh [board]              board: LABEL · WINDOW · LIVE (web twin on the i box: localhost:9999/problems)
-#   sh ~/a/lib/label.sh <label> <j-name>     label an agent: renames its tmux window to <label> + registry row
-# Label IS the tmux window name (visible in `a i` picker); registry = adata/git/labels.txt (synced), last row per label wins.
-# Protocol that uses this: ~/i/how/problem-agents.txt
+# a agent labels — agent↔problem registry (Sean 2026-08-05): label IS the tmux window name; registry adata/git/labels.txt (synced), last row per label wins
+# label.sh [board] | label.sh <label> <j-name> · protocol: ~/i/how/problem-agents.txt
 R="$HOME/a/adata/git/labels.txt"
 if [ -z "$1" ] || [ "$1" = board ]; then
     printf '%-18s %-14s %s\n' LABEL WINDOW LIVE

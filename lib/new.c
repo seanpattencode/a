@@ -1,4 +1,4 @@
-/* a new [-p pw] <host|user@host[:port]> (alias a clone) — replicate a onto a device: curl|sh install, this box's gh+git identity, adata/git sparse-cloned without activity/ */
+/* replicate a onto a device: curl|sh install, this box's gh+git identity, adata/git sparse-cloned without activity/ */
 static int cmd_new(int argc,char**argv){
     perf_disarm();int ai=2;const char*pw=NULL;
     if(argc>3&&!strcmp(argv[2],"-p")){pw=argv[3];ai=4;}

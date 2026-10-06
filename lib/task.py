@@ -3,20 +3,20 @@ CLI: task.py [N|add <t>|ctx N <l>|down N|archive N (github-url receipt)|agent N 
 import html,os,re,subprocess,sys,threading,time
 D=os.environ['HOME']+'/a/adata/git';F=D+'/tasks.txt';TAG=r' ?\[a:([^\]\s]*)\]';DT=r'^== (\d{4}-\d\d-\d\d(?: \d\d:\d\d:\d\d)?|\d\d-\d\d) ' # date prefix on the title, to the second; MM-DD (days.txt form) still read
 _c=os.path.expanduser('~/a/adata/git/workspace/config.txt');_cfg=open(_c).read()if os.path.exists(_c)else''
-g=lambda k,d='':(re.search(r'^'+k+r': *(\S+)',_cfg,re.M)or(0,d))[1] # config field
-AG=g('m_agent','claude');MD=g('m_model');EF=g('m_effort');PM=g('m_perms','bypass') # a j spawn knobs
+g=lambda k,d='':(re.search(r'^'+k+r': *(\S+)',_cfg,re.M)or(0,d))[1]
+AG=g('m_agent','claude');MD=g('m_model');EF=g('m_effort');PM=g('m_perms','bypass')
 CF='--dangerously-skip-permissions'+(MD and' --model '+MD)+(EF and' --effort '+EF) # same flags a res resumes with
 MO=dict(claude=('claude-fable-5 claude-fable-5-1 claude-opus-4-8 claude-opus-5 claude-sonnet-5 claude-haiku-4-5'.split(),'max xhigh high medium low'.split()),codex=('gpt-5.5 gpt-6-astra gpt-5'.split(),'xhigh max high medium low'.split()),agy=('gemini-3.8-flash-high gemini-3.1-pro-high'.split(),'low medium high'.split())) # models+efforts per agent, default first; all-claude incl opus 4-8 (Sean 2026-09-21: fable's separate limit forces non-fable volume; he rates 4-8 > opus 5)
-def sel(k,v,o):return'<select class=bb onchange="cf(\''+k+' \'+this.value)">'+''.join('<option'+(' selected'if x==v else'')+'>'+x+'</option>'for x in o)+'</select>' # dropdown -> cf
-DVS=lambda:[DEV]+sorted(f[:-4]for f in os.listdir(D+'/ssh')if f.endswith('.txt')and f!='description.txt') # spawn-device options: this box + every ssh host (fleet dispatch, Sean 2026-09-21)
+def sel(k,v,o):return'<select class=bb onchange="cf(\''+k+' \'+this.value)">'+''.join('<option'+(' selected'if x==v else'')+'>'+x+'</option>'for x in o)+'</select>'
+DVS=lambda:[DEV]+sorted(f[:-4]for f in os.listdir(D+'/ssh')if f.endswith('.txt')and f!='description.txt') # this box + every ssh host (fleet dispatch, Sean 2026-09-21)
 P0=g('prompt','default');TP=D+'/common/prompts/task-agent.txt' # a j appends common/prompts/<P0>.txt under every spawn (data.c dprompt); none = appends nothing
-DEV=os.uname().nodename # this machine; a task's dev: line says where its agent lives
+DEV=os.uname().nodename
 TS='tasks.txt tasks-done.txt common/prompts/task-agent.txt'
 SYNC=f'flock {D}/.tasksync sh -c "cd {D}&&git add {TS} 2>/dev/null;git commit -qm task -- {TS}" >/dev/null 2>&1 &'  # LOCAL commit only: adata/git main has no push uplink; fleet sync distributes
 tm=lambda f:subprocess.run(['tmux','list-panes','-s','-t','a','-F',f],capture_output=True,text=True).stdout.splitlines()
-def blocks(): # → (lines, [header line idx…, end])
+def blocks():
  ls=open(F).read().splitlines();return ls,[i for i,l in enumerate(ls)if l.startswith('== ')]+[len(ls)]
-def me(): # (window, session-id) of the agent calling this: pid chain → `claude --resume <uuid>` → tmux pane
+def me():
  P=dict(l.split(None,1)for l in tm('#{pane_pid} #{window_name}'));p=os.getpid();s=''
  while p>1:
   c=open(f'/proc/{p}/cmdline','rb').read().decode('utf8','replace').replace('\0',' ')
@@ -24,7 +24,7 @@ def me(): # (window, session-id) of the agent calling this: pid chain → `claud
   if str(p)in P:return P[str(p)],s
   p=int(open(f'/proc/{p}/stat').read().rsplit(')',1)[1].split()[1])
  return'',s
-def live(): # {session-id: (window, session:index, command)} for every agent under a pane — identity that survives a reboot, unlike the window name (a res re-pairs names with sessions)
+def live(): # survives a reboot, unlike the window name (a res re-pairs names with sessions)
  PS={}
  for l in subprocess.run(['ps','-eo','pid=,ppid=,args='],capture_output=True,text=True).stdout.splitlines():
   f=l.split(None,2);PS[f[0]]=(f[1],f[2]if len(f)>2 else'')
@@ -37,7 +37,7 @@ def live(): # {session-id: (window, session:index, command)} for every agent und
   if z not in P:continue
   if m:o[m[0]]=P[z][:3]
   else:late.append((q,P[z]))
- for q,w in late: # fresh agent (no id in argv): newest unclaimed transcript for its cwd, only if written since the process started — an older one is a different conversation (09-12 wrong-sid bug)
+ for q,w in late: # only a transcript written since the process started — an older one is a different conversation (09-12 wrong-sid bug)
   try:t0=os.stat('/proc/'+q).st_ctime-5
   except OSError:t0=0
   d=os.path.expanduser('~/.claude/projects/'+w[3].replace('/','-'))
@@ -45,25 +45,25 @@ def live(): # {session-id: (window, session:index, command)} for every agent und
   if c:o[c[0][1]]=w[:3]
  return o
 def run(a,cli=False): # THE mutation path — CLI and the web bridge both call it; returns the reply text
- if a[:1]==['spawn']:return spawn(int(a[1]),' '.join(a[2:])) # c=spawn N <message> (the /tasks box)
+ if a[:1]==['spawn']:return spawn(int(a[1]),' '.join(a[2:]))
  ls,hi=blocks();n=len(hi)-1;blk=lambda k:slice(hi[k],hi[k+1])
  if a[:1]==['add']and a[1:]:by=a[2]if a[1]=='--by'and a[3:]else'';ls[0:0]=['== '+' '.join(a[3:]if by else a[1:])+' ==']+([f'by: {by}']if by else[])+[''] # --by <model>: provenance line for an LLM-entered task (default.txt LLM-TAGGED TASKS)
  elif a[:1]==['ctx']and a[2:]:ls.insert(hi[int(a[1])],' '.join(a[2:]))
  elif a[:1]==['down']:k=int(a[1])-1;j=min(k+100,n-1);ls[hi[k]:hi[j+1]]=ls[hi[k+1]:hi[j+1]]+ls[blk(k)] # rank down 100 places (Sean 08-27: one is too close; 09-12: 10 still too close)
  elif a[:1]in(['archive'],['done']):k=int(a[1])-1;open(D+'/tasks-archive.txt','a').write(time.strftime('%F ')+'\n'.join(ls[blk(k)])+'\n');del ls[blk(k)];arch=1
- elif a[:1]==['rank']and a[2:]:k=int(a[1])-1;j=min(max(int(a[2])-1,0),n-1);b=ls[blk(k)];del ls[blk(k)];hi=[i for i,l in enumerate(ls)if l.startswith('== ')]+[len(ls)];ls[hi[j]:hi[j]]=b # move block N to position K
+ elif a[:1]==['rank']and a[2:]:k=int(a[1])-1;j=min(max(int(a[2])-1,0),n-1);b=ls[blk(k)];del ls[blk(k)];hi=[i for i,l in enumerate(ls)if l.startswith('== ')]+[len(ls)];ls[hi[j]:hi[j]]=b
  elif a[:1]==['date']:k=hi[int(a[1])-1];v=' '.join(a[2:]).replace('T',' ');ls[k]=re.sub(DT,'== ',ls[k]);ls[k]=ls[k].replace('== ',f'== {v} ',1)if re.fullmatch(r'\d{4}-\d\d-\d\d(?: \d\d:\d\d(?::\d\d)?)?|\d\d-\d\d',v)else ls[k]
  elif a[:1]==['agent']:
   L=live()
-  if'?'in a[1:]:return'\n'.join(f'{v[1]:<6} {v[0]:<26} {i[:8]}'for i,v in sorted(L.items(),key=lambda t:(len(t[1][1]),t[1][1])))or'x none running' # `agent ?` — the agents running right now — pick one by session:index, window, or sid prefix
+  if'?'in a[1:]:return'\n'.join(f'{v[1]:<6} {v[0]:<26} {i[:8]}'for i,v in sorted(L.items(),key=lambda t:(len(t[1][1]),t[1][1])))or'x none running'
   k=hi[int(a[1])-1];q=a[2]if a[2:]else''
-  C=[(i,v)for i,v in L.items()if q and(v[0]==q or v[1]==q or i.startswith(q))] # resolve among the RUNNING: window name · session:index · sid prefix — no id to type by hand
+  C=[(i,v)for i,v in L.items()if q and(v[0]==q or v[1]==q or i.startswith(q))]
   if len(C)>1:return f'x ambiguous ({len(C)}) — '+' · '.join(f'{v[1]}={i[:8]}'for i,v in C) # never bind the first match: window names repeat (3 are 'r-i'), and first-match silently tags a neighbour's agent
-  w,sd=me()if q=='self'else(C[0][1][0],C[0][0])if C else(q if q in tm('#{window_name}')else'','') # a name matching no live agent must still be a real window, else 'x no such window'
+  w,sd=me()if q=='self'else(C[0][1][0],C[0][0])if C else(q if q in tm('#{window_name}')else'','')
   ls[k]=re.sub(TAG,'',ls[k])[:-2].rstrip()+(f' [a:{w}]'if w else'')+' =='
   ls[k+1:hi[int(a[1])]]=[l for l in ls[k+1:hi[int(a[1])]]if not l.startswith(('sid: ','dev: '))]
   if sd:ls.insert(k+1,f'sid: {sd}') # the session id IS the agent; the window name is only its current address
-  if w:ls.insert(k+1,f'dev: {DEV}') # which machine it runs on. FUTURE (Sean 2026-08-28): spawn/resume on ANOTHER device over ssh (a ssh <name> + this same resume command) — not implemented; today every agent here is local
+  if w:ls.insert(k+1,f'dev: {DEV}')
   wd=w and next((l.split('\t')[1]for l in tm('#{window_name}\t#{pane_current_path}')if l.split('\t')[0]==w),'')
   ls[k+1:hi[int(a[1])]]=[l for l in ls[k+1:hi[int(a[1])]]if not l.startswith('resume: ')]
   if wd:ls.insert(k+1,'resume: cd '+wd+' && '+(f'claude {CF} --resume {sd}'if sd else'claude {CF} --continue')) # full copy-pasteable command; --resume <sid> hits THAT session (--continue would take the cwd's newest)
@@ -76,34 +76,31 @@ def run(a,cli=False): # THE mutation path — CLI and the web bridge both call i
   r=subprocess.run(['sh','-c',gc],capture_output=True,text=True).stdout.strip()
   return '✓ archived · pushed '+r if r.startswith('http') else '✓ archived locally · ✗ push failed — retry or check origin'
  return'✓'
-def setblock(n,t): # replace block n with the editor's text (first line = title; == == re-added if dropped); web /tasks/set
+def setblock(n,t): # first line = title; `== ==` re-added if dropped
  ls,hi=blocks();L=[l.rstrip()for l in t.strip('\n').splitlines()]
  if not L:return'x empty'
  if not L[0].startswith('== '):L[0]=f'== {L[0].strip("= ").strip()} =='
  ls[hi[n-1]:hi[n]]=L+[''];open(F,'w').write('\n'.join(ls)+'\n');threading.Thread(target=os.system,args=(SYNC,),daemon=True).start();return'✓'
-def pset(t): # /tasks/set n=0: save the prompt template (spawn reads TP, else TA)
+def pset(t):
  open(TP,'w').write(t.rstrip('\n')+'\n');threading.Thread(target=os.system,args=(SYNC,),daemon=True).start();return'✓ prompt saved → '+TP
-TA="You are an agent spawned to help your user accomplish the task described above. You should do this step by step with the user rather than all at once and expect that this process will result in slight or major changes in the above task as preliminary steps change what the user realizes is valuable and they review the output at each step to be able to direct the next one. You should gather context as needed then propose the most straightforward simplified thing to do and then wait for the user to ok it or modify it before actually proceeding with actions or coding beyond simply reading information. It is strongly recommended that each step be kept to under 200 token equivalent of code or information so that the user can review and redirect the thing continuously throughout the process and minimize the amount of errors and assumptions that can be made that differ from the user's goals." # Sean's text 2026-09-12, typos cleaned as ordered · the task block is prepended by spawn(), never stored in the editable template · file override: adata/git/common/prompts/task-agent.txt
-# TRIAL SOON, not built (Sean 2026-09-21): fleet dispatch — spawn task agents on a device CHOSEN by RAM/disk
-# availability (a fleet reports both) to spread many tasks across the fleet; needs tests that ram parking is
-# reliable, and multi-device spawns must land in a task (dev: line exists) + a review, so status reads from one place.
-def spawn(n,msg=''): # board task n -> a j with the task-agent prompt, label the window, tag [a:label] + resume line (i web.py _spawn ported a-side: no bridge, Sean 2026-09-05)
+TA="You are an agent spawned to help your user accomplish the task described above. You should do this step by step with the user rather than all at once and expect that this process will result in slight or major changes in the above task as preliminary steps change what the user realizes is valuable and they review the output at each step to be able to direct the next one. You should gather context as needed then propose the most straightforward simplified thing to do and then wait for the user to ok it or modify it before actually proceeding with actions or coding beyond simply reading information. It is strongly recommended that each step be kept to under 200 token equivalent of code or information so that the user can review and redirect the thing continuously throughout the process and minimize the amount of errors and assumptions that can be made that differ from the user's goals." # Sean's text 2026-09-12 (typos cleaned as ordered); the task block is prepended by spawn(), never stored; override: adata/git/common/prompts/task-agent.txt
+def spawn(n,msg=''): # a-side, no i bridge (Sean 2026-09-05)
  ls,hi=blocks()
  if not 0<n<len(hi):return'x bad task'
  h=ls[hi[n-1]].strip('= ').strip()
  if'[a:'in h:return'x already owned: '+h[:60]
- if msg:run(['ctx',str(n),msg]);ls,hi=blocks() # message -> task block: board + __ENTRY__ both carry it
+ if msg:run(['ctx',str(n),msg]);ls,hi=blocks()
  lab=('t%d-'%n+re.sub(r'[^a-z0-9]+','-',h.lower())[:14].strip('-'))[:20].rstrip('-')
  pr=('== TASK __N__ (localhost:1111/tasks · tmux window __LABEL__) ==\n__ENTRY__\n\n'+(open(TP).read()if os.path.exists(TP)else TA)).replace('__LABEL__',lab).replace('__N__',str(n)).replace('__ENTRY__','\n'.join(ls[hi[n-1]:hi[n]]))
  if os.environ.get('TASK_DRY'):return'dry: label %s, prompt %d chars'%(lab,len(pr))
  dv=g('m_dev')
- if dv and dv!=DEV: # fleet spawn: RAW ssh + prompt over stdin (a ssh caps streams and re-quotes — backup.sh precedent); tag ssh:<dev>:<idx> — /op, term and fleetview all stream that target
+ if dv and dv!=DEV: # RAW ssh, prompt over stdin: a ssh caps streams and re-quotes (backup.sh precedent); tag ssh:<dev>:<idx> is what /op, term and fleetview stream
   try:kv=dict(l.split(': ',1)for l in open(D+f'/ssh/{dv}.txt')if': 'in l)
   except OSError:return'x unknown spawn device %r — options: '%dv+' '.join(DVS())
   hp=kv['Host'].strip();pt='22'
   if':'in hp.split('@')[-1]:hp,pt=hp.rsplit(':',1)
   pw=kv.get('Password','').strip()
-  rc='E=$(python3 -c "import json;print(json.load(open(%r))[\'oauthAccount\'][\'emailAddress\'])" 2>/dev/null);[ "$AG" != claude ]||[ -n "$E" ]||{ echo NOACCT;exit 7;};echo "ACCT:$E";PATH=$HOME/.local/bin:$PATH a j "$(cat)"'%'~/.claude.json' # account fetched on the TARGET at spawn time (Sean 2026-09-22: real-time latest, indicate when, error if unknown); claude spawns abort before a j when unreadable
+  rc='E=$(python3 -c "import json;print(json.load(open(%r))[\'oauthAccount\'][\'emailAddress\'])" 2>/dev/null);[ "$AG" != claude ]||[ -n "$E" ]||{ echo NOACCT;exit 7;};echo "ACCT:$E";PATH=$HOME/.local/bin:$PATH a j "$(cat)"'%'~/.claude.json' # account read on the TARGET at spawn (Sean 2026-09-22: real-time, say when, error if unknown); abort before a j when unreadable
   q=subprocess.run((['sshpass','-p',pw]if pw else[])+['ssh','-p',pt,'-oStrictHostKeyChecking=accept-new','-oConnectTimeout=8']+([]if pw else['-oBatchMode=yes'])+[hp,'AG=%s;'%AG+rc.replace('~',"$HOME")],input=pr,capture_output=True,text=True,timeout=90)
   if'NOACCT'in q.stdout:return f'x claude account UNKNOWN on {dv} — spawn refused (fix: a acct list / login there)'
   ac=(re.search(r'ACCT:(\S+)',q.stdout)or(0,''))[1];m=re.search(r'tmux win (\d+)',q.stdout+q.stderr)
@@ -113,7 +110,7 @@ def spawn(n,msg=''): # board task n -> a j with the task-agent prompt, label the
   ls.insert(k+1,f'dev: {dv}');open(F,'w').write('\n'.join(ls)+'\n');os.system(SYNC)
   return'spawned on %s (%s acct %s, fetched %s) -> %s · stream: /op?w=%s'%(dv,AG,ac or'n/a',time.strftime('%T'),w,w)
  ac=''
- if AG=='claude': # local spawn: same real-time account read + refuse-when-unknown (Sean 2026-09-22)
+ if AG=='claude':
   try:
    import json;ac=json.load(open(os.path.expanduser('~/.claude.json')))['oauthAccount']['emailAddress']
   except Exception:return'x claude account UNKNOWN on this box — spawn refused (a acct list)'
@@ -125,7 +122,7 @@ def spawn(n,msg=''): # board task n -> a j with the task-agent prompt, label the
   if any(l.startswith('sid: ')for l in ls[hi[n-1]:hi[n]]):break
   time.sleep(1.2)
  return'spawned %s ← %s'%(lab,m[0])+(ac and' (claude acct %s, fetched %s)'%(ac,time.strftime('%T')))+' · '+r
-def resume(n): # RESUMABLE -> LIVE: run the block's resume: line in a window carrying its label
+def resume(n):
  ls,hi=blocks()
  if not 0<n<len(hi):return'x bad task'
  m=re.search(TAG,ls[hi[n-1]]);r=next((l[8:].strip()for l in ls[hi[n-1]+1:hi[n]]if l.startswith('resume: ')),'')
@@ -198,8 +195,8 @@ if __name__=='__main__':
  ls,hi=blocks();n=len(hi)-1
  if a and a[0].isdigit():print('\n'.join(ls[hi[int(a[0])-1]:hi[int(a[0])]]))
  elif a==['page']:print(page())
- elif a==['web']:print(run(sys.stdin.readline().split(),True)) # :1111 POST /tasks/run, the command line on stdin
- elif a[:1]==['set']:n=int(a[1]);print(pset(sys.stdin.read())if n==0 else setblock(n,sys.stdin.read())) # :1111 POST /tasks/set, block text on stdin; n=0 = the task-agent prompt template
+ elif a==['web']:print(run(sys.stdin.readline().split(),True))
+ elif a[:1]==['set']:n=int(a[1]);print(pset(sys.stdin.read())if n==0 else setblock(n,sys.stdin.read()))
  elif a[:1]==['spawn']:print(spawn(int(a[1]),' '.join(a[2:])))
  elif a[:1]==['resume']:print(resume(int(a[1])))
  elif a:print(run(a,True))

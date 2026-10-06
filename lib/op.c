@@ -1,4 +1,4 @@
-/* op — claude operator in tmux. plain english → a cmds. always spawns new; old ones persist. */
+/* always spawns new; old ones persist */
 static const char *OPERATOR_PROMPT =
 "You are an operator agent for the `a` agent manager. You can use any of the `a` tools or regular command-line tools to accomplish the tasks the user specifies.\n\n"
 "If a command fails to work as expected, consider fixing the code and propose pushing the fix as a pull request to the main repo — after verifying the fix works and is shorter in tokens than before (check with `a diff`).\n\n"

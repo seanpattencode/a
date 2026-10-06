@@ -14,7 +14,7 @@ static int cmd_docs(int argc, char **argv) {
     if (argc > 3 && !strcmp(argv[2],"mkdir")) { char f[P];snprintf(f,P,"%s/%s",dir,argv[3]);mkdirp(f);printf("+ %s/\n",argv[3]);return 0; }
     if (argc > 2) {
         char f[P]; snprintf(f, P, "%s/%s%s", dir, argv[2], strchr(argv[2],'.') ? "" : ".md");
-        char*sl=strrchr(f,'/');if(sl){*sl=0;mkdirp(f);*sl='/';}   /* folders: a docs sub/foo */
+        char*sl=strrchr(f,'/');if(sl){*sl=0;mkdirp(f);*sl='/';}
         int fd = open(f, O_CREAT|O_WRONLY|O_APPEND, 0644); if(fd>=0) close(fd);
         execlp("e", "e", f, (char*)NULL);
         return 0;

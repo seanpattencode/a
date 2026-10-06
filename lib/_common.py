@@ -1,4 +1,3 @@
-"""Shared utilities for lib/*.py commands"""
 import os, subprocess as sp, shutil
 from datetime import datetime
 from pathlib import Path
@@ -21,7 +20,6 @@ def alog(msg):
     repo = f' git:{r.stdout.strip()}' if r and r.returncode == 0 and r.stdout.strip() else ''
     (ACTIVITY_DIR/now.strftime(f'%Y%m%dT%H%M%S.{int(now.timestamp()*1000)%1000:03d}_{DEVICE_ID}.txt')).write_text(f'{now:%m/%d %H:%M} {DEVICE_ID} {msg} {cwd}{repo}\n')
 
-# Cloud
 def get_rclone(): return shutil.which('rclone') or next((p for p in ['/usr/bin/rclone', os.path.expanduser('~/.local/bin/rclone')] if os.path.isfile(p)), None)
 def _configured_remotes():
     if not (rc := get_rclone()): return []

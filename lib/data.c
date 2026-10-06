@@ -1,4 +1,3 @@
-/* data */
 static const char *dprompt(void) {
     static char b[B*64]; const char*a=cfget("prompt");if(!*a)a="default";  /* SILENTLY truncates default.txt past sizeof(b) — bit THRICE: keep ~2x headroom */
     char p[P]; snprintf(p,P,"%s/common/prompts/%s.txt",SROOT,a);
@@ -53,7 +52,6 @@ static void init_db(void) {
     }
 }
 
-/* loaders */
 static void load_cfg(void) {
     NCF = 0; char p[P]; snprintf(p, P, "%s/workspace/config.txt", SROOT);
     kvs_t kv = kvfile(p);

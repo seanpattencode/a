@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""a briext — build BOTH browser extensions (FF MV2 + Chrome MV3) from this one file into adata/local/ext/;
-icons defined once so they can't drift. Edit here, rerun to redeploy; FF xpi: a bri deploy; chrome: a briext install."""
+"""a briext — build BOTH browser extensions (FF MV2 + Chrome MV3) from this one file into adata/local/ext/ (icons defined once, can't drift). FF xpi: a bri deploy · chrome: a briext install."""
 import os,sys,base64
 ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT=os.path.join(ROOT,"adata/local/ext")
@@ -377,7 +376,7 @@ def chrome_install(chrome='google-chrome-canary'):  # pack with the channel that
     open(upd,'w').write(
       "<?xml version='1.0' encoding='UTF-8'?>\n<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>\n"
       "<app appid='%s'><updatecheck codebase='file://%s' version='%s'/></app>\n</gupdate>\n"%(ID,crx,ver))
-    pol=json.dumps({"ExtensionInstallForcelist":["%s;file://%s"%(ID,upd)],"ExtensionInstallSources":["file:///*"],"NTPFooterExtensionAttributionEnabled":False,"NTPFooterManagementNoticeEnabled":False})   # Chrome 138+ NTP footer off
+    pol=json.dumps({"ExtensionInstallForcelist":["%s;file://%s"%(ID,upd)],"ExtensionInstallSources":["file:///*"],"NTPFooterExtensionAttributionEnabled":False,"NTPFooterManagementNoticeEnabled":False})
     subprocess.run(['sudo','mkdir','-p','/etc/opt/chrome/policies/managed'],check=True)
     subprocess.run(['sudo','tee','/etc/opt/chrome/policies/managed/bri-chrome.json'],input=pol.encode(),stdout=subprocess.DEVNULL,check=True)
     print("\u2713 force-install policy set  id=%s v%s crx=%d bytes"%(ID,ver,os.path.getsize(crx)))

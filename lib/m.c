@@ -1,5 +1,4 @@
-/* m — platonic chat agent: FILE = the agent (adata/git/m/agents/<name>.txt), model = ANY cmd stdin->stdout.
- * a m [name] · a m <name> <task> · use <ag> <md> [ef] · cmd <raw>|clear · '/' menu */
+/* platonic agent: FILE = the agent (adata/git/m/agents/<name>.txt); model = ANY cmd stdin->stdout */
 static volatile sig_atomic_t g_halt;
 static void m_sint(int s){(void)s;g_halt=1;}
 static void m_ap(const char*sf,const char*h,const char*t){FILE*f=fopen(sf,"a");if(f){fprintf(f,"## %s\n%s\n",h,t);fclose(f);}}
@@ -8,11 +7,11 @@ static void m_fresh(char*fn){strftime(fn,128,"%y%m%d-%H%M%S",localtime(&(time_t)
 static void m_cmdstr(char*o,size_t n){const char*mc=cfget("m_cmd");if(*mc){snprintf(o,n,"%s",mc);return;}
     const char*md=cfget("m_model"),*ef=cfget("m_effort");
     snprintf(o,n,MCF,*md?md:"claude-fable-5",*ef?ef:"max");}
-static int m_splice(char*o,size_t n,const char*fl,const char*v){  /* swap --<fl> '<v>' in the live cmd; 0 = no flag */
+static int m_splice(char*o,size_t n,const char*fl,const char*v){
     char c[B];m_cmdstr(c,B);char f[24];int fn=snprintf(f,24,"--%s '",fl);
     char*p=strstr(c,f),*q=p?strchr(p+fn,'\''):0;if(!q)return 0;
     snprintf(o,n,"%.*s%s%s",(int)(p+fn-c),c,v,q);return 1;}
-static void m_run(const char*sf,const char*wd){ /* loop: model -> last CMD: -> run in wd -> feed back */
+static void m_run(const char*sf,const char*wd){
     static char b[1<<16],x[B*4],mc[B];char last[B]="",sp[P];int rep=0;
     load_cfg();m_cmdstr(mc,B);
     snprintf(sp,P,"%s/m_sent_%s",DDIR,bname(sf));  /* exact model stdin, pre-written (tee SIGPIPEs) */
@@ -53,20 +52,20 @@ static void m_run(const char*sf,const char*wd){ /* loop: model -> last CMD: -> r
     snprintf(x,sizeof x,"(flock /tmp/.a_git.lock -c \"cd '%s'&&git add m&&{ git diff --cached --quiet||{ git commit -q -m m&&timeout 8 git push -q;};}\")>/dev/null 2>&1 &",SROOT);
     (void)!system(x);
 }
-static int m_resume(char*m,size_t sz){  /* saved convos newest-first; pick -> m="/<name>" */
+static int m_resume(char*m,size_t sz){
     static char ib[24][96];const char*it[24]={0};char ls[4096],sel[96];int n=0;
     {char gc[B];snprintf(gc,B,"cd '%s/m/agents' 2>/dev/null&&ls -t|sed 's/\\.txt$//'|while read -r f;do printf '%%s\t%%.60s\n' \"$f\" \"$(sed -n 2p \"$f.txt\")\";done",SROOT);pcmd(gc,ls,sizeof ls);}
     for(char*q=ls;*q&&n<24;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
     if(!n||m_pick("resume",it,n,sel,sizeof sel)<=0)return 0;
     sel[strcspn(sel,"\t")]=0;snprintf(m,sz,"/%s",sel);return 1;}
-/* '/' menu: ops+models+efforts+servers+locals. Picks set m_cmd ONLY (fleet keys untouched). 1=submit 2=edit 0=handled */
+/* picks set m_cmd ONLY (fleet keys untouched); 1=submit 2=edit 0=handled */
 static int m_slash(char *m,size_t sz){
     static char ib[32][96];const char*it[32];int n=0;
-    static const char*cl[]={"resume\topen saved conversation","new\tfresh agent","cmd\ttype raw model cmd","q\tquit",  /* filter word must be IN the row */
+    static const char*cl[]={"resume\topen saved conversation","new\tfresh agent","cmd\ttype raw model cmd","q\tquit",
         "claude-fable-5\tfable claude model","opus\tclaude model","sonnet\tclaude model","haiku\tclaude model",  /* exact fable id: bare alias = 5.1 = regression */
         "max\tclaude effort","xhigh\tclaude effort","high\tclaude effort","medium\tclaude effort","low\tclaude effort",0};
     for(int k=0;cl[k];k++)it[n++]=cl[k];
-    char ol[4096];{char gc[B];snprintf(gc,B,"awk -F'\t' '!/^#/&&NF>1{print $1\"\tserver\"}' '%s/m/models.txt' 2>/dev/null;ollama list 2>/dev/null|awk 'NR>1{print $1\"\tollama local\"}'",SROOT);pcmd(gc,ol,sizeof ol);}  /* models.txt rows; servers first */
+    char ol[4096];{char gc[B];snprintf(gc,B,"awk -F'\t' '!/^#/&&NF>1{print $1\"\tserver\"}' '%s/m/models.txt' 2>/dev/null;ollama list 2>/dev/null|awk 'NR>1{print $1\"\tollama local\"}'",SROOT);pcmd(gc,ol,sizeof ol);}
     for(char*q=ol;*q&&n<32;){char*nl=strchr(q,'\n');if(nl)*nl=0;if(*q){snprintf(ib[n],96,"%s",q);it[n]=ib[n];n++;}if(!nl)break;q=nl+1;}
     char sel[96];
     if(m_pick("cmd",it,n,sel,sizeof sel)<=0)return 0;
@@ -78,11 +77,11 @@ static int m_slash(char *m,size_t sz){
     if(eff){if(!m_splice(nc,B,"effort",sel)){puts("x cmd takes no --effort");return 0;}}
     else if(srv){char gc[B];snprintf(gc,B,"grep -m1 '^%s\t' '%s/m/models.txt'|cut -f2-",sel,SROOT);pcmd(gc,nc,B);nc[strcspn(nc,"\n")]=0;if(!nc[0])return 0;}
     else if(oll)snprintf(nc,B,"jq -Rs '{model:\"%s\",prompt:.,stream:false,think:true}'|curl -sS -d @- localhost:11434/api/generate|jq -r .response",sel);
-    else if(!m_splice(nc,B,"model",sel)){const char*ef=cfget("m_effort");snprintf(nc,B,MCF,sel,*ef?ef:"max");}  /* no --model = fresh */
-    cfset("m_cmd",nc);snprintf(m,sz,"/new");return 1;  /* pick = fresh agent */
+    else if(!m_splice(nc,B,"model",sel)){const char*ef=cfget("m_effort");snprintf(nc,B,MCF,sel,*ef?ef:"max");}
+    cfset("m_cmd",nc);snprintf(m,sz,"/new");return 1;
 }
 #define M_ST(st,fn) {load_cfg();char _mc[B];m_cmdstr(_mc,B);snprintf(st,B,"%s · %s · /=menu",fn,_mc);}
-/* menu=1: chat ('/' = m_slash); menu=0: generic box. heap buf; *out static until next call */
+/* *out static until next call */
 static size_t m_input(char **out,const char *sfn,int menu){
     static size_t cap;static char *m;if(!m){cap=4096;m=malloc(cap);}
     char st[B];if(menu)M_ST(st,sfn)else snprintf(st,B,"%s",sfn);
@@ -94,18 +93,18 @@ static size_t m_input(char **out,const char *sfn,int menu){
     for(;;){
         struct timespec p0;clock_gettime(CLOCK_MONOTONIC,&p0);  /* 1MS: key->painted, shown live */
         struct winsize ws;ioctl(1,TIOCGWINSZ,&ws);int W=ws.ws_col>8?ws.ws_col:80,H=ws.ws_row>6?ws.ws_row:24;
-        int tR=1,cc=3;size_t ro[128];ro[1]=0;  /* wrap walk -> rows + cursor col; ro = row-start ring */
+        int tR=1,cc=3;size_t ro[128];ro[1]=0;
         for(size_t k=0;k<l;k++){
             if(m[k]=='\n'){tR++;cc=1;ro[tR&127]=k+1;continue;}
             if((m[k]&0xC0)==0x80)continue;
             if(cc>W){tR++;cc=1;ro[tR&127]=k;}
             cc++;}
         int pend=cc>W;if(pend){tR++;cc=1;ro[tR&127]=l;}
-        int BR=H-5>120?120:H-5;if(BR<3)BR=3;  /* overflow: count row + tail rows, end visible */
+        int BR=H-5>120?120:H-5;if(BR<3)BR=3;
         int eR=tR,ind=0;size_t ds=0;
         if(tR>BR){ind=1;eR=BR;ds=ro[(tR-BR+2)&127];}
         if(eR>mtR)mtR=eR;
-        if(eR>pTR){printf("\033[%d;1H",H);int sc=pTR?eR-pTR:eR+3;while(sc--)fputs("\n",stdout);pTR=eR;}  /* scroll up: paint over freed rows only */
+        if(eR>pTR){printf("\033[%d;1H",H);int sc=pTR?eR-pTR:eR+3;while(sc--)fputs("\n",stdout);pTR=eR;}
         int top=H-eR-2;if(top<1)top=1;ctop=H-mtR-2;if(ctop<1)ctop=1;
         printf("\033[%d;1H\033[J\033[%d;1H",ctop,top);
         for(int k=0;k<W;k++)fputs("─",stdout);
@@ -135,7 +134,7 @@ static size_t m_input(char **out,const char *sfn,int menu){
     }
     m[l]=0;*out=m;
     #undef MFIT
-    printf("\033[%d;1H\033[J",ctop);  /* wipe box; caller prints from here */
+    printf("\033[%d;1H\033[J",ctop);
     fputs("\033[?2004l",stdout);fflush(stdout);tcsetattr(0,TCSANOW,&o);sigaction(SIGWINCH,&osa,0);
     return q?(size_t)-q:l;
 }
@@ -163,7 +162,7 @@ static int cmd_m(int c,char**v){
             if(l==(size_t)-1)return 0;
             if(l==(size_t)-2)break;
             if(!l)continue;
-            if(l>2048){size_t eo=l-2000;while(eo<l&&(m[eo]&0xC0)==0x80)eo++;  /* huge paste: count+tail echo */
+            if(l>2048){size_t eo=l-2000;while(eo<l&&(m[eo]&0xC0)==0x80)eo++;
                 printf("\033[100;97m> %zuc…%s\033[0m\n",l,m+eo);}
             else printf("\033[100;97m> %s\033[0m\n",m);
             if(m[0]=='/'){m[strcspn(m,"\n")]=0;

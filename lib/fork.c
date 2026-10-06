@@ -1,4 +1,3 @@
-/* fork — lightweight copies, no .git */
 static int in_fork(const char *p) { return strstr(p, "/adata/forks/") != NULL; }
 static int fork_cp(const char *src, const char *dst) {
     char c[B]; snprintf(c,B,"mkdir '%s'&&(cd '%s'&&git ls-files -z|tar -cf - --null -T -|tar -xf - -C '%s')&&rm -rf '%s/adata'&&ln -sf '%s' '%s/adata'",dst,src,dst,dst,AROOT,dst);

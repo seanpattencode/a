@@ -17,9 +17,7 @@ static int cmd_project_num(int argc, char **argv, int idx) { (void)argc; (void)a
         snprintf(c,B,"%s/cd_target",DDIR); writef(c,p->path); printf("%s\n",p->path);
         if(p->gdrive[0]) return 0; /* gdrive: skip git housekeeping */
         if(!fork()){snprintf(c,B,"git -C '%s' ls-remote --exit-code origin HEAD>/dev/null 2>&1&&mkdir -p '%s/logs'&&touch '%s/logs/push.ok'",p->path,DDIR,DDIR);(void)!system(c);_exit(0);}
-        /* nav only: no agent pre-spawn. the old "ghost" split claude into the user's pane
-           (tm_new splits when $TMUX is set) and was never claimed anyway — cmd_sess looks for a
-           time-suffixed name the ghost lacked — so it only ever surfaced as an unwanted window. */
+        /* nav only, no agent pre-spawn: the old ghost split claude into the user's pane and was never claimed (cmd_sess wants a time-suffixed name) */
         return 0;
     }
     int ai = idx - NPJ;

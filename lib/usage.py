@@ -1,7 +1,5 @@
-# a usage — Claude Max/Codex/grok limits (all accounts) via the undocumented oauth endpoints the CLIs use.
-# Claude Code holds ONE login (~/.claude/.credentials.json); each run snapshots the active account into
-# ~/.claude-<email-slug>/ (CLAUDE_CONFIG_DIR dirs too), kept alive by refresh (rotates the RT — the new
-# pair MUST be written back); a stale snapshot (x row) heals next time that account is active.
+# a usage — Claude Max/Codex/grok limits (all accounts) via the oauth endpoints the CLIs use.
+# Claude Code holds ONE login; each run snapshots the active account to ~/.claude-<slug>/ and refreshes it (rotates the RT: the new pair MUST be written back; a stale snapshot heals when that account is next active)
 import json,os,re,sys,glob,time,shutil,urllib.request,datetime as dt
 def J(u,d=None,h={}):
     return json.load(urllib.request.urlopen(urllib.request.Request(u,json.dumps(d).encode() if d else None,{"Content-Type":"application/json",**h})))
@@ -12,14 +10,14 @@ now=dt.datetime.now(dt.timezone.utc);H=os.path.expanduser("~")
 def R(r):s=max(0,int((r-now).total_seconds()));return f'{s//3600}h{s%3600//60:02}m'   # clamp: avoids negative just after a reset
 mf=H+"/.claude/.credentials.json";me=em_of(H)
 def aw(p,s):open(p+".tmp","w").write(s);os.chmod(p+".tmp",0o600);os.rename(p+".tmp",p)
-def snap():  # active -> slug dir: creds + full oauthAccount
+def snap():
     if not(me and os.path.exists(mf)):return
     sd=H+"/.claude-"+re.sub(r"\W","_",me);os.makedirs(sd,exist_ok=True)
     aw(sd+"/.credentials.json",open(mf).read())
     try:oa=json.load(open(H+"/.claude.json"))["oauthAccount"]
     except Exception:oa={"emailAddress":me}
     json.dump({"oauthAccount":oa},open(sd+"/.claude.json","w"))
-if "switch" in sys.argv[1:3]:  # a usage switch <email-part>: flip ~/.claude (profile page)
+if "switch" in sys.argv[1:3]:
     q=(sys.argv+[""])[sys.argv.index("switch")+1].lower();snap()
     dirs=sorted(glob.glob(H+"/.claude-*"))
     m=[d for d in dirs if q and q in em_of(d).lower()]

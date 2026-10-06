@@ -1,4 +1,3 @@
-/* scp - tui pick file→host→dir, transfer */
 static char*spk(const char*pr,char*raw){
     static char*it[256];int n=0;
     for(char*p=raw;*p&&n<256;){char*nl=strchr(p,'\n');if(nl)*nl=0;if(*p)it[n++]=p;if(!nl)break;p=nl+1;}

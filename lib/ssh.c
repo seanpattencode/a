@@ -77,7 +77,6 @@ static int cmd_ssh(int argc,char**argv){
          const char*hn=kvget(&kv,"Hint");snprintf(H[nh].hint,256,"%s",hn?hn:"");}
         snprintf(H[nh].path,P,"%s",paths[i]);nh++;}
     const char*sub=argc>2?argv[2]:NULL;
-    /* list */
     if(!sub){
         char ip[128]="",port[8]="22",h[256]="";const char*u=getenv("USER");
         char pv[64];pcmd("grep -ci microsoft /proc/version 2>/dev/null",pv,64);
@@ -109,11 +108,10 @@ static int cmd_ssh(int argc,char**argv){
         for(int i=0;km[i];i++)SA("%s\tcommand",km[i]);raw_enter();int got=m_pick("ssh",it,ni,sel,sizeof sel)>0;raw_exit();putchar('\n');
         #undef SA
         if(!got||!*sel)return 0;
-        sel[strcspn(sel," \t\n")]=0;  /* first token = host/command name */
+        sel[strcspn(sel," \t\n")]=0;
         if(!strcmp(sel,"default")){char*d=cfget("default_ssh");if(*d)execvp("a",(char*[]){"a","ssh",d,NULL});return 0;}
         execvp("a",(char*[]){"a","ssh",sel,NULL});return 1;}
 
-    /* start/stop/status */
     if(!strcmp(sub,"start")){int r=system("sshd 2>/dev/null||service ssh start 2>/dev/null||sudo service ssh start 2>/dev/null||sudo /usr/sbin/sshd 2>/dev/null");puts(r?"x sshd":"\033[30;42m SSHD ON \033[0m");return r!=0;}
     if(!strcmp(sub,"stop")){(void)!system("pkill -x sshd 2>/dev/null||sudo pkill -x sshd");puts("\033[97;41m SSHD OFF \033[0m");return 0;}
     if(!strcmp(sub,"status")||!strcmp(sub,"s")){
@@ -121,7 +119,6 @@ static int cmd_ssh(int argc,char**argv){
         pcmd(IP_CMD,ip,128);ip[strcspn(ip,"\n")]=0;
         const char*u=getenv("USER");int p=access("/data/data/com.termux",F_OK)?22:8022;
         printf("%s ssh %s@%s -p %d\n",on?"✓":"x",u?u:"",ip,p);return 0;}
-    /* setup — install openssh */
     if(!strcmp(sub,"setup")){
         int on=!system("pgrep -x sshd >/dev/null 2>&1");
         if(!on){printf("SSH not running. Install? (y/n): ");char yn[8];
@@ -130,29 +127,22 @@ static int cmd_ssh(int argc,char**argv){
                 else (void)!system("sudo apt install -y openssh-server && sudo systemctl enable --now ssh");}}
         on=!system("pgrep -x sshd >/dev/null 2>&1");
         printf("SSH: %s\n",on?"✓ running":"x not running");return 0;}
-    /* key — generate ed25519 key */
     if(!strcmp(sub,"key")){char kf[P];snprintf(kf,P,"%s/.ssh/id_ed25519",HOME);
         struct stat st;if(stat(kf,&st)){char c[B];snprintf(c,B,"ssh-keygen -t ed25519 -N '' -f '%s'",kf);(void)!system(c);}
         char pub[P];snprintf(pub,P,"%s.pub",kf);catf(pub);return 0;}
-    /* auth — add authorized key */
     if(!strcmp(sub,"auth")){char k[B];printf("Paste public key: ");if(!fgets(k,B,stdin))return 1;
         k[strcspn(k,"\n")]=0;char af[P];snprintf(af,P,"%s/.ssh/authorized_keys",HOME);
         char d[P];snprintf(d,P,"%s/.ssh",HOME);mkdirp(d);
         FILE*f=fopen(af,"a");if(f){fprintf(f,"\n%s\n",k);fclose(f);chmod(af,0600);puts("✓");}return 0;}
-    /* push-auth — push gh/rclone creds to remote host */
     if(!strcmp(sub,"push-auth")&&argc>3){
         char tok[512];pcmd("gh auth token 2>/dev/null",tok,512);tok[strcspn(tok,"\n")]=0;
         const char*tgt=argv[3];
-        /* push rclone.conf */
         {char rc[P],c[B*2];snprintf(rc,P,"%s/.config/rclone/rclone.conf",HOME);
         if(fexists(rc)){snprintf(c,B*2,"base64 '%s'|a ssh %s 'mkdir -p ~/.config/rclone&&base64 -d>~/.config/rclone/rclone.conf'",rc,tgt);(void)!system(c);}}
-        /* push gh hosts.yml */
         {char gh[P],c[B*2];snprintf(gh,P,"%s/.config/gh/hosts.yml",HOME);
         if(fexists(gh)){snprintf(c,B*2,"base64 '%s'|a ssh %s 'mkdir -p ~/.config/gh&&base64 -d>~/.config/gh/hosts.yml'",gh,tgt);(void)!system(c);}}
-        /* push gh token */
         if(tok[0]){char c[B*2];snprintf(c,B*2,"a ssh %s 'echo \"%s\"|gh auth login --with-token'",tgt,tok);(void)!system(c);}
         puts("✓");return 0;}
-    /* add — interactive */
     if(!strcmp(sub,"add")){char h[256],n[128],pw[256];
         printf("Host: ");if(!fgets(h,256,stdin))return 1;h[strcspn(h,"\n")]=0;
         printf("Name: ");if(!fgets(n,128,stdin))return 1;n[strcspn(n,"\n")]=0;
@@ -164,7 +154,6 @@ static int cmd_ssh(int argc,char**argv){
         snprintf(tc+l,(size_t)(B-l)," 'echo ok' 2>&1");
         char o[64];if(pcmd(tc,o,64)||!strstr(o,"ok")){printf("x auth failed: %s",o);return 1;}}
         ssh_savex(dir,n,h,pw,0,0);printf("✓ %s\n",n);return 0;}
-    /* self — register this device */
     if(!strcmp(sub,"self")){char ip[128]="",port[8]="22",h[256],dnm[160];
         const char*u=getenv("USER");const char*nm=argc>3?argv[3]:dnm;
         
@@ -200,23 +189,18 @@ static int cmd_ssh(int argc,char**argv){
         
         const char*epw=NULL;for(int i=0;i<nh;i++)if(!strcmp(H[i].name,nm)){epw=H[i].pw;break;}
         ssh_savex(dir,nm,h,epw,"OS",os);printf("✓ %s %s [%s]\n",nm,h,os);return 0;}
-    /* rm */
     if(!strcmp(sub,"rm")&&argc>3){int x=ssh_idx(argv[3],H,nh);
         if(x>=0&&x<nh){unlink(H[x].path);printf("✓ rm %s\n",H[x].name);}return 0;}
-    /* pw — change password */
     if(!strcmp(sub,"pw")&&argc>3){int x=ssh_idx(argv[3],H,nh);
         if(x>=0&&x<nh){char pw[256];printf("Password for %s: ",H[x].name);
             if(fgets(pw,256,stdin)){pw[strcspn(pw,"\n")]=0;ssh_savex(dir,H[x].name,H[x].host,pw,0,0);printf("✓ %s\n",H[x].name);}}return 0;}
-    /* mv/rename */
     if((!strcmp(sub,"mv")||!strcmp(sub,"rename"))&&argc>4){
         const char*old=argv[3],*nn=argv[4];int x=ssh_idx(old,H,nh);
         if(x>=0&&x<nh){unlink(H[x].path);
             ssh_savex(dir,nn,H[x].host,H[x].pw,0,0);printf("✓ %s -> %s\n",H[x].name,nn);}return 0;}
-    /* info */
     if(!strcmp(sub,"info")||!strcmp(sub,"i")){
         for(int i=0;i<nh;i++){char hp[256],port[8];ssh_parse(H[i].host,hp,port);
             printf("%s: ssh %s%s%s%s\n",H[i].name,strcmp(port,"22")?"-p ":"",strcmp(port,"22")?port:"",strcmp(port,"22")?" ":"",hp);}return 0;}
-    /* os — detect remote OS on all hosts */
     if(!strcmp(sub,"os")||!strcmp(sub,"ping")){
         struct{int fd;pid_t pid;int hi;}S[32];int ns=0;size_t dl=strlen(DEV);
         for(int i=0;i<nh&&ns<32;i++){
@@ -284,13 +268,11 @@ static int cmd_ssh(int argc,char**argv){
         for(int i=0;i<ns;i++){char o[B];int l=(int)read(S[i].fd,o,B-1);o[l>0?l:0]=0;close(S[i].fd);waitpid(S[i].pid,NULL,0);
             printf("\n%s %s\n",o[0]=='+'?"✓":"x",S[i].nm);if(o[1])printf("%s",o+1);}
         return 0;}
-    /* resolve # or name; "<name> <scope>" = exact "<name>-<scope>" */
     int idx=-1,ci=3;char cn[160];cn[0]=0;if(argc>3)snprintf(cn,160,"%s-%s",sub,argv[3]);
     if(isdigit((unsigned char)*sub))idx=atoi(sub);
     else for(int i=0;i<nh;i++){if(cn[0]&&!strcasecmp(H[i].name,cn)){idx=i;ci=4;break;}if(idx<0&&strcasestr(H[i].name,sub))idx=i;}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
-    /* TCP probe; fail -> Fallback, else -wan sibling */
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
         snprintf(pb,B,"timeout 1 bash -c 'exec 3<>/dev/tcp/%s/%s' 2>/dev/null",ph,port);
         if(system(pb)){int f=-1;
@@ -336,7 +318,7 @@ static int cmd_ssh(int argc,char**argv){
         else snprintf(c+n,(size_t)(sizeof(c)-(size_t)n),";rc=$?;[ $rc -eq 255 ]||exit $rc;printf '\\n\\033[33m! %s dropped - reconnecting\\033[0m\\n';sleep 2;exec a ssh '%s'",H[idx].name,H[idx].name);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}
 }
-/* sw <device> <prompt>: ssh-launch a j remotely, report window + reattach; keep the prompt quote-free */
+/* keep the prompt quote-free */
 static int cmd_swarm(int c,char**v){
     if(c<4){char ex[128]="";
         if(c==3)snprintf(ex,128,"%s",v[2]);
@@ -359,8 +341,7 @@ static int cmd_swarm(int c,char**v){
     else printf("x %s: %s\n",v[2],out[0]?out:"no job window made");
     return!ok;
 }
-/* a fl n|p <pane> — recursive cross-device flip: forward the key inward; return 0 (caller flips locally)
-   only when every nested bar sits at its last/first window. One key sweeps deepest->local. */
+/* recursive flip: forward inward; return 0 (caller flips locally) only when every nested bar is at its last/first window */
 static int cmd_fl(int c,char**v){
     if(c<4)return 1;int n=*v[2]=='n';char cm[B];
     snprintf(cm,B,

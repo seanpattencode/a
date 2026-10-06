@@ -1,8 +1,4 @@
-/* globals — paths:
-   AROOT=adata/        DDIR=adata/local/ (gitignored)   SROOT=adata/git/ (synced repo)
-   SROOT subdirs: notes/ tasks/ projects/ activity/ sessions/ perf/ workspace/ secrets/
-   SROOT/secrets/ — user-managed secrets (recovery keys, tokens, …). Plaintext OK since
-   adata/git is a private remote; append your own files there as desired. */
+/* AROOT=adata/ DDIR=adata/local/ (gitignored) SROOT=adata/git/ (synced private remote: secrets/ plaintext OK) */
 static char HOME[P], TMP[P], DDIR[P], AROOT[P], SROOT[P], SDIR[P], DEV[128], LOGDIR[P];
 static struct timespec T0;   /* main() stamps T0; each menu times its own render — cold on first paint, key→repaint after each keystroke — so a perf regression shows on sight */
 

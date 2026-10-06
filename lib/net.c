@@ -41,14 +41,12 @@ static int cmd_log(int argc, char **argv) {
         else if(_s<3600)snprintf(buf,sz,"%dm ago",_s/60); \
         else if(_s<86400)snprintf(buf,sz,"%dh ago",_s/3600); \
         else snprintf(buf,sz,"%dd ago",_s/86400); } while(0)
-    /* count .ext files in dir, track newest mtime */
     #define DCOUNT(dir,ext,cnt,newest) do { DIR*_d=opendir(dir); struct dirent*_e; struct stat _s; char _p[P]; \
         cnt=0; newest=0; if(_d){while((_e=readdir(_d))){int _l=(int)strlen(_e->d_name); int _el=(int)strlen(ext); \
         if(_l>_el&&!strcmp(_e->d_name+_l-_el,ext)){cnt++;snprintf(_p,P,"%s/%s",dir,_e->d_name); \
         if(!stat(_p,&_s)&&_s.st_mtime>newest)newest=_s.st_mtime;}}closedir(_d);} } while(0)
     mkdirp(LOGDIR);
     int nlogs; time_t llm_new; DCOUNT(LOGDIR,".log",nlogs,llm_new);
-    /* count backup subdirs + newest .jsonl across them */
     int nbak=0; time_t bak_new=0; { char bd[P]; snprintf(bd,P,"%s/backup",AROOT);
         DIR*d=opendir(bd); struct dirent*e; if(d){while((e=readdir(d))){if(e->d_name[0]=='.')continue;
         char sd[P]; snprintf(sd,P,"%s/%s",bd,e->d_name); struct stat ss; if(!stat(sd,&ss)&&S_ISDIR(ss.st_mode)){
@@ -136,14 +134,11 @@ static int cmd_update(int argc, char **argv) { AB;
     if(system(c)!=0){printf("Diverged — destroy local changes & hard-reset to origin? [y/N] ");fflush(stdout);if(getchar()!='y'){puts("Aborted");return 1;}snprintf(c,B,"cd '%s'&&git fetch -q&&git reset --hard @{u}&&git clean -fd",SDIR);(void)!system(c);}
     snprintf(c,B,"git -C '%s' rev-parse HEAD 2>/dev/null",SDIR);pcmd(c,nh,64);nh[strcspn(nh,"\n")]=0;
     int ch=strcmp(oh,nh)!=0;
-    /* no-op: up to date + binary exists */
     {char b[P];snprintf(b,P,"%s/a",DDIR);if(!ch&&!access(b,X_OK)){puts("✓ Up to date");return 0;}}
-    /* detect dep change: a.c modified → pip/shell/node */
     int dc=0;
     if(ch&&oh[0]){snprintf(c,B,"git -C '%s' diff --name-only '%s' HEAD 2>/dev/null",SDIR,oh);char df[B];pcmd(c,df,B);dc=!!strstr(df,"a.c");}
     init_db();load_cfg();
     puts("✓ Updated (bg)");
-    /* background: build, deps, cache, sync, rclone, backup */
     {if(!bg()){
         snprintf(c,B,"sh '%s/a.c'",SDIR);(void)!system(c);
         if(dc){char vp[P];snprintf(vp,P,"%s/venv/bin/pip",AROOT);

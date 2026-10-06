@@ -1,6 +1,6 @@
 /* tmux — one session "a", windows are jobs */
 #define TMS "a"
-#define ACAT "A_NOPROMPT=1 a cat"  /* dprompt already wrote default.txt */
+#define ACAT "A_NOPROMPT=1 a cat"
 static void tm_gc(void){(void)!system("tmux ls -F'#{session_name}:#{session_attached}' 2>/dev/null|awk -F: '/^"TMS"-[0-9]+:0/{print$1}'|xargs -I{} tmux kill-session -t{} 2>/dev/null");
     (void)!system("tmux list-clients -F'#{client_tty}' 2>/dev/null|while read t;do [ -e \"$t\" ]||tmux detach-client -t \"$t\" 2>/dev/null;done");
     (void)!system("tmux list-clients -t '"TMS"' -F'#{client_pid} #{client_tty}' 2>/dev/null|while read p t;do g='"TMS"'-$p;tmux has-session -t \"$g\" 2>/dev/null||tmux new-session -d -t '"TMS"' -s \"$g\" 2>/dev/null;tmux switch-client -c \"$t\" -t \"$g\" 2>/dev/null;done");}
@@ -14,7 +14,7 @@ static void tm_ensure_sess(void){
     /* own scope: ui reload cgroup-kill must not take tmux down */
     (void)!system("{ command -v systemd-run >/dev/null 2>&1&&systemctl --user show-environment >/dev/null 2>&1&&Z='systemd-run --user --scope -q --'||Z=;"
         "$Z tmux new-session -d -s '"TMS"' 'while a i 2>/dev/null;do sleep 1;done';tmux set -gs exit-empty off;tmux set -gs exit-unattached off;} </dev/null >/dev/null 2>&1");}
-    /* restore once per SERVER (@res dies with it); raw creators no longer skip it */
+    /* restore once per SERVER (@res dies with it) */
     (void)!system("tmux show -gv @res 2>/dev/null|grep -qx 1||{ tmux set -g @res 1;(a snap restore >>\"$HOME/a/adata/local/restore.log\" 2>&1 &);} 2>/dev/null");}
 static int tm_has(const char *w) {
     char c[B];snprintf(c,B,"tmux list-windows -t '"TMS"' -F '#{window_name}' 2>/dev/null|grep -qx '%s'",w);
@@ -46,7 +46,6 @@ static int tm_new(const char *w, const char *wd, const char *cmd) {
     else snprintf(c,sizeof(c),"tmux new-window -d %s-t '"TMS":' -n '%s' -c '%s'",ev,w,wd);
     return system(c);
 }
-/* prompt+tools -> file; source=off skips a-cat */
 #define SRC_ON strcmp(cfget("source"),"off")
 static void prompt_freshness(FILE*f){
     char c[B],b[256]="";
@@ -73,14 +72,13 @@ static int write_prompt_file(const char *path, const char *wd, const char *extra
     if(tp){char b[8192];size_t n;while((n=fread(b,1,8192,tp))>0)fwrite(b,1,n,f);pclose(tp);}
     fclose(f);return 1;
 }
-/* job cmd */
 static void jcmd_fill(char*b,int cont,const char*wd,const char*extra){
     char ctxf[P],xsuf[512]="";snprintf(ctxf,P,"%s/a_ctx_%d.txt",TMP,(int)getpid());
     write_prompt_file(ctxf,wd,NULL);
     if(extra&&extra[0]){char xf[P];snprintf(xf,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(xf,extra);
         snprintf(xsuf,512," \"$(cat '%s')\"",xf);}
     const char*ag=cfget("m_agent");if(!*ag)ag="claude";const char*md=cfget("m_model"),*ef=cfget("m_effort");char run[B];
-    int by=strcmp(cfget("m_perms"),"ask")!=0;   /* m_perms ask = gated */
+    int by=strcmp(cfget("m_perms"),"ask")!=0;
     if(strstr(ag,"codex"))snprintf(run,B,"codex -c model_reasoning_effort=\"%s\" --model %s%s%s",*ef?ef:"xhigh",*md?md:"gpt-5.5",by?" --dangerously-bypass-approvals-and-sandbox":"",xsuf);
     else if(strstr(ag,"agy")||strstr(ag,"gemini"))snprintf(run,B,"agy%s%s%s%s%s%s",*md?" --model ":"",md,*ef?" --effort ":"",ef,by?" --dangerously-skip-permissions":"",xsuf);   /* stale m_agent=gemini heals here */
     else{const char*sid=getenv("SID");char sp[96]="";if(sid&&*sid)snprintf(sp,96,"--session-id %s ",sid);
@@ -141,7 +139,6 @@ static void tm_ensure_conf(void) {
         "bind -n C-o " SSHIF "'send C-o' 'splitw -v -c \"#{pane_current_path}\"'\n"
         "bind -n C-w " SSHIF "'send C-w' 'selectw -n;killw -t:!'\n"
         "bind -n C-x " SSHIF "'send C-x' 'kill-pane'\n"
-/* ... menu, shared by C-. and click */
 #define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills"
         "bind -n C-. " SSHIF "'send C-.' {" AMENU "}\n"
 #undef SSHIF
