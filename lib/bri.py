@@ -12,6 +12,9 @@ ogs/gsi/"EvalError" rows are subframes, not failure. Stream: tail -f /tmp/bri.lo
 import socket, threading, queue, json, sys, time, os, re, glob, subprocess
 
 PORT, CMD, LOG = 1234, 1235, '/tmp/bri.log'
+FF = '^((/usr/(bin|lib)/)?firefox-nightly|/Applications/Firefox Nightly.app/Contents/MacOS/firefox( .*)?)'
+FFP = ['pgrep','-f',FF+'$']
+FFB = ['open','-a','Firefox Nightly'] if sys.platform=='darwin' else ['firefox-nightly']   # mac: a bare exec over ssh has no WindowServer
 pollers, pending = [], {}  # pollers: list[(Queue, browser)]  pending: id -> Queue
 backlog = []  # (ts, msg, tgt) no-id cmds that matched zero pollers: the ext's poll re-registration leaves a gap that silently ate bursts (i q pre-open) — held 60s, delivered on the next /poll; id'd cmds keep fail-fast (a late run would double-execute under caller retries)
 
@@ -164,7 +167,7 @@ def _ffenv():
     xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
     socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
     if socks: env['WAYLAND_DISPLAY'] = socks[0]
-    for c in (['pgrep','-fx','(/usr/lib/)?firefox-nightly'],['pgrep','-x','sway']):   # -fx: main proc only, never a wedged launcher's wrong bus
+    for c in (FFP,['pgrep','-x','sway']):   # FF$: main proc only, never a wedged launcher's wrong bus
         for pid in subprocess.run(c,capture_output=True,text=True).stdout.split():
             try: e = dict(l.split('=',1) for l in open(f'/proc/{pid}/environ').read().split('\0') if '=' in l)
             except OSError: continue
@@ -191,16 +194,16 @@ def _ff_restart(headless=False):
             sys.stderr.write(_w + '\n  LLM/agent: PAUSE here and ASK THE USER what to do (close tabs first? proceed anyway?).\n'
                                   '  Do NOT auto-proceed; only re-run with FORCE=1 after the user says so.\n')
             return
-    subprocess.run(['pkill','-9','-f','^(/usr/lib/)?firefox-nightly'],stdout=-3,stderr=-3); time.sleep(1)  # anchored: unanchored matched vmtouch-firefox-nightly's cmdline (its args are FF paths) and SIGKILLed it every restart
+    subprocess.run(['pkill','-9','-f',FF],stdout=-3,stderr=-3); time.sleep(1)  # anchored: unanchored also killed vmtouch-firefox-nightly
     env = _ffenv()   # post-pkill: adopts sway's bus so the next manual launch hands off, not dialogs
     m = _ff_monitor()
     # fork (not thread) — subscribe must survive client process exit, before FF Popen so window::new isn't missed.
     if m and not headless and os.fork() == 0:
         os.setsid(); _ff_move(m); os._exit(0)
-    subprocess.Popen(['firefox-nightly']+(['--headless']if headless else[]),env=env,stdout=-3,stderr=-3,start_new_session=True)
+    subprocess.Popen(FFB+(['--headless']if headless else[]),env=env,stdout=-3,stderr=-3,start_new_session=True)
 
 def _ffup():   # auto-start Firefox when it is not running, wait 5s for bri-ext; fail loud (Sean 09-13)
-    if subprocess.run(['pgrep','-fx','(/usr/lib/)?firefox-nightly'],stdout=-3).returncode == 0: return
+    if subprocess.run(FFP,stdout=-3).returncode == 0: return
     sys.stderr.write('bri: Firefox not running, starting it\n'); _ff_restart()
     for _ in range(5):
         time.sleep(1); s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
@@ -209,7 +212,7 @@ def _ffup():   # auto-start Firefox when it is not running, wait 5s for bri-ext;
 def _ffwatch(expect, hl=False):  # nightly is always crashing (Sean 2026-09-15): "if its dead there is no point in not restarting it" — on by default, `serve ... nowatch` disables; expect=1 (serve ff) restarts from birth, else only death-after-life (a no-FF box stays no-FF)
     while True:
         time.sleep(20)
-        if subprocess.run(['pgrep','-fx','(/usr/lib/)?firefox-nightly'],stdout=-3).returncode == 0: expect = 1
+        if subprocess.run(FFP,stdout=-3).returncode == 0: expect = 1
         elif expect: log('[ffwatch] firefox dead — restarting'); _ff_restart(hl); time.sleep(40)
 def _mon():
     def run(c): return subprocess.run(c, capture_output=True, text=True).stdout
@@ -511,9 +514,9 @@ if __name__=='__main__':
     args = sys.argv[1:]
     if args and args[0] == 'bri': args = args[1:]  # `a bri …` passes cmd name as argv[1]
     if not args:
-        up = subprocess.run(['ss','-ltn','sport = :1234'],capture_output=True,text=True).stdout
-        print(f"[{'running' if ':1234' in up else 'stopped'}] :1234")
-        if ':1234' in up:  # show connected browsers + target
+        up = not socket.socket().connect_ex(('127.0.0.1',PORT))
+        print(f"[{'running' if up else 'stopped'}] :1234")
+        if up:  # show connected browsers + target
             s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()
             m = re.search(r'connected: [^)\n]*', r)
             print(f"  target: firefox by default (@chrome @all or BRI_TO override) · {m.group(0) if m else '?'}")
