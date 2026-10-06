@@ -201,7 +201,8 @@ def _ff_restart(headless=False):
     subprocess.Popen(FFB+(['--headless']if headless else[]),env=env,stdout=-3,stderr=-3,start_new_session=True)
 
 def _ffup():   # auto-start Firefox when it is not running, wait 5s for bri-ext; fail loud (Sean 09-13)
-    if subprocess.run(FFP,stdout=-3).returncode == 0: return
+    import shutil
+    if subprocess.run(FFP,stdout=-3).returncode == 0 or not shutil.which('firefox-nightly'): return  # running, or no LOCAL binary to start (WSL->Windows FF) — let the command hit the connected ext or fail normally
     sys.stderr.write('bri: Firefox not running, starting it\n'); _ff_restart()
     for _ in range(5):
         time.sleep(1); s = _sock(); s.sendall(b'{}\n'); r = s.recv(4096).decode(errors='replace'); s.close()

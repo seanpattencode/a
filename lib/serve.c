@@ -870,15 +870,26 @@ static void handle(int c){
     sresp(c,404,"text/plain","not found",9);
 }
 #define PSAS "ps -ef|awk '/serve( 1111)? *$/"
+#ifdef __CYGWIN__
+#define RK "'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'"
+static void ui_logon(int on){  /* logon autostart ⇄ HKCU Run "a" (Task Manager lists it) */
+    char w[P],c2[B];cygwin_conv_path(CCP_POSIX_TO_WIN_A,DDIR,w,P);
+    snprintf(c2,B,on?"cd '%s'&&echo 'Set s=CreateObject(\"WScript.Shell\"):s.Run \"\"\"%s\\a.exe\"\" serve\",0,False'>a-ui.vbs&&{ icacls a-ui.vbs /reset;reg add " RK " /v a /d 'wscript.exe \"%s\\a-ui.vbs\"' /f; }>/dev/null 2>&1&&echo '\xe2\x9c\x93 logon autostart: Run \"a\" = wscript a-ui.vbs'||echo 'x reg add'"
+        :"reg delete " RK " /v a /f>/dev/null 2>&1&&echo '\xe2\x9c\x93 autostart off'",DDIR,w,w);
+    system(c2);}
+#else
+#define ui_logon(x)(void)0
+#endif
 static int cmd_ui(int c,char**v){  /* cygwin: lib/ui is python (hangs there): restart a serve detached + open the browser */
     if(!CYG)fallback_py("ui/__init__",c,v);
     perf_disarm();int up=!system("p=$(" PSAS "{print $2}');kill $p 2>/dev/null;sleep .2;[ -n \"$p\" ]");const char*o=c>2?v[2]:"";
-    if(*o=='k'||!strcmp(o,"off")||(*o=='r'&&!up))return puts("\xe2\x9c\x93 ui off")<0;
+    if(*o=='k'||!strcmp(o,"off")||(*o=='r'&&!up)){if(!strcmp(o,"off"))ui_logon(0);return puts("\xe2\x9c\x93 ui off")<0;}
     bg_exec(*v,"serve");
     if(system("sleep .6;" PSAS "{f=1}END{exit !f}'"))return puts("x serve exited — :1111 held by another a (win+wsl share localhost)")<0;
     const char*u="http://localhost:1111";
     if(!*o)bg_exec(OPENER,u);
     else if(isatty(0)){printf("open %s in the default browser? [Y/n] ",u);fflush(stdout);char b[8];if(fgets(b,8,stdin)&&(*b=='\n'||(*b|32)=='y'))bg_exec(OPENER,u);}
+    if(!strcmp(o,"on"))ui_logon(1);
     return puts("\xe2\x9c\x93 http://localhost:1111 (stop: a ui off)")<0;}
 static int cmd_serve(int argc,char**argv){perf_disarm();signal(SIGPIPE,SIG_IGN);signal(SIGCHLD,SIG_IGN);
     {const char*op=getenv("PATH");if(!op)op="";char np[P];snprintf(np,P,"%s/.local/bin:/opt/homebrew/bin:/usr/local/bin:%s",HOME,op);setenv("PATH",np,1);}
