@@ -33,9 +33,9 @@ static int cmd_kill(int argc, char **argv) {
         (void)!system("pkill -9 tmux 2>/dev/null; sleep 1");
         (void)!system("clear"); puts("✓"); return 0;
     }
-    /* combine intelligently: numeric selector = tmux window; bare or a name = app process killer (lib/kil.py) */
+    /* combine intelligently: numeric selector = tmux window; bare or a name = app process killer (a kil) */
     if (!sel || sel[0] < '0' || sel[0] > '9') {
-        char c[B]; int o = snprintf(c, B, "python3 '%s/lib/kil.py'", SDIR);
+        char c[B]; int o = snprintf(c, B, "a kil");
         for (int i = 2; i < argc && o < B; i++) o += snprintf(c+o, (size_t)(B-o), " '%s'", argv[i]);
         return system(c) ? 1 : 0;
     }

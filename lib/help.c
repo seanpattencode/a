@@ -62,12 +62,12 @@ static void gen_icache(void){
         if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;d4(ld,e->d_name,"cmd",ds);*dot=0;
         fprintf(f,"%s\t%s\n",e->d_name,ds);}closedir(d);}}
     /* auto-discover my + lab + repos scripts */
-    {const char*sr[]={SROOT,SDIR};const char*sl[]={"my","lab"};
-    for(int si=0;si<2;si++){char md[P];snprintf(md,P,"%s/%s",sr[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
+    {const char*sr[]={SROOT,SDIR,HOME};const char*sl[]={"my","lab","aext"};
+    for(int si=0;si<3;si++){char md[P];snprintf(md,P,"%s/%s",sr[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
     if(d){while((e=readdir(d))){if(e->d_name[0]=='.'||e->d_name[0]=='_')continue;
         char nm[64];snprintf(nm,64,"%s",e->d_name);char*dot=strrchr(nm,'.');
         if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;
-        const char*tg=!si&&dot&&!strcmp(dot,".html")?"page":sl[si];if(!si&&dot)*dot=0;
+        const char*tg=!si&&dot&&!strcmp(dot,".html")?"page":sl[si];if(si!=1&&dot)*dot=0;
         d4(md,e->d_name,tg,ds);fprintf(f,"%s\t%s\n",nm,ds);}closedir(d);}}
     /* repos: scan adata/repos/ scripts */
     {char rd[P];snprintf(rd,P,"%s/repos",AROOT);DIR*d=opendir(rd);struct dirent*re;
