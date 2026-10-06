@@ -196,10 +196,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(nn){int pl2=(int)strlen(lastpr),mx=Wc-12;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}
             FP("%s ✓ %s · %.*s%s\033[K\n",sel==0?" >":"  ",strstr(lastnote,"/notes/")?"✎ note":"☐ task",pl2,lastpr,cut?"…":"");
             FP("%s \033[%dm⌕ open in web\033[0m\033[K\n",sel==1?" >":"  ",sel==1?37:90);}
-        for(int i=0;i<show;i++){int j=top+i,gj=j+vo,W=ws.ws_col;char*t=strchr(fm[j],'\t'),*t2=t?strchr(t+1,'\t'):NULL;
-            int ml=t?(int)(t-fm[j]):(int)strlen(fm[j]);if(ml>W-7)ml=W-7;
-            char*desc=t2?t2+1:(t?t+1:"");int dc=W<110?W/2:W-60>200?200:W-60;  /* name never cut — desc gets the leftover */
-            if(dc>W-7-ml)dc=W-7-ml;if(dc<8){desc="";dc=0;}
+        int mx=0;for(int i=0;i<show;i++){int l=(int)strcspn(fm[top+i],"\t");if(l>mx)mx=l>Wc/2?Wc/2:l;}  /* grey col = longest visible name, cap half: scans down; name never cut */
+        for(int i=0;i<show;i++){int j=top+i,gj=j+vo,ml=(int)strcspn(fm[j],"\t");char*t=fm[j][ml]?fm[j]+ml:0,*t2=t?strchr(t+1,'\t'):0;if(ml>Wc-7)ml=Wc-7;
+            int dc=Wc-8-(ml>mx?ml:mx);char*desc=dc<8||!t?"":t2?t2+1:t+1;
             static char db[320];int hm=0;
             if(t2&&!strncmp(t+1,"win\t",4)){char*hit=0;int wl2=0;char*mm=strstr(desc," · ");int hd=mm?(int)(mm-desc)+4:0;
                 if(blen)for(char*pw=buf;*pw&&!hit;){while(*pw==' ')pw++;int L2=(int)strcspn(pw," ");if(!L2)break;
@@ -208,9 +207,9 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     int pre=(int)(hit-st2),rm=dc-hd-pre-wl2-4,tw=(int)strlen(hit+wl2);if(rm<0)rm=0;if(tw>rm)tw=rm;while(tw>0&&(hit[wl2+tw]&0xC0)==0x80)tw--;
                     snprintf(db,320,"%.*s%s%.*s\033[7m%.*s\033[27m%.*s",hd,desc,st2>desc+hd?"…":"",pre,st2,wl2,hit,tw,hit+wl2);desc=db;hm=9;}
                 else if((int)strlen(desc)>dc&&mm){int rm=dc-hd-3;if(rm>8){char*tp=desc+strlen(desc)-(size_t)rm;while((*tp&0xC0)==0x80)tp++;snprintf(db,320,"%.*s…%s",hd,desc,tp);desc=db;}}}
-            int dl=(int)strnlen(desc,(size_t)dc+(size_t)hm),dv;while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;dv=dl-hm;  /* never cut mid-UTF-8 */
+            int dl=(int)strnlen(desc,(size_t)dc+(size_t)hm);while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;
             FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
-            if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",W-dv,dl,desc);FP("\n");}
+            if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",Wc-dc,dl,desc);FP("\n");}
         FP("\033[J\033[2;%dH\033[?25h",ccol);
         #undef FP
         twrite(rb,(size_t)rl);
