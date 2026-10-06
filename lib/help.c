@@ -126,7 +126,7 @@ static void gen_icache(void){
             fclose(af);}
         pclose(d);qsort(ct,(size_t)nc,sizeof(ct[0]),ctcmp);
         {snprintf(fp2,P,"%s/web_cache.txt",DDIR);
-        char cm[P*2];snprintf(cm,P*2,"T=/tmp/.a_h$$;Q=\"SELECT url,title FROM urls WHERE title<>'' ORDER BY visit_count DESC LIMIT 50\";"
+        char cm[P*2];(snprintf)(cm,P*2,"T=/tmp/.a_h$$;Q=\"SELECT url,title FROM urls WHERE title<>'' ORDER BY visit_count DESC LIMIT 50\";"
 #ifdef __APPLE__
             "for b in 'Google/Chrome' 'Google/Chrome Canary' 'BraveSoftware/Brave-Browser' "
             "'BraveSoftware/Brave-Browser-Beta' Chromium;do "
