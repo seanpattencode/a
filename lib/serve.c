@@ -140,16 +140,16 @@ static void docpage(int c,const char*rel,const char*body,size_t bl,const char*sa
     memcpy(h+hl,"</textarea></form>",18);hl+=18;
     sdoc(c,h,hl);free(h);}
 static int docls(char*h,int hl,const char*rel,int off){
-    char dp[P];snprintf(dp,P,"%s/%s",SROOT,rel);DIR*d=opendir(dp);if(!d)return hl;
-    struct dirent*e;char nm[256][96];int n=0;
-    while((e=readdir(d))&&n<256){if(e->d_name[0]=='.')continue;snprintf(nm[n++],96,"%s",e->d_name);}closedir(d);
-    for(int i=1;i<n;i++){char t[96];snprintf(t,96,"%s",nm[i]);int j=i-1;while(j>=0&&strcmp(nm[j],t)>0){snprintf(nm[j+1],96,"%s",nm[j]);j--;}snprintf(nm[j+1],96,"%s",t);}
-    for(int i=0;i<n&&hl<(1<<18)-512;i++){char r2[P];snprintf(r2,P,"%s/%s",rel,nm[i]);
+    char dp[P];snprintf(dp,P,"%s/%s",SROOT,rel);struct dirent**nm;int n=scandir(dp,&nm,0,alphasort);   /* d_name is 256: a 96-byte copy truncated a 107-char adoc name into a dead link (2026-10-08) */
+    for(int i=0;i<n;i++){const char*nmi=nm[i]->d_name;
+        if(nmi[0]!='.'&&hl<(1<<18)-512){char r2[P];snprintf(r2,P,"%s/%s",rel,nmi);
         char fp[P];snprintf(fp,P,"%s/%s",SROOT,r2);struct stat st;
-        if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){if(!strcmp(nm[i],"archive"))continue;
-            hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=color:#777;padding:4px 16px>%s/</div>",r2+off);hl=docls(h,hl,r2,(int)strlen(r2)+1);}
+        if(!stat(fp,&st)&&S_ISDIR(st.st_mode)){if(strcmp(nmi,"archive")){
+            hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=color:#777;padding:4px 16px>%s/</div>",r2+off);hl=docls(h,hl,r2,(int)strlen(r2)+1);}}
         else if(strstr(r2,"/archive/"))hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<a href=\"/doc?f=%s\">%s</a>",r2,r2+off);
         else hl+=snprintf(h+hl,(size_t)((1<<18)-hl),"<div style=\"display:flex\"><a style=\"flex:1\" href=\"/doc?f=%s\">%s</a><a href=\"#\" style=\"color:#555\" onclick=\"fetch('/doc-arch?f=%s').then(function(){location.reload()});return false\">arch</a></div>",r2,r2+off,r2);}
+        free(nm[i]);}
+    if(n>0)free(nm);
     return hl;}
 static int ws_upgrade(int c,const char*req){
     const char*k=strstr(req,"Sec-WebSocket-Key: ");if(!k)return 0;
