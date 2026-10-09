@@ -77,17 +77,6 @@ static int cmd_push(int argc, char **argv) { AB;
     if(!msg[0])snprintf(msg, B, "Update %s", bname(cwd));
 
     if (!git_in_repo(cwd)) {
-        if(in_fork(cwd)){char c[B],br[128],rf[P];
-            snprintf(rf,P,"%s/.fork_remote",cwd);char*remote=readf(rf,NULL);
-            if(!remote||!*remote){free(remote);puts("x No .fork_remote");return 1;}
-            remote[strcspn(remote,"\n")]=0;
-            snprintf(br,128,"fork-%s",bname(cwd));
-            snprintf(c,B,"cd '%s'&&git init -q&&git remote add origin '%s'&&git fetch -q --depth=1 origin main&&git update-ref refs/heads/'%s' origin/main&&git symbolic-ref HEAD refs/heads/'%s'&&git add -A&&git commit -qm '%s'&&git push -u origin '%s' 2>&1",cwd,remote,br,br,msg,br);
-            char out[B];pcmd(c,out,B);
-            if(strstr(out,"->")||strstr(out,"new branch"))printf("✓ pushed branch %s\n",br);
-            else printf("x %s\n",out);
-            return 0;}
-        
         DIR *d = opendir(cwd); struct dirent *e; int nsub = 0;
         char subs[32][256];
         if (d) { while ((e = readdir(d)) && nsub < 32) { if(e->d_name[0]=='.')continue; char gp[P]; snprintf(gp,P,"%s/%s/.git",cwd,e->d_name); if (dexists(gp)) snprintf(subs[nsub++],256,"%s",e->d_name); } closedir(d); }
@@ -219,12 +208,7 @@ static int cmd_diff(int argc, char **argv) { AB;
         else if(_l[0]=='-'&&_l[1]!='-'){printf("  \033[48;2;117;34;27m- %s\033[0m\n",_l+1);if(cf>=0){fs[cf].dl++;fs[cf].db+=(int)strlen(_l)-1;}}} \
         pclose(_f);}}while(0)
     #define HR for(int _j=0;_j<60;_j++){putchar(0xe2);putchar(0x94);putchar(0x80);}putchar('\n')
-    int fk=in_fork(cwd)&&!git_in_repo(cwd);
-    if(fk){
-        printf("%s\nfork → %s\n",cwd,SDIR);
-        {char c[B];snprintf(c,B,"for f in *;do [ \"$f\" = adata ]&&continue;diff -ru '%s/'\"$f\" \"$f\" 2>/dev/null;done|grep -v '^Only in'",SDIR);DS(c);}
-        {char o[32];pcmd("du -sk .|awk '{print $1*1024}'",o,32);ws=atol(o);}
-    } else {
+    {
         char br[128]; pcmd("git rev-parse --abbrev-ref HEAD 2>/dev/null",br,128); br[strcspn(br,"\n")]=0;
         int wt=!sel&&(!strncmp(br,"wt-",3)||!strncmp(br,"j-",2)||!strncmp(br,"job-",4));
         char tgt[256]; snprintf(tgt,256,"origin/%s",sel?sel:wt?"main":br);
@@ -248,12 +232,12 @@ static int cmd_diff(int argc, char **argv) { AB;
         if(st)printf("%s%s: +%d/-%d lines, %s%+d tok (%+.3f%% of file)\033[0m\n",W,bname(fs[j].name),fs[j].al,fs[j].dl,TC(tk),tk,tk*100.0/st);
         else printf("%s%s: +%d/-%d lines, %s%+d tok (new)\033[0m\n",W,bname(fs[j].name),fs[j].al,fs[j].dl,TC(tk),tk);
         ti+=fs[j].al;td+=fs[j].dl;ta+=fs[j].ab;tb+=fs[j].db;}
-    int nt=(ta-tb)/4; HR; if(ws)printf("%s: %d file%s, %+d lines, %s%+d tok (%+.3f%% of repo)\033[0m\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,TC(nt),nt,(ta-tb)*100.0/ws);
-    else printf("%s: %d file%s, %+d lines, %s%+d tok\033[0m\n",fk?"fork":"net",nf,nf!=1?"s":"",ti-td,TC(nt),nt);
+    int nt=(ta-tb)/4; HR; if(ws)printf("net: %d file%s, %+d lines, %s%+d tok (%+.3f%% of repo)\033[0m\n",nf,nf!=1?"s":"",ti-td,TC(nt),nt,(ta-tb)*100.0/ws);
+    else printf("net: %d file%s, %+d lines, %s%+d tok\033[0m\n",nf,nf!=1?"s":"",ti-td,TC(nt),nt);
     #undef TC
     if(!filt){char cp[P];commit_path(cp);char*cs=readf(cp,NULL),*nl=cs?strchr(cs,'\n'):0;
      if(nl){*nl=0;printf("\n\033[36mcommit:\033[0m %s \033[32m→ a push -f\033[0m\n",cs);}free(cs);}
-    if(!fk&&!sel&&!filt) puts("\ndiff # = last #");
+    if(!sel&&!filt) puts("\ndiff # = last #");
     {char v[B*2];if(tok_rule(cwd,v,(int)sizeof v,NULL))printf("\n\033[31m✗ TOK INCREASE RULE\033[0m (will block a push):\n%s",v);}
     return 0;
     #undef FS

@@ -54,7 +54,7 @@ _shell_funcs() {
         touch "$RC" 2>/dev/null || { warn "can't write $RC (skip)"; continue; }
         grep -q '.local/bin' "$RC" 2>/dev/null || echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$RC"
         sed -i.bak '/^_ADD=/d;/^a() {/,/^}/d;/^aio() /d;/^ai() /d;/aios/d;/a-tmux-env-fix/,+1d' "$RC";rm "$RC.bak"
-        _R="${D%%/adata/worktrees/*}"; _R="${_R%%/adata/forks/*}"
+        _R="${D%%/adata/worktrees/*}"
         echo "_ADD=\"$_R/adata/local\"" >> "$RC"
         cat >> "$RC" << 'AFUNC'
 a() {
@@ -109,7 +109,7 @@ _tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen (human
     echo "tok $t/$c ($(( t<=c ? c-t : t-c )) $r)" >&2
     [[ $t -le $c ]] || { echo -e "\033[31m✗ TOK KILL\033[0m: a.c+lib = $t > cap $c tok — simplify, don't raise ($f)" >&2;sed 1d "$f" >&2 2>/dev/null;exit 1; };}
 [[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
-_abin() { [[ "$D" == *"/adata/worktrees/"*||"$D" == *"/adata/forks/"* ]]&&ABIN="$D"||ABIN="$D/adata/local"
+_abin() { [[ "$D" == *"/adata/worktrees/"* ]]&&ABIN="$D"||ABIN="$D/adata/local"
     BIN="$HOME/.local/bin";[[ -d $ABIN && -d $BIN ]]||mkdir -p "$ABIN" "$BIN";}
 _checkers() {
     _c(){ n=$1;shift;{ ! command -v "$1" &>/dev/null||"$@";}>"$T/$n" 2>&1||touch "$T/$n.f";}
@@ -388,7 +388,6 @@ static const char*EXT[]={"",".py",".c",".sh",".html",0};
 #include "lib/data.c"
 #include "lib/tmux.c"
 #include "lib/git.c"
-#include "lib/fork.c"
 #include "lib/session.c"
 #include "lib/alog.c"
 #include "lib/help.c"
@@ -537,22 +536,13 @@ static int cmd_j(int c,char**v){
         tm_ensure_conf();char jcmd[B];jcmd_fill(jcmd,1,wd,NULL);
         {char sn[64];snprintf(sn,64,"j-%s",bname(wd));if(!tm_new(sn,wd,jcmd))sess_log(sn,wd);tm_go(sn);}
         return 0;}
-    int si=2,wt=0;if(c>3&&isdigit(*v[2])){int idx=atoi(v[2]);if(idx<NPJ)snprintf(wd,P,"%s",PJ[idx].path);si++;}
-    /* jobs run on main by default. --wt opts into fork isolation. agents work in parallel, push only their files. */
-    char pr[B]="";int pl=0;for(int i=si;i<c;i++){if(!strcmp(v[i],"--wt")){wt=1;continue;}if(!strcmp(v[i],"--no-wt"))continue;pl+=snprintf(pr+pl,(size_t)(B-pl),"%s%s",pl?" ":"",v[i]);}
+    int si=2;if(c>3&&isdigit(*v[2])){int idx=atoi(v[2]);if(idx<NPJ)snprintf(wd,P,"%s",PJ[idx].path);si++;}
+    /* jobs run on main; agents work in parallel, push only their files. --wt/--no-wt swallowed: fork isolation retired 2026-10-08 (recipe in git history) */
+    char pr[B]="";int pl=0;for(int i=si;i<c;i++){if(!strcmp(v[i],"--wt")||!strcmp(v[i],"--no-wt"))continue;pl+=snprintf(pr+pl,(size_t)(B-pl),"%s%s",pl?" ":"",v[i]);}
     {struct stat pf;const char*dt=strrchr(pr,'.');
      if(dt&&(!strcmp(dt,".txt")||!strcmp(dt,".md"))&&!stat(pr,&pf)&&S_ISREG(pf.st_mode)){char*fc=readf(pr,NULL);if(fc){
         if(strlen(fc)>(size_t)B-200){printf("x %s: >%d bytes, too big for j\n",pr,B-200);free(fc);return 1;}
         printf("+ prompt ← %s\n",pr);pl=snprintf(pr,B,"%s",fc);free(fc);}}}
-    if(wt&&git_in_repo(wd)){
-        char fkd[P];snprintf(fkd,P,"%s/forks",AROOT);mkdirp(fkd);
-        time_t now=time(NULL);struct tm*t=localtime(&now);char ts[16];
-        strftime(ts,16,"%b%d",t);for(char*p=ts;*p;p++)*p=(char)tolower(*p);
-        int h=t->tm_hour%12;if(!h)h=12;char nm[64],fp[P];
-        snprintf(nm,64,"%s-%s-%d%02d%02d%s",bname(wd),ts,h,t->tm_min,t->tm_sec,t->tm_hour>=12?"pm":"am");
-        snprintf(fp,P,"%s/%s",fkd,nm);
-        if(!fork_cp(wd,fp)){printf("+ %s\n",fp);snprintf(wd,P,"%s",fp);}
-    }
     printf("+ job: %s\n  %.*s\n",bname(wd),80,pr);
     if(pr[0])snprintf(pr+pl,(size_t)(B-pl),"\n\nWhen done: write .a_done — one simple sentence + test cmd; output beginning...end 4 lines max; no spacing between sections");
     tm_ensure_conf();
@@ -584,7 +574,7 @@ static const cmd_t CMDS[] = {
     {"book",cmd_book},{"cat",cmd_cat},{"clone",cmd_new},{"cmd",cmd_cmd},{"config",cmd_config},
     {"copy",cmd_copy},{"create",cmd_create},{"cron",cmd_hub},
     {"d",cmd_diff},{"diff",cmd_diff},{"dir",cmd_dir},{"docs",cmd_docs},{"done",cmd_done},
-    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"fork",cmd_fork},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},
+    {"e",cmd_e},{"email",cmd_email},{"file",cmd_get},{"fl",cmd_fl},{"fleet",cmd_fleet},{"freq",cmd_freq},{"grep",cmd_grep},{"h",cmd_h},
     {"help",cmd_help_full},{"home",cmd_h},{"hub",cmd_hub},{"i",cmd_i},
     {"install",cmd_install},{"j",cmd_j},
     {"kill",cmd_kill},{"log",cmd_log},{"login",cmd_login},{"ls",cmd_ls},
