@@ -623,6 +623,7 @@ int main(int argc, char **argv) {
     CWD(wd);
     alog(acmd, wd);
     const char *arg = argv[1];
+    if(!strcmp(arg,"apk")){const char*p="/data/data/com.termux/files/usr/bin/aapt2",*o=getenv("GRADLE_OPTS");if(!access(p,X_OK)){char b[B];snprintf(b,B,"-Dorg.gradle.project.android.aapt2FromMavenOverride=%s %s",p,o?o:"");setenv("GRADLE_OPTS",b,1);}}
     /* per-cmd auto-sync removed: swept others' WIP */
 
     if (*arg && !arg[strspn(arg,"0123456789")]) { init_db(); return cmd_project_num(argc, argv, atoi(arg)); }

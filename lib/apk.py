@@ -3,7 +3,7 @@ WHY over termux (keep the division — termux owns ALL logic+HTML): the apk = th
 restarting termux when Android kills it, OS surfaces only an installed apk reaches. Install auto-provisions termux with this box's
 gh+rclone creds via RUN_COMMAND (adb can't reach termux home); noauth skips, `a apk auth` re-pushes. Drive: am start -n com.aios.a/.M
 --es nav <note|term|...> (--ez menu true); debug: adb forward tcp:9112 tcp:1112. ui_full.html re-copied from assets every launch."""
-import os,subprocess as S,shutil,glob,sys
+import os,subprocess as S,shutil,glob,sys,json
 SELF="self" in sys.argv[2:]   # a apk self: parallel-installable variant — self-built signature can't UPDATE the installed app, so coexist under own id+label
 P="com.aios.a.self" if SELF else "com.aios.a"
 KT=r'''@file:Suppress("DEPRECATION","OVERRIDE_DEPRECATION")
@@ -1472,11 +1472,7 @@ def _apk_auth(serial):
     names=_provision(serial,P)
     print(f"✓ provisioned termux on {serial}: {', '.join(names)}" if names else "! no gh/rclone creds on this dev box to push")
 def _adb_install(apk,pkg,serial):
-    r=adb("install","-r","-g",apk,serial=serial)
-    if "INSTALL_FAILED" in r.stdout+r.stderr:
-        if pkg:adb("uninstall",pkg,serial=serial)
-        r=adb("install","-g",apk,serial=serial)
-    return r
+    return adb("install","-r","-g",apk,serial=serial)
 AST=R+"/adata/apks/state"   # app-state snapshots — navfreq/★/localStorage must survive reinstall (Sean 2026-08-02)
 def _stq(serial,*a,**kw):return S.run(["adb"]+(["-s",serial] if serial else[])+list(a),capture_output=True,**kw)
 def _stf(serial,pkg,nm):return f"{AST}/{pkg}-{serial or 'any'}-{nm}.tgz"   # keyed per device — two phones must not clobber each other's state
@@ -1514,8 +1510,7 @@ def run():
         if a in AMAP:ABI=AMAP[a];continue
         for p in [a,H+"/"+a,R+"/adata/git/my/"+a]:
             if os.path.isdir(p) and glob.glob(p+"/build.gradle*"):proj=os.path.abspath(p);break
-        if proj:break
-        elif not serial:serial=a
+        else:serial=a
     if not serial and not bo:
         ds=devlist()
         if ds:serial=ds[0] if len(ds)==1 else pick(ds)
@@ -1535,10 +1530,7 @@ def run():
         os.chdir(proj);S.run(["./gradlew","assembleDebug"],check=True)
         apks=glob.glob(proj+"/**/debug/*.apk",recursive=True)
         if not apks:sys.exit("x No APK")
-        apk=apks[0];pkg=None
-        for bf in glob.glob(proj+"/app/build.gradle*"):
-            for line in open(bf):
-                if ("applicationId" in line or "namespace" in line) and '"' in line:pkg=line.split('"')[1];break
+        apk=apks[0];pkg=json.load(open(os.path.dirname(apk)+"/output-metadata.json"))["applicationId"]
     else:
         w(D+"/settings.gradle.kts",GS);w(D+"/app/build.gradle.kts",GB.replace("arm64-v8a",ABI));w(D+"/local.properties",f"sdk.dir={SDK}\n")
         ks=f"{R}/adata/git/common/debug.keystore";hk=f"{H}/.android/debug.keystore"
@@ -1608,24 +1600,24 @@ def run():
         print(f"✓ built: {apk}\n  serve it:      python3 -m http.server 8999 -d {os.path.dirname(apk)}\n  phone termux:  curl -o {fn} http://{ip}:8999/{os.path.basename(apk)} && termux-open {fn}   # Termux needs 'Install unknown apps' once")
         return
     if IT:
-        sa=_self_adb()
+        sa=serial or _self_adb()
         if sa:
             r=_adb_install(apk,pkg,sa)
             if r.returncode==0:
-                if pkg:adb("shell","am","start","-n",pkg+"/.M",serial=sa)
+                if pkg:adb("shell","monkey","-p",pkg,"1",serial=sa).check_returncode()
                 print("✓ "+(pkg or os.path.basename(apk)));return
             print("x adb install failed, falling back to manual")
-        S.run(["cp",apk,"/storage/emulated/0/Download/"+os.path.basename(apk)],check=True)
-        if not sa:print("! Enable wireless debug for auto-install:\n  Settings → Developer Options → Wireless debugging ON\n  adb connect localhost:5555  → tap Allow\n  APK copied to Downloads")
-        if pkg:S.run(["am","start","-n",pkg+"/.M"])
+        S.run(["termux-open","--view","--content-type","application/vnd.android.package-archive",apk],check=True)
+        print("→ confirm APK installation in Android");return
     else:
         if not serial:
             ds=devlist()
             if not ds:sys.exit("No devices")
             serial=pick(ds)
-        _st_pull(serial,pkg)
+        if not proj:_st_pull(serial,pkg)
         r=_adb_install(apk,pkg,serial)
         if r.returncode:print(r.stderr);sys.exit(1)
+        if proj:r=adb("shell","monkey","-p",pkg,"1",serial=serial);print(r.stdout+r.stderr);r.check_returncode();return
         _st_push(serial,pkg); _roles(serial,pkg)
         names=_provision(serial,pkg) if auth_on else []
         if pkg and up_on:_txupdate(serial,pkg)
