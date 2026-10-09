@@ -181,33 +181,33 @@ static int ws_recv(int c,char*buf,int bsz){
     if(mask)for(int i=0;i<len;i++)buf[i]^=(char)mk[i%4];
     buf[len]=0;return len;
 }
-static void ws_term(int c,const char*target){
+static void ws_term(int c,const char*target,int ttl){
     int m,s;if(openpty(&m,&s,NULL,NULL,NULL)<0)return;
     char cty[64];{const char*tn=ttyname(s);snprintf(cty,64,"%s",tn?tn:"");}
-    pid_t p=fork();
+    pid_t p=fork();if(p<0){close(m);close(s);return;}
     if(!p){close(m);setsid();ioctl(s,TIOCSCTTY,0);dup2(s,0);dup2(s,1);dup2(s,2);close(s);
         setenv("TERM","xterm-256color",1);
-        unsetenv("TMUX");unsetenv("TMUX_PANE");  /* inherited TMUX would switch the real client, not this pty */
+        unsetenv("TMUX");unsetenv("TMUX_PANE");  /* isolate this PTY */
         if(target&&!strncmp(target,"ssh:",4)){char d2[160];snprintf(d2,160,"%s",target+4);char*cl=strchr(d2,':');
             if(cl){*cl=0;char ses[192];snprintf(ses,192,"a:%s",cl+1);setenv("A_TMUX_SESSION",ses,1);}
             execlp("a","a","ssh",d2,(char*)0);}
-        if(target&&target[0])execlp("a","a","tmux",target,(char*)0);
-        else execlp("a","a","tmux",(char*)0);
-        char*b[]={"bash","-l",NULL};execvp("bash",b);
-        char*cc[]={"sh","-l",NULL};execvp("sh",cc);execl("/system/bin/sh","sh",(char*)0);_exit(1);}
+        if(!ttl)execlp("a","a","tmux",target&&*target?target:NULL,(char*)0);
+        execlp("bash","bash","-l",(char*)0);
+        execlp("sh","sh","-l",(char*)0);execl("/system/bin/sh","sh",(char*)0);_exit(1);}
     close(s);
     struct pollfd pf[2]={{c,POLLIN,0},{m,POLLIN,0}};char buf[4096];
-    while(poll(pf,2,-1)>0){
+    struct timespec end,now;clock_gettime(CLOCK_MONOTONIC,&end);end.tv_sec+=ttl;
+    for(;;){clock_gettime(CLOCK_MONOTONIC,&now);int left=ttl?(int)((end.tv_sec-now.tv_sec)*1000+(end.tv_nsec-now.tv_nsec)/1000000):-1;if((ttl&&left<=0)||poll(pf,2,left)<=0)break;
         if(pf[1].revents&POLLIN){int n=(int)read(m,buf,4096);if(n<=0)break;ws_send(c,buf,n,0x82);}
         if(pf[0].revents&POLLIN){int n=ws_recv(c,buf,4096);if(n<0)break;
             if(buf[0]=='{'){char*co=strstr(buf,"\"cols\":");char*ro=strstr(buf,"\"rows\":");
                 if(co&&ro){struct winsize w={.ws_row=(unsigned short)atoi(ro+7),.ws_col=(unsigned short)atoi(co+7)};ioctl(m,TIOCSWINSZ,&w);continue;}
-                /* /fw claim: switch-client re-takes size; resize-window manual-locks (def3b2ee) */
+                /* /fw: retake tmux size (def3b2ee) */
                 if(strstr(buf,"\"claim\"")){char cc[300];snprintf(cc,300,"s=$(tmux lsc -f '#{==:#{client_tty},%s}' -F '#{session_name}' 2>/dev/null);[ -n \"$s\" ]&&tmux switch-client -c %s -t \"$s\" 2>/dev/null",cty,cty);(void)!system(cc);continue;}}
             (void)!write(m,buf,(size_t)n);}
         if(pf[0].revents&(POLLHUP|POLLERR)||pf[1].revents&(POLLHUP|POLLERR))break;
     }
-    kill(p,SIGHUP);close(m);waitpid(p,NULL,0);
+    if(ttl){pid_t f=tcgetpgrp(m);if(f>0)kill(-f,SIGKILL);kill(-p,SIGKILL);}else kill(p,SIGHUP);close(m);waitpid(p,NULL,0);
 }
 static char rql[160];
 typedef struct{time_t t;char*p,*w,*n,*m;size_t i;}rv_t;static int rvcmp(const void*a,const void*b){time_t x=((const rv_t*)a)->t,y=((const rv_t*)b)->t;return y>x?1:y<x?-1:0;}
@@ -351,12 +351,14 @@ static void handle(int c){
         char uf[P];struct stat us;snprintf(uf,P,"%s/lib/ui_full.html",SDIR);   /* regen when page newer than cache (boot-freeze bug) */
         if(shlen&&!stat(uf,&us)&&us.st_mtime>=sgen_t)html_gen();
         if(shlen)sresp(c,200,"text/html",shtml,shlen);else sresp(c,503,"text/plain","starting",8);return;}
-    if(!strncmp(req,"GET /ws",7)&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
+    int lease=!strncmp(req,"GET /shell?",11);
+    if((lease||!strncmp(req,"GET /ws",7))&&(strstr(req,"Upgrade: websocket")||strstr(req,"upgrade: websocket"))){
         char tgt[64]={0};const char*qw=strstr(req,"?w=");
         if(qw){qw+=3;int j=0;for(int i=0;qw[i]&&qw[i]!=' '&&qw[i]!='&'&&qw[i]!='\r'&&j<63;i++){
             if(qw[i]=='%'&&qw[i+1]&&qw[i+2]){char x[3]={qw[i+1],qw[i+2],0};tgt[j++]=(char)strtol(x,NULL,16);i+=2;}
             else tgt[j++]=qw[i]=='+'?' ':qw[i];}tgt[j]=0;}
-        if(ws_upgrade(c,req))ws_term(c,tgt);return;}
+        int ttl=lease?atoi(req+11):0;if(lease&&(ttl<1||ttl>600)){sresp(c,400,"text/plain","1-600 seconds",13);return;}
+        if(ws_upgrade(c,req))ws_term(c,ttl?NULL:tgt,ttl);return;}
     if(!strncmp(req,"GET /bm",7)&&(req[7]==' '||req[7]=='?')){const char*q=req+7;int js=!strncmp(q,"?js",3),tx=!strncmp(q,"?txt",4),cr=!strncmp(q,"?chrome",7);char fp[P];
         snprintf(fp,P,cr?"%s/local/bm_chrome.json":tx?"%s/bookmarks.txt":js?"%s/common/bm.js":"%s/common/bm.html",cr?AROOT:SROOT);
         size_t fl=0;char*d=readf(fp,&fl);if(!d){sresp(c,404,"text/plain","x",1);return;}

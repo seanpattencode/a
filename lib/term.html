@@ -1,10 +1,9 @@
 <!doctype html>
-<!-- direct-DOM terminal: col*cw grid, glyphs clipped to cells = alignment by construction; zero deps. verify: adata/git/my/term/test.py · out of scope until screamed: F-keys, combining marks, DECOM, 47/1047/1048, SO/SI G1 -->
 <meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>a term</title>
 <style>
-html,body{margin:0;height:100%;background:#000;overflow:hidden}#scr{top:16px} /* status strip: #sb never covers row 0 */
+html,body{margin:0;height:100%;background:#000;overflow:hidden}#scr{top:16px}
 #scr{position:absolute;left:0;width:100vw;height:calc(100vh - 16px);overflow:hidden;cursor:text;color:#ccc}
 .r{position:absolute;left:0;width:100%;contain:layout style}
 .r span{position:absolute;top:0;white-space:pre}
@@ -28,7 +27,7 @@ const ACS={'`':'◆','a':'▒','f':'°','g':'±','h':'░','i':'#','j':'┘','k'
 /* fl: 1 bold 2 dim 4 ital 8 ul 16 rev 32 inv 64 strike | 128 WIDE 512 CONT */
 let cols=0,rows=0,cw=9,chh=LH,G=[],RE=[],MAIN=null;
 const DEF={x:0,y:0,fg:-1,bg:-1,fl:0,top:0,bot:0,wrap:true,ckm:false,vis:true,mouse:0,sgrm:false,paste:false,alt:false,pw:false,cs0:false,last:' ',lw:1,save:null};
-const S=Object.assign({},DEF);
+const S={...DEF};
 const newRow=()=>({t:Array(cols).fill(' '),f:Array(cols).fill(-1),b:Array(cols).fill(S.bg),l:Array(cols).fill(0)});
 const sv=()=>S.save={x:S.x,y:S.y,fg:S.fg,bg:S.bg,fl:S.fl,pw:S.pw,cs0:S.cs0};
 const rs=()=>{if(S.save)Object.assign(S,S.save);drow(S.y);};
@@ -50,7 +49,7 @@ function clr(y,x0,x1){
   for(let i=Math.max(0,x0);i<=Math.min(cols-1,x1);i++){r.t[i]=' ';r.f[i]=-1;r.b[i]=S.bg;r.l[i]=0;}
   drow(y);
 }
-function scrl(n,dn){ /* scroll region top..bot; dn=reverse */
+function scrl(n,dn){
   if(kb.value)ckb();
   while(n-->0){G.splice(dn?S.bot:S.top,1);G.splice(dn?S.top:S.bot,0,newRow());}
   for(let y=S.top;y<=S.bot;y++)drow(y);
@@ -65,7 +64,7 @@ function put(ch,w){
   S.pw=false;
   if(S.x+w>cols)S.x=Math.max(0,cols-w);
   const r=G[S.y];
-  if(r.l[S.x]&512&&S.x>0){r.t[S.x-1]=' ';r.l[S.x-1]&=~128;} /* overwrote right half: unghost the wide base */
+  if(r.l[S.x]&512&&S.x>0){r.t[S.x-1]=' ';r.l[S.x-1]&=~128;}
   r.t[S.x]=ch;r.f[S.x]=S.fg;r.b[S.x]=S.bg;r.l[S.x]=S.fl|(w===2?128:0);
   if(w===2&&S.x+1<cols){r.t[S.x+1]='';r.f[S.x+1]=S.fg;r.b[S.x+1]=S.bg;r.l[S.x+1]=512;}
   drow(S.y);
@@ -98,10 +97,10 @@ function feed(d){
     else if(c!==0x7f)put(S.cs0&&ACS[ch]?ACS[ch]:ch,wcw(c));
   }
   pt=performance.now()-t0;
-  if(kb.value){if(S.y!==py0||S.x>=px0+kb.value.length)ckb();else clearTimeout(yt);} /* echo caught up/row moved -> grid owns it; else echoing, cancel echo-off timer */
+  if(kb.value){if(S.y!==py0||S.x>=px0+kb.value.length)ckb();else clearTimeout(yt);} /* clear ahead-echo when caught up */
   if(!raf)raf=requestAnimationFrame(paint);
 }
-function title(){ /* OSC 0/2 -> window pin; OSC 52 -> clipboard */
+function title(){
   const m=ob.match(/^[02];(?:[^:]*:)?(.*)$/);
   if(m){wn=m[1];document.title=m[1];return;}
   const c=ob.match(/^52;[^;]*;([A-Za-z0-9+/=]+)$/);
@@ -220,7 +219,7 @@ function sgr(a){
       let col=-1;
       if(m===5)col=parseInt(t[2])||0;
       else if(m===2){
-        const o=ext&&t.length>5?3:2; /* colon form may carry a colorspace slot: 38:2::r:g:b */
+        const o=ext&&t.length>5?3:2; /* optional colorspace: 38:2::r:g:b */
         col=0x1000000|(parseInt(t[o])||0)<<16|(parseInt(t[o+1])||0)<<8|(parseInt(t[o+2])||0);
       }
       if(v===38)S.fg=col;else S.bg=col;
@@ -230,7 +229,7 @@ function sgr(a){
   }
 }
 const esc=s=>s.replace(/[&<>]/g,m=>m==='&'?'&amp;':m==='<'?'&lt;':'&gt;');
-const col=(v,t)=>{let n=v<256?PAL[v]:v&0xffffff,m=Math.max(n>>16,n>>8&255,n&255);return'#'+((t&&n>>16<m/2?m*65793:n)|1<<24).toString(16).slice(1)}; /* t=text: low red->grey (red-only filter) */
+const col=(v,t)=>{let n=v<256?PAL[v]:v&0xffffff,m=Math.max(n>>16,n>>8&255,n&255);return'#'+((t&&n>>16<m/2?m*65793:n)|1<<24).toString(16).slice(1)}; /* text: low red -> grey */
 const flow=t=>{const c=t.codePointAt(0);return c<0x80||(c>=0x2500&&c<=0x25ff);};
 function style(x,f,b,l,w){
   if(l&16)[f,b]=[b<0?0x1000000:b,f<0?0x1cccccc:f];
@@ -285,13 +284,13 @@ function fit(){
   const e=document.createElement('span');
   e.style.cssText='position:absolute;visibility:hidden;white-space:pre';
   e.textContent='0'.repeat(100);
-  scr.style.font=FS+'px/'+LH+'px '+FONT;
+  kb.style.font=scr.style.font=FS+'px/'+LH+'px '+FONT;
   po.style.cssText='position:absolute;left:0;top:16px;color:#ccc;pointer-events:none;font:'+FS+'px/'+LH+'px '+FONT;
-  kb.style.font=FS+'px/'+LH+'px '+FONT;
   scr.appendChild(e);
   cw=e.getBoundingClientRect().width/100; 
   e.remove();
-  const vw=visualViewport?visualViewport.width:innerWidth,vh=(visualViewport?visualViewport.height:innerHeight)-16;
+  if(!cw)return;
+  const vw=visualViewport?.width||innerWidth,vh=(visualViewport?.height||innerHeight)-16;
   sizeTo(Math.max(20,Math.floor(vw/cw)),Math.max(5,Math.floor(vh/chh)));
 }
 function sizeTo(c,r){
@@ -326,7 +325,7 @@ function tx(s){
   if(Q.get('test')){T.sent.push(s);return;}
   if(!W||W.readyState!==1)return;
   let i=0;
-  while(i<s.length){ /* 4095B frames; whole surrogates */
+  while(i<s.length){ /* whole UTF-8 frames */
     let j=Math.min(i+512,s.length);
     if(j<s.length&&s.charCodeAt(j-1)>=0xd800&&s.charCodeAt(j-1)<0xdc00)j++;
     W.send(s.slice(i,j));
@@ -338,7 +337,6 @@ const KN={Delete:3,PageUp:5,PageDown:6};
 function key(e){
   if(e.isComposing)return;
   const k=e.key;
-  /* native #kb echo: 0 JS round-trip, no jump */
   if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(!kb.value)kbpos();kt=ks=performance.now();kf=1;return;}
   const M=(e.shiftKey?1:0)|(e.altKey?2:0)|(e.ctrlKey?4:0);
   let s=null;
@@ -359,13 +357,13 @@ function key(e){
   if(k==='Backspace'&&!e.altKey&&kb.value){kb.value=kb.value.slice(0,-1);snt=kb.value.length;cancelAnimationFrame(raf);raf=0;paint();}
   else ckb();
 }
-/* ahead-buffer clears when the echo catches up, on a control key, or after a no-echo grace (password) */
+/* ahead-echo ends on echo, control key or password timeout */
 function ckb(){kb.value='';snt=0;clearTimeout(yt);}
 function kbpos(){px0=S.x;py0=S.y;kb.style.left=px0*cw+'px';kb.style.top=(16+py0*chh)+'px';kb.style.width=(cols-px0)*cw+'px';kb.style.height=chh*4+'px';}
 addEventListener('keydown',key);
 kb.addEventListener('input',()=>{const v=kb.value;if(v.length>snt)tx(v.slice(snt));snt=v.length;
   cancelAnimationFrame(raf);raf=0;paint();
-  clearTimeout(yt);if(v)yt=setTimeout(ckb,kr?Math.min(1000,Math.max(250,kr*3)):600);}); /* echo-off (password) self-clears after grace = 3x RTT */
+  clearTimeout(yt);if(v)yt=setTimeout(ckb,kr?Math.min(1000,Math.max(250,kr*3)):600);}); /* password: 3x RTT grace */
 kb.addEventListener('paste',e=>{
   e.preventDefault();
   const t=e.clipboardData.getData('text');
@@ -384,7 +382,6 @@ scr.addEventListener('pointerdown',e=>{
 scr.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')mev(e.button===2?2:e.button,e.clientX,e.clientY,true);});
 scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);});
 scr.addEventListener('contextmenu',e=>{if(S.mouse)e.preventDefault();});
-/* scroll at the CURSOR row, never the status bar (wheel there = selectw) */
 addEventListener('wheel',e=>{if(mev(e.deltaY<0?64:65,e.clientX,(S.y+.5)*chh,false))e.preventDefault();},{passive:false});
 scr.addEventListener('touchstart',e=>ty=e.touches[0].clientY,{passive:true});
 scr.addEventListener('touchmove',e=>{ 
@@ -401,6 +398,6 @@ window.T={sizeTo,S,sent:[],
   dump:()=>G.map(r=>r.t.join('').replace(/\s+$/,'')).join('\n'),
   cell:(x,y)=>({t:G[y].t[x],f:G[y].f[x],b:G[y].b[x],l:G[y].l[x]})};
 fit();
-if(!Q.get('test'))connect();
-kb.focus();
+if(Q.has('rtc')){W={readyState:1,send:s=>parent.rtc(s)};wsOk=true;}else if(!Q.get('test'))connect();
+if(!Q.has('rtc'))kb.focus();
 </script>
