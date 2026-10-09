@@ -867,6 +867,9 @@ static void handle(int c){
         if(th){siso(c,th,(int)tl);free(th);}
         else sresp(c,404,"text/plain","no term.html",12);
         return;}
+    if(!strncmp(req,"GET /webrtc",11)&&(req[11]==' '||req[11]=='?'||req[11]=='\r')){
+        char tf[P];snprintf(tf,P,"%s/lib/webrtc.html",SDIR);size_t tl=0;char*th=readf(tf,&tl);
+        if(th){sdoc(c,th,(int)tl);free(th);}else sresp(c,404,"text/plain","no webrtc.html",14);return;}
     sresp(c,404,"text/plain","not found",9);
 }
 #define PSAS "ps -ef|awk '/serve( 1111)? *$/"
