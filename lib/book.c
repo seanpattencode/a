@@ -589,6 +589,7 @@ if __name__ == "__main__":
               "a book list | index | serve [start|stop] | sync\n"
               "a book next <name> [A-B|page]  unread chunk → read.log; read.html live page\n"
               "a book note <name> [@N[-M]] [text]  note/mark at offset or section; bare=list\n"
+              "a book toc          tagged books' tables of contents -> books/toc.txt\n"
               "a book archive <substr>  toggle hidden .<name>: saved, not listed")
   sys.exit(0)
 
@@ -708,6 +709,11 @@ if __name__ == "__main__":
    if _sz(out): done += 1; print(f"✓ {bd.name}", flush=True)
    else: fail += 1; print(f"✗ {bd.name}: {((r.stderr or r.stdout).strip().splitlines() or ['failed'])[-1][:80]}")
   print(f"\nconverted {done}, skipped {skip} (already had text), failed {fail}")
+ elif cmd == "toc":   # a title = grep target in that book's text
+  subprocess.run(["sh", "-c", r'''while read -r b t;do case $b in \#*)continue;;esac;d=$1/$b;e=$d/source.epub
+c=$({ [ -f "$e" ]&&unzip -p "$e" '*.ncx'|sed -n '/navMap/,$p'|grep -o '<text>[^<]*'|cut -c7-||mutool show "$d/source.pdf" outline|sed 's/^[^"]*"//;s/"[^"]*$//';}|grep -vixE 'cover|title page|copyright.*|contents|dedication|acknowledg.*|index|notes|about the author|also by.*')
+[ $(echo "$c"|wc -l) -gt 2 ]&&printf '== %s\n%s\n' "$b" "$c"||x="$x $b";done<$2/tags.txt>$2/toc.txt 2>/dev/null
+echo "+ $(grep -c ^== $2/toc.txt) books -> $2/toc.txt · no TOC:$x"''', "_", DATA_DIR, IDX.parent])
  elif cmd == "split":
   book = _bk()
   split_pdf(book, nocache=nocache)
