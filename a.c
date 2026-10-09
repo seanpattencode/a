@@ -46,7 +46,7 @@ _ensure_cc() {
 }
 _warn_flags() {
     if [[ "$CC" == *clang* ]]; then
-        WARN="-std=c17 -Werror -Weverything -Wno-unknown-warning-option -Wno-padded -Wno-disabled-macro-expansion -Wno-reserved-id-macro -Wno-documentation -Wno-declaration-after-statement -Wno-unsafe-buffer-usage -Wno-used-but-marked-unused -Wno-pre-c11-compat -Wno-implicit-void-ptr-cast -Wno-nullable-to-nonnull-conversion -Wno-poison-system-directories -Wno-format-nonliteral -Wno-implicit-int-float-conversion -Wno-overlength-strings --system-header-prefix=/usr/include -isystem /usr/local/include"
+        WARN="-std=c17 -Werror -Weverything -Wno-unknown-warning-option -Wno-padded -Wno-disabled-macro-expansion -Wno-declaration-after-statement -Wno-unsafe-buffer-usage -Wno-pre-c11-compat -Wno-implicit-void-ptr-cast -Wno-nullable-to-nonnull-conversion -Wno-poison-system-directories -Wno-format-nonliteral -Wno-implicit-int-float-conversion -Wno-overlength-strings -Wno-lifetime-safety-intra-tu-suggestions --system-header-prefix=/usr/include -isystem /usr/local/include"
     else WARN="-std=c17 -w"; fi
 }
 _shell_funcs() {
