@@ -24,7 +24,7 @@ static void sha1(const unsigned char*d,size_t n,unsigned char out[20]){
     uint32_t hh[]={h0,h1,h2,h3,h4};
     for(int i=0;i<5;i++)for(int j=0;j<4;j++)out[i*4+j]=(unsigned char)(hh[i]>>(24-j*8));
 }
-static char shtml[4<<20];static int shlen;static time_t sgen_t;
+static char shtml[4<<20],smdl[8192];static int shlen;static time_t sgen_t;   /* smdl: models json for /tasks (A_MODELS) */
 static char sdr[P]; /* a serve <port> <dir> = static site only; UI (incl /ws shell) never exposed */
 static char RB[512];static int RL,rmt;   /* red REMOTE banner (RL bytes), rmt = RL when the viewer is remote (Sean 2026-10-03) */
 static const char*mime(const char*p,const char*d){const char*e=strrchr(p,'.');e=e?e+1:"";
@@ -84,7 +84,7 @@ static void html_gen(void){
                             ?snprintf(o,640,"<option value=\"%s\">%s → %s</option>",dln,dln,hbr)
                             :snprintf(o,640,"<option>%s</option>",dln);EMIT(o,ol)}if(df)pclose(df);}
                 else if(!strcmp(tag,"NO")){static char nb[131072];int nl2=notes_build(nb,131072);EMIT(nb,nl2)}
-                else if(!strcmp(tag,"MF"))EMIT("1",1)   /* capability: this binary honors &m= &e= */
+                else if(!strcmp(tag,"MODELS")){char mc[P];snprintf(mc,P,"python3 '%s/lib/models.py'",SDIR);pcmd(mc,smdl,8192);EMIT(smdl,(int)strlen(smdl))}
                 else{EMIT(p,(int)(end+2-p))p=end+2;continue;}
                 p=end+2;continue;}}
         EMIT(p,1)p++;
@@ -274,7 +274,7 @@ static void handle(int c){
                 out:close(r);return;}
             close(r);}}
     local:   /* new page = GET handler here + nav link in ui_full.html */
-    if(!strncmp(req,"GET /tasks",10)&&(req[10]==' '||req[10]=='?')){char cmd[P];snprintf(cmd,P,"python3 '%s/lib/task.py' page",SDIR);FILE*pp=popen(cmd,"r");size_t oc=1<<22,ol=0;char*o=malloc(oc);if(pp){ol=fread(o,1,oc-1,pp);pclose(pp);}o[ol]=0;sdoc(c,o,(int)ol);free(o);return;}
+    if(!strncmp(req,"GET /tasks",10)&&(req[10]==' '||req[10]=='?')){char cmd[P];snprintf(cmd,P,"python3 '%s/lib/task.py' page",SDIR);setenv("A_MODELS",smdl,1);FILE*pp=popen(cmd,"r");size_t oc=1<<22,ol=0;char*o=malloc(oc);if(pp){ol=fread(o,1,oc-1,pp);pclose(pp);}o[ol]=0;sdoc(c,o,(int)ol);free(o);return;}
     if(!strncmp(req,"POST /tasks/",12)||!strncmp(req,"GET /tasks/spawn?n=",19)||!strncmp(req,"GET /tasks/resume?n=",20)){
         char*bd=strstr(req,"\r\n\r\n");bd=bd?bd+4:(char*)"";char v[B*4]="",cmd[P],tf[P]="",*p;int n=0;
         if(req[0]=='G'){n=atoi(strchr(req,'=')+1);snprintf(cmd,P,"python3 '%s/lib/task.py' %s %d",SDIR,req[11]=='s'?"spawn":"resume",n);}

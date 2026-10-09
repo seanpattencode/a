@@ -1,12 +1,11 @@
 """a-side task engine, CANONICAL (i task = stub). Data adata/git/tasks.txt + tasks-archive.txt; ordinal = block order; block = `== [date] title [a:window] ==` + context lines.
 CLI: task.py [N|add <t>|ctx N <l>|down N|archive N (github-url receipt)|agent N [window|self]|date N [ts]|rank N K]; free text = add; add --by <model> = LLM task; sync = a sync."""
-import html,os,re,subprocess,sys,threading,time
+import html,json,os,re,subprocess,sys,threading,time
 D=os.environ['HOME']+'/a/adata/git';F=D+'/tasks.txt';TAG=r' ?\[a:([^\]\s]*)\]';DT=r'^== (\d{4}-\d\d-\d\d(?: \d\d:\d\d:\d\d)?|\d\d-\d\d) ' # date prefix on the title, to the second; MM-DD (days.txt form) still read
 _c=os.path.expanduser('~/a/adata/git/workspace/config.txt');_cfg=open(_c).read()if os.path.exists(_c)else''
 g=lambda k,d='':(re.search(r'^'+k+r': *(\S+)',_cfg,re.M)or(0,d))[1]
 AG=g('m_agent','claude');MD=g('m_model');EF=g('m_effort');PM=g('m_perms','bypass')
 CF='--dangerously-skip-permissions'+(MD and' --model '+MD)+(EF and' --effort '+EF) # same flags a res resumes with
-MO=dict(claude=('claude-fable-5 claude-fable-5-1 claude-opus-4-8 claude-opus-5 claude-sonnet-5 claude-haiku-4-5'.split(),'max xhigh high medium low'.split()),codex=('gpt-5.5 gpt-6-astra gpt-5'.split(),'xhigh max high medium low'.split()),agy=('gemini-3.8-flash-high gemini-3.1-pro-high'.split(),'low medium high'.split())) # models+efforts per agent, default first; all-claude incl opus 4-8 (Sean 2026-09-21: fable's separate limit forces non-fable volume; he rates 4-8 > opus 5)
 def sel(k,v,o):return'<select class=bb onchange="cf(\''+k+' \'+this.value)">'+''.join('<option'+(' selected'if x==v else'')+'>'+x+'</option>'for x in o)+'</select>'
 DVS=lambda:[DEV]+sorted(f[:-4]for f in os.listdir(D+'/ssh')if f.endswith('.txt')and f!='description.txt') # this box + every ssh host (fleet dispatch, Sean 2026-09-21)
 P0=g('prompt','default');TP=D+'/common/prompts/task-agent.txt' # a j appends common/prompts/<P0>.txt under every spawn (data.c dprompt); none = appends nothing
@@ -129,6 +128,7 @@ def resume(n):
  if not(m and r):return'x no [a:label] + resume: line'
  subprocess.run(['tmux','new-window','-d','-n',m[1],'sh','-c',r+'; exec bash'],timeout=20);return'resumed → tmux window '+m[1]
 def page(): # Local navigation; rank = file order, date = soonest first.
+ MO=json.loads(os.getenv('A_MODELS')or subprocess.run([sys.executable,__file__[:-7]+'models.py'],capture_output=True,text=True).stdout)
  W={};[W.setdefault(p[0],p[1:])for p in(l.split('\t')for l in tm('#{window_name}\t#{session_name}:#{window_index}\t#{pane_current_command}'))if len(p)==3];S=live()
  B=lambda v,t,x='',_K={'archive':'4','down':'5','rank':'0','spawn':'3','resume':'3','go':'3','agent':'a'}:(lambda k=_K.get(v):f'<button class=bb'+(f' data-k={k}' if k else '')+f' onpointerdown="tq(\'{v}\',this,\'{x}\')">{t}'+(f' ({k})' if k else '')+'</button>')();e=html.escape;LM=lambda t:re.sub(r'(?m)^(\[LLM.*)',r'<i style=color:#666>\1</i>',e(t));ls,hi=blocks();O=range(len(hi)-1);mo=MO.get(AG)or MO['claude'];apnd=P0!='none'and os.path.exists(D+'/common/prompts/'+P0+'.txt')
  def row(i,h,body):

@@ -123,11 +123,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(strchr(p,'\t')&&!strchr("<=>#",*p)){if(n<2048)lines[n++]=p;}else if((c=strchr(p,':'))&&nfq<1024){*c=0;snprintf(fq[nfq].n,64,"%s",p);fq[nfq++].c=atoi(c+1);}p=nl;}}}
     fq_index();
     {static char*acts[]={"home\tssh into homebox","tmux split-window\tpane\tnew pane below","tmux new-window\twin\topen new window","tmux kill-pane\tpane\tclose this pane","tmux kill-window\twin\tclose this window","tmux detach\tquit\tdetach, session keeps running","tmux kill-session\tquit\tkill session + windows","tmux resize-pane -Z\tpane\ttoggle pane zoom","tmux set synchronize-panes\tpane\ttoggle sync all panes",
-        "m new\tm\tnew agent file in agent/",
-        "m agent claude\tm\tswitch to Claude","m agent codex\tm\tswitch to Codex (GPT)","m agent agy\tm\tswitch to agy (Antigravity)",
-        "m model opus\tm\tClaude Opus (1M ctx, deepest)","m model sonnet\tm\tClaude Sonnet (fast/cheap)","m model haiku\tm\tClaude Haiku (fastest)","m model gpt-5\tm\tCodex GPT-5","m model gpt-5.5\tm\tCodex GPT-5.5",
-        "m model gemini-3.8-flash-high\tm\tagy Flash","m model gemini-3.1-pro-high\tm\tagy Pro",
-        "m effort low\tm\tlow reasoning effort","m effort medium\tm\tmedium effort","m effort high\tm\thigh effort","m effort max\tm\tmax (Claude only)","m effort xhigh\tm\txhigh (Codex only)",0};
+        "m new\tm\tnew agent file in agent/",0};
     for(int i=0;acts[i]&&n<2048;i++)lines[n++]=acts[i];}
     {static LNK lk[2048];for(int i=0;i<n;i++){lk[i].s=lines[i];lk[i].k=fq_get(lines[i]);lk[i].i=i;}
      qsort(lk,(size_t)n,sizeof*lk,lnk_cmp);for(int i=0;i<n;i++)lines[i]=lk[i].s;}
@@ -290,12 +286,6 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             int hs=0,cl=(int)strlen(cmd);
             for(int i=0;i<n;i++)if(!strncmp(lines[i],cmd,(size_t)cl)&&lines[i][cl]==' '){hs=1;break;}
             if(hs){snprintf(prefix,256,"%s ",cmd);buf[0]=0;blen=0;sel=0;printf("\033[J");continue;}
-            if(!strncmp(cmd,"m model ",8)||!strncmp(cmd,"m agent ",8)||!strncmp(cmd,"m effort ",9)){char cs[512];snprintf(cs,512,"a %s >/dev/null 2>&1",cmd);(void)!system(cs);load_cfg();
-                sel=0;buf[0]=0;blen=0;
-                if(!strncmp(cmd,"m agent ",8))snprintf(prefix,256,"m effort ");
-                else if(!strncmp(cmd,"m effort ",9))snprintf(prefix,256,"m model ");
-                else prefix[0]=0;
-                (void)!write(STDOUT_FILENO,"\033[2J\033[H",7);continue;}
             IRST;
             if(dexists(cmd)){char tf[P];snprintf(tf,P,"%s/cd_target",DDIR);writef(tf,cmd);return 0;}
             {int wo=!strncmp(cmd,"open ",5)?5:!strncmp(cmd,"web ",4)?4:0;
