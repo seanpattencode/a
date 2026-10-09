@@ -225,6 +225,23 @@ static int rvfl(char*f[5],char*fl){   /* the <diff>files</diff> of that a done, 
 static int rvpath(int N,int K,char*fp,int n){char*f[5];fp[0]=0;char*rl=rvline(N,f);int ok=rl?rvdoc(f[4],f[3],K,fp,n):0;free(rl);return ok;}   /* a review: K-th <doc> path of done.log line N; 1 = found */
 static void udec(const char*s,char*o,size_t n){size_t k=0;for(;*s&&*s!='&'&&k<n-1;s++){if(*s=='%'&&isxdigit((unsigned char)s[1])&&isxdigit((unsigned char)s[2])){char h[3]={s[1],s[2],0};o[k++]=(char)strtol(h,0,16);s+=2;}else o[k++]=*s=='+'?' ':*s;}o[k]=0;}   /* one urlencoded form value, stops at & */
 static const char*ktok(long b,int i){static char k[8][16];if(b<4000)snprintf(k[i],16,"%ld tok",b/4);else snprintf(k[i],16,"%.1fk tok",b/4000.);return k[i];}   /* i = caller-chosen slot: many per printf */
+static const char STREAM[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nCache-Control:no-store\r\nAccess-Control-Allow-Origin:*\r\nConnection:close\r\n\r\n";
+static void rtc_pair(int c,char*b){ /* offer/wait, read offer, answer; blocking FIFOs */
+    char*e=b?strchr(b,'\n'):0;
+    if(!e||e-b!=6||strspn(b,"0123456789ABCDEF")!=6||e[1]<'0'||e[1]>'2'||e[2]!='\n'||strlen(e+3)>=4096){sresp(c,400,"text/plain","bad pairing request",19);return;}
+    int op=e[1]-'0',f[2]={-1,-1},n=0;char dir[P],p[2][P],buf[4096];
+    snprintf(dir,P,"%s/local/webrtc-%.6s",AROOT,b);
+    if(!op&&mkdir(dir,0700)){sresp(c,409,"text/plain","code busy",9);return;}
+    for(int i=0;i<2;i++){snprintf(p[i],P,"%s/%d",dir,i);if(!op)mkfifo(p[i],0600);f[i]=open(p[i],O_RDWR);}
+    if(f[0]<0||f[1]<0){sresp(c,404,"text/plain","code not found",14);goto done;}
+    if(op==2){(void)!write(f[1],e+3,strlen(e+3));sresp(c,200,"text/plain","ok",2);goto done;}
+    if(!op){(void)!write(f[0],e+3,strlen(e+3));(void)!write(c,STREAM,sizeof STREAM-1);(void)!write(c,"\n",1);}
+    {struct pollfd q={f[op?0:1],POLLIN,0};if(poll(&q,1,90000)>0)n=(int)read(q.fd,buf,sizeof buf);}
+    if(!op){if(n>0)(void)!write(c,buf,(size_t)n);}
+    else sresp(c,n>0?200:408,"text/plain",buf,n>0?n:0);
+done:
+    for(int i=0;i<2;i++){if(f[i]>=0)close(f[i]);if(!op)unlink(p[i]);}if(!op)rmdir(dir);
+}
 static void handle(int c){
     {struct sockaddr_in sa;socklen_t sl=sizeof sa;getsockname(c,(void*)&sa,&sl);rmt=!CYG&&!sdr[0]&&sa.sin_addr.s_addr!=htonl(INADDR_LOOPBACK)?RL:0;}   /* LAN ip or a ssh tunnel (targets 127.0.0.2) = banner on every page; never on a static site */
     static char req[262144];int rn=0;
@@ -237,6 +254,7 @@ static void handle(int c){
     {char*e=strchr(req,'\r');int L=e?(int)(e-req):0;if(L>159)L=159;memcpy(rql,req,(size_t)L);rql[L]=0;}
     int one=1;setsockopt(c,IPPROTO_TCP,TCP_NODELAY,&one,4);
     if(sdr[0]){ /* static site mode: files only, no UI routes */
+        if(!strncmp(req,"POST /rtcpair ",14)){rtc_pair(c,bb?bb+4:0);return;}
         if(!strncmp(req,"POST /",6)){ /* hook: executable site/.post/<name> gets body as $1, stdout back */
             char nm[64];int i=0;const char*q=req+6;
             for(;*q&&*q!=' '&&*q!='/'&&*q!='?'&&i<63;q++)nm[i++]=*q;nm[i]=0;
@@ -247,7 +265,7 @@ static void handle(int c){
                 pid_t ch=fork();
                 if(!ch){dup2(pp[1],1);dup2(pp[1],2);close(pp[0]);close(pp[1]);signal(SIGCHLD,SIG_DFL);signal(SIGPIPE,SIG_DFL);execl(hp,hp,b,(char*)0);_exit(1);}
                 close(pp[1]);
-                {static const char SH[]="HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nCache-Control:no-store\r\nAccess-Control-Allow-Origin:*\r\nConnection:close\r\n\r\n";(void)!write(c,SH,sizeof SH-1);}
+                (void)!write(c,STREAM,sizeof STREAM-1);
                 char sb[4096];int r;while((r=(int)read(pp[0],sb,4096))>0)if(write(c,sb,(size_t)r)<0)break; /* stream as produced; client gone -> child SIGPIPEs */
                 close(pp[0]);waitpid(ch,0,0);return;}}
         if(strncmp(req,"GET /",5)){sresp(c,404,"text/plain","x",1);return;}
