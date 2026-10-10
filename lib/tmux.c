@@ -124,28 +124,28 @@ static void tm_ensure_conf(void) {
         "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ..." WH(" ^.") " #[norange] #[range=user|kbd]Kb#[norange] \"\n"
 #undef WH
         "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] ,#[fg=#000000 bg=#ffffff bold] #I:#W #[default] }\"\n"
-        /* C-Tab impossible: Tab=0x09=C-i */
+        /* C-Tab impossible: Tab=0x09=C-i; browser owns C-t/C-w/C-n: C-e=kill M-n=new (C-m=CR=Enter) */
 #define SSHIF "if -F '#{m/r:^ssh,#{pane_current_command}}' "
-        "bind -n M-Right " SSHIF "'if-shell \"a fl n #{pane_id}\" next-window' 'next-window'\n"
-        "bind -n M-Left " SSHIF "'if-shell \"a fl p #{pane_id}\" previous-window' 'previous-window'\n"
-        "bind -n C-k " SSHIF "'send C-k' 'next-window'\n"
-        "bind -n C-j " SSHIF "'send C-j' 'previous-window'\n"
-        "bind -n C-PageDown " SSHIF "'if-shell \"a fl n #{pane_id}\" next-window' 'next-window'\n"
-        "bind -n C-PageUp " SSHIF "'if-shell \"a fl p #{pane_id}\" previous-window' 'previous-window'\n"
+#define KB(k,c) "bind -n " k " " SSHIF "'send " k "' '" c "'\n"
+#define FL(k,d,c) "bind -n " k " " SSHIF "'if-shell \"a fl " d " #{pane_id}\" " c "' '" c "'\n"
+        FL("M-Right","n","next") FL("M-Left","p","prev")
+        KB("C-k","next") KB("C-j","prev")
+        FL("C-PageDown","n","next") FL("C-PageUp","p","prev")
         "bind -n PPage if -F '#{alternate_on}' 'send PPage' 'copy-mode -e ; send -X -N \"#{pane_height}\" scroll-up'\n"
-        "bind-key -n C-n new-window\n"
-        "bind -n C-t " SSHIF "'send C-t' 'new-window'\n"
-        "bind -n C-o " SSHIF "'send C-o' 'splitw -v -c \"#{pane_current_path}\"'\n"
-        "bind -n C-w " SSHIF "'send C-w' 'selectw -n;killw -t:!'\n"
-        "bind -n C-x " SSHIF "'send C-x' 'kill-pane'\n"
+        KB("C-t","neww") KB("M-n","neww")
+        KB("C-o","splitw -v -c \"#{pane_current_path}\"")
+        KB("C-w","selectw -n;killw -t:!") KB("C-e","selectw -n;killw -t:!")
+        KB("C-x","killp")
 #define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills"
         "bind -n C-. " SSHIF "'send C-.' {" AMENU "}\n"
 #undef SSHIF
-        "bind-key -n C-q detach\n"
+#undef KB
+#undef FL
+        "bind -n C-q detach\n"
         "bind -n WheelUpStatus selectw -p\n"
         "bind -n WheelDownStatus selectw -n\n", f);
     fputs(
-        "bind-key -n M-a new-window 'while a i 2>/dev/null;do sleep 1;done'\n"
+        "bind -n M-a neww 'while a i 2>/dev/null;do sleep 1;done'\n"
         "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
         "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
         "win) tmux new-window;;"
