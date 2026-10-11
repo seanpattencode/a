@@ -66,19 +66,14 @@ def agent(pids):
         for tk in cl.split("\0")[:2]:                 # argv[0:2] = exe (+ `node <script>`); the prompt sits later
             b = os.path.basename(tk)
             if b in AEXE:
-                if b == "claude": m = ID.search(cl); return ("claude", m.group(1) if m else "")
+                if b == "claude":                     # live id from claude's own pid file (argv --resume goes stale on /clear; guessing newest-in-cwd resumed a headless book run as fable/max, 10-09)
+                    try: return ("claude", json.load(open(os.path.expanduser(f"~/.claude/sessions/{p}.json")))["sessionId"])
+                    except (OSError, ValueError, KeyError): m = ID.search(cl); return ("claude", m.group(1) if m else "")
                 return (b, "")
     return (None, "")
 
 
 def have(sid): return bool(sid and glob.glob(f"{PROJ}/*/{sid}.jsonl"))
-
-
-def newest_in(cwd, skip):
-    for j in sorted(glob.glob(f"{PD(cwd)}/*.jsonl"), key=os.path.getmtime, reverse=True):
-        s = os.path.basename(j)[:-6]
-        if s not in skip: return s
-    return None
 
 
 def windows():                                        # all panes: claude may be off the active pane after `a done` splits
@@ -97,18 +92,15 @@ def save():
     if not LINUX: _ps()
     info = [(wid, n, cwd, *agent(pid), sc) for wid, n, cwd, pid, sc in windows()]
     if not info: print("x no windows — snapshot kept"); return []
-    claimed = {sid for _w, _n, _c, k, sid, _s in info if k == "claude" and have(sid)}
-    used, jobs = set(), []
+    jobs = []
     for wid, name, cwd, kind, sid, sc in info:
         if "while a i" in sc: continue
-        cmd = s = ""
-        if kind == "claude":
-            s = sid if have(sid) else newest_in(cwd, claimed | used)
-            if s and s not in used: used.add(s); cmd = RESUME["claude"] % s
+        cmd = ""
+        if kind == "claude": cmd = RESUME["claude"] % sid if have(sid) else ""
         elif kind in ("codex", "agy", "grok"): cmd = RESUME[kind]
         elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
-                     "preview": (_preview(s) if s else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
+                     "preview": (_preview(sid) if cmd and sid else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
     os.makedirs(SNAPDIR, exist_ok=True)
     gui = gui_save()
     if not gui:                                       # sway down mid-save — keep last known gui (don't clobber with emptiness)
