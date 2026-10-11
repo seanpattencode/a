@@ -55,9 +55,9 @@ static void ssh_savex(const char*dir,const char*n,const char*h,const char*pw,con
     writef(f,d);snprintf(f,P,"%s/i_cache.txt",DDIR);unlink(f);
     char g[B];snprintf(g,B,"flock /tmp/.a_git.lock sh -c \"cd %s;git add ssh/%s.txt&&git commit -qm ssh:%s&&git push -q\" 2>/dev/null &",SROOT,n,n);(void)!system(g);}
 typedef struct{char name[128],host[256],pw[256],jump[256],jpw[256],fb[128],hint[256],path[P];}host_t;
+static int ssh_num(const char*s){return s[strspn(s,"0123456789")]?-1:atoi(s);}
 static int ssh_idx(const char*a,const host_t*H,int nh){
-    if(isdigit((unsigned char)*a))return atoi(a);
-    for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,a))return i;return -1;}
+    for(int i=0;i<nh;i++)if(!strcasecmp(H[i].name,a))return i;return ssh_num(a);}
 static int cmd_ssh(int argc,char**argv){
     AB;
     char dir[P];snprintf(dir,P,"%s/ssh",SROOT);mkdirp(dir);
@@ -268,9 +268,8 @@ static int cmd_ssh(int argc,char**argv){
         for(int i=0;i<ns;i++){char o[B];int l=(int)read(S[i].fd,o,B-1);o[l>0?l:0]=0;close(S[i].fd);waitpid(S[i].pid,NULL,0);
             printf("\n%s %s\n",o[0]=='+'?"✓":"x",S[i].nm);if(o[1])printf("%s",o+1);}
         return 0;}
-    int idx=-1,ci=3;char cn[160];cn[0]=0;if(argc>3)snprintf(cn,160,"%s-%s",sub,argv[3]);
-    if(isdigit((unsigned char)*sub))idx=atoi(sub);
-    else for(int i=0;i<nh;i++){if(cn[0]&&!strcasecmp(H[i].name,cn)){idx=i;ci=4;break;}if(idx<0&&strcasestr(H[i].name,sub))idx=i;}
+    int idx=ssh_num(sub),ci=3;char cn[160]="";if(argc>3)snprintf(cn,160,"%s-%s",sub,argv[3]);
+    if(idx<0)for(int i=0;i<nh;i++){if(cn[0]&&!strcasecmp(H[i].name,cn)){idx=i;ci=4;break;}if(idx<0&&strcasestr(H[i].name,sub))idx=i;}
     if(idx<0||idx>=nh){printf("x No host %s\n",sub);return 1;}
     char hp[256],port[8];ssh_parse(H[idx].host,hp,port);
     if(!H[idx].jump[0]){char pb[B];const char*ph=strchr(hp,'@');ph=ph?ph+1:hp;
