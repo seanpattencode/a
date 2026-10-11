@@ -2,7 +2,7 @@
 # Per-file vault (Sean 10-10): open/ = plain .txt and stays; close encrypts only files newer than .closed into enc/<ts>-<host>/ — append = one file, devices union, uploads never collide; names are public, never a secret.
 # Restore anywhere (pw has NO reset — the paper export is the only recovery): read -s VP;export VP;cd enc;for f in $(find . -name '*.enc'|sort);do o=${f#./*/};mkdir -p ${o%/*};openssl enc -d -aes-256-cbc -pbkdf2 -iter 1000000 -pass env:VP -in $f -out ${o%.enc};done
 # Change pw: a vault rekey = all of open/ re-encrypted into a new dir; older cloud dirs still open with the old pw, rotate secrets if it leaked.
-umask 77;D=${A_VD:-$HOME/a/adata};V=$D/vault/open;EN=$D/vault/enc;X=$D/vault/.exported;C=$D/vault/.closed;G=${A_VG:-a-gdrive2:vault};N=$(hostname)
+umask 77;D=${A_VD:-$HOME/a/adata};V=$D/vault/open;EN=$D/vault/enc;X=$D/vault/.exported;C=$D/vault/.closed;G=${A_VG:-a-gdrive2:vault};N=$(uname -n)
 O="openssl enc -aes-256-cbc -pbkdf2 -iter 1000000 -pass env:VP"
 pw(){ stty -echo 2>/dev/null;printf 'vault pw: ';read -r VP;stty echo 2>/dev/null;echo;export VP;}
 case $1 in
