@@ -108,10 +108,11 @@ static int cmd_sync(int argc, char **argv) { (void)argc;(void)argv;AB;
     (void)!system(c);
     bg_backup_jsonl();
     {char rc[64];pcmd("rclone listremotes 2>/dev/null|grep '^a-gdrive2:'|head -1|tr -d ':'",rc,64);rc[strcspn(rc,"\n")]=0;
-    if(rc[0]){char cd[P],bd[P];snprintf(cd,P,"%s/context",AROOT);snprintf(bd,P,"%s/books",AROOT);mkdirp(cd);mkdirp(bd);
+    if(rc[0]){int lf=open("/tmp/.a_sync_rc.lock",O_CREAT|O_WRONLY|O_CLOEXEC,0644);if(lf>=0&&flock(lf,LOCK_EX|LOCK_NB)){puts("x cloud legs busy: another a sync");return 0;} /* single-flight: 27 piled up 10-11 */
+        char cd[P],bd[P];snprintf(cd,P,"%s/context",AROOT);snprintf(bd,P,"%s/books",AROOT);mkdirp(cd);mkdirp(bd);
         snprintf(c,B,"rclone copy '%s' '%s:adata/context/' -q -L 2>/dev/null;rclone copy '%s:adata/context/' '%s' -q 2>/dev/null",cd,rc,rc,cd);(void)!system(c);
-        snprintf(c,B,"cd '%s'&&ls -d .[!.]*/ 2>/dev/null|sed -e 's/[][*?{}\\\\]/\\\\&/g' -e 's|^\\.\\(.*\\)/$|- \\1/**|'>\"$TMPDIR/.bk_arc\";printf '+ */output/*.txt\\n- *\\n'>>\"$TMPDIR/.bk_arc\"",bd);(void)!system(c);
-        snprintf(c,B,"rclone copy '%s' '%s:adata/books/' --filter '- .*/**' --filter '+ */output/*.txt' --filter '- *' -q -L 2>/dev/null;rclone copy '%s:adata/books/' '%s' --filter-from \"$TMPDIR/.bk_arc\" -q 2>/dev/null",bd,rc,rc,bd);(void)!system(c);
+        snprintf(c,B,"cd '%s'&&ls -d .[!.]*/ 2>/dev/null|sed -e 's/[][*?{}\\\\]/\\\\&/g' -e 's|^\\.\\(.*\\)/$|- \\1/**|'>\"${TMPDIR:-/tmp}/.bk_arc\";printf '+ */output/*.txt\\n- *\\n'>>\"${TMPDIR:-/tmp}/.bk_arc\"",bd);(void)!system(c);
+        snprintf(c,B,"rclone copy '%s' '%s:adata/books/' --filter '- .*/**' --filter '+ */output/*.txt' --filter '- *' -q -L 2>/dev/null;rclone copy '%s:adata/books/' '%s' --filter-from \"${TMPDIR:-/tmp}/.bk_arc\" -q 2>/dev/null",bd,rc,rc,bd);(void)!system(c);
         puts("✓ context + books");}}
     return 0;
 }
