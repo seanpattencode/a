@@ -5,9 +5,6 @@ static void alog(const char *cmd, const char *cwd) {
     char lf[P]; snprintf(lf, P, "%s/local/activity/%04d-%02d_%s.txt", AROOT, tm->tm_year+1900, tm->tm_mon+1, DEV);
     FILE *f = fopen(lf, "a");
     if (!f) { char d[P]; snprintf(d, P, "%s/local/activity", AROOT); mkdirp(d); f = fopen(lf, "a"); if (!f) return; }
-    const char *sid = getenv("ASID");
-    fprintf(f, "%02d/%02d %02d:%02d %s %s %s%s%s\n",
-        tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min,
-        DEV, cmd, cwd, sid?" sid:":"", sid?sid:"");
+    fprintf(f, "%02d/%02d %02d:%02d %s %s %s\n", tm->tm_mon+1, tm->tm_mday, tm->tm_hour, tm->tm_min, DEV, cmd, cwd);
     fclose(f);
 }

@@ -353,15 +353,15 @@ def _row(n):
     try: f = open(LOC + '/done.log').read().splitlines()[int(n)].split('\t'); return f[2], f[3], int(f[0]), f[4][-50:], f[5] if len(f) > 5 else ''
     except Exception: return '', '', 0, '', ''
 
-def _tr(t, k, d):  # later sessions merely quoting k don't count
-    for f in glob.glob(d + '/*.jsonl'):
-        try:
-            if os.path.getmtime(f) >= t and k in (s := open(f, errors='ignore').read()) and any(k in l and json.loads(l)['timestamp'] < time.strftime('%FT%T', time.gmtime(t + 9)) for l in s.splitlines()): return f, s
-        except Exception: pass
-    return '', ''
+def _tr(t, k, d):  # later sessions merely quoting k don't count; grep, not python read: the corpus is GBs
+    fs = [f for f in glob.glob(d + '/*.jsonl') if os.path.getmtime(f) >= t]
+    for l in subprocess.run(['grep', '-aHF', '--', k] + fs, capture_output=True, text=True, errors='ignore').stdout.splitlines() if k.strip() and fs else []:
+        f, _, l = l.partition(':')
+        if (re.search(r'"timestamp":"([^"]*)"', l) or [0, '~'])[1] < time.strftime('%FT%T', time.gmtime(t + 9)): return f
+    return ''
 
 def _first(t, k):  # first prompt of that transcript, any project
-    try: return json.loads(re.search(r'"user","content":("(?!<)([^"\\]|\\.)*")', _tr(t, k, PROJ + '/*')[1])[1])
+    try: return json.loads(re.search(r'"user","content":("(?!<)([^"\\]|\\.)*")', open(_tr(t, k, PROJ + '/*')).read())[1])
     except Exception: return ''
 
 def watch(n):                                         # /review SSE: push on events only (pidfd exit, transcript/snapshot inotify)
@@ -382,15 +382,12 @@ def watch(n):                                         # /review SSE: push on eve
 def review(n, revive=False):
     name, cwd, t, m, rid = _row(n)
     if not LINUX: _ps()
-    ws = [w for w in windows() if w[1:3] == [name, cwd]]
-    panes = subprocess.run(['tmux', 'list-panes', '-t', ws[0][0], '-F', '#{pane_id}\t#{pane_pid}\t#{window_index}'], capture_output=True, text=True).stdout.splitlines() if len(ws) == 1 else []
-    live = [p.split('\t') for p in panes if agent([p.split('\t')[1]])[0]]
-    saved = []   # recorded sid (done.log f6) beats cwd/name drift; else transcript text-match (pre-sid rows)
-    if not live and (sid := rid if have(rid) else os.path.basename(_tr(t, m, PD(cwd))[0])[:-6]):
-        saved = [{'cmd': RESUME['claude'] % sid, 'preview': _preview(sid)}]
+    P = [p.split('\t') for p in subprocess.run(['tmux', 'list-panes', '-s', '-t', TMS, '-F', '#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{window_index}\t#{pane_id}'], capture_output=True, text=True).stdout.splitlines()]
+    live = [p for p in P for a in [agent([p[2]])] if a[0] and (rid and a[1] == rid or p[:2] == [name, cwd])]   # sid match survives label.sh/a ssh renames + cd; name+cwd = pre-sid rows and post-/clear windows
+    sid = '' if live else rid if have(rid) else os.path.basename(_tr(t, m, PROJ + '/*'))[:-6]
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
-    if len(live) == 1:
-        p, _, win = live[0]; state = 'ALIVE'
+    if live:
+        p, win = live[0][4], live[0][3]; state = 'ALIVE'
         preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-300'], capture_output=True, text=True).stdout.rstrip(); L = [l.rstrip() for l in preview.splitlines() if 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)]
         W = max(map(len, L), default=0); P = []; n = 0   # re-flow TUI hard-wraps (pane width = longest line); blank, bullet and table lines break
         for l in L:
@@ -399,9 +396,9 @@ def review(n, revive=False):
             else: P.append(l)
             n = len(l)
         preview = '\n'.join(P)
-    elif not live and len(ws) < 2 and saved:
-        state, preview = 'RESUMABLE', 'Saved output: ' + saved[0]['preview']
-        if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', saved[0]['cmd']], check=True); state = 'RESUMING'
+    elif sid:
+        state, preview = 'RESUMABLE', 'Saved output: ' + _preview(sid)
+        if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', RESUME['claude'] % sid], check=True); state = 'RESUMING'
     return dict(state=state, preview=preview, window=win)
 
 def sweep(kind, dry=False):
