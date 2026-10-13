@@ -379,11 +379,12 @@ def watch(n):                                         # /review SSE: push on eve
         else: print(':\n', flush=True)
         os.close(ifd); pfd and os.close(pfd)
 
+def panes(): return [l.split('\t') for l in subprocess.run(['tmux', 'list-panes', '-st', TMS, '-F', '#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{window_index}\t#{pane_id}'], capture_output=True, text=True).stdout.splitlines()]
+
 def review(n, revive=False):
     name, cwd, t, m, rid = _row(n)
     if not LINUX: _ps()
-    P = [p.split('\t') for p in subprocess.run(['tmux', 'list-panes', '-s', '-t', TMS, '-F', '#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{window_index}\t#{pane_id}'], capture_output=True, text=True).stdout.splitlines()]
-    live = [p for p in P for a in [agent([p[2]])] if a[0] and (rid and a[1] == rid or p[:2] == [name, cwd])]   # sid match survives label.sh/a ssh renames + cd; name+cwd = pre-sid rows and post-/clear windows
+    live = [p for p in panes() for a in [agent([p[2]])] if a[0] and (rid and a[1] == rid or p[:2] == [name, cwd])]   # sid match survives label.sh/a ssh renames + cd; name+cwd = pre-sid rows and post-/clear windows
     sid = '' if live else rid if have(rid) else os.path.basename(_tr(t, m, PROJ + '/*'))[:-6]
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
     if live:
@@ -400,6 +401,11 @@ def review(n, revive=False):
         state, preview = 'RESUMABLE', 'Saved output: ' + _preview(sid)
         if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', RESUME['claude'] % sid], check=True); state = 'RESUMING'
     return dict(state=state, preview=preview, window=win)
+
+def grep(q):   # /review search box: rows whose live pane holds q, wraps joined; w<index> = hit windows for rows without a done line
+    H = [p for p, c in [(p, subprocess.Popen(['tmux', 'capture-pane', '-pJS-', '-t', p[4]], stdout=-1)) for p in panes()] if ' '.join(q).lower().encode() in b' '.join(c.communicate()[0].lower().split())]
+    N = [k for p in H for k in (agent([p[2]])[1], f'\t{p[0]}\t{p[1]}\t') if k]
+    print(*[n for n, l in enumerate(open(LOC + '/done.log')) if any(k in l for k in N)], *{'w' + p[3] for p in H})
 
 def sweep(kind, dry=False):
     rd = lambda p: os.path.exists(p) and open(p).read() or ''
@@ -425,6 +431,7 @@ def main(a):
     if cmd in ("save", "s"): save()
     elif cmd == "show": show(a[1] if len(a) > 1 else "")
     elif cmd == "review": print(json.dumps(review(a[1], a[2:] == ['resume'])))
+    elif cmd == "grep": grep(a[1:])
     elif cmd == "watch": watch(a[1])
     elif cmd == "sweep": sweep(*a[1:])
     elif cmd == "restore": restore(dry=("--dry" in a or "-n" in a))
