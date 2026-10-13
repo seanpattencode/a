@@ -10,8 +10,8 @@ nodes only; one response per connected frame (ogs/gsi/"EvalError" rows are subfr
 import socket, threading, queue, json, sys, time, os, re, glob, subprocess
 
 PORT, CMD, LOG = 1234, 1235, '/tmp/bri.log'
-FF = '^((/usr/(bin|lib)/)?firefox-nightly|/Applications/Firefox Nightly.app/Contents/MacOS/firefox( .*)?)'
-FFP = ['pgrep','-f',FF+'$']
+FF = '^((/usr/(bin|lib)/)?firefox-nightly|/Applications/Firefox Nightly.app/Contents/MacOS/firefox)'
+FFP = ['pgrep','-f',FF+'( |$)']
 FFB = ['open','-a','Firefox Nightly'] if sys.platform=='darwin' else ['firefox-nightly']   # mac: a bare exec over ssh has no WindowServer
 pollers, pending = [], {}
 backlog = []  # no-id cmds that matched zero pollers: the ext's poll re-registration gap silently ate bursts — held 60s, delivered on the next /poll; id'd cmds stay fail-fast (a late run would double-execute under retries)
@@ -165,7 +165,7 @@ def _ffenv():
     xdg = env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}'
     socks = [os.path.basename(s) for s in sorted(glob.glob(f'{xdg}/wayland-*'),key=os.path.getmtime,reverse=True) if not s.endswith('.lock')]
     if socks: env['WAYLAND_DISPLAY'] = socks[0]
-    for c in (FFP,['pgrep','-x','sway']):   # FF$: main proc only, never a wedged launcher's wrong bus
+    for c in (FFP,['pgrep','-x','sway']):   # main proc only, never a wedged launcher's wrong bus
         for pid in subprocess.run(c,capture_output=True,text=True).stdout.split():
             try: e = dict(l.split('=',1) for l in open(f'/proc/{pid}/environ').read().split('\0') if '=' in l)
             except OSError: continue
