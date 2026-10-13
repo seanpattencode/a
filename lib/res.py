@@ -387,16 +387,7 @@ def review(n, revive=False):
     live = [p for p in panes() for a in [agent([p[2]])] if a[0] and (rid and a[1] == rid or p[:2] == [name, cwd])]   # sid match survives label.sh/a ssh renames + cd; name+cwd = pre-sid rows and post-/clear windows
     sid = '' if live else rid if have(rid) else os.path.basename(_tr(t, m, PROJ + '/*'))[:-6]
     state, preview, win = 'UNAVAILABLE', 'No saved agent for this review.', ''
-    if live:
-        p, win = live[0][4], live[0][3]; state = 'ALIVE'
-        preview = subprocess.run(['tmux', 'capture-pane', '-pJ', '-t', p, '-S', '-300'], capture_output=True, text=True).stdout.rstrip(); L = [l.rstrip() for l in preview.splitlines() if 'shift+tab' not in l and not re.fullmatch(r'\s*\d+ tokens', l)]
-        W = max(map(len, L), default=0); P = []; n = 0   # re-flow TUI hard-wraps (pane width = longest line); blank, bullet and table lines break
-        for l in L:
-            if not re.search(r'\w', l): n = 0; continue
-            if n >= W - 12 and not re.match(r'\s*([-•●⏺✓✗*>$│⎿]|\d+\.)\s', l): P[-1] += ('' if n == W and len(P[-1].rsplit(' ', 1)[-1]) > 16 else ' ') + l.strip()   # full line cut inside a long token: no space
-            else: P.append(l)
-            n = len(l)
-        preview = '\n'.join(P)
+    if live: state, preview, win = 'ALIVE', '', live[0][3]   # no text preview: /review embeds the live /op terminal instead
     elif sid:
         state, preview = 'RESUMABLE', 'Saved output: ' + _preview(sid)
         if revive: subprocess.run(['tmux', 'new-window', '-d', '-n', name, '-c', cwd, 'sh', '-c', RESUME['claude'] % sid], check=True); state = 'RESUMING'
