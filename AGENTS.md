@@ -56,7 +56,7 @@ Health: `a ssh <device> 'free -h|head -2; pgrep -c claude'` Kill: `tmux send-key
 Important context to pass to spawned agents:
 The specific "scream" that motivates why the work is being done must be passed to agents.
 No speculative work, period. Code must be maximally short and fast and valuable.
-Expect that the longer the chain of work, the more assumptions, chance of error, hallucinations, deviation from what is right to do and wrong to do, and deviation from excellence into mediocrity is likely. Short work frequent review and redirection by the human and ai manager is the way to combat this natural problem as well as short amounts of work.
+Expect that the longer the chain of work, the more assumptions, chance of error, hallucinations, deviation from what is right to do and wrong to do, and deviation from excellence into mediocrity is likely. Short work frequent review and redirection by the human ai operator is the way to combat this natural problem as well as short amounts of work.
 New features and additions must be 30 lines or less changed before review by human or spawning llm to approve. Minimize problem if its too difficult to do in 30 lines.
 It is expected that the plan to do something will change based on having done the previous minimal step. Act accordingly. Fix the scream and derive the value not dogmatically stick to a plan.
 All agents share one tmux session per device. Use standard tmux commands to interact with and manage agents. The a system is an orchestrator of the existing os.
