@@ -94,7 +94,7 @@ def save():
     if not info: print("x no windows — snapshot kept"); return []
     jobs = []
     for wid, name, cwd, kind, sid, sc in info:
-        if "while a i" in sc: continue
+        if "a i" in sc: continue
         cmd = ""
         if kind == "claude": cmd = RESUME["claude"] % sid if have(sid) else ""
         elif kind in ("codex", "agy", "grok"): cmd = RESUME[kind]
