@@ -159,24 +159,23 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             if(L2){if(!tl1){tl1=p2;ll1=L2;}else{tl2=p2;ll2=L2;}}if(!e2)break;p2=e2+1;}}
         int xtra=na?(tl2?2:(tl1||fresh)?1:0):0;
         int Wc=ws.ws_col?ws.ws_col:80;
+        int cw=0,off=0,vl=0,pos=plen+2,aw=Wc*(maxshow-3)-pos-1;char cnt[24]="";static char vis[B];if(aw>B-8)aw=B-8;if(blen>aw){pos+=cw=snprintf(cnt,24,"%dc…",blen)-2;off=blen-aw+cw;while(off<blen&&(buf[off]&0xC0)==0x80)off++;}  /* Nc count proves the paste landed */
+        for(int k=off;k<blen;k++){pos+=(buf[k]&0xC0)!=0x80;vis[vl++]=strchr("\n\t",buf[k])?' ':buf[k];}vis[vl]=0;int ir=pos/Wc;maxshow-=ir;
         int avail=maxshow-vo-xtra>0?maxshow-vo-xtra:1,ms=sel-vo,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
         int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
         double fms;{struct timespec _n;clock_gettime(CLOCK_MONOTONIC,&_n);fms=(_n.tv_sec-tk.tv_sec)*1e3+(_n.tv_nsec-tk.tv_nsec)/1e6;}
         {char rb[B*4];int rl=0;
         #define FP(...) rl+=snprintf(rb+rl,rl<B*4?(size_t)(B*4-rl):0,__VA_ARGS__)
         FP("%s\033[H\033[?25l",sv&&!ifr_on?"\033[?1049h\033[?1000h\033[?1006h\033[?2004h":"");  /* alt screen rides frame 1's write */
-        int Wr=ws.ws_col>8?ws.ws_col:80,ccol=plen+blen+3;char hint[320]="";
+        int Wr=ws.ws_col>8?ws.ws_col:80;char hint[320]="";
         #define RULE do{for(int _r=0;_r<Wr;_r++)FP("─");FP("\033[K\n");}while(0)
         RULE;
         if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
         else if(!blen&&!plen){char sn2[32]="";const char*ps=getenv("A_PSSEEN");if(ps)snprintf(sn2,32,"seen %.8s ps · ",ps);else if(ifr_ms>0)snprintf(sn2,32,"seen %.3f · ",ifr_ms);  /* ps: PowerShell painted the cached frame in-process before this exe even loaded */
             FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
-        else{int W=ws.ws_col?ws.ws_col:80,aw=W-plen-4,off=0,cw=0;char cnt[24]="";  /* tail-anchored row; Nc count proves the paste landed */
-            if(aw>440)aw=440;if(aw<8)aw=8;
-            if(blen>aw){cw=snprintf(cnt,24,"%dc…",blen)-2;aw-=cw;if(aw<8)aw=8;off=blen-aw;while(off<blen&&(buf[off]&0xC0)==0x80)off++;}
-            char vis[512];int vl=0;for(int k=off;k<blen;k++,vl++)vis[vl]=(char)(buf[k]=='\n'||buf[k]=='\t'?' ':buf[k]);vis[vl]=0;
-            FP("%s> \033[90m%s\033[0m%s\033[K\n",plen?prefix:"",cnt,vis);ccol=plen+3+cw+vl;
+        else{int W=Wc;
+            FP("%s> \033[90m%s\033[0m%s \033[K\n",plen?prefix:"",cnt,vis);  /* ' ' wraps a full row */
             if(!plen){int hw=W-31-(int)strlen(ag)-(int)strlen(ef);if(hw<8)hw=8;if(hw>vl)hw=vl;
                 snprintf(hint,320,"↵ new tmux win → %s eff=%s : \"%s%s\"",ag,ef,blen>hw?"…":"",vis+vl-hw);}}
         RULE;
@@ -206,7 +205,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             int dl=(int)strnlen(desc,(size_t)dc+(size_t)hm);while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;
             FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
             if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",Wc-dc,dl,desc);FP("\n");}
-        FP("\033[J\033[2;%dH\033[?25h",ccol);
+        FP("\033[J\033[%d;%dH\033[?25h",2+ir,pos%Wc+1);
         #undef FP
         twrite(rb,(size_t)rl);
         if(sv){sv=0;tcsetattr(0,TCSANOW,&raw_t);init_dev();init_db();load_cfg();
@@ -233,7 +232,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     while(read(0,&mc,1)==1&&mc!=';')mb=mb*10+mc-'0';
                     while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
-                    if(mc=='M'){if(!mb){int rr=my-4;if(rr>=0&&rr<vo){sel=rr;do_pick=1;}
+                    if(mc=='M'){if(!mb){int rr=my-4-ir;if(rr>=0&&rr<vo){sel=rr;do_pick=1;}
                         else{int ci=top+rr-vo-xtra;if(rr>=vo+xtra&&ci>=0&&ci<nm){sel=ci+vo;do_pick=1;}}}
                     else if(mb==64&&sel>0){sel--;}else if(mb==65&&sel<tot-1){sel++;}}}
                 else if(seq[1]=='2'){char d0=0,d1=0;act="paste";
