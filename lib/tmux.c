@@ -85,10 +85,10 @@ static void jcmd_fill(char*b,int cont,const char*wd,const char*extra){
     snprintf(b,B,"tmux splitw -vd -p50 -t $TMUX_PANE;%s;e=$?;[ $e -ne 0 ]&&echo \"$(date) $e $(pwd)\">>%s/crashes.log;exec bash",run,LOGDIR);}
 
 static void tm_ensure_conf(void) {
-    if (strcmp(cfget("tmux_conf"), "y") != 0) return;
+    if(strcmp(cfget("tmux_conf"),"y"))return;
     if(fork())return;setsid();
-    char adir[P];snprintf(adir,P,"%s/.a",HOME);mkdirp(adir);
-    char cpath[P];snprintf(cpath,P,"%s/tmux.conf",adir);
+    char cpath[P];snprintf(cpath,P,"%s/.a",HOME);mkdirp(cpath);
+    snprintf(cpath,P,"%s/.a/tmux.conf",HOME);
     FILE*f=fopen(cpath,"w");if(!f)return;
     const char *cc = clip_cmd();
     fputs("# aio-managed-config\nset-hook -gu after-new-window\nset-hook -gu session-created\nset -qwg pane-scrollbars on\n"
@@ -121,9 +121,9 @@ static void tm_ensure_conf(void) {
         "set -g status-right \"\"\n"
 /* ^key hints only on wide clients */
 #define WH(x) "#{?#{e|>:#{client_width},70}," x ",}"
-        "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ..." WH(" ^.") " #[norange] #[range=user|kbd]Kb#[norange] \"\n"
+        "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ..." WH(" ^.") " #[norange] #[range=user|kbd]Kb#[norange] #{?pane_in_mode,#[range=user|bot] ⤓,#[range=user|top] ⤒}#[norange]\"\n"
 #undef WH
-        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#{W:#[range=window|#{window_index}]#{?window_bell_flag,#[fg=white bg=red bold],#[fg=colour231 bg=black]} #{?window_bell_flag,\\U0001F534 ,}#I:#W #[default]#[norange] ,#[fg=#000000 bg=#ffffff bold] #I:#W #[default] }\"\n"
+        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#[fg=#000000 bg=#ffffff range=user|find] ⌕ find window (#{session_windows}) #[norange bg=default] #[bg=#ffffff] #I:#W \"\n"
         /* C-Tab impossible: Tab=0x09=C-i; browser owns C-t/C-w/C-n: C-e=kill M-n=new (C-m=CR=Enter) */
 #define SSHIF "if -F '#{m/r:^ssh,#{pane_current_command}}' "
 #define KB(k,c) "bind -n " k " " SSHIF "'send " k "' '" c "'\n"
@@ -143,34 +143,28 @@ static void tm_ensure_conf(void) {
 #undef FL
         "bind -n C-q detach\n"
         "bind -n WheelUpStatus selectw -p\n"
-        "bind -n WheelDownStatus selectw -n\n", f);
-    fputs(
+        "bind -n WheelDownStatus selectw -n\n"
         "bind -n M-a neww 'while a i 2>/dev/null;do sleep 1;done'\n"
-        "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},window}' "
-        "{ selectw } { run-shell 'case \"#{mouse_status_range}\" in "
+        "bind -T root MouseDown1Status if -F '#{==:#{mouse_status_range},find}' "
+        "{ neww -S -n find 'A_FILT_TAG=win a i' } { run-shell 'case \"#{mouse_status_range}\" in "
         "win) tmux new-window;;"
         "prev) tmux prev;; next) tmux next;; aa) tmux neww a;; new) tmux splitw;; "
-        "x) tmux killp;; close) tmux killw;; "
+        "x) tmux killp;; close) tmux killw;; top) tmux copy-mode -e \\; send -X history-top;; bot) tmux copy-mode -q;; "
         "menu) tmux " AMENU ";; "
         "kbd) tmux set -g mouse off; tmux display \"Mouse off 3s\"; "
-        "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n",
-        f);
+        "(sleep 3; tmux set -g mouse on) &;; esac;:' }\n",f);
 #undef AMENU
-    if (access("/data/data/com.termux",F_OK)==0)
+    if(!access("/data/data/com.termux",F_OK))
         fprintf(f,"set-environment -g CLAUDE_CODE_TMPDIR \"%s/.tmp\"\n",HOME);
-    if (cc) fprintf(f, "set -s copy-command \"%s\"\n", cc);
-    {const char*cm[]={"copy-mode","copy-mode-vi",NULL};const char*wn="#{?#{e|>:#{client_width},100},#{pane_height},3}";
-    for(int i=0;cm[i];i++){ cc?fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel \"%s\"\n",cm[i],cc)
-        :fprintf(f,"bind -T %s MouseDragEnd1Pane send -X copy-pipe-and-cancel\n",cm[i]);
-        static const char*K[]={"PPage","NPage","WheelUpPane","WheelDownPane"};for(int k=0;k<4;k++)fprintf(f,"bind -T %s %s send -X -N '%s' scroll-%s\n",cm[i],K[k],k<2?"#{pane_height}":wn,k&1?"down":"up");}}
+    if(cc)fprintf(f,"set -s copy-command \"%s\"\n",cc);
+    {const char*cm[]={"root","copy-mode","copy-mode-vi",NULL},*wn="#{?#{e|>:#{client_width},100},#{pane_height},3}";
+    for(int i=0;cm[i];i++){fprintf(f,"unbind -T %s DoubleClick1Pane\nunbind -T %s TripleClick1Pane\n",cm[i],cm[i]);   /* their word/line copy overwrote the clipboard */
+        static const char*K[]={"PPage","NPage","WheelUpPane","WheelDownPane"};for(int k=0;i&&k<4;k++)fprintf(f,"bind -T %s %s send -X -N '%s' scroll-%s\n",cm[i],K[k],k<2?"#{pane_height}":wn,k&1?"down":"up");}}
     fclose(f);
-    char uconf[P];snprintf(uconf,P,"%s/.tmux.conf",HOME);
-    char*uc=readf(uconf,NULL);
-    if(!uc||!strstr(uc,"~/.a/tmux.conf")){
-        FILE*uf=fopen(uconf,"a");
-        if(uf){fputs("\nsource-file -q ~/.a/tmux.conf  # a\n",uf);fclose(uf);}
-    }
-    free(uc);
     {char cmd[B];snprintf(cmd,B,"tmux source-file '%s' 2>/dev/null&&tmux refresh-client -S 2>/dev/null",cpath);(void)!system(cmd);}
+    snprintf(cpath,P,"%s/.tmux.conf",HOME);
+    char*uc=readf(cpath,NULL);
+    if(!uc||!strstr(uc,"~/.a/tmux.conf")){FILE*uf=fopen(cpath,"a");if(uf){fputs("\nsource-file -q ~/.a/tmux.conf  # a\n",uf);fclose(uf);}}
+    free(uc);
     _exit(0);
 }
