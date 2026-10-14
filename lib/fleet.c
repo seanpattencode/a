@@ -31,7 +31,8 @@ static int f_sh(const char *host, const char *sc) {                     /* run s
         FBASH(sc) }
     close(pf[1]); return pf[0];
 }
-static const char *FLQ =
+static const char *FLQ =   /* line 1 = remote tm_ensure_sess: a fleet wakes every box */
+"tmux has-session -t a||{ tmux new -d -s a 'while $HOME/.local/bin/a i 2>/dev/null;do sleep 1;done';tmux set -g @res 1;a snap restore; } </dev/null >/dev/null\n"
 "m=$(if [ -r /proc/meminfo ];then awk '/MemAvailable/{a=$2}/MemTotal/{t=$2}END{printf \"%.1f/%.1fG\",a/1048576,t/1048576}' /proc/meminfo;"
 "else echo \"$(vm_stat 2>/dev/null|awk '/Pages free|Pages inactive/{s+=$3}END{printf \"%.1f\",s*4096/1073741824}')/$(sysctl -n hw.memsize 2>/dev/null|awk '{printf \"%.1fG\",$1/1073741824}')\";fi)\n"
 "ag=$(( $(pgrep -x claude 2>/dev/null|wc -l)+$(pgrep -x grok 2>/dev/null|wc -l) ))\n"
