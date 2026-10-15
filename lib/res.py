@@ -13,6 +13,7 @@ SNAP = f"{SNAPDIR}/{DEV}.json"
 PROJ = os.path.expanduser("~/.claude/projects")
 PD = lambda cwd: PROJ + "/" + "".join(c if c.isalnum() else "-" for c in cwd)
 ID = re.compile(r"--(?:resume|session-id)[ =]+([0-9a-f-]{36})")
+UUID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
 try: C = dict(re.findall(r"^m_(\w+): *(.*)", open(f"{GIT}/workspace/config.txt").read(), re.M))
 except OSError: C = {}
 MF = "".join(f" --{k} {C[k]}" for k in ("model", "effort") if C.get(k)) if C.get("agent", "claude") == "claude" else ""
@@ -114,34 +115,62 @@ def save():
         tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"
         print(f"   {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
     try: park()
-    except Exception as e: print("x park:", e)
+    except Exception as e: print("x park:", e)    # a park bug must never break the snapshot pass (one timer runs save+park)
     return jobs
 
 
-HOLD = f"""#!/bin/bash
-# a hold — parked agent (a res park): kB placeholder in the agent's own pane; visiting the window (or any key) resumes it
+HOLD = """#!/bin/bash
+# a hold — parked agent (a res park): kB placeholder in the pane; visiting the window (or any key) resumes it
 printf '\\033[?1004h'
-tail -n40 "$1" | jq -r 'select(.type=="assistant").message.content[]?|select(.type=="text").text' 2>/dev/null | tail -3 | cut -c-200
-printf '\\n⏸ parked · visit or key resumes · claude %s\\n' "${{2:0:7}}"
+tail -n8 "$1" 2>/dev/null
+printf '\\n⏸ parked %s · visit or key resumes\\n' "$3"
 IFS= read -rsn1 -d ''; while IFS= read -rsn1 -t 0.1; do :; done
 printf '\\033[?1004l'
-exec bash -c "{RESUME['claude'] % '$2'}"
+exec bash -c "$2"
 """
 
-def park():                                           # cold agent → holder in its own pane (sleeping tabs); cache TTL is 1h so ≥60min park is free
+def _presume(kind, pids, cwd, sc):                    # non-claude resume: (shell cmd, transcript file for the idle clock) else (None, None)
+    ids = UUID.findall(" ".join(_cmdline(t) for pid in pids for t in tree(pid)).replace("\0", " ")) if kind else []
+    if kind == "codex":                               # explicit uuid in argv, else newest rollout recorded for this cwd
+        for f in sorted(glob.glob(os.path.expanduser("~/.codex/sessions/*/*/*/rollout-*.jsonl")), key=os.path.getmtime, reverse=True)[:40]:
+            try: m = json.loads(open(f).readline())["payload"]
+            except (OSError, ValueError, KeyError): continue   # rollout mid-write or old schema — not this one, keep scanning
+            if m["session_id"] in ids or (not ids and m.get("cwd") == cwd): return f"codex resume {m['session_id']}; exec bash", f
+    if kind == "agy":                                 # agy's own cwd → conversation map (what -c resumes)
+        try: sid = ids[0] if ids else json.load(open(os.path.expanduser("~/.gemini/antigravity-cli/cache/last_conversations.json")))[cwd]
+        except (OSError, ValueError, KeyError): return None, None   # no conversation map or cwd never used — nothing safe to resume
+        return f"agy --dangerously-skip-permissions --conversation {sid}; exec bash", None
+    if kind == "grok": return (f"grok --always-approve --resume {ids[0]}; exec bash" if ids else RESUME["grok"]), None
+    for p in (t for pid in pids for t in tree(pid)):                                    # a m native agent: FILE = the agent
+        cl = _cmdline(p).split("\0")
+        if os.path.basename(cl[0] or "") == "a" and cl[1:2] == ["m"] and len(cl) > 2 and cl[2] != "new":
+            return f"a m {cl[2]}", f"{GIT}/m/agents/{cl[2]}.txt"
+    return None, None
+
+def park(target=None):                                # cold agent → holder in its own pane (sleeping tabs); `a res park <win>` parks one now
     try: sec = int(os.environ.get("A_PARK_SEC") or 60 * int((re.search(r"^park_min: *(\d+)", open(f"{GIT}/workspace/config.txt").read(), re.M) or (0, "60"))[1]))
-    except (OSError, ValueError): sec = 3600          # config park_min: minutes, 0 = off; A_PARK_SEC (seconds) for rigs
-    if sec <= 0: return
+    except (OSError, ValueError): sec = 3600          # park_min: minutes, 0 = off; A_PARK_SEC (seconds) for rigs; no/garbage config → 60 min
+    if sec <= 0 and not target: return
     seen = {l.strip() for l in os.popen("tmux list-clients -F '#{window_id}'")}         # windows a human is looking at now
-    for w, n, cwd, pids, sc in windows():
-        kind, sid = agent(pids)
-        fp = glob.glob(f"{PROJ}/*/{sid}.jsonl") if sid else []
-        if kind != "claude" or not fp or w in seen or len(pids) > 1 or "a i" in sc: continue   # multi-pane = a done review pending
-        idle = time.time() - os.path.getmtime(fp[0])
-        if idle < sec: continue
-        open(f"{LOC}/hold.sh", "w").write(HOLD)
-        subprocess.run(["tmux", "respawn-pane", "-k", "-t", w, "bash", f"{LOC}/hold.sh", fp[0], sid])
-        print(f"⏸ parked {n} · idle {int(idle)}s · visit the window to resume {sid[:7]}")
+    act = dict(l.split() for l in os.popen(f"tmux lsw -t {TMS} -F '#{{window_id}} #{{window_activity}}'") if " " in l)
+    rows = [(w, n, cwd, pids, sc, *agent(pids)) for w, n, cwd, pids, sc in windows()]
+    percwd = {}
+    for r in rows: percwd[(r[5], r[2])] = percwd.get((r[5], r[2]), 0) + 1
+    for w, n, cwd, pids, sc, kind, sid in rows:
+        if target and target not in (w, n, w[1:]): continue
+        if "a i" in sc or len(pids) > 1 or (not target and w in seen): continue         # multi-pane = a done review pending
+        if kind == "claude" and have(sid): cmd, f = RESUME["claude"] % sid, glob.glob(f"{PROJ}/*/{sid}.jsonl")[0]
+        elif kind in ("codex", "grok", "agy") and percwd[(kind, cwd)] > 1: continue     # newest-per-cwd resume would cross threads
+        else: cmd, f = _presume(kind, pids, cwd, sc)
+        if not cmd: continue
+        idle = time.time() - (os.path.getmtime(f) if f and os.path.exists(f) else int(act.get(w, "0")))   # no transcript → tmux window_activity
+        if idle < sec and not target: continue
+        os.makedirs(f"{LOC}/hold", exist_ok=True)
+        tf = f"{LOC}/hold/{w[1:]}.txt"
+        open(tf, "w").write("\n".join(l for l in os.popen(f"tmux capture-pane -p -t {w}").read().splitlines() if l.strip())[-700:] + "\n")
+        open(f"{LOC}/hold.sh.tmp", "w").write(HOLD); os.replace(f"{LOC}/hold.sh.tmp", f"{LOC}/hold.sh")   # rename: live holders keep their inode
+        subprocess.run(["tmux", "respawn-pane", "-k", "-t", w, "bash", f"{LOC}/hold.sh", tf, cmd, kind or "a m"])
+        print(f"⏸ parked {n} · idle {int(idle)}s · visit resumes: {cmd[:56]}")
 
 
 def _sway(*args):
@@ -450,7 +479,7 @@ def main(a):
     cmd = a[0] if a else ("save" if via == "snap" else "")          # bare `a snap` = save (back-compat); res/resume = pick
     if cmd in ("save", "s"): save()
     elif cmd == "show": show(a[1] if len(a) > 1 else "")
-    elif cmd == "park": park()
+    elif cmd == "park": park(a[1] if len(a) > 1 else None)
     elif cmd == "review": print(json.dumps(review(a[1], a[2:] == ['resume'])))
     elif cmd == "grep": grep(a[1:])
     elif cmd == "watch": watch(a[1])
