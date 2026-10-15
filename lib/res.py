@@ -98,6 +98,7 @@ def save():
         cmd = ""
         if kind == "claude": cmd = RESUME["claude"] % sid if have(sid) else ""
         elif kind in ("codex", "agy", "grok"): cmd = RESUME[kind]
+        elif "hold.sh" in sc: cmd = sc              # parked (a res park) → restore the holder: lazy resume
         elif os.path.exists(HOST % name): cmd = "a ssh %s; exec bash" % name
         jobs.append({"window": name, "cwd": cwd, "cmd": cmd,
                      "preview": (_preview(sid) if cmd and sid else "") or _pane_tail(wid)})  # bake tail → syncs cross-device; pane tail when transcript is silent
@@ -112,7 +113,35 @@ def save():
     for j in jobs:
         tag = j["cmd"].split()[0] if j["cmd"] else "(shell)"
         print(f"   {j['window']:16.16} {tag:8.8} {j['preview'][:56]}")
+    try: park()
+    except Exception as e: print("x park:", e)
     return jobs
+
+
+HOLD = f"""#!/bin/bash
+# a hold — parked agent (a res park): kB placeholder in the agent's own pane; visiting the window (or any key) resumes it
+printf '\\033[?1004h'
+tail -n40 "$1" | jq -r 'select(.type=="assistant").message.content[]?|select(.type=="text").text' 2>/dev/null | tail -3 | cut -c-200
+printf '\\n⏸ parked · visit or key resumes · claude %s\\n' "${{2:0:7}}"
+IFS= read -rsn1 -d ''; while IFS= read -rsn1 -t 0.1; do :; done
+printf '\\033[?1004l'
+exec bash -c "{RESUME['claude'] % '$2'}"
+"""
+
+def park():                                           # cold agent → holder in its own pane (sleeping tabs); cache TTL is 1h so ≥60min park is free
+    try: sec = int(os.environ.get("A_PARK_SEC") or 60 * int((re.search(r"^park_min: *(\d+)", open(f"{GIT}/workspace/config.txt").read(), re.M) or (0, "60"))[1]))
+    except (OSError, ValueError): sec = 3600          # config park_min: minutes, 0 = off; A_PARK_SEC (seconds) for rigs
+    if sec <= 0: return
+    seen = {l.strip() for l in os.popen("tmux list-clients -F '#{window_id}'")}         # windows a human is looking at now
+    for w, n, cwd, pids, sc in windows():
+        kind, sid = agent(pids)
+        fp = glob.glob(f"{PROJ}/*/{sid}.jsonl") if sid else []
+        if kind != "claude" or not fp or w in seen or len(pids) > 1 or "a i" in sc: continue   # multi-pane = a done review pending
+        idle = time.time() - os.path.getmtime(fp[0])
+        if idle < sec: continue
+        open(f"{LOC}/hold.sh", "w").write(HOLD)
+        subprocess.run(["tmux", "respawn-pane", "-k", "-t", w, "bash", f"{LOC}/hold.sh", fp[0], sid])
+        print(f"⏸ parked {n} · idle {int(idle)}s · visit the window to resume {sid[:7]}")
 
 
 def _sway(*args):
@@ -421,6 +450,7 @@ def main(a):
     cmd = a[0] if a else ("save" if via == "snap" else "")          # bare `a snap` = save (back-compat); res/resume = pick
     if cmd in ("save", "s"): save()
     elif cmd == "show": show(a[1] if len(a) > 1 else "")
+    elif cmd == "park": park()
     elif cmd == "review": print(json.dumps(review(a[1], a[2:] == ['resume'])))
     elif cmd == "grep": grep(a[1:])
     elif cmd == "watch": watch(a[1])
