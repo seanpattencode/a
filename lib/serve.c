@@ -692,8 +692,8 @@ static void handle(int c){
             if(mv[0])setenv("A_MODEL",mv,1);if(ev[0])setenv("A_EFFORT",ev,1);
             if(dn>=0){load_proj();if(dn>=NPJ||chdir(PJ[dn].path)){dprintf(1,"x no folder: project %d\n",dn);_exit(1);}dprintf(1,"in %s\n",PJ[dn].path);}
             char*args[32]={"a"};int ac=1;char*p2=cmd;
-            while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(*p2)*p2++=0;}
-            args[ac]=NULL;execvp("a",args);
+            while(*p2&&ac<31){while(*p2==' ')p2++;if(!*p2)break;args[ac++]=p2;while(*p2&&*p2!=' ')p2++;if(ac<31&&*p2)*p2++=0;}
+            execvp("a",args);
             _exit(1);}
         close(pp[1]);char out[8192];int ol=0;
         {int r;while((r=(int)read(pp[0],out+ol,(size_t)(8191-ol)))>0)ol+=r;}
