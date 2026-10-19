@@ -457,11 +457,15 @@ static void handle(int c){
         char*ch=malloc(e2-o+1);memcpy(ch,txt+o,e2-o);ch[e2-o]=0;free(txt);
         if(strstr(req,"txt=1")){char hh[192];int hn=snprintf(hh,192,"HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nContent-Length:%zu\r\nX-Next:%zu\r\nConnection:close\r\n\r\n",e2-o,e2);   /* apk speaks it (A.say); X-Next chains chunks */
             (void)!write(c,hh,(size_t)hn);(void)!write(c,ch,e2-o);free(ch);return;}
+        int lv=!!strstr(req,"live=1"),lp[2];if(lv&&pipe(lp))lv=0;   /* live=1: stream say's stderr (voice= header + \xe2\x96\xb6 i/N per sentence) until it exits */
         pid_t k=fork();
-        if(!k){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0){dup2(dn,1);dup2(dn,2);}
+        if(!k){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0)dup2(dn,1);
+            if(lv){dup2(lp[1],2);close(lp[0]);close(lp[1]);}else if(dn>=0)dup2(dn,2);
             signal(SIGCHLD,SIG_DFL);execlp("a","a","say",ch,(char*)0);_exit(127);}
         free(ch);
         if(k>0){char pb[24];int pn=snprintf(pb,24,"%d",k);int pfd=open(sf2,O_WRONLY|O_CREAT|O_TRUNC,0644);if(pfd>=0){(void)!write(pfd,pb,(size_t)pn);close(pfd);}}
+        if(lv){close(lp[1]);const char*sh2="HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nConnection:close\r\n\r\n";(void)!write(c,sh2,strlen(sh2));
+            char lb[512];ssize_t lr;while((lr=read(lp[0],lb,512))>0)if(write(c,lb,(size_t)lr)<0)break;close(lp[0]);return;}
         sresp(c,200,"text/plain","on",2);return;}
     if(!strncmp(req,"GET /bookarchive",16)){char nm[128];qn(req,nm);  /* dot-prefix = archive; restore: a book archive <substr> */
         if(!bkok(nm)||nm[0]=='.'){sresp(c,400,"text/plain","bad book",8);return;}
@@ -570,7 +574,7 @@ static void handle(int c){
             "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
             "function O(){var r=K.getBoundingClientRect(),o;for(var y=2;y<120;y+=8){o=C(r.left+32,r.top+y);if(o!=null)return o;}return P;}"
             "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.round(K.scrollTop/ph());}"
-            "function U(){hud.textContent='pg '+(pg+1)+'/'+(NP()+1);}"
+            "function U(){hud.textContent='pg '+(pg+1)+'/'+(NP()+1)+(sp&&MD?' Â· '+MD:'');}"
             "function save(){var b='pos='+O(),u='/book?n='+encodeURIComponent(N);navigator.sendBeacon?navigator.sendBeacon(u,new Blob([b],{type:'application/x-www-form-urlencoded'})):fetch(u,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});}"
             /* whole-screen pages via scrollTop (sync, sub-ms); flip on pointerdown/wheel/keys */
             "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,st;"
@@ -610,17 +614,25 @@ static void handle(int c){
             "np.addEventListener('pointerdown',function(e){e.stopPropagation()});"
             "nq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Escape')np.style.display='none';else if(e.key==='Enter'&&nq.value.trim()){fetch('/api/omni',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent('book note '+N+' @'+O()+' '+nq.value.trim())}).then(function(r){return r.text()}).then(function(t){hud.textContent=t.replace(/<[^>]*>/g,'').trim().slice(0,40);setTimeout(U,3000)});nq.value='';np.style.display='none'}});"
             "fq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Enter'){if(fq.value!==FV){FV=fq.value;FN(FV)}FG(e.shiftKey?-1:1)}else if(e.key==='Escape')FT(0)});"
-            /* speak: apk in-app (A.say narrator, A.media shade notif, shade keys land on #p) else server-side a say; _srng word ranges highlight + auto-flip; _sdone + X-Next chain chunks */
-            "var sp=0,cs=0,nx=0;function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}}"
-            "function SPN(p){fetch('/booksay?n='+encodeURIComponent(N)+'&pos='+p+'&txt=1').then(function(r){nx=+r.headers.get('x-next')||0;return r.text()}).then(function(t){var i=TX.indexOf(t.slice(0,60),Math.max(0,p-800));cs=i<0?p:i;A.say(t);sp=1;UP()})}"
-            "window._sdone=function(){if(sp&&nx&&nx<TX.length)SPN(nx);else{sp=0;UP()}};"
+            /* speak: apk in-app (A.say narrator, _srng word ranges) else server a say with live=1 stderr stream (voice= + \xe2\x96\xb6 i/N sentence lines); chunk highlighted on start either way; _sdone + X-Next chain chunks */
+            "var sp=0,cs=0,nx=0,ct='',MD='';function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}U()}"
+            "function SQ(){var r=/(?<=[.!?])\\s+|\\n\\s*\\n+/g,o=[],a=0,m;while(m=r.exec(ct)){if(/\\S/.test(ct.slice(a,m.index)))o.push([a,m.index]);a=r.lastIndex}if(/\\S/.test(ct.slice(a)))o.push([a,ct.length]);return o}"
+            "function SPN(p){fetch('/booksay?n='+encodeURIComponent(N)+'&pos='+p+'&txt=1').then(function(r){nx=+r.headers.get('x-next')||0;return r.text()}).then(function(t){var i=TX.indexOf(t.slice(0,60),Math.max(0,p-800));cs=i<0?p:i;ct=t;sp=1;_srng(0,t.length);"
+            "if(window.A&&A.say){try{A.pitch&&A.pitch(''+(localStorage.bkp||.48))}catch(x){}A.say(t);setTimeout(function(){try{MD=A.voice()||MD}catch(x){}U()},1200);UP()}else{UP();LV(p)}})}"
+            "function LV(p){fetch('/booksay?n='+encodeURIComponent(N)+'&pos='+p+'&live=1').then(function(r){var d=r.body.getReader(),x=new TextDecoder(),b='',sq=SQ();"
+            "function st(o2){b+=x.decode(o2.value||new Uint8Array(0),{stream:!o2.done});var L=b.split('\\n');b=o2.done?'':L.pop();"
+            "L.forEach(function(l){l=l.replace(/\\x1b\\[[0-9;]*m/g,'');var v=l.match(/voice=(\\S+)/);if(v){MD=v[1];U()}"
+            "var g=l.match(/\\u25b6 (\\d+)\\/(\\d+)/);if(g&&+g[2]==sq.length&&sq[g[1]-1])_srng(sq[g[1]-1][0],sq[g[1]-1][1])});"
+            "if(o2.done)_sdone();else return d.read().then(st)}return d.read().then(st)})}"
+            "window._sdone=function(){if(sp&&nx&&nx<TX.length)SPN(nx);else{sp=0;UP();try{CSS.highlights.delete('spk')}catch(x){}}};"
             "function RG(a,b){var g=document.createRange(),i=ns.length-1;while(i>0&&a<bs[i])i--;g.setStart(ns[i],Math.min(a-bs[i],ns[i].length));i=ns.length-1;while(i>0&&b<bs[i])i--;g.setEnd(ns[i],Math.min(b-bs[i],ns[i].length));return g}"
             "window._srng=function(s,e){try{var g=RG(cs+s,cs+e);CSS.highlights.set('spk',new Highlight(g));var r=g.getBoundingClientRect(),k=K.getBoundingClientRect();if(r.bottom>k.bottom||r.top<k.top){R(cs+s);G(Math.round(K.scrollTop/ph()))}}catch(x){}};"
-            "function SP(x){if(window.A&&A.say){if(x){A.shush();sp=0;UP();CSS.highlights&&CSS.highlights.delete('spk')}else SPN(O());return}"
-            "fetch('/booksay?n='+encodeURIComponent(N)+(x?'&stop=1':'&pos='+O())).then(function(r){return r.text()}).then(function(t){sp=t=='on'?1:0;UP()},function(){sp=0;UP()})}"
+            "function SP(x){if(x){window.A&&A.say?A.shush():fetch('/booksay?n='+encodeURIComponent(N)+'&stop=1');sp=0;UP();try{CSS.highlights.delete('spk')}catch(x2){}}else SPN(O())}"
             "ms.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();SP(sp)});"
             "tr.addEventListener('pointerdown',function(e){e.stopPropagation()});"
             "var pe=document.createElement('b');pe.id='p';pe.play=function(){SP(0)};pe.pause=function(){SP(1)};document.body.appendChild(pe);"
+            /* android pitch slider (apk A.pitch bridge; persisted, applies from the next chunk) */
+            "if(window.A&&A.pitch){var pr=document.createElement('input');pr.type='range';pr.min=.3;pr.max=1.2;pr.step=.02;pr.value=localStorage.bkp||.48;pr.style.cssText='width:42%%;align-self:center';pr.oninput=function(){localStorage.bkp=pr.value;try{A.pitch(''+pr.value)}catch(x){}hud.textContent='pitch '+pr.value};var pl2=document.createElement('b');pl2.textContent='pitch';pl2.style.cssText='color:#999;font:16px system-ui;align-self:center;padding-left:8px';op.appendChild(pl2);op.appendChild(pr)}"
             "</script>",nm,pos);
         sdoc(c,pg,hl);free(pg);return;}
     if(!strncmp(req,"GET /bookfile",13)){char nm[128];qn(req,nm);  /* raw book asset with real mime → pdf opens in the browser's viewer */

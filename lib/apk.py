@@ -53,15 +53,17 @@ ms!!.setPlaybackState(PlaybackState.Builder().setActions(PlaybackState.ACTION_PL
 ms!!.isActive=true;Ms.tok=ms!!.sessionToken;Ms.title=title;Ms.playing=pl
 if(pl)try{startForegroundService(Intent(this,Ms::class.java))}catch(e:Exception){} else{Ms.inst?.stopForeground(2);Ms.upd(this)}}}   /* paused: drop FGS, keep notif so controls stay */
 /* in-app narrator: GBD voice @0.48 (= say.sh/Rdr picks); backgrounded termux can't am-start the TTS apk, which lost this voice */
-private var tt:android.speech.tts.TextToSpeech?=null
+private var tt:android.speech.tts.TextToSpeech?=null;private var pv=0.48f
 @JavascriptInterface fun say(t:String){h.post{
-if(tt==null)tt=android.speech.tts.TextToSpeech(this,android.speech.tts.TextToSpeech.OnInitListener{st->if(st==android.speech.tts.TextToSpeech.SUCCESS){val x=tt!!;x.voices?.firstOrNull{it.name=="en-gb-x-gbd-network"}?.let{x.setVoice(it)};x.setPitch(0.48f)
+if(tt==null)tt=android.speech.tts.TextToSpeech(this,android.speech.tts.TextToSpeech.OnInitListener{st->if(st==android.speech.tts.TextToSpeech.SUCCESS){val x=tt!!;x.voices?.firstOrNull{it.name=="en-gb-x-gbd-network"}?.let{x.setVoice(it)};x.setPitch(pv)
 x.setOnUtteranceProgressListener(object:android.speech.tts.UtteranceProgressListener(){override fun onStart(id:String){};override fun onDone(id:String){jsEval("window._sdone&&_sdone()")};override fun onError(id:String)=onDone(id)
 override fun onRangeStart(id:String,s:Int,e:Int,f:Int){jsEval("window._srng&&_srng($s,$e)")}
 override fun onStop(id:String,i:Boolean)=onDone(id)})   /* network voices can end here, not onDone; page sp-guard keeps manual pause from chaining */
 x.speak(t,android.speech.tts.TextToSpeech.QUEUE_FLUSH,null,"a")}})
 else tt!!.speak(t,android.speech.tts.TextToSpeech.QUEUE_FLUSH,null,"a")}}
 @JavascriptInterface fun shush(){h.post{tt?.stop()}}
+@JavascriptInterface fun pitch(p:String){h.post{pv=p.toFloatOrNull()?:pv;tt?.setPitch(pv)}}   /* book pitch slider */
+@JavascriptInterface fun voice():String=try{tt?.voice?.name?:""}catch(e:Exception){""}
 private val SHIM="(function(){var _w=null;window.WebSocket=function(url){_w=this;this.readyState=0;this.send=function(d){A.wsSend(d+'')};this.close=function(){this.readyState=3};A.wsOpen(url)};window._wsOpen=function(){if(_w){_w.readyState=1;if(_w.onopen)_w.onopen()}};window._wsMsg=function(d){if(_w&&_w.onmessage)_w.onmessage({data:d})};window._wsClose=function(c){if(_w){_w.readyState=3;if(_w.onclose)_w.onclose({code:c,wasClean:false})}}})()"
 private var openMenu:(()->Unit)?=null;private var backB:(()->Unit)?=null;private var nav:((String)->Unit)?=null
 /* programmatic menu control: am start -n com.aios.a/.M --es nav note   (or --ez menu true to open the menu) */
