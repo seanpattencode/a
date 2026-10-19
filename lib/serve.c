@@ -763,6 +763,8 @@ static void handle(int c){
         (void)!write(c,SEH,sizeof SEH-1);dup2(c,1);if(c>2)close(c);signal(SIGPIPE,SIG_DFL);signal(SIGCHLD,SIG_DFL);
         char rp2[P],nb[16];snprintf(rp2,P,"%s/lib/res.py",SDIR);snprintf(nb,16,"%d",atoi(req+19));
         execlp("python3","python3",rp2,"res","watch",nb,(char*)0);_exit(1);}
+    if(!strncmp(req,"GET /mic ",9)){(void)!write(c,STREAM,sizeof STREAM-1);dup2(c,1);if(c>2)close(c);signal(SIGPIPE,SIG_DFL);   /* omnibox mic: stream a dictate nt partials (dictate server log) */
+        execlp("tail","tail","-n0","-F","/tmp/a_dictate.log",(char*)0);_exit(1);}
     if(!strncmp(req,"GET /review/closeold?h=",23)){double hh=atof(req+23);if(hh<=0)hh=100;long cut=(long)time(NULL)-(long)(hh*3600);int nn=0;   /* windows untouched: names repeat, bulk kills would hit the wrong live agents */
         char lf[P];snprintf(lf,P,"%s/done.log",DDIR);char*rl=readf(lf,NULL);
         char cp2[P];snprintf(cp2,P,"%s/review_closed.txt",DDIR);char*cz=readf(cp2,NULL);FILE*cw=fopen(cp2,"a");
