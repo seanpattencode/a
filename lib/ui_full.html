@@ -79,7 +79,7 @@ var DP='<div style="padding:10px 16px;color:#ccc;font-size:17px">';function sav(
 function pfreq(r){try{return +(localStorage['pf'+r]||0)}catch(e){return 0}}
 function navpage(r,t){if(r.slice(0,7)=='native:'){try{A.native(r.slice(7))}catch(e){}return}try{localStorage['pf'+r]=pfreq(r)+1}catch(e){}if(views[r])go(r,t);else location.href=r}
 function _sg(){return qo.querySelectorAll('[data-p],[data-c],[data-a],[data-g],[data-n]')}
-function hl(){var it=_sg();it.forEach(function(el,i){var s=i===_cs;el.style.background=s?'#fff':'';el.style.color=s?'#000':el.dataset.c?'#555':el.dataset.a?'#fff':el.dataset.g?'#aaa':el.dataset.n?'#999':''})}
+function hl(){var it=_sg(),a=document.activeElement,on=a===qi||!a.matches(':focus-visible');it.forEach(function(el,i){var s=i===_cs&&on;el.style.background=s?'#fff':'';el.style.color=s?'#000':el.dataset.c?'#555':el.dataset.a?'#fff':el.dataset.g?'#aaa':el.dataset.n?'#999':''})}   // one highlight at a time (Sean 10-19): the row cursor hides while a bar, tile or chip is visibly focused
 qi.oninput=function(){var _t=performance.now(),v=qi.value.toLowerCase();_cs=0;_L=0;qi.style.height='auto';qi.style.height=qi.scrollHeight+'px';
   var pg=PAGES.slice().sort(function(a,b){return pfreq(b[0])-pfreq(a[0])});
   if(v)pg=pg.filter(function(p){return p[1].indexOf(v)>=0||p[0].slice(1).indexOf(v)>=0});
@@ -106,7 +106,7 @@ ocs.onkeydown=function(e){var t=e.target,k=e.key,s=ovs(),i=s.indexOf(t),n=k==='A
  else if(k.length===1){qi.focus();return}
  else return;e.preventDefault()};
 function brg(){return [].slice.call(omni.querySelectorAll('button')).reverse().concat([].map.call(document.querySelectorAll('#bmdash .pg'),function(x){x.tabIndex=0;return x}))}   // below the box in visual order: more ▾, mic, bookmark tiles (bm.js adds them late; folders need a tabindex)
-v_index.addEventListener('keydown',function(e){var r=brg(),i=r.indexOf(e.target),k=e.key;if(i<0||e.ctrlKey||e.metaKey||e.altKey)return;if(k==='ArrowDown'){if(r[i+1])r[i+1].focus()}else if(k==='ArrowUp')(r[i-1]||qi).focus();else if(k==='Enter'&&e.target.tagName==='SPAN')e.target.click();else if(k==='Escape'||k.length===1&&k!==' ')return qi.focus();else return;e.preventDefault()});
+v_index.addEventListener('focusin',hl);v_index.addEventListener('keydown',function(e){var r=brg(),i=r.indexOf(e.target),k=e.key;if(i<0||e.ctrlKey||e.metaKey||e.altKey)return;if(k==='ArrowDown'){if(r[i+1])r[i+1].focus()}else if(k==='ArrowUp')(r[i-1]||qi).focus();else if(k==='Enter'&&e.target.tagName==='SPAN')e.target.click();else if(k==='Escape'||k.length===1&&k!==' ')return qi.focus();else return;e.preventDefault()});
 omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw,sh=_sg()[_cs];if(!v){if(sh&&sh.dataset.p)navpage(sh.dataset.p);return}
   if(sh&&sh.dataset.n){sav(sh.dataset.n,raw);return}if(sh&&sh.dataset.g){gsearch();return}
   var pm=PAGES.filter(function(p){return p[1]===v||p[0]===v||p[0]==='/'+v||p[0]==='#'+v});if(pm.length){qi.value='';navpage(pm[0][0]);return} 
