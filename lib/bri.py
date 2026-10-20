@@ -234,28 +234,36 @@ _HL_ENUM = ('const S=__SEL__;const seen=new Set(),V=[];const W=r=>{r.querySelect
   'if(!seen.has(e)){seen.add(e);V.push(e)}});r.querySelectorAll("*").forEach(e=>e.shadowRoot&&W(e.shadowRoot))};'
   'W(document);const Z=V.filter(e=>{const r=e.getBoundingClientRect();if(r.width<6||r.height<6)return 0;'
   'if(r.bottom<0||r.top>innerHeight||r.right<0||r.left>innerWidth)return 0;const c=getComputedStyle(e);'
-  'return c.visibility!="hidden"&&c.display!="none"&&c.pointerEvents!="none"});')
+  'return c.visibility!="hidden"&&c.display!="none"&&c.pointerEvents!="none"});'
+  'const cd=i=>{const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ";return i<26?A[i]:A[(i/26|0)-1]+A[i%26]};')
 _HL_HINT = ('(()=>{__GUARD____ENUM__document.querySelectorAll(".__bh").forEach(n=>n.remove());'
-  'const cd=i=>{const A="ABCDEFGHIJKLMNOPQRSTUVWXYZ";return i<26?A[i]:A[(i/26|0)-1]+A[i%26]};'
   'const o=Z.map((e,i)=>{const c=cd(i),r=e.getBoundingClientRect(),b=document.createElement("div");'
   'b.className="__bh";b.textContent=c;b.style.cssText="position:fixed;left:"+Math.max(0,r.left)+"px;top:"+'
   'Math.max(0,r.top)+"px;z-index:2147483647;background:#ff0;color:#000;font:bold 10px monospace;'
   'padding:0 2px;border:1px solid #000;pointer-events:none;line-height:12px";document.body.appendChild(b);'
   'return c+"="+(e.innerText||e.getAttribute("aria-label")||e.getAttribute("placeholder")||e.tagName)'
   '.trim().replace(/\\s+/g," ").slice(0,30)});return o.length+" marks: "+o.join(" | ")})()')
-_HL_CLICK = ('(()=>{__GUARD____ENUM__const c=__CODE__;'
+_HL_CLICK = ('(()=>{__GUARD____ENUM__const c=__CODE__,t=__TEXT__;'
   'const i=c.length<2?c.charCodeAt(0)-65:(c.charCodeAt(0)-64)*26+(c.charCodeAt(1)-65);'
-  'const e=Z[i];if(!e)return"no element "+c;const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,'
+  'const e=Z[i];if(!e)return"no element "+c;if(t!=null){e.focus();if(e.isContentEditable)document.execCommand("insertText",false,t);'
+  'else e.value=t;e.dispatchEvent(new InputEvent("input",{bubbles:1,data:t,inputType:"insertText"}));return"typed "+c}'
+  'const r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2,'
   'o={bubbles:1,cancelable:1,clientX:x,clientY:y,button:0,buttons:1,view:window,pointerType:"mouse",isPrimary:1};'
   '["pointerdown","mousedown","pointerup","mouseup","click"].forEach(t=>e.dispatchEvent('
   'new(t[0]=="p"?PointerEvent:MouseEvent)(t,o)));return"clicked "+c+" = "+'
   '(e.innerText||e.getAttribute("aria-label")||e.tagName).trim().slice(0,30)})()')
-def _hl(host='', code=None):
+_HL_AX = ('(()=>{__GUARD____ENUM__const M=new Map(Z.map((e,i)=>[e,cd(i)])),o=[],T=s=>(s||"").replace(/\\s+/g," ").trim(),w=(n,d)=>{'   # codes = the hint enumeration: hint-click / type C act on the tree
+  'if(n.nodeType==3){const t=T(n.textContent);t&&o.push(" ".repeat(d)+t.slice(0,300));return}if(n.nodeType!=1||!n.checkVisibility())return;'
+  'const c=M.get(n),l=/^(A|BUTTON|SUMMARY|OPTION|LABEL|IMG|H[1-6])$/.test(n.tagName),r=n.role||(c||l?n.tagName=="A"?"link":n.localName:"");'
+  'if(r){const s=T(n.ariaLabel||n.alt||n.placeholder||(l?n.innerText||n.textContent:"")).slice(0,80);o.push(" ".repeat(d)+r+(s?" \\""+s+"\\"":"")+(c?" ["+c+"]":"")'
+  '+(typeof n.value=="string"&&n.value&&n.value!=s&&n.type!="password"?" ="+JSON.stringify(n.value.slice(0,40)):"")+(n.ariaExpanded?" expanded="+n.ariaExpanded:""));if(l&&s)return;d++}'
+  'for(const k of n.shadowRoot?[...n.shadowRoot.childNodes,...n.childNodes]:n.childNodes)w(k,d)};w(document.body,0);return o.join("\\n")})()')
+def _hl(host='', code=None, text=None, ax=0):
     # host = URL substring: real host or job tag (#brijob=7) for parallel job tabs
     g = ('if(window.top!=window)return"skip:iframe";if(!location.href.includes('+json.dumps(host)+'))return"skip:"+location.href;') \
         if host else 'if(window.top!=window)return"skip:iframe";if(!document.hasFocus())return"skip:unfocused";'
-    body = (_HL_HINT if code is None else _HL_CLICK).replace('__GUARD__', g).replace('__ENUM__', _HL_ENUM.replace('__SEL__', json.dumps(_HL_SEL)))
-    return body if code is None else body.replace('__CODE__', json.dumps(code.upper()))
+    t = _HL_AX if ax else _HL_CLICK if code else _HL_HINT
+    return t.replace('__GUARD__', g).replace('__ENUM__', _HL_ENUM.replace('__SEL__', json.dumps(_HL_SEL))).replace('__CODE__', json.dumps(str(code).upper())).replace('__TEXT__', json.dumps(text))
 
 def _send(j, to=None):
     j.setdefault('id', int(time.time()*1000) % 10**9)
@@ -315,17 +323,17 @@ def client(args):
         subprocess.Popen(['firefox-nightly','--new-tab',url], env=_ffenv(), stdout=-3, stderr=-3, start_new_session=True)
         sys.stdout.write(f'+ job tab: {url}\n  drive: a bri hint brijob={jid} | hint-click <C> brijob={jid} | save <url>\n'); return
     if a == 'mon':     _mon(); return
-    if a in ('grab', 'copy'):
+    if a in ('grab', 'copy', 'ax'):   # ax = aria tree, role "name" [CODE] state: text+hint in one; RE-RUN after any DOM-changing action (codes shift)
         host = next((x for x in args[1:] if not x.startswith('--')), '')
         prop = 'document.documentElement.outerHTML' if '--html' in args else 'document.body.innerText'
         guard = (f'if(!location.href.toLowerCase().includes({json.dumps(host.lower())}))return null;'
                  if host else 'if(!document.hasFocus())return null;')
-        code = f'(()=>{{if(window.top!==window)return null;{guard}return {prop};}})()'
+        code = _hl(host, ax=1) if a == 'ax' else f'(()=>{{if(window.top!==window)return null;{guard}return {prop};}})()'
         best = ''   # longest reply = the target tab
         rs = _send({'action': 'eval', 'code': code}, to)
         for r in rs:
             v = r.get('value')
-            if isinstance(v, str) and len(v) > len(best): best = v
+            if isinstance(v, str) and v[:5] != 'skip:' and len(v) > len(best): best = v
         if best: sys.stdout.write(best + '\n')
         else: sys.stderr.write(f'x no text — is the {host or "focused"} tab open, logged in, and active? (discarded tabs read blank until clicked)'
                                f' [target={to}; answered: {", ".join(sorted({r["br"] for r in rs if r.get("br")})) or "none"} — wrong browser? @chrome/@all]\n'); sys.exit(1)
@@ -451,7 +459,7 @@ def client(args):
         if a.startswith(('http://','https://')): j = {'action':'navigate','url':a}
         elif a=='text':  j = {'id':RID,'action':'text','sel':args[1] if len(args)>1 else 'body'}
         elif a=='click': j = {'id':RID,'action':'click','sel':args[1]}
-        elif a=='type':  j = {'id':RID,'action':'type','sel':args[1],'text':args[2]}
+        elif a=='type':  j = {'id':RID,'action':'eval','code':_hl(args[3] if len(args)>3 else '', args[1], args[2])} if args[1].isupper() and len(args[1])<3 else {'id':RID,'action':'type','sel':args[1],'text':args[2]}
         elif a=='keys':  j = {'id':RID,'action':'keys','sel':args[1],'keys':args[2]}
         elif a=='url':   j = {'id':RID,'action':'url'}
         elif a=='hint':  j = {'id':RID,'action':'eval','code':_hl(args[1] if len(args)>1 else '')}
@@ -488,7 +496,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per 
   <url>            navigate (http/https detected)
   text [sel]       read body or selected element (sel default: body)
   click <sel>      click element
-  type <sel> <s>   type into element (handles contenteditable)
+  type <sel|C> <s> type into css sel, or hint/ax code C ([match] 4th arg); contenteditable ok
   keys <sel> <k>   dispatch keydown/keyup (e.g. Enter)
   url              current URL
   grab [host]      select-all+copy equiv: full innerText of the tab whose URL has <host> (--html=DOM, no host=focused)
@@ -501,6 +509,7 @@ MENU = """a bri <cmd>     extension bridge to Firefox/Chrome — ONE target per 
   new <id> [url]   open a job tab tagged #brijob=<id> (default chatgpt.com) for parallel jobs
   hint [match]     label clickable els on tabs whose URL contains <match> (host or brijob=<id>)
   hint-click <C>   click element C (re-enumerates; optional [match] filter, same as hint)
+  ax [host]        aria tree: role "name" [C] state = text+hint in one; RE-RUN after a DOM-changing action (codes shift)
   save <url> [nt]  log a research/chat URL → urls.txt (a bri <N> reopens)
   screenshot [p]   PNG of active tab → p (default /tmp/bri-<ts>.png)
                    ! avoid if possible — prefer text/html/url (text is the
