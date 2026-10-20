@@ -56,7 +56,7 @@ static void gen_icache(void){
         if(p&&(p[1]=='p'||p[1]=='c')){*p=0;fprintf(f,"agent run %s\tagent\n",e->d_name);}}closedir(d);}}
     {char ld[P];snprintf(ld,P,"%s/lib",SDIR);DIR*d=opendir(ld);struct dirent*e;
     if(d){while((e=readdir(d))){char*dot=strrchr(e->d_name,'.');
-        if(!dot||strcmp(dot,".py")||e->d_name[0]=='_')continue;d4(ld,e->d_name,"cmd",ds);*dot=0;
+        if(!dot||(strcmp(dot,".py")&&strcmp(dot,".sh"))||e->d_name[0]=='_')continue;d4(ld,e->d_name,"cmd",ds);*dot=0;
         fprintf(f,"%s\t%s\n",e->d_name,ds);}closedir(d);}}
     {const char*sr[]={SROOT,SDIR,HOME};const char*sl[]={"my","lab","aext"};
     for(int si=0;si<3;si++){char md[P];snprintf(md,P,"%s/%s",sr[si],sl[si]);DIR*d=opendir(md);struct dirent*e;
