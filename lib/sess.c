@@ -97,6 +97,19 @@ static void ifr_blast(void){struct winsize w;char p[P];size_t l;
     if(f&&l){twrite(f,l);ifr_on=1;
         struct timespec t;clock_gettime(CLOCK_MONOTONIC,&t);ifr_ms=(double)(t.tv_sec-T0.tv_sec)*1e3+(double)(t.tv_nsec-T0.tv_nsec)/1e6;}
     free(f);}
+/* "/" palette: picks set the sticky sends-to (i_to), device (i_device), agent+model, effort; /chat = /model */
+static char *SLP[]={"/model\tagent + model","/chat\tsame as /model","/claude\tuse claude","/agy\tuse agy","/codex\tuse codex","/grok\tuse grok","/note\tsends to a note","/task\tsends to a task","/search\tsends to web search","/device\trun on a device","/effort\treasoning effort",0};
+static char *SLO[]={"/device local\tthis machine","/model claude default","/model claude-opus-5-5","/model claude-fable-5","/model claude-fable-5-1","/model codex","/model agy","/model grok","/effort max","/effort high","/effort medium","/effort low","/effort xhigh",0};
+static int sl_known(const char*s){size_t l=strcspn(s," ");for(int i=0;SLP[i];i++){size_t c=strcspn(SLP[i]," \t");if(s[l]?c==l&&!strncmp(SLP[i],s,l):!strncmp(SLP[i],s,l))return 1;}return 0;}
+/* "/" → command rows; "/cmd " → its arg rows, or its free-text row */
+static int sl_show(const char*r,const char*fb,int fl){size_t nl=strcspn(r," \t");int arg=r[nl]==' ';const char*sp=memchr(fb,' ',(size_t)fl);
+    if(!sp)return(!arg||nl==(size_t)fl)&&!strncmp(r,fb,(size_t)fl);
+    if(strncmp(r,fb,(size_t)(sp-fb)))return 0;
+    if(arg)return !sp[1]||strcasestr(r+nl,sp+1)!=0;
+    return nl==(size_t)(sp-fb)&&strncmp(r,"/device",7)&&strncmp(r,"/model",6)&&strncmp(r,"/effort",7);}
+static void i_value(char*out,const char*text,const char*key){const char*p=text?strstr(text,key):NULL;if(!p)return;
+    p+=strlen(key);p+=strspn(p," \t:=");char q=(*p=='\"'||*p=='\'')?*p++:0;
+    snprintf(out,96,"%.*s",(int)strcspn(p,q=='\"'?"\"\r\n":q=='\''?"'\r\n":" \t\r\n"),p);}
 static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     AB;
     perf_disarm();
@@ -108,7 +121,13 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     if(isatty(0)){tcgetattr(STDIN_FILENO,&old);raw_t=old;
     raw_t.c_lflag&=~(tcflag_t)(ICANON|ECHO|ISIG);raw_t.c_cc[VMIN]=1;raw_t.c_cc[VTIME]=0;}
     int bcap=1024,blen=0,sel=0,pnm=-1,rotate=0,cfgmode=0,paste=0,sv=1;char*buf=calloc(1,(size_t)bcap);char prefix[256]="",jstat[96]="",lastwin[16]="",lastidx[8]="",lastpr[192]="",ltl[600]="",lastnote[P]="";time_t lastfire=0;
-    static char*ICFG[]={"agent claude","agent codex","effort low","effort medium","effort high","effort max","effort xhigh",0};
+    char*draft=NULL;
+    init_db();load_cfg();load_sess();
+    char models[4][96];char*agents[]={"claude","codex","agy","grok"},*files[]={".claude/settings.json",".codex/config.toml",".gemini/antigravity-cli/settings.json",".grok/config.toml"};
+    for(int i=0;i<4;i++){char p[P];snprintf(p,P,"%s/%s",HOME,files[i]);char*d=readf(p,NULL);strcpy(models[i],"CLI default");
+        i_value(models[i],d,i==3?"default =":i==1?"model =":"\"model\"");free(d);sess_t*s=find_sess(agents[i]);if(s)i_value(models[i],s->cmd," --model ");}
+    char mids[64][96],mpath[P];int nmid=0;snprintf(mpath,P,"%s/.codex/models_cache.json",HOME);char*catalog=readf(mpath,NULL);
+    for(char*p=catalog;p&&(p=strstr(p,"\"slug\""))&&nmid<64;p+=6){char v[96]="";i_value(v,p,"\"visibility\"");if(!strcmp(v,"list"))i_value(mids[nmid++],p,"\"slug\"");}free(catalog);
     struct timespec tk=T0; const char*act="render";
     /* regen when any source newer (>= = same-second; %.0s eats SROOT); tty checks after frame 1 */
     #define ISTALE {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications"};\
@@ -133,16 +152,35 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(tl>63)tl=63;memcpy(tg,t+1,tl);tg[tl]=0;
         if(strstr(ft0,tg))lines[j++]=lines[i];}}n=j;}}
     if(!isatty(STDIN_FILENO)){for(int i=0;i<n;i++)puts(lines[i]);return 0;}
+    int ls0=n;   /* palette rows sit after the cache lines */
+    {static char SR[64][96];int k=0;
+     for(int i=0;i<ls0&&k<63;i++){if(strncmp(lines[i],"ssh ",4))continue;char*s=lines[i]+4,*tb=strchr(s,'\t');
+         if(tb&&strncmp(s,"add\t",4)&&strncmp(s,"all\t",4))snprintf(SR[k++],96,"/device %.*s%s",(int)(tb-s),s,tb);}
+     for(int i=0;SLP[i]&&n<2048;i++)lines[n++]=SLP[i];
+     for(int i=0;SLO[i]&&n<2048;i++)lines[n++]=SLO[i];
+     for(int i=0;i<k&&n<2048;i++)lines[n++]=SR[i];}
     #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)
     #define SNIP do{int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}while(0)
     #define IRST twrite("\033[?1000l\033[?1006l\033[?2004l",24);tcflush(STDIN_FILENO,TCIFLUSH);tcsetattr(STDIN_FILENO,TCSANOW,&old);twrite("\033[?1049l",8);free(buf)
     while (1) {
+        if(!cfgmode&&draft){strcpy(buf,draft);free(draft);draft=NULL;blen=(int)strlen(buf);}
         {struct stat st;if(!sv&&!stat(wc,&st)&&st.st_mtime!=wcm)goto bld;}
         WSZ(ws)int maxshow=ws.ws_row>8?ws.ws_row-5:10;
-        char*fm[2048]; int nm=0,ex=0,plen=(int)strlen(prefix);
-        char*fb=buf;int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' '){fb+=2;fl-=2;}
-        if(cfgmode){for(int i=0;ICFG[i]&&nm<2048;i++){if(blen&&!strcasestr(ICFG[i],fb))continue;fm[nm++]=ICFG[i];}}
+        char*fm[2048]; int nm=0,ex=0,cj=-1,plen=(int)strlen(prefix);
+        char*fb=buf,nb[260];int fl=blen;if(fl>2&&*fb=='a'&&fb[1]==' '){fb+=2;fl-=2;}
+        if(fl<250&&!strncmp(fb,"/chat",5)){snprintf(nb,260,"/model%s",fb+5);fb=nb;fl++;}
+        const char*ag=cfget("i_agent");if(!*ag)ag="claude";const char*ef=cfget("i_effort");if(!*ef)ef=strstr(ag,"codex")?"xhigh":"max";
+        const char*md=cfget("i_model"),*dv=cfget("i_device");char cr[96];snprintf(cr,96,"/model %s",strcmp(ag,"claude")?ag:*md?md:"claude default");   /* the row ↵ sends to now */
+        const char*model="CLI default";for(int i=0;i<4;i++)if(!strcmp(ag,agents[i]))model=models[i];if(*dv)model="remote default";if(*md)model=md;
+        int slm=!cfgmode&&!plen&&fl&&fb[0]=='/'&&sl_known(fb);
+        const char*sto=cfget("i_to");int tgt=!strcmp(sto,"note")?1:!strcmp(sto,"task")?2:!strcmp(sto,"search")?3:0;
+        if(cfgmode){if(cfgmode==1)for(int i=0;i<4;i++)fm[nm++]=agents[i];
+            if(cfgmode==2){fm[nm++]="default";if(!strcmp(ag,"codex"))for(int i=0;i<nmid;i++)fm[nm++]=mids[i];}
+            for(int i=0;SLO[i];i++)if(cfgmode==3?!strncmp(SLO[i],"/effort ",8):cfgmode==2&&!strcmp(ag,"claude")&&!strncmp(SLO[i],"/model claude-",14))fm[nm++]=SLO[i]+(cfgmode==3?8:7);
+            int j=0;for(int i=0;i<nm;i++)if(!blen||strcasestr(fm[i],buf))fm[j++]=fm[i];nm=j;if(!nm&&cfgmode==2)fm[nm++]=buf;}
         else for (int i=0;i<n&&nm<2048&&blen<256;i++) {
+            if(slm!=(i>=ls0))continue;
+            if(slm){if(sl_show(lines[i],fb,fl)){if(!strcmp(lines[i],cr))cj=nm;fm[nm++]=lines[i];}continue;}
             if (plen && strncmp(lines[i], prefix, (size_t)plen)) continue;
             if(!blen&&(strstr(lines[i],"\tdir")||(!strncmp(lines[i],"web ",4)&&!strstr(lines[i]," · bm"))))continue;
             if(blen){char*s=lines[i]+plen,b2[256],*w;strcpy(b2,fb);int ok=1;
@@ -150,38 +188,36 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                 if(s[fl]<=' '&&!strncasecmp(s,fb,(size_t)fl)){memmove(fm+ex+1,fm+ex,sizeof*fm*(size_t)(nm++-ex));fm[ex++]=lines[i];continue;}}
             fm[nm++]=lines[i];
         }
-        const char*ag=cfget("i_agent");if(!*ag)ag="claude";const char*ef=cfget("i_effort");if(!*ef)ef=strstr(ag,"codex")?"xhigh":"max";
-        int na=(lastwin[0]&&!cfgmode&&!blen&&!plen)?1:0,nn=(lastnote[0]&&!cfgmode&&!blen&&!plen)?2:0,pv=(blen&&!plen&&!cfgmode)?4:0,vo=na+nn+pv,tot=nm+vo;
-        if(rotate){sel=nm==pnm?sel+1:vo;if(!nm)sel=0;rotate=0;}pnm=nm;
+        int na=(lastwin[0]&&!cfgmode&&!blen&&!plen)?1:0,nn=(lastnote[0]&&!cfgmode&&!blen&&!plen)?2:0,pv=(blen&&!plen&&!cfgmode&&!slm&&!ft0)?5:0,vo=na+nn+pv,tot=nm+vo;
+        if(rotate){sel=cfgmode?0:nm==pnm&&!slm?sel+1:cj<0?vo:cj;if(!nm)sel=0;rotate=0;}pnm=nm;
         if(sel>=tot)sel=tot?tot-1:0;
         int fresh=lastfire&&time(0)-lastfire<180;if(!fresh)ltl[0]=0;
         char*tl1=0,*tl2=0;int ll1=0,ll2=0;if(na){char*p2=ltl;while(*p2&&!tl2){char*e2=strchr(p2,'\n');int L2=e2?(int)(e2-p2):(int)strlen(p2);
             if(L2){if(!tl1){tl1=p2;ll1=L2;}else{tl2=p2;ll2=L2;}}if(!e2)break;p2=e2+1;}}
         int xtra=na?(tl2?2:(tl1||fresh)?1:0):0;
-        int Wc=ws.ws_col?ws.ws_col:80;
+        int Wc=ws.ws_col?ws.ws_col:80,lp=ft0&&Wc<90?2+2*(ws.ws_row>23):1;
         int cw=0,off=0,vl=0,pos=plen+2,aw=Wc*(maxshow-3)-pos-1;char cnt[24]="";static char vis[B];if(aw>B-8)aw=B-8;if(blen>aw){pos+=cw=snprintf(cnt,24,"%dc…",blen)-2;off=blen-aw+cw;while(off<blen&&(buf[off]&0xC0)==0x80)off++;}  /* Nc count proves the paste landed */
         for(int k=off;k<blen;k++){pos+=(buf[k]&0xC0)!=0x80;vis[vl++]=strchr("\n\t",buf[k])?' ':buf[k];}vis[vl]=0;int ir=pos/Wc;maxshow-=ir;
-        int avail=maxshow-vo-xtra>0?maxshow-vo-xtra:1,ms=sel-vo,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
+        int avail=maxshow-vo-xtra>lp?(maxshow-vo-xtra)/lp:1,ms=sel-vo,selm=ms<0?0:ms>=nm?(nm?nm-1:0):ms;
         int top=selm>=avail?selm-avail+1:0, show=nm-top<avail?nm-top:avail;
         double fms;{struct timespec _n;clock_gettime(CLOCK_MONOTONIC,&_n);fms=(_n.tv_sec-tk.tv_sec)*1e3+(_n.tv_nsec-tk.tv_nsec)/1e6;}
         {char rb[B*4];int rl=0;
         #define FP(...) rl+=snprintf(rb+rl,rl<B*4?(size_t)(B*4-rl):0,__VA_ARGS__)
         FP("%s\033[H\033[?25l",sv&&!ifr_on?"\033[?1049h\033[?1000h\033[?1006h\033[?2004h":"");  /* alt screen rides frame 1's write */
         int Wr=ws.ws_col>8?ws.ws_col:80;char hint[320]="";
-        #define RULE do{for(int _r=0;_r<Wr;_r++)FP("─");FP("\033[K\n");}while(0)
-        RULE;
-        if(cfgmode)FP("config> %s\033[90m  pick agent / effort · ESC back\033[0m\033[K\n",buf);
+        {char tt[256];int tl=snprintf(tt,256,"%s %s effort=%s%s%s",tgt?sto:ag,model,ef,*dv?" on ":"",dv)+3;FP("\033[?7l─\033[7m %s \033[0m",tt);while(tl++<Wr)FP("─");FP("\033[K\n");}
+        if(cfgmode)FP("%s> %s\033[90m  %s · ESC back\033[0m\033[K\n",cfgmode==1?"agent":cfgmode==2?"model":"effort",buf,cfgmode==2?"type model ID or pick default":"pick to continue");
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
         else if(!blen&&!plen){char sn2[32]="";const char*ps=getenv("A_PSSEEN");if(ps)snprintf(sn2,32,"seen %.8s ps · ",ps);else if(ifr_ms>0)snprintf(sn2,32,"seen %.3f · ",ifr_ms);  /* ps: PowerShell painted the cached frame in-process before this exe even loaded */
-            FP("> \033[90m↵ home · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
+            FP("> \033[90m↵ home · / commands · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
         else{int W=Wc;
-            FP("%s> \033[90m%s\033[0m%s \033[K\n",plen?prefix:"",cnt,vis);  /* ' ' wraps a full row */
-            if(!plen){int hw=W-31-(int)strlen(ag)-(int)strlen(ef);if(hw<8)hw=8;if(hw>vl)hw=vl;
-                snprintf(hint,320,"↵ new tmux win → %s eff=%s : \"%s%s\"",ag,ef,blen>hw?"…":"",vis+vl-hw);}}
-        RULE;
-        #undef RULE
-        if(hint[0]){FP("%s \033[%dm%s\033[0m\033[K\n",sel?"  ":" >",sel?90:37,hint);
-            static const char*PV[]={"✎ save note","☐ add task","⌕ web search"};
+            FP("\033[?7h%s> \033[90m%s\033[0m%s \033[K\n",plen?prefix:"",cnt,vis);  /* ' ' wraps a full row */
+            if(!plen&&!slm){const char*lb=tgt==1?"✎ save note":tgt==2?"☐ add task":tgt==3?"⌕ web search":"new tmux win";
+                int hw=W-(int)strlen(lb)-12;if(hw<8)hw=8;if(hw>vl)hw=vl;
+                snprintf(hint,320,"↵ %s : \"%s%s\"",lb,blen>hw?"…":"",vis+vl-hw);}}
+        FP("\033[?7h");for(int _r=0;_r<Wr;_r++)FP("─");FP("\033[K\n");
+        if(pv){FP("%s \033[%dm%s\033[0m\033[K\n",sel?"  ":" >",sel?90:37,hint);
+            static const char*PV[]={"✎ save note","☐ add task","⌕ web search","change default agent"};
             for(int r=1;r<pv;r++)FP("%s \033[%dm%s\033[0m\033[K\n",sel==r?" >":"  ",sel==r?37:90,PV[r-1]);}
         if(na){int pl2=(int)strlen(lastpr),mx=Wc-22;if(mx<8)mx=8;int cut=pl2>mx;if(cut){pl2=mx;while(pl2>0&&(lastpr[pl2]&0xC0)==0x80)pl2--;}
             FP("%s ⮌ switch → win %s · %.*s%s\033[K\n",sel==0?" >":"  ",lastidx,pl2,lastpr,cut?"…":"");
@@ -193,22 +229,25 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             FP("%s \033[%dm⌕ open in web\033[0m\033[K\n",sel==1?" >":"  ",sel==1?37:90);}
         int mx=0;for(int i=0;i<show;i++){int l=(int)strcspn(fm[top+i],"\t");if(l>mx)mx=l>Wc/2?Wc/2:l;}  /* grey col = longest visible name, cap half: scans down; name never cut */
         for(int i=0;i<show;i++){int j=top+i,gj=j+vo,ml=(int)strcspn(fm[j],"\t");char*t=fm[j][ml]?fm[j]+ml:0,*t2=t?strchr(t+1,'\t'):0;if(ml>Wc-7)ml=Wc-7;
-            int dc=Wc-8-(ml>mx?ml:mx);char*desc=dc<8||!t?"":t2?t2+1:t+1;
+            int dc=lp>1?Wc-6:Wc-8-(ml>mx?ml:mx);char*desc=dc<8||!t?"":strrchr(t,'\t')+1,*d0=desc;
             static char db[320];int hm=0;
-            if(t2&&!strncmp(t+1,"win\t",4)){char*hit=0;int wl2=0;char*mm=strstr(desc," · ");int hd=mm?(int)(mm-desc)+4:0;
+            if(t2&&!strncmp(t+1,"win\t",4)){char*hit=0;int wl2=0;char*mm=strstr(desc," · ");int hd=mm?(int)(mm-desc)+4:0;if(lp>1){d0=desc+=hd;hd=0;}
                 if(blen)for(char*pw=buf;*pw&&!hit;){while(*pw==' ')pw++;int L2=(int)strcspn(pw," ");if(!L2)break;
                     char wq[64];if(L2<64){memcpy(wq,pw,(size_t)L2);wq[L2]=0;if((hit=strcasestr(desc,wq)))wl2=L2;}pw+=L2;}
                 if(hit&&hit>=desc+hd){char*st2=hit-20;if(st2<desc+hd)st2=desc+hd;while((*st2&0xC0)==0x80)st2++;  /* filter hit: snippet around the first matched word (shows WHY) */
                     int pre=(int)(hit-st2),rm=dc-hd-pre-wl2-4,tw=(int)strlen(hit+wl2);if(rm<0)rm=0;if(tw>rm)tw=rm;while(tw>0&&(hit[wl2+tw]&0xC0)==0x80)tw--;
-                    snprintf(db,320,"%.*s%s%.*s\033[7m%.*s\033[27m%.*s",hd,desc,st2>desc+hd?"…":"",pre,st2,wl2,hit,tw,hit+wl2);desc=db;hm=9;}
-                else if((int)strlen(desc)>dc&&mm){int rm=dc-hd-3;if(rm>8){char*tp=desc+strlen(desc)-(size_t)rm;while((*tp&0xC0)==0x80)tp++;snprintf(db,320,"%.*s…%s",hd,desc,tp);desc=db;}}}
-            int dl=(int)strnlen(desc,(size_t)dc+(size_t)hm);while(dl>0&&(desc[dl]&0xC0)==0x80)dl--;
-            FP(cfgmode?"%s %.*s\033[K":"%s a %.*s\033[K",gj==sel?" >":"  ",ml,fm[j]);
-            if(*desc)FP("\033[%dG\033[90m%.*s\033[0m",Wc-dc,dl,desc);FP("\n");}
+                    snprintf(db,320,"%.*s%s%.*s\033[7m%.*s\033[27m%.*s",hd,desc,st2>desc+hd?"…":"",pre,st2,wl2,hit,tw,hit+wl2);desc=db;hm=9;}}
+            FP(cfgmode||slm?"%s %s%.*s\033[0m\033[K":"%s a %s%.*s\033[K",gj==sel?" >":"  ",strcmp(fm[j],cr)?"":"\033[7m",ml,fm[j]);
+            for(int r=0;r<lp-(lp>1);r++){char*s=r||!hm?d0:desc,*q=lp>1?strstr(s," · "):0;int e=(int)strlen(s),w=dc+(r?0:hm);   /* desc: beside the name or wrapped under it, a line per " · " part; a filter hit's snippet first */
+                if(q&&q-s<e)e=(int)(q-s);
+                if(e>w){int k=w;while(k>w/2&&s[k]!=' ')k--;e=k>w/2?k:w;while(e&&(s[e]&0xC0)==0x80)e--;}
+                if(s==d0){d0+=e;while(*d0==' ')d0++;if(!strncmp(d0,"· ",3))d0+=3;}
+                FP("%s\033[%dG\033[90m%.*s\033[0m",lp>1?"\n\033[K":"",Wc-dc,e,s);}
+            FP("\n");}
         FP("\033[J\033[%d;%dH\033[?25h",2+ir,pos%Wc+1);
         #undef FP
         twrite(rb,(size_t)rl);
-        if(sv){sv=0;tcsetattr(0,TCSANOW,&raw_t);init_dev();init_db();load_cfg();
+        if(sv){sv=0;tcsetattr(0,TCSANOW,&raw_t);init_dev();
             if(!ft0){char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames; torn read = one cosmetic frame */
             if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",ifr_on?32:0);(void)!write(fd,rb,(size_t)rl);close(fd);}}
             ISTALE}}
@@ -223,7 +262,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         clock_gettime(CLOCK_MONOTONIC,&tk);
         int do_pick=0;
         if(ch=='\x1b'){int av;ioctl(0,FIONREAD,&av);if(!av){usleep(2000);ioctl(0,FIONREAD,&av);}  /* buffered arrow seqs instant; lone ESC waits 2ms */
-            if(!av){if(prefix[0]||cfgmode){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
+            if(!av){if(prefix[0]||cfgmode||slm){cfgmode=0;prefix[0]=0;buf[0]=0;blen=0;sel=0;continue;}break;}
             char seq[2];if(read(0,seq,1)!=1)break;
             if(seq[0]=='['){if(read(0,seq+1,1)!=1)break;
                 if(seq[1]=='A'){if(sel>0)sel=sel==vo?0:sel-1;act="↑";}
@@ -233,7 +272,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
                     while(read(0,&mc,1)==1&&mc!=';');
                     while(read(0,&mc,1)==1&&mc!='M'&&mc!='m')my=my*10+mc-'0';
                     if(mc=='M'){if(!mb){int rr=my-4-ir;if(rr>=0&&rr<vo){sel=rr;do_pick=1;}
-                        else{int ci=top+rr-vo-xtra;if(rr>=vo+xtra&&ci>=0&&ci<nm){sel=ci+vo;do_pick=1;}}}
+                        else{int ci=top+(rr-vo-xtra)/lp;if(rr>=vo+xtra&&ci>=0&&ci<nm){sel=ci+vo;do_pick=1;}}}
                     else if(mb==64&&sel>0){sel--;}else if(mb==65&&sel<tot-1){sel++;}}}
                 else if(seq[1]=='2'){char d0=0,d1=0;act="paste";
                     if(read(0,&d0,1)==1&&d0!='~'&&read(0,&d1,1)==1){char t=d1;while(t!='~'&&read(0,&t,1)==1);
@@ -247,29 +286,47 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         else if(ch==4)break;
         else if((unsigned char)ch>=32||(paste&&ch=='\t')){BFIT;buf[blen++]=ch;buf[blen]=0;rotate=1;act="filter";}
         if(paste){int av=0;ioctl(0,FIONREAD,&av);if(av>0)goto rd;}  /* drain paste before repaint */
-        if(do_pick&&cfgmode&&nm&&sel<nm){char fld[16]="",val[32]="",ck[24];
-            sscanf(fm[sel],"%15s %31s",fld,val);snprintf(ck,24,"i_%s",fld);cfset(ck,val);load_cfg();
+        if(do_pick&&slm){char pk[256]="",nw[16]="",arg[B]="",ck[24]="";const char*tr=strchr(buf,' ');
+            if(nm&&sel<nm)snprintf(pk,256,"%.*s",(int)strcspn(fm[sel],"\t"),fm[sel]);
+            sscanf(pk[0]?pk:fb,"/%15s %4095[^\n]",nw,arg);
+            if(find_sess(nw)){strcpy(arg,nw);strcpy(nw,"model");}snprintf(ck,24,"i_%s",nw);
+            int argc_=!strcmp(nw,"device")||!strcmp(nw,"model")||!strcmp(nw,"effort");
+            if(argc_&&(!arg[0]||!pk[0]||(sel==cj&&!strchr(fb,' ')))){snprintf(buf,(size_t)bcap,"/%s ",nw);blen=(int)strlen(buf);}   /* bare /model ↵ keeps the list: /model ↵ ↓ ↵ picks */
+            else if(argc_){if(*nw=='m'){cfset("i_agent",!strncmp(arg,"claude",6)?"claude":arg);cfset("i_to","");}
+                cfset(ck,*nw=='m'?(!strncmp(arg,"claude-",7)?arg:""):strcmp(arg,"local")?arg:"");buf[0]=0;blen=0;snprintf(jstat,sizeof jstat,"✓ %s %s",nw,arg);}
+            else if(!strcmp(nw,"note")||!strcmp(nw,"task")||!strcmp(nw,"search")){cfset("i_to",nw);
+                if(tr)memmove(buf,tr+1,strlen(tr+1)+1);else buf[0]=0;blen=(int)strlen(buf);
+                snprintf(jstat,sizeof jstat,"✓ sends to %s",nw);}
+            rotate=1;pnm=-2;sel=0;continue;}
+        if(do_pick&&cfgmode&&nm&&sel<nm){const char*v=fm[sel];
+            if(strspn(v,"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._/")!=strlen(v))continue;
+            cfset(cfgmode==1?"i_agent":cfgmode==2?"i_model":"i_effort",strcmp(v,"default")?v:"");
+            if(cfgmode==1){cfset("i_model","");cfset("i_to","");}cfgmode=(cfgmode+1)%4;
             buf[0]=0;blen=0;sel=0;continue;}
-        if(do_pick&&!cfgmode&&!prefix[0]&&blen&&sel<vo){
-            if(sel==1||sel==2){char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);
-                if(sel==1)snprintf(lastnote,P,"%s",note_save(nd,buf));else{task_py("add",buf);snprintf(lastnote,P,"%s/tasks.txt",SROOT);}sync_bg();SNIP;
-                snprintf(jstat,sizeof jstat,"✓ %s saved",sel==1?"note":"task");
+        if(do_pick&&!cfgmode&&!prefix[0]&&blen&&sel<vo){int ta=sel?sel:tgt;
+            if(ta==4){draft=strdup(buf);buf[0]=0;blen=sel=0;cfgmode=1;continue;}
+            if(ta==1||ta==2){char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);
+                if(ta==1)snprintf(lastnote,P,"%s",note_save(nd,buf));else{task_py("add",buf);snprintf(lastnote,P,"%s/tasks.txt",SROOT);}sync_bg();SNIP;
+                snprintf(jstat,sizeof jstat,"✓ %s saved",ta==1?"note":"task");
                 lastwin[0]=0;buf[0]=0;blen=0;sel=-1;continue;}
-            if(sel==3){char u[B*3];int l=snprintf(u,sizeof u,"https://google.com/search?q=");
+            if(ta==3){char u[B*3];int l=snprintf(u,sizeof u,"https://google.com/search?q=");
                 for(int k=0;k<blen&&l<(int)sizeof u-4;k++){unsigned char c2=(unsigned char)buf[k];
                     if(c2==' '||c2=='\n'||c2=='\t')u[l++]='+';
                     else if(isalnum(c2)||strchr("-_.~",c2))u[l++]=(char)c2;
                     else l+=snprintf(u+l,4,"%%%02X",(unsigned)c2);}
                 u[l]=0;IRST;bg_exec(OPENER,u);return 0;}
-            const char*ia=cfget("i_agent");if(!*ia)ia="claude";const char*ie=cfget("i_effort");if(!*ie)ie=strstr(ia,"codex")?"xhigh":"max";
-            char run[B+64],cm[B+256],wi[16]="?",pf[P];
+            int mm=*md;char run[B*2+64],cm[B*3+256],wi[16]="?",pf[P],ds[120]="";
             snprintf(pf,P,"%s/i_prompt.txt",DDIR);writef(pf,buf);  /* prompt rides a file: shell-proof, any length */
-            if(strstr(ia,"codex"))snprintf(run,sizeof run,"codex -c model_reasoning_effort=%s --dangerously-bypass-approvals-and-sandbox \"$(cat %s)\"",ie,pf);
-            else snprintf(run,sizeof run,"claude --dangerously-skip-permissions --effort %s \"$(cat %s)\"",ie,pf);
-            snprintf(cm,sizeof cm,"tmux new-window -dP -F '#{window_index} #{window_id}' -c '%s' '%s;exec bash'",cwd,run);
+            if(*dv){char mp[96]="";if(mm)snprintf(mp,96,"A_MODEL=%s ",md);   /* base64: a ssh joins argv into one remote shell line */
+                snprintf(run,sizeof run,"a ssh %s \"%sA_EFFORT=%s a %s \\\"\\$(echo $(base64 <%s|tr -d \\\\n)|base64 -d)\\\"\"",dv,mp,ef,ag,pf);
+                snprintf(ds,120," on %s",dv);snprintf(cm,sizeof cm,"tmux new-window -dP -F '#{window_index} #{window_id}' -c '%s' '%s;exec bash'",cwd,run);}
+            else{load_sess();sess_t*s=find_sess(ag);setenv("A_MODEL",mm?md:"",1);setenv("A_EFFORT",ef,1);
+                const char*sn=tm_name(s?s->name:ag,bname(cwd),time(0));create_sess(sn,cwd,s?s->cmd:ag,buf);   /* a c's launcher: ctx preload, session id, log */
+                snprintf(cm,sizeof cm,"tmux display -pt '" TMS ":%s' '#{window_index} #{window_id}'",sn);}
+            if(mm)snprintf(ds+strlen(ds),120-strlen(ds)," %s",md);
             pcmd(cm,wi,16);sscanf(wi,"%7s %15s",lastidx,lastwin);SNIP;
             ltl[0]=0;lastnote[0]=0;lastfire=time(0);
-            snprintf(jstat,sizeof jstat,"→ win %s · %s/%s",lastidx,ia,ie);buf[0]=0;blen=0;sel=-1;continue;}
+            snprintf(jstat,sizeof jstat,"→ win %s · %s%s/%s",lastidx,ag,ds,ef);buf[0]=0;blen=0;sel=-1;continue;}
         if(do_pick&&na&&sel==0){IRST;char c[64];snprintf(c,64,"tmux select-window -t %s",lastwin);(void)!system(c);return 0;}
         if(do_pick&&nn&&sel>=0&&sel<nn){IRST;
             if(sel){char u[P+40];snprintf(u,sizeof u,"http://localhost:1111/doc?f=%s",lastnote+strlen(SROOT)+1);
@@ -297,7 +354,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
             for(char*p=cmd;*p&&ac<31;){while(*p==' ')p++;if(!*p)break;args[ac++]=p;while(*p&&*p!=' ')p++;if(*p)*p++=0;}
             args[ac]=NULL;setenv("A_TUI","1",1);execvp("a",args);return 0;}
     }
-    IRST;
+    free(draft);IRST;
     #undef IRST
     #undef BFIT
     #undef SNIP
