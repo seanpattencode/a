@@ -202,10 +202,10 @@ static int cmd_done(int argc,char**argv){AB;
             const char*CR="Crunch the code while keeping the same input output functionality exactly, reducing the number of tokens and verifying that with \"a diff\". Keep cutting until the code will break when cut more. Simplify and integrate logic as needed.";
             const char*KX="[ \"$k\" = %c ]&&{ tmux selectp -t $AP;tmux send -t $AP -X cancel 2>/dev/null;tmux send -t $AP -l '%s';sleep 0.4;tmux send -t $AP Enter; }\n"; /* copy-mode eats keys — cancel first */
             if(ts[0])fprintf(sf,"TS=$(cat<<'A_DONE'\n%s\nA_DONE\n)\n",ts);
-            fputs("TK=$(f 2>&1|grep -aE '^(net|fork):'|tail -1)\nwhile :;do\nprintf '\\033[1;32m✓ a done\\033[0m\\n'\n",sf);  /* [d] line carries the diff numbers (Sean 2026-09-25) */
+            fputs("TK=$(f 2>&1|grep -aE '^(net|fork):'|tail -1|sed 's/^net:.*lines, //');TK=${TK:-'+0 tok (no changes)'}\nwhile :;do\nprintf '%s\\n\\033[1;32m✓ a done\\033[0m\\n' \"$TK\"\n",sf);  /* tok line: own row at top, tok left, no file count (Sean 2026-10-20) */
             if(dl[0]&&tp)fputs("printf '\\033[1;37m[p]\\033[0m tell agent to push\\n'\n",sf);
             if(tp)fputs("printf '\\033[1;37m[e]\\033[0m talk to agent\\n'\n",sf);
-            fputs("printf '\\033[1;37m[d]\\033[0m view diff · %s\\n' \"$TK\"\nif [ -z \"$M\" ];then printf '\\033[1;37m[o]\\033[0m more\\n';else\n",sf);
+            fputs("printf '\\033[1;37m[d]\\033[0m view diff\\n'\nif [ -z \"$M\" ];then printf '\\033[1;37m[o]\\033[0m more\\n';else\n",sf);
             if(dl[0])fprintf(sf,"printf '\\033[1;37m[y]\\033[0m push these files only: %s\\n'\n",dl);
             if(tp)fputs("printf '\\033[1;37m[c]\\033[0m crunch the code\\n'\n",sf);
             fprintf(sf,"printf '\\033[1;37m[v]\\033[0m edit: %%s/%.*s\\n' \"$PWD\"\n",fl,dl);
