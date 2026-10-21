@@ -8,7 +8,7 @@ SELF="self" in sys.argv[2:]   # a apk self: parallel-installable variant — sel
 P="com.aios.a.self" if SELF else "com.aios.a"
 KT=r'''@file:Suppress("DEPRECATION","OVERRIDE_DEPRECATION")
 package com.aios.a
-import android.app.*;import android.content.*;import android.os.*;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*;import android.media.session.*
+import android.app.*;import android.content.*;import android.os.*;import android.speech.*;import android.speech.RecognizerIntent as RI;import android.webkit.*;import android.view.*;import android.graphics.*;import android.widget.*;import android.media.session.*
 import java.io.File;import java.io.OutputStream;import java.net.Socket
 private const val BASE="http://127.0.0.1:1112"
 // next-tmux-session: target the ATTACHED client's session; ssh/mosh/sshpass pane = send C-b n keystrokes (rides to the remote tmux), else local next-window
@@ -24,6 +24,18 @@ private fun pg(s:String)=w.loadDataWithBaseURL(null,"<body style='font:18px mono
 private fun jsEval(s:String)=h.post{w.evaluateJavascript(s,null)}
 @JavascriptInterface fun retry(){h.post{spawn();n=0;w.loadUrl(cur)}}
 @JavascriptInterface fun native(name:String){h.post{nav?.invoke(name)}}   // web home menu -> a native view (setup/native/read/rec); localhost menu lists these when window.A exists
+@JavascriptInterface fun recs():Int=(getSystemService(AUDIO_SERVICE) as android.media.AudioManager).activeRecordingConfigurations.size   // other apps' live captures: /mic warns they get silence
+private var sr:SpeechRecognizer?=null
+@JavascriptInterface fun hear(on:Boolean){h.post{sr?.destroy();sr=null;if(on){   // /mic: voice line's engine -> mrx('~partial'|'=final'); WebView Web Speech gave empty finals
+val r=if(SpeechRecognizer.isOnDeviceRecognitionAvailable(this))SpeechRecognizer.createOnDeviceSpeechRecognizer(this) else SpeechRecognizer.createSpeechRecognizer(this);sr=r
+val i=Intent(RI.ACTION_RECOGNIZE_SPEECH).putExtra(RI.EXTRA_LANGUAGE_MODEL,RI.LANGUAGE_MODEL_FREE_FORM).putExtra(RI.EXTRA_PARTIAL_RESULTS,true).putExtra(RI.EXTRA_SEGMENTED_SESSION,RI.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS).putExtra(RI.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,1500)   // segmented: plain onResults came back empty
+fun js(s:String)=w.evaluateJavascript("mrx("+org.json.JSONObject.quote(s)+")",null)
+fun t(b:Bundle?)=b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?:""
+r.setRecognitionListener(object:RecognitionListener{override fun onPartialResults(b:Bundle?){js("~"+t(b))}
+override fun onSegmentResults(b:Bundle){js("="+t(b))};override fun onResults(b:Bundle?){};override fun onEndOfSegmentedSession(){if(sr===r)r.startListening(i)}
+override fun onError(x:Int){if(sr===r)h.postDelayed({if(sr===r)r.startListening(i)},150)}
+override fun onReadyForSpeech(b:Bundle?){};override fun onBeginningOfSpeech(){};override fun onRmsChanged(v:Float){};override fun onBufferReceived(b:ByteArray?){};override fun onEndOfSpeech(){};override fun onEvent(x:Int,b:Bundle?){}})
+r.startListening(i)}}}
 @JavascriptInterface fun wsOpen(url:String){wsExec.submit{try{val s=Socket("127.0.0.1",1112);wsOut=s.getOutputStream()
 val k=android.util.Base64.encodeToString(ByteArray(16).also{java.security.SecureRandom().nextBytes(it)},android.util.Base64.NO_WRAP)
 wsOut!!.write("GET /ws HTTP/1.1\r\nHost: 127.0.0.1:1112\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $k\r\nSec-WebSocket-Version: 13\r\n\r\n".toByteArray())
@@ -84,7 +96,7 @@ val bin=File(filesDir,"bin");bin.mkdirs();for(p in listOf("a" to "liba.so","tmux
 for(sub in listOf("ssh","workspace/projects","workspace/cmds")){val sd=File(filesDir,"adata/git/$sub");sd.mkdirs();try{for(n in assets.list("git/$sub")?:emptyArray()){assets.open("git/$sub/$n").use{i->File(sd,n).outputStream().use{o->i.copyTo(o)}}}}catch(e:Exception){}}}
 private fun spawn(){txRun(this,"a serve 1112")}  // termux serves :1112; onResume re-ensures serve, never reloads (app-switch keeps state)
 @android.annotation.SuppressLint("ClickableViewAccessibility")
-override fun onCreate(b:Bundle?){super.onCreate(b)
+override fun onCreate(b:Bundle?){super.onCreate(b);actionBar?.hide();window.statusBarColor=Color.BLACK   // pure black top like the page (Sean 10-21)
 WebView.setWebContentsDebuggingEnabled(true)
 w=WebView(this).apply{settings.javaScriptEnabled=true;settings.domStorageEnabled=true;settings.mediaPlaybackRequiresUserGesture=false;addJavascriptInterface(this@M,"A");setBackgroundColor(Color.BLACK)   /* domStorage: localStorage is NULL in WebView without it (music trim cache, page freq counters) */
 setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT,false)   /* keep renderer priority when invisible (frozen renderer killed background music); no-gesture play = shade button works */
