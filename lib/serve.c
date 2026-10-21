@@ -483,11 +483,11 @@ static void handle(int c){
         sresp(c,fd<0||write(fd,bp+4,(size_t)(rn-(bp+4-req)))<0?400:200,TP,"",0);return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];qn(req,nm);
         if(!nm[0]){
-            int au=!!strstr(req,"sort=author"),alp=!!strstr(req,"sort=name"),rc=!!strstr(req,"sort=recent");   /* default = most-opened first; ?sort=name | ?sort=author | ?sort=recent = last opened first (Sean 10-04) */
+            int au=!!strstr(req,"sort=author"),alp=!!strstr(req,"sort=name"),rc=!!strstr(req,"sort=recent");   /* default = most-opened first; ?sort=name | ?sort=author | ?sort=recent = dir mtime desc: added or opened last (Sean 10-21) */
             char bd[P];snprintf(bd,P,"%s/books",AROOT);
-            static char names[4096][128];int n=0;DIR*d=opendir(bd);struct dirent*e;
+            static char names[4096][128];static int mt[4096];int n=0;DIR*d=opendir(bd);struct dirent*e;
             if(d){while((e=readdir(d))&&n<4096){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
-                char dp[P];snprintf(dp,P,"%s/%s",bd,e->d_name);struct stat st;if(!stat(dp,&st)&&S_ISDIR(st.st_mode))snprintf(names[n++],128,"%s",e->d_name);}closedir(d);}
+                char dp[P];snprintf(dp,P,"%s/%s",bd,e->d_name);struct stat st;if(!stat(dp,&st)&&S_ISDIR(st.st_mode)){mt[n]=(int)st.st_mtime;snprintf(names[n++],128,"%s",e->d_name);}}closedir(d);}
             {char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);  /* merge synced index: registered-elsewhere books appear, pull on open */
              if(ix){for(char*l=ix;l<ix+il&&n<4096;){char*e2=memchr(l,'\n',(size_t)(ix+il-l)),*lim=e2?e2:ix+il;
                 char*t1=memchr(l,'\t',(size_t)(lim-l)),*t2=t1?memchr(t1+1,'\t',(size_t)(lim-t1-1)):0;
@@ -496,14 +496,16 @@ static void handle(int c){
                     if(!dup&&bn[0]&&bn[0]!='.')snprintf(names[n++],128,"%s",bn);}
                 if(e2)l=e2+1;else break;}free(ix);}}
             static int idx[4096];   /* author mode sorts an index by resolved-author key (book.c) */
-            if(au){bk_resolve(names,n);g_ak=bk_ak;for(int i=0;i<n;i++)idx[i]=i;qsort(idx,(size_t)n,sizeof(int),g_akcmp);}
-            else{qsort(names,(size_t)n,128,scmp);for(int i=0;i<n;i++)idx[i]=i;
-                if(!alp){static int cnt[4096],lst[4096],k;   /* fork-per-conn: fresh zeroed copy each request; lst = open sequence, highest = seen last */
+            for(int i=0;i<n;i++)idx[i]=i;
+            if(au){bk_resolve(names,n);g_ak=bk_ak;qsort(idx,(size_t)n,sizeof(int),g_akcmp);}
+            else{if(!rc)qsort(names,(size_t)n,128,scmp);   /* recent: dir order keeps mt[i] paired */
+                if(rc)g_bc=mt;else if(!alp){static int cnt[4096];   /* fork-per-conn: fresh zeroed copy each request */
                     char lp[P];snprintf(lp,P,"%s/local/serve.log",AROOT);size_t ll=0;char*lg=readf(lp,&ll);
                     if(lg){for(char*p=lg;(p=memmem(p,(size_t)(lg+ll-p),"GET /book?n=",12));){p+=12;   /* memmem: the log holds NULs, strstr stopped at the first one (half the opens were never counted) */char bn[128];int j=0;
                         for(;*p&&*p!=' '&&*p!='&'&&j<127;p++){if(*p=='%'&&p[1]&&p[2]){char x[3]={p[1],p[2],0};bn[j++]=(char)strtol(x,0,16);p+=2;}else bn[j++]=*p;}
-                        bn[j]=0;for(int i=0;i<n;i++)if(!strcmp(names[i],bn)){cnt[i]++;lst[i]=++k;break;}}
-                    free(lg);}g_bc=rc?lst:cnt;qsort(idx,(size_t)n,sizeof(int),g_bccmp);}}
+                        bn[j]=0;for(int i=0;i<n;i++)if(!strcmp(names[i],bn)){cnt[i]++;break;}}
+                    free(lg);}g_bc=cnt;}
+                if(!alp)qsort(idx,(size_t)n,sizeof(int),g_bccmp);}
             int cap=1<<20;char*h=malloc((size_t)cap);int hl=snprintf(h,(size_t)cap,
                 DOCV ""
                 "<style>body{background:#0b0b0b;color:#ddd;margin:0 0 160px;font:18px/1.35 system-ui}h3{color:#fff;padding:14px 16px 6px;margin:0}"
@@ -544,11 +546,10 @@ static void handle(int c){
                 hl+=snprintf(h+hl,(size_t)(cap-hl),"<div class=\"r %s %s\"><a class=t href=\"/book?n=%s\">%s</a><a class=\"c o\">\xe2\x8b\xaf</a><div class=m><a href=\"/book?n=%s\">txt</a>%s<a href=\"/bookdir?n=%s\">folder</a><a href=\"/bookcloud?n=%s\">cloud</a><a class=x href=\"/bookarchive?n=%s\">archive</a></div></div>",has?"":"x",au?"in":"",names[i],lb,names[i],xt,names[i],names[i],names[i]);}
             sdoc(c,h,hl);free(h);return;}
         if(!bkok(nm)){sresp(c,400,TP,"bad book",8);return;}
-        char tf[P];bkfile(nm,tf);
+        char tf[P],bdir[P];bkfile(nm,tf);snprintf(bdir,P,"%s/books/%s",AROOT,nm);utimensat(AT_FDCWD,bdir,0,0);   /* touch: the recent key */
         size_t tl=0;char*txt=readf(tf,&tl);
-        if(!txt){char bdir[P];snprintf(bdir,P,"%s/books/%s",AROOT,nm);struct stat bst;int local=!stat(bdir,&bst)&&S_ISDIR(bst.st_mode);  /* book here but no transcript = needs transcribe, NOT a pull loop */
-            char ip[P];snprintf(ip,P,"%s/git/books/index.txt",AROOT);size_t il=0;char*ix=readf(ip,&il);int reg=0;  /* in synced index, not local: pull in bg, page retries */
-            if(ix){char pat[140];snprintf(pat,140,"\t%s\t",nm);reg=!!strstr(ix,pat);free(ix);}
+        if(!txt){struct stat bst;int local=!stat(bdir,&bst)&&S_ISDIR(bst.st_mode);  /* book here but no transcript = needs transcribe, NOT a pull loop */
+            char x[1];int reg=bkcol(nm,1,x,1)>=0;  /* in synced index, not local: pull in bg, page retries */
             if(reg&&!local){if(!fork()){signal(SIGCHLD,SIG_DFL);int z=open("/dev/null",O_WRONLY);if(z>=0){dup2(z,1);dup2(z,2);}execlp("a","a","book","pull",nm,(char*)0);_exit(1);}
                 char b[512];int bl=snprintf(b,512,"<!doctype html><meta charset=utf-8><meta http-equiv=refresh content=5><body style=\"background:#0b0b0b;color:#fff;font:16px " UM ";padding:40px\">syncing %s from cloud\xe2\x80\xa6 auto-retrying</body>",nm);
                 sdoc(c,b,bl);return;}
