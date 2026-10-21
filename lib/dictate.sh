@@ -3,6 +3,78 @@
 # or endpoint pauses and rewrites in place. Voice commands ("new agent", "next agent", "close agent", "backspace", "clear", "enter", "stop")
 # fire immediately on streaming partials. In #mic (nt mode), streams to #mt2 on top AND types/acts in active tmux pane on bottom.
 S=/tmp/a_dictate R=$S.ctl srv=/tmp/a_dictate_srv.py
+case $(uname) in Darwin) # macOS: Apple Speech.framework = the OS dictation engine (sherpa/pactl/ydotool below are linux-only). Finals type
+# into the most-recent tmux client's pane (A_DICT_WIN overrides); TCC dialogs only render in the GUI session (serve lives there) — not over ssh.
+H=$HOME/.cache/a_dictate/macdict
+case "$1" in
+bind) echo 'macOS: open localhost:1111/mic (or: a dictate)'; exit;;
+mic) [ "$2" ] || echo 'default	macOS system input — swap in System Settings > Sound	*'; exit;;
+status) { pgrep -qf 'dictate.sh _loop' && echo '# listening · macOS' || echo '# off'; } | tee -a $S.log; exit;;
+_loop)
+mkdir -p ${H%/*}; cat >$H.sw.tmp <<'SW'
+// Apple Speech.framework — stdout: ~partial =final #status !error. On-device never self-finals (verified 10-20): the timer endAudio()s a hypothesis quiet >1.2s.
+import Speech
+import AVFoundation
+setbuf(stdout, nil)
+let sem = DispatchSemaphore(value: 0)
+if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined { AVCaptureDevice.requestAccess(for: .audio) { _ in sem.signal() }; sem.wait() }
+if SFSpeechRecognizer.authorizationStatus() == .notDetermined { SFSpeechRecognizer.requestAuthorization { _ in sem.signal() }; sem.wait() }
+guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { print("! mic denied: System Settings > Privacy & Security > Microphone"); exit(1) }
+guard SFSpeechRecognizer.authorizationStatus() == .authorized, let r = SFSpeechRecognizer(), r.isAvailable else { print("! speech denied/unavailable: System Settings > Privacy & Security > Speech Recognition"); exit(1) }
+let eng = AVAudioEngine(), inp = eng.inputNode
+var req: SFSpeechAudioBufferRecognitionRequest?, task: SFSpeechRecognitionTask?, txt = "", stamp = Date()
+func go() {
+    let q = SFSpeechAudioBufferRecognitionRequest()
+    q.shouldReportPartialResults = true; q.taskHint = .dictation; q.requiresOnDeviceRecognition = r.supportsOnDeviceRecognition
+    req = q
+    task = r.recognitionTask(with: q) { res, err in
+        guard req === q else { return }
+        if let res = res { txt = res.bestTranscription.formattedString; stamp = Date(); print((res.isFinal ? "=" : "~") + txt); if res.isFinal { txt = ""; go() } }
+        else if err != nil { txt = ""; usleep(250000); go() }
+    }
+}
+inp.installTap(onBus: 0, bufferSize: 2048, format: inp.outputFormat(forBus: 0)) { b, _ in req?.append(b) }
+do { try eng.start() } catch { print("! audio engine: \(error.localizedDescription)"); exit(1) }
+go()
+print("# listening · \(r.supportsOnDeviceRecognition ? "on-device" : "server") dictation · \(Int(inp.outputFormat(forBus: 0).sampleRate))Hz")
+Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in if !txt.isEmpty, Date().timeIntervalSince(stamp) > 1.2 { req?.endAudio() } }
+RunLoop.main.run()
+SW
+cmp -s $H.sw.tmp $H.swift 2>/dev/null && rm $H.sw.tmp || { mv $H.sw.tmp $H.swift; rm -f $H; }
+[ -x $H ] || { echo '# compiling Apple Speech helper (one-time)'
+printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.a.dictate</string><key>NSMicrophoneUsageDescription</key><string>a dictate listens while dictation is on.</string><key>NSSpeechRecognitionUsageDescription</key><string>a dictate transcribes your speech on this Mac.</string></dict></plist>\n' >$H.plist
+swiftc -swift-version 5 -O -suppress-warnings -o $H $H.swift -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker $H.plist && codesign -fs - $H 2>/dev/null || { echo '! swiftc failed'; rm -f $S.on; exit 1; }; }
+[ -f $S.on ] || exit 0
+t(){ [ "$A_DICT_WIN" ] && { echo "$A_DICT_WIN"; return; }; v=$(tmux lsc -F '#{client_activity} #{client_session}' 2>/dev/null|sort -n|tail -1|cut -d' ' -f2); echo "${v:-a}"; }
+rm -f $S.sess
+"$H" | while IFS= read -r l; do p=${l#?}
+case $l in
+'~'*) printf '%s\n' "$p";;
+'='*) w=$(printf %s "$p"|tr A-Z a-z|tr -cd 'a-z ')
+case $w in
+stop|*' stop') pkill -f "$H";;
+enter) tmux send-keys -t "$(t)" Enter;;
+clear) tmux send-keys -t "$(t)" C-u;;
+backspace) tmux send-keys -t "$(t)" BSpace;;
+'new agent') d=$(tmux display -t "$(t)" -p '#{pane_current_path}');w=$(cd "${d:-$HOME}"&&PATH=$HOME/.local/bin:$PATH a a 2>>$S.log|awk '/^→ win/{print $3}');[ "$w" ]&&[ "$w" != "?" ]&&for c in $(tmux lsc -F '#{client_session}'|grep '^a');do tmux select-window -t "$c:$w";done;;
+'next agent'|'switch agent') tmux next-window -t "$(t)";;
+'close agent') tmux kill-window -t "$(t)";;
+*) [ "$p" ] && { tmux send-keys -t "$(t)" -l -- "$p "; printf '%s\n' "$p" >>$S.sess; };;
+esac; printf '%s\n' "$p";;
+*) printf '%s\n' "$l";;
+esac
+done
+[ -s $S.sess ] && { mkdir -p "$HOME/a/adata/transcripts"; cat $S.sess >>"$HOME/a/adata/transcripts/$(date '+%Y-%m-%d %I-%M %p') dictate.txt"; rm -f $S.sess; }
+rm -f $S.on; echo '# off'; exit;;
+esac
+:>>$S.log
+if [ -f $S.on ] && pgrep -qf 'dictate.sh _loop'; then
+if [ "$2" = on ]; then echo '# listening · macOS' >>$S.log; else rm -f $S.on; pkill -f "$H"; fi
+elif [ "$2" != off ]; then :>$S.on; nohup sh "$0" _loop </dev/null >>$S.log 2>&1 &
+else echo '# off' >>$S.log
+fi
+exit;;
+esac
 if [ "$1" = bind ]; then c=$HOME/.config/sway/config
   grep -q 'F5 exec a dictate' "$c" || echo 'bindsym F5 exec a dictate' >> "$c"
   swaymsg bindsym F5 exec a dictate && echo 'F5 -> a dictate (tap to start/stop)'; exit; fi
