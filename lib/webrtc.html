@@ -6,7 +6,7 @@
 const media=['audio','video'];
 const L=m=>{log.textContent+='\n'+m;log.scrollTop=log.scrollHeight},V=s=>btoa(unescape(encodeURIComponent(s)));
 let p,d,C,A,W,sid='',ok=false,q=null,sent=0;const frame=new Promise(r=>term.onload=()=>r(frames[0]));
-const help=(e,b)=>L(e+'\nUse HTTPS/localhost. '+(media.includes(b?.id)?'Allow camera/mic in site/app settings. Close other camera apps.':b==run||b==grant?'Check remote output; restart a serve, reconnect, then retry.':'Check internet. Android Settings > Apps > browser > Permissions > Nearby devices > Allow. Create a new code. Try the same Wi-Fi; relaying is not configured.'));
+const help=(e,b)=>L(e+'\nUse HTTPS/localhost. '+(media.includes(b?.id)?'Allow camera/mic in app/site settings; retry. Close camera apps.':b==run||b==grant?'Check remote output; restart a serve, reconnect, then retry.':'Check internet. Android Settings > Apps > a app/browser > Permissions > Nearby devices > Allow. Create a new code. Try the same Wi-Fi; relaying is not configured.'));
 const on=(b,f,e='onpointerdown')=>b[e]=async()=>{const t=performance.now();try{await f()}catch(e){if(e.name!='AbortError'){if(b==offer||b==use)close();help(e,b)}}ms.textContent=(performance.now()-t).toFixed(3)+' ms'};
 const tx=(m,c=d)=>c?.readyState=='open'&&c.send(JSON.stringify(m)),lock=v=>run.disabled=deny.disabled=v,ui=()=>{const m=mode.value;grant.disabled=audio.disabled=video.disabled=!ok;send.disabled=!ok||m=='cmd'&&sent;grant.hidden=!(cmd.hidden=send.hidden=m=='shell');run.hidden=deny.hidden=m!='cmd'};
 function rtc(s){if(sid)W?W.readyState==1&&W.send(s):tx({shell:sid,input:s})}
