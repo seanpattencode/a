@@ -1,10 +1,11 @@
 static void bg_backup_jsonl(void) {
+    int lf=open("/tmp/.a_bk.lock",O_CREAT|O_WRONLY,0644);if(lf>=0&&flock(lf,LOCK_EX|LOCK_NB)){close(lf);return;} /* single-flight (746 piled on fedora 10-22); no CLOEXEC on purpose: the nohup chain inherits the fd, so the lock lives exactly as long as the upload */
     char c[B]; snprintf(c, B, "nohup sh -c 'D=%s/backup/%s;mkdir -p $D&&"
         "find ~/.claude/projects -name \"*.jsonl\" 2>/dev/null|while read f;do [ \"$f\" -nt \"$D/$(basename \"$f\")\" ]&&cp \"$f\" $D/ 2>/dev/null;done;"  /* -nt: growing sessions re-stage (cp -n froze first-sync prefix; cp -u absent on mac) */
         "r=$(rclone listremotes 2>/dev/null|grep \"^a-gdrive2:\"|head -1|tr -d \":\");"
         "[ -n \"$r\" ]&&rclone copy $D \"$r:adata/backup/%s/\" --include \"*.jsonl\" --include \"*.log\" -q"
         "' </dev/null >/dev/null 2>&1 &", AROOT, DEV, DEV);
-    (void)!system(c);
+    (void)!system(c);if(lf>=0)close(lf);
 }
 
 static int cmd_email(int argc, char **argv) { AB;(void)argc;
