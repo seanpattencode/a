@@ -574,14 +574,14 @@ static void handle(int c){
             "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}::highlight(spk){background:#764;color:#fff}::highlight(fnd){background:#a80;color:#000}"
             "#fp,#op,#np{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;background:#000;z-index:9;padding:10px 12px;box-sizing:border-box}"
             "#fq,#nq{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px " UM ";padding:8px 10px}#fc{color:#999;font:22px " UM ";padding-left:12px}</style>"
-            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=mn>\xe2\x9c\x8e</a><a id=mo>\xe2\x8b\xaf</a><div id=hud></div></div><div id=mp></div><div id=op><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a></div><div id=fp><input id=fq placeholder=find><span id=fc></span></div><div id=np><input id=nq placeholder=note></div><pre id=bk>");
+            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=mn>\xe2\x9c\x8e</a><a id=mo>\xe2\x8b\xaf</a><div id=hud></div></div><div id=mp></div><div id=op><a id=mc style=display:none>\xe2\x98\xb0</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a></div><div id=fp><input id=fq placeholder=find><span id=fc></span></div><div id=np><input id=nq placeholder=note></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,ns=[].slice.call(K.childNodes),T=0,bs=[];"
             "for(var i=0;i<ns.length;i++){bs.push(T);T+=ns[i].length||0;}"
             "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
             "function O(){var r=K.getBoundingClientRect(),o;for(var y=2;y<120;y+=8){o=C(r.left+32,r.top+y);if(o!=null)return o;}return P;}"
-            "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.round(K.scrollTop/ph());}"
+            "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.floor(K.scrollTop/ph());}"   /* floor = the page the line is on: the flip after a jump moves on from it instead of skipping half a page (round) */
             "function U(){hud.textContent='pg '+(pg+1)+'/'+(NP()+1)+(sp&&MD?' \xc2\xb7 '+MD:'');}"
             "function save(){var b='pos='+O(),u='/book?n='+encodeURIComponent(N);navigator.sendBeacon?navigator.sendBeacon(u,new Blob([b],{type:'" UE "'})):fetch(u,{method:'POST',headers:{'Content-Type':'" UE "'},body:b});}"
             /* whole-screen pages via scrollTop (sync, sub-ms); flip on pointerdown/wheel/keys */
@@ -597,16 +597,19 @@ static void handle(int c){
             "requestAnimationFrame(function(){fit();if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
             "addEventListener('pagehide',save);addEventListener('visibilitychange',function(){if(document.hidden)save();});"
             /* marks: col6 csv, server reply authoritative; stopPropagation vs the pager; TX offsets == file offsets */
-            "var TX=K.textContent,mks=[];"
+            "var TX=K.textContent,mks=[],MH='',TC='',mw=0;"
             "function EH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}"
             "function MR(t){mks=t?t.split(',').filter(Boolean).map(Number):[];mt.textContent='\xe2\x9a\x91'+(mks.length||'');"
-            "mp.innerHTML=mks.map(function(o){return '<div data-o='+o+'><b data-x='+o+'>\xe2\x9c\x95</b>'+EH(TX.substr(o,44).replace(/\\s+/g,' '))+'</div>'}).join('')||'<div>no marks \xe2\x80\x94 +\xe2\x9a\x91 adds this page</div>'}"
+            "MH=mks.map(function(o){return '<div data-o='+o+'><b data-x='+o+'>\xe2\x9c\x95</b>'+EH(TX.substr(o,44).replace(/\\s+/g,' '))+'</div>'}).join('')||'<div>no marks \xe2\x80\x94 +\xe2\x9a\x91 adds this page</div>';mp.innerHTML=MH;mw=1}"
+            "function PP(h,w){mp.innerHTML=h;mp.style.display=mp.style.display=='block'&&mw==w?'none':'block';mw=w}"
             "function MW(b){fetch('/bookmark?n='+encodeURIComponent(N),{method:'POST',headers:{'Content-Type':'" UE "'},body:b}).then(function(r){return r.text()}).then(MR)}"
             "ma.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();MW('add='+O())});"
-            "mt.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();mp.style.display=mp.style.display=='block'?'none':'block'});"
+            "mt.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();PP(MH,1)});mc.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();PP(TC,2)});"
             "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
-            "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));K.scrollTop=pg*ph();U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"
+            "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"   /* the line lands at the top (no page snap: a chapter heading must show); the next flip realigns to pages */
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
+            /* chapters = output/toc.txt (a book toc: epub nav/ncx titles mapped into this text, offset\ttitle); \xe2\x98\xb0 shows only when it exists, rows reuse the marks popup + jump */
+            "fetch('/bookfile?n='+encodeURIComponent(N)+'&f=output/toc.txt').then(function(r){return r.ok?r.text():''}).then(function(t){TC=t.split('\\n').filter(Boolean).map(function(l){var i=l.indexOf('\\t');return '<div data-o='+l.slice(0,i)+'>'+EH(l.slice(i+1))+'</div>'}).join('');if(TC)mc.style.display=''});"
             /* find: native find can't scroll the hidden-overflow pager nor match across hard wraps — fold case/dashes/whitespace over TX, jump = the mark pattern */
             "var FH=[],FI=-1,FV=null;"
             "function FN(v){FH=[];FI=-1;if(!/\\S/.test(v))return;var q=v.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&').replace(/[\\s\\u2014\\u2013-]+/g,'[\\\\s\\\\u2014\\\\u2013-]+'),rx=new RegExp(q,'gi'),m;while((m=rx.exec(TX))&&FH.length<500)FH.push([m.index,m.index+m[0].length])}"

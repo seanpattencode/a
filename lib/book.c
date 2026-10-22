@@ -2,7 +2,7 @@
 # /// script
 # dependencies = ["PyPDF2"]
 # ///
-import sys, subprocess, time, tempfile, os, shutil, glob, re, json
+import sys, subprocess, time, tempfile, os, shutil, glob, re, json, zipfile, posixpath, html
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
@@ -308,7 +308,7 @@ def _drip_loop(tgt, rate):
    try: subprocess.run(["ebook-convert", str(src2), str(out)], capture_output=True, timeout=180)
    except Exception: pass
    if out.exists() and not out.stat().st_size: out.unlink()   # 0-byte stub reads as "has text"
-   _dlog(f"{b.name} convert {'ok' if out.exists() else 'failed'}")
+   _dlog(f"{b.name} convert {'ok' if out.exists() else 'failed'}"); out.exists() and cmd_toc(b.name)
  for b in [x for x in books if (x / "chunks").is_dir() and (x / "prompt.txt").is_file()]: _drip_text(b, rate)
  books = _dorder([b for b in books if _dtodo(b)])
  _dw(qtotal=len(books), qdone=0)
@@ -473,6 +473,40 @@ def cmd_sync():
  print(f"Pulling {path} -> {DATA_DIR}")
  subprocess.run(["rclone", "copy", path, str(DATA_DIR), "--progress", "-L", "--update"], check=False)
 
+def _epubtoc(ep):   # ncx titles + where each target sits in the spine's bytes: the prior that beats the printed contents page
+ z = zipfile.ZipFile(ep); N = z.namelist(); opf = next((n for n in N if n.endswith(".opf")), None); ncx = next((n for n in N if n.endswith(".ncx")), None)
+ if not (opf and ncx): return []
+ o = z.read(opf).decode("utf8", "replace"); J = lambda d, h: posixpath.normpath(posixpath.join(d, h)); od = posixpath.dirname(opf)
+ ids = {i[1]: J(od, h[1]) for t in re.findall(r"<item\b[^>]*>", o) for i, h in [(re.search(r'id="([^"]+)"', t), re.search(r'href="([^"]+)"', t))] if i and h}
+ sp = [ids[i] for i in re.findall(r'<itemref\b[^>]*idref="([^"]+)"', o) if i in ids]; sz = [z.getinfo(p).file_size if p in N else 0 for p in sp]; tot = sum(sz) or 1
+ def frac(hr):
+  f, _, g = hr.partition("#"); p = J(posixpath.dirname(ncx), f)
+  if p not in sp: return None
+  k = sp.index(p); x = z.read(p).decode("utf8", "replace") if g else ""; j = x.find(f'id="{g}"')
+  return (sum(sz[:k]) + (j / len(x) * sz[k] if j > 0 else 0)) / tot
+ E = re.findall(r'(?s)<navLabel>\s*<text>(.*?)</text>\s*</navLabel>\s*<content src="([^"]+)"', z.read(ncx).decode("utf8", "replace"))
+ return [(s, frac(h)) for t, h in E for s in [re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", t))).strip()] if s]
+def _tocmap(E, T):   # nearest hit to the spine spot (±6%, else forward within 15%); a hit owning/starting its line wins ties within 1%
+ L = len(T); pos = 0; out = []; ln = lambda i: T[T.rfind("\n", 0, i) + 1:T.find("\n", i) % (L + 1)].strip(" \t#"); ls = lambda i: not T[T.rfind("\n", 0, i) + 1:i].strip(" \t#")
+ for t, fr in E:
+  w = re.findall(r"\w+", t.lower())
+  if not w or re.fullmatch(r"cover|title page|copyright|contents|dedication|epigraph|index|notes|sources|also by.*|about the author", t, re.I): continue   # no text to land on
+  rx = re.compile(r"(?<!\w)" + r"\W+".join(map(re.escape, w)) + r"(?!\w)", re.I); ex = None if fr is None else fr * L; wl = lambda i: re.findall(r"\w+", ln(i).lower()) == w
+  c = [m.start() for m in rx.finditer(T, max(0, int(ex - .06 * L)), int(ex + .06 * L))] if ex is not None else []
+  c = c or [i for i in (m.start() for m in rx.finditer(T, pos, L if ex is None else int(ex + .15 * L))) if ex is None or i >= ex - .15 * L]
+  if not re.search(r"[^\W\d_]{3}", t): c = [i for i in c if wl(i)]   # "3", "IV": a heading line or nothing
+  if c: d = (lambda i: i) if ex is None else (lambda i: abs(i - ex)); m = min(map(d, c)); i = min((i for i in c if d(i) - m <= .01 * L), key=lambda i: (not wl(i), not ls(i), d(i))); out.append((i, t)); pos = i + 1
+ n = -(T[:1] == "\n"); k = 0; u = {}   # -> JS string offsets: astral chars count 2, <pre> eats a leading newline
+ for o in sorted({o for o, t in out}): n += len(T[k:o].encode("utf-16-le")) // 2 - (o - k); k = o; u[o] = o + n
+ return [(u[o], t) for o, t in out]
+def cmd_toc(tgt):   # epub ncx -> output/toc.txt "offset\ttitle" for the reader's ☰; no epub or <3 found = no file
+ for b in [resolve_book(tgt)] if tgt != "all" else sorted(d for d in DATA_DIR.glob("[!.]*") if d.is_dir()):
+  ep = next(b.glob("*.epub"), None); tp = next((p for p in [b / "output" / f for f in ("explained.txt", b.name + ".txt", "transcript.txt")] + [b / "source.txt"] if p.is_file()), None); out = b / "output" / "toc.txt"   # tp = serve.c bkfile order
+  if not (ep and tp): continue
+  try: m = _tocmap(_epubtoc(ep), tp.read_text(encoding="utf8", errors="replace"))
+  except Exception as e: print(f"✗ {b.name}: {e}"); continue
+  if len(m) < 3: out.unlink(missing_ok=True); continue
+  out.write_text("".join(f"{o}\t{t}\n" for o, t in m)); print(f"☰ {b.name} {len(m)}")
 def cmd_add(path):
  p = Path(path)
  if not p.exists(): print(f"File not found: {path}"); sys.exit(1)
@@ -589,7 +623,7 @@ if __name__ == "__main__":
               "a book list | index | serve [start|stop] | sync\n"
               "a book next <name> [A-B|page]  unread chunk → read.log; read.html live page\n"
               "a book note <name> [@N[-M]] [text]  note/mark at offset or section; bare=list\n"
-              "a book toc          tagged books' tables of contents -> books/toc.txt\n"
+              "a book toc [<name>|all]  epub chapters -> output/toc.txt, the reader's ☰ list\n"
               "a book archive <substr>  toggle hidden .<name>: saved, not listed")
   sys.exit(0)
 
@@ -706,14 +740,10 @@ if __name__ == "__main__":
    out.parent.mkdir(parents=True, exist_ok=True)
    try: r = subprocess.run(["ebook-convert", str(src), str(out)], capture_output=True, text=True, timeout=180)
    except subprocess.TimeoutExpired: fail += 1; print(f"✗ {bd.name}: timeout (>180s)"); continue
-   if _sz(out): done += 1; print(f"✓ {bd.name}", flush=True)
+   if _sz(out): done += 1; print(f"✓ {bd.name}", flush=True); cmd_toc(bd.name)
    else: fail += 1; print(f"✗ {bd.name}: {((r.stderr or r.stdout).strip().splitlines() or ['failed'])[-1][:80]}")
   print(f"\nconverted {done}, skipped {skip} (already had text), failed {fail}")
- elif cmd == "toc":   # a title = grep target in that book's text
-  subprocess.run(["sh", "-c", r'''while read -r b t;do case $b in \#*)continue;;esac;d=$1/$b;e=$d/source.epub
-c=$({ [ -f "$e" ]&&unzip -p "$e" '*.ncx'|sed -n '/navMap/,$p'|grep -o '<text>[^<]*'|cut -c7-||mutool show "$d/source.pdf" outline|sed 's/^[^"]*"//;s/"[^"]*$//';}|grep -vixE 'cover|title page|copyright.*|contents|dedication|acknowledg.*|index|notes|about the author|also by.*')
-[ $(echo "$c"|wc -l) -gt 2 ]&&printf '== %s\n%s\n' "$b" "$c"||x="$x $b";done<$2/tags.txt>$2/toc.txt 2>/dev/null
-echo "+ $(grep -c ^== $2/toc.txt) books -> $2/toc.txt · no TOC:$x"''', "_", DATA_DIR, IDX.parent])
+ elif cmd == "toc": cmd_toc(args[2] if len(args) > 2 else "all")
  elif cmd == "split":
   book = _bk()
   split_pdf(book, nocache=nocache)
