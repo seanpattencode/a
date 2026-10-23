@@ -1,5 +1,7 @@
-"""pre-accept claude's per-dir trust prompt: no global off-switch, --dangerously-skip-permissions doesn't bypass it, trust lives per-dir in ~/.claude.json (atomic, race-safe)"""
+"""pre-accept claude+codex per-dir trust prompt (no off-switch, skip-permissions doesn't bypass)"""
 import json,os,tempfile
+c,h=os.path.expanduser("~/.codex/config.toml"),f'[projects."{os.getcwd()}"]'
+if os.path.exists(c) and h not in open(c).read():open(c,"a").write(f'\n{h}\ntrust_level = "trusted"\n')
 p=os.path.expanduser("~/.claude.json")
 try:d=json.load(open(p)) if os.path.exists(p) else {}
 except Exception:raise SystemExit(0)

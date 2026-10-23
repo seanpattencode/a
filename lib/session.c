@@ -55,7 +55,7 @@ static int create_sess(const char *sn, const char *wd, const char *cmd, const ch
     }
     /* ctx as file (E2BIG at 128KB/arg) */
     char src_pfx[P+32]="";if(is_claude&&SRC_ON)snprintf(src_pfx,sizeof(src_pfx),"%s >>%s 2>/dev/null;",ACAT,ctxf);
-    char tpfx[P+48]="";if(is_claude)snprintf(tpfx,sizeof(tpfx),"python3 \"%s/lib/trust.py\" 2>/dev/null;",SDIR);
+    char tpfx[P+48]="";if(is_claude||is_codex)snprintf(tpfx,sizeof(tpfx),"python3 \"%s/lib/trust.py\" 2>/dev/null;",SDIR);
     if (ai) snprintf(wcmd, sizeof(wcmd),
         "unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT;%s%stmux wait-for -S rdy-%s;for _ in 1 2 3;do %s%s&&exit;echo \"$(date) $? $(pwd)\">>%s/crashes.log;sleep 1;done;exec bash", tpfx,src_pfx,sn,acmd,csuf,LOGDIR);
     else snprintf(wcmd, sizeof(wcmd), "%s", cmd ? cmd : "");
