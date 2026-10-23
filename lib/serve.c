@@ -570,10 +570,10 @@ static void handle(int c){
             "#tr{position:fixed;bottom:0;left:0;right:0;height:112px;display:flex;align-items:center;background:#000;z-index:9}"
             "#tr a,#op a{color:#fff;text-decoration:none;padding:0 18px;font:56px/112px " UM "}"
             "#hud{margin-left:auto;min-width:0;overflow:hidden;color:#999;font:16px " UM ";padding:0 12px}"
-            "#mp{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px " UM ";z-index:9}"
+            "#mp{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px " UM ";z-index:9;scrollbar-color:#666 #000}#mp::-webkit-scrollbar{display:block;width:12px;background:#000}#mp::-webkit-scrollbar-thumb{background:#666}#mh{position:sticky;top:0;background:#000}"
             "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}::highlight(spk){background:#764;color:#fff}::highlight(fnd){background:#a80;color:#000}"
             "#fp,#op,#np{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;background:#000;z-index:9;padding:10px 12px;box-sizing:border-box}"
-            "#fq,#nq{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px " UM ";padding:8px 10px}#fc{color:#999;font:22px " UM ";padding-left:12px}</style>"
+            "#fq,#nq,#mq{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px " UM ";padding:8px 10px}#fc{color:#999;font:22px " UM ";padding-left:12px}</style>"
             "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=mn>\xe2\x9c\x8e</a><a id=mo>\xe2\x8b\xaf</a><div id=hud></div></div><div id=mp></div><div id=op><a id=mc style=display:none>\xe2\x98\xb0</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a></div><div id=fp><input id=fq placeholder=find><span id=fc></span></div><div id=np><input id=nq placeholder=note></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
@@ -591,7 +591,7 @@ static void handle(int c){
             "function NP(){return Math.max(0,Math.ceil((K.scrollHeight-K.clientHeight)/ph()));}"
             "function G(p){p=Math.max(0,Math.min(p,NP()));K.scrollTop=p*ph();pg=p;U();clearTimeout(st);st=setTimeout(save,500);}"
             "addEventListener('pointerdown',function(e){G(pg+(e.clientX<innerWidth/3?-1:1));e.preventDefault();});"
-            "addEventListener('wheel',function(e){G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
+            "addEventListener('wheel',function(e){if(mp.contains(e.target))return;G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
             "addEventListener('keydown',function(e){var k=e.key;if(((e.ctrlKey||e.metaKey)&&(k==='f'||k==='F'))||k==='/'){FT(1);e.preventDefault();return}if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
             "addEventListener('resize',function(){fit();G(pg);});"
             "requestAnimationFrame(function(){fit();if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
@@ -600,16 +600,20 @@ static void handle(int c){
             "var TX=K.textContent,mks=[],MH='',TC='',mw=0;"
             "function EH(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}"
             "function MR(t){mks=t?t.split(',').filter(Boolean).map(Number):[];mt.textContent='\xe2\x9a\x91'+(mks.length||'');"
-            "MH=mks.map(function(o){return '<div data-o='+o+'><b data-x='+o+'>\xe2\x9c\x95</b>'+EH(TX.substr(o,44).replace(/\\s+/g,' '))+'</div>'}).join('')||'<div>no marks \xe2\x80\x94 +\xe2\x9a\x91 adds this page</div>';mp.innerHTML=MH;mw=1}"
+            "MH=HD('marks')+(mks.map(function(o){return '<div data-o='+o+'><b data-x='+o+'>\xe2\x9c\x95</b>'+EH(TX.substr(o,44).replace(/\\s+/g,' '))+'</div>'}).join('')||'<div>no marks \xe2\x80\x94 +\xe2\x9a\x91 adds this page</div>');mp.innerHTML=MH;mw=1}"
             "function PP(h,w){mp.innerHTML=h;mp.style.display=mp.style.display=='block'&&mw==w?'none':'block';mw=w}"
+            "function HD(l){return '<div id=mh>'+l+' <input id=mq placeholder=search></div>'}"   /* the sticky header names the list; the box filters rows, Enter takes the first match; keys never reach the page's flip handler */
+            "mp.addEventListener('input',function(){var q=mq.value.toLowerCase(),d=mh.nextSibling;for(;d;d=d.nextSibling)d.style.display=d.textContent.toLowerCase().indexOf(q)<0?'none':''});"
+            "mp.addEventListener('keydown',function(e){e.stopPropagation();if(e.key=='Enter'){var d=mp.querySelector('[data-o]:not([style*=none])');if(d)JR(d)}});"
             "function MW(b){fetch('/bookmark?n='+encodeURIComponent(N),{method:'POST',headers:{'Content-Type':'" UE "'},body:b}).then(function(r){return r.text()}).then(MR)}"
             "ma.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();MW('add='+O())});"
             "mt.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();PP(MH,1)});mc.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();PP(TC,2)});"
-            "mp.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
-            "var r=e.target.closest('[data-o]');if(r){R(+r.getAttribute('data-o'));U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}});"   /* the line lands at the top (no page snap: a chapter heading must show); the next flip realigns to pages */
+            "var pd,py;mp.addEventListener('pointerdown',function(e){e.stopPropagation();pd=e.target.closest('[data-o]');py=e.clientY;if(e.target.id!='mq')e.preventDefault()});"   /* a row acts on lift, on the row that took the press, if the finger did not move: a drag scrolls the list (Chrome cancels the pointer), and the tap that opened the list cannot fall through onto a row */
+            "mp.addEventListener('pointerup',function(e){var r=e.target.closest('[data-o]');if(!r||r!==pd||Math.abs(e.clientY-py)>8)return;var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
+            "JR(r)});function JR(r){R(+r.getAttribute('data-o'));U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}"   /* the line lands at the top (no page snap: a chapter heading must show); the next flip realigns to pages */
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
             /* chapters = output/toc.txt (a book toc: epub nav/ncx titles mapped into this text, offset\ttitle); \xe2\x98\xb0 shows only when it exists, rows reuse the marks popup + jump */
-            "fetch('/bookfile?n='+encodeURIComponent(N)+'&f=output/toc.txt').then(function(r){return r.ok?r.text():''}).then(function(t){TC=t.split('\\n').filter(Boolean).map(function(l){var i=l.indexOf('\\t');return '<div data-o='+l.slice(0,i)+'>'+EH(l.slice(i+1))+'</div>'}).join('');if(TC)mc.style.display=''});"
+            "fetch('/bookfile?n='+encodeURIComponent(N)+'&f=output/toc.txt').then(function(r){return r.ok?r.text():''}).then(function(t){t=t.split('\\n').filter(Boolean).map(function(l){var i=l.indexOf('\\t');return '<div data-o='+l.slice(0,i)+'>'+EH(l.slice(i+1))+'</div>'}).join('');if(t){TC=HD('contents')+t;mc.style.display=''}});"
             /* find: native find can't scroll the hidden-overflow pager nor match across hard wraps — fold case/dashes/whitespace over TX, jump = the mark pattern */
             "var FH=[],FI=-1,FV=null;"
             "function FN(v){FH=[];FI=-1;if(!/\\S/.test(v))return;var q=v.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&').replace(/[\\s\\u2014\\u2013-]+/g,'[\\\\s\\\\u2014\\\\u2013-]+'),rx=new RegExp(q,'gi'),m;while((m=rx.exec(TX))&&FH.length<500)FH.push([m.index,m.index+m[0].length])}"
