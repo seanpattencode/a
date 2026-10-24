@@ -50,7 +50,7 @@ function clr(y,x0,x1){
   drow(y);
 }
 function scrl(n,dn){
-  if(kb.value)ckb();
+  if(snt)ckb();
   while(n-->0){G.splice(dn?S.bot:S.top,1);G.splice(dn?S.top:S.bot,0,newRow());}
   for(let y=S.top;y<=S.bot;y++)drow(y);
 }
@@ -97,7 +97,7 @@ function feed(d){
     else if(c!==0x7f)put(S.cs0&&ACS[ch]?ACS[ch]:ch,wcw(c));
   }
   pt=performance.now()-t0;
-  if(kb.value){if(S.y!==py0||S.x>=px0+kb.value.length)ckb();else clearTimeout(yt);} /* clear ahead-echo when caught up */
+  if(snt){if(S.y!==py0||S.x>=px0+snt)ckb();else clearTimeout(yt);} /* clear ahead-echo when caught up */
   if(!raf)raf=requestAnimationFrame(paint);
 }
 function title(){
@@ -265,7 +265,7 @@ function paint(){
   const t0=performance.now();
   for(const y of dirty)if(y<rows&&RE[y])RE[y].innerHTML=rowhtml(G[y]);
   dirty.clear();
-  const cx=kb.value?Math.min(cols-1,px0+kb.value.length):S.x,cy=kb.value?py0:S.y,r=G[cy],w=r&&r.l[cx]&128?2:1;
+  const cx=snt?Math.min(cols-1,px0+snt):S.x,cy=snt?py0:S.y,r=G[cy],w=r&&r.l[cx]&128?2:1;
   if(kf){sm=performance.now()-ks;kf=0;}
   const cs='left:'+(cx*cw).toFixed(2)+'px;top:'+cy*chh+'px;width:'+(w*cw).toFixed(2)+'px;height:'+chh+'px;display:'+(S.vis?'block':'none');
   if(cs!==curlast){cur.style.cssText=cs;curlast=cs;}
@@ -273,7 +273,7 @@ function paint(){
   stat();
 }
 function stat(){
-  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(kb.value?' K'+kb.value.length:'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
+  sb.textContent=cols+'x'+rows+' p'+pt.toFixed(2)+' d'+dt.toFixed(2)+(sm?' s'+sm.toFixed(2):'')+(kr?' r'+kr.toFixed(2):'')+'ms'+(snt?' K'+snt:'')+(unk?' unk'+unk:'')+(wsOk?'':' ⚠');
 }
 function fitGrid(g){
   while(g.length<rows)g.push(newRow());
@@ -337,7 +337,7 @@ const KN={Delete:3,PageUp:5,PageDown:6};
 function key(e){
   if(e.isComposing)return;
   const k=e.key;
-  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey){if(!kb.value)kbpos();kt=ks=performance.now();kf=1;return;}
+  if(k.length===1&&!e.ctrlKey&&!e.altKey&&!e.metaKey){kt=ks=performance.now();kf=1;return;}
   const M=(e.shiftKey?1:0)|(e.altKey?2:0)|(e.ctrlKey?4:0);
   let s=null;
   if(KM[k])s=M?'\x1b[1;'+(M+1)+KM[k]:(S.ckm?'\x1bO':'\x1b[')+KM[k];
@@ -354,16 +354,16 @@ function key(e){
   else return;
   e.preventDefault();
   tx(s);
-  if(k==='Backspace'&&!e.altKey&&kb.value){kb.value=kb.value.slice(0,-1);snt=kb.value.length;cancelAnimationFrame(raf);raf=0;paint();}
+  if(k==='Backspace'&&!e.altKey&&snt){kb.value=kb.value.slice(0,-1);snt--;cancelAnimationFrame(raf);raf=0;paint();}
   else ckb();
 }
 /* ahead-echo ends on echo, control key or password timeout */
-function ckb(){kb.value='';snt=0;clearTimeout(yt);}
+function ckb(){kb.value='\u200b';snt=0;clearTimeout(yt);} /* IME deletion anchor */
 function kbpos(){px0=S.x;py0=S.y;kb.style.left=px0*cw+'px';kb.style.top=(16+py0*chh)+'px';kb.style.width=(cols-px0)*cw+'px';kb.style.height=chh*4+'px';}
 addEventListener('keydown',key);
-kb.addEventListener('input',()=>{const v=kb.value;if(v.length>snt)tx(v.slice(snt));snt=v.length;
+kb.addEventListener('input',()=>{if(!snt)kbpos();const n=kb.value.length-1;tx(n<snt?'\x7f'.repeat(snt-n):kb.value.slice(snt+1));snt=n;if(n<0)ckb();
   cancelAnimationFrame(raf);raf=0;paint();
-  clearTimeout(yt);if(v)yt=setTimeout(ckb,kr?Math.min(1000,Math.max(250,kr*3)):600);}); /* password: 3x RTT grace */
+  clearTimeout(yt);if(snt)yt=setTimeout(ckb,kr?Math.min(1000,Math.max(250,kr*3)):600);}); /* password: 3x RTT grace */
 kb.addEventListener('paste',e=>{
   e.preventDefault();
   const t=e.clipboardData.getData('text');
@@ -377,7 +377,7 @@ function mev(b,cx,cy,rel){
 }
 scr.addEventListener('pointerdown',e=>{
   kb.focus({preventScroll:true});
-  if(e.pointerType!=='touch'&&mev(e.button===2?2:e.button,e.clientX,e.clientY,false))e.preventDefault();
+  e.preventDefault();if(e.pointerType!=='touch')mev(e.button,e.clientX,e.clientY,false);
 });
 scr.addEventListener('pointerup',e=>{if(e.pointerType!=='touch')mev(e.button===2?2:e.button,e.clientX,e.clientY,true);});
 scr.addEventListener('pointermove',e=>{if(e.pointerType!=='touch'&&e.buttons&1&&S.mouse>1000)mev(32,e.clientX,e.clientY,false);});
@@ -397,7 +397,7 @@ window.T={sizeTo,S,sent:[],
   feed:d=>{feed(d);paint();},
   dump:()=>G.map(r=>r.t.join('').replace(/\s+$/,'')).join('\n'),
   cell:(x,y)=>({t:G[y].t[x],f:G[y].f[x],b:G[y].b[x],l:G[y].l[x]})};
-fit();
+ckb();fit();
 if(Q.has('rtc')){W={readyState:1,send:s=>parent.rtc(s)};wsOk=true;}else if(!Q.get('test'))connect();
 if(!Q.has('rtc'))kb.focus();
 </script>
