@@ -139,7 +139,7 @@ static void bkfile(const char*nm,char*tf){
     if(access(tf,R_OK))snprintf(tf,P,"%s/books/%s/source.txt",AROOT,nm);}
 static void docpage(int c,const char*rel,const char*body,size_t bl,const char*saved,const char*ds){
     char*h=malloc(bl*6+2048);if(!h){sresp(c,500,TP,"oom",3);return;}
-    int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:22px/1.5 " UM "}form{height:100dvh;display:flex;flex-direction:column}#bar{background:#000;padding:12px 9vw;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center;overflow-wrap:anywhere}#bar b{color:#fff}button{flex:none;background:#222;color:#fff;border:1px solid #555;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#bbb}textarea{width:100%%;flex:1;box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:24px 9vw;font:inherit;resize:none}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
+    int hl=snprintf(h,2048,"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\"><title>%s</title><style>body{margin:0;background:#0b0b0b;color:#ddd;font:22px/1.5 " UM "}form{height:100dvh;display:flex;flex-direction:column}#bar{background:#000;padding:12px 9vw;border-bottom:1px solid #222;display:flex;gap:12px;align-items:center;overflow-wrap:anywhere}#bar b{color:#fff}button{flex:none;background:#222;color:#fff;border:1px solid #555;padding:3px 14px;font:inherit;cursor:pointer}#s{color:#bbb}textarea{width:100%%;flex:1;box-sizing:border-box;background:#0b0b0b;color:#ddd;border:0;outline:none;padding:24px 9vw;font:inherit;resize:none}</style><form method=POST enctype=\"text/plain\" action=\"/doc?f=%s%s\"><div id=bar><b>%s</b><button>save</button><button name=d>download</button><span id=s>%s</span></div><textarea name=b spellcheck=false>",rel,rel,ds,rel,saved?saved:"");
     for(size_t i=0;i<bl;i++){char k=body[i];
         if(k=='<'){memcpy(h+hl,"&lt;",4);hl+=4;}
         else if(k=='&'){memcpy(h+hl,"&amp;",5);hl+=5;}
@@ -370,29 +370,27 @@ static void handle(int c){
         snprintf(fp,P,cr?"%s/local/bm_chrome.json":tx?"%s/bookmarks.txt":js?"%s/common/bm.js":"%s/common/bm.html",cr?AROOT:SROOT);
         size_t fl=0;char*d=readf(fp,&fl);if(!d){sresp(c,404,TP,"x",1);return;}
         sresph(c,200,js?"application/javascript":tx||cr?TPC:TH,d,(int)fl,"no-cache");free(d);return;}
-    if(!strncmp(req,"GET /doc",8)&&(req[8]=='?'||req[8]==' ')){
+    if((!strncmp(req,"GET /doc",8)&&(req[8]=='?'||req[8]==' '))||!strncmp(req,"POST /doc",9)){
         char rel[P];const char*m="? GET /doc?f=<path under adata/git> [&d=code for the a repo]";
         if(!docrel(req,rel)){sresp(c,400,TP,m,(int)strlen(m));return;}
         char*dc=strstr(req,"d=code"),*eol=strstr(req,"\r\n");const char*ds=(dc&&eol&&dc<eol)?"&d=code":"";const char*base=*ds?SDIR:SROOT;
-        char fp[P];snprintf(fp,P,"%s/%s",base,rel);size_t fl=0;char*fd=readf(fp,&fl);
-        docpage(c,rel,fd?fd:"",fl,NULL,ds);free(fd);return;}
-    if(!strncmp(req,"POST /doc",9)){
-        char rel[P];if(!docrel(req,rel)){sresp(c,400,TP,"bad path",8);return;}
-        char*dc=strstr(req,"d=code"),*eol=strstr(req,"\r\n");const char*ds=(dc&&eol&&dc<eol)?"&d=code":"";const char*base=*ds?SDIR:SROOT;
-        char*bd=strstr(req,"\r\n\r\n"),*clh=strstr(req,"Content-Length:");
-        if(!bd||!clh){sresp(c,400,TP,"no body",7);return;}
-        bd+=4;int blen=atoi(clh+15);
+        char fp[P];snprintf(fp,P,"%s/%s",base,rel);
+        if(*req=='G'){size_t fl=0;char*fd=readf(fp,&fl);docpage(c,rel,fd?fd:"",fl,NULL,ds);free(fd);return;}
+        if(!bb||!cl){sresp(c,400,TP,"no body",7);return;}
+        char*bd=bb+4;int blen=atoi(cl+15);
         if(blen>250000){sresp(c,413,TP,"too big (>250KB) for editor save",32);return;}
-        char*ct=bd;if(blen>=2&&!strncmp(bd,"b=",2)){ct+=2;blen-=2;}
+        int dl=!strncmp(bd,"d=",2);char*ct=bd+dl*4;blen-=dl*4;if(blen>=2&&!strncmp(ct,"b=",2)){ct+=2;blen-=2;}
         while(blen>0&&(ct[blen-1]=='\n'||ct[blen-1]=='\r'))blen--;              /* drop the trailing CRLF the form appends */
         int w=0;for(int i=0;i<blen;i++)if(ct[i]!='\r')ct[w++]=ct[i];
-        char fp[P];snprintf(fp,P,"%s/%s",base,rel);
+        if(dl)snprintf(fp,P,"%s/Downloads/%s",HOME,bname(rel));
         {char*sl=strrchr(fp,'/');if(sl){*sl=0;mkdirp(fp);*sl='/';}}
         char bf[64];snprintf(bf,64,"/tmp/_b%d",(int)getpid());   /* merge base = pre-save file (what the editor loaded), not stale HEAD */
-        {size_t o=0;char*d=readf(fp,&o);FILE*b=fopen(bf,"w");if(b){if(d)(void)!fwrite(d,1,o,b);fclose(b);}free(d);}
+        if(!dl){size_t o=0;char*d=readf(fp,&o);FILE*b=fopen(bf,"w");if(b){if(d)(void)!fwrite(d,1,o,b);fclose(b);}free(d);}
         FILE*wf=fopen(fp,"w");int ok=0;if(wf){fwrite(ct,1,(size_t)w,wf);ok=!ferror(wf);fclose(wf);}
         char saved[512],gurl[B]="";
-        if(ok){  /* 3-way merge onto origin/main's latest, push just this file via plumbing (survives local divergence); url or ERR */
+        if(!ok)snprintf(saved,512,"✗ SAVE FAILED");
+        else if(dl)snprintf(saved,512,"✓ %s",fp);
+        else{  /* 3-way merge onto origin/main's latest, push just this file via plumbing (survives local divergence); url or ERR */
             char gc[B*3];snprintf(gc,B*3,"cd '%s'&&F='%s';T=/tmp/_t$$;M=/tmp/_m$$;I=/tmp/_i$$;git fetch origin -q;git show origin/main:\"$F\">$T 2>/dev/null||cp '%s' $T;"
                 "if git merge-file -p \"$F\" '%s' $T>$M;then cp $M \"$F\";GIT_INDEX_FILE=$I git read-tree origin/main;GIT_INDEX_FILE=$I git update-index --add --cacheinfo 100644,$(git hash-object -w $M),\"$F\";"
                 "n=$(git commit-tree $(GIT_INDEX_FILE=$I git write-tree) -p origin/main -m \"doc: $F\");e=$(git push origin $n:main 2>&1)&&{ u=$(git config remote.origin.url);u=${u#*github.com[:/]};echo \"https://github.com/${u%%.git}/commit/$(git rev-parse --short $n)\";}||printf 'ERR %%s' \"$e\";"
