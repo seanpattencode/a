@@ -483,7 +483,7 @@ static void handle(int c){
         sresp(c,fd<0||write(fd,bp+4,(size_t)(rn-(bp+4-req)))<0?400:200,TP,"",0);return;}
     if(!strncmp(req,"GET /book",9)&&(req[9]=='?'||req[9]==' ')){char nm[128];qn(req,nm);
         if(!nm[0]){
-            int au=!!strstr(req,"sort=author"),alp=!!strstr(req,"sort=name"),fq=!!strstr(req,"sort=freq"),rc=!au&&!alp&&!fq;   /* default = recent: dir mtime desc, added or opened last (Sean 10-22); ?sort=freq|name|author */
+            int au=!!strstr(req,"sort=author"),alp=!!strstr(req,"sort=name"),fr=!!strstr(req,"sort=freq"),rc=!au&&!alp&&!fr;   /* default = recent: dir mtime desc, added or opened last (Sean 10-22); ?sort=freq|name|author */
             char bd[P];snprintf(bd,P,"%s/books",AROOT);
             static char names[4096][128];static int mt[4096];int n=0;DIR*d=opendir(bd);struct dirent*e;
             if(d){while((e=readdir(d))&&n<4096){if(e->d_name[0]=='.'||!strcmp(e->d_name,"book.py"))continue;
@@ -529,7 +529,7 @@ static void handle(int c){
                 "onkeydown=function(e){if(document.activeElement!=q&&!e.ctrlKey&&!e.metaKey&&(e.key.length==1||e.key=='Backspace'))q.focus()}</script>"
                 "<input id=af type=file multiple hidden><script>async function up(fs){for(var f of fs){var m=f.name.replace(/[^\\w.]+/g,'-');for(var o=0;o<f.size;o+=2e5)await fetch('/up?s='+ +!o+'&n='+m,{method:'POST',body:f.slice(o,o+2e5)}),ab.textContent=m+' '+o;navigator.sendBeacon('/api/omni','q=cmd+a+book+add+${TMPDIR:-/tmp}/'+m)}setTimeout(\"location=''\",999)}af.onchange=()=>up(af.files);"
                 "ondragover=e=>{e.preventDefault();ab.textContent='drop to add book'};ondragleave=e=>{if(!e.relatedTarget)ab.textContent='+ add book'};ondrop=e=>{e.preventDefault();ab.textContent='+ add book';if(e.dataTransfer.files.length)up(e.dataTransfer.files)}</script>",
-                n,rc?" class=on":"",fq?" class=on":"",alp?" class=on":"",au?" class=on":"");
+                n,rc?" class=on":"",fr?" class=on":"",alp?" class=on":"",au?" class=on":"");
             const char*ex[]={"pdf","epub","azw3","mobi","docx",0};char pk[96]="";
             for(int ii=0;ii<n&&hl<cap-2048;ii++){int i=idx[ii];
                 if(au&&strcmp(bk_ak[i],pk)){strcpy(pk,bk_ak[i]);   /* sticky author header per run */
