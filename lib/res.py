@@ -288,10 +288,23 @@ def _snip(ut, q, w):
 
 def _stamp(t): l = time.localtime(t); return f"{time.strftime('%b', l)}{l.tm_mday}-{l.tm_hour % 12 or 12}{l.tm_min:02d}{'ap'[l.tm_hour > 11]}"   # Sep4-346p = tm_name (tmux.c): the WHEN in every agent window name
 def _claunch(r):
-    subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(r[2])}-{_stamp(r[0])}", "-c", r[2], RESUME["claude"] % r[1]])
+    subprocess.run(["tmux", "new-window", "-n", f"r-{os.path.basename(r[2])}-{_stamp(r[0])}", "-c", r[2], r[5] if len(r) > 5 else RESUME["claude"] % r[1]])
 
 
 def _hum(t): return [x for x in re.findall(r'"role":"user","content":"([^"]{2,400})', t) if not x.startswith(("<", "[Request"))]
+
+
+def _agy(cut):                                        # agy rows (its live sqlite — the cache json lags days); no local .db = not resumable here; r[5] = resume cmd
+    import sqlite3
+    A = os.path.expanduser("~/.gemini/antigravity-cli/")
+    try: Q = list(sqlite3.connect(f"file:{A}conversation_summaries.db?mode=ro", uri=True).execute("SELECT conversation_id,title,preview,step_count,workspace_uris FROM conversation_summaries WHERE step_count>0"))
+    except Exception: return []
+    R = []
+    for i, t, p, n, u in Q:
+        f = f"{A}conversations/{i}.db"
+        if os.path.exists(f) and (mt := os.path.getmtime(f)) >= cut and os.path.isdir(w := (json.loads(u or "null") or ["file://" + A])[0][7:]):
+            R.append([mt, i, w, n, "agy " + " ".join(dict.fromkeys((t, p))), f"agy --dangerously-skip-permissions --conversation {i}; exec bash"])
+    return R
 
 
 def _load(cut=0):                                     # typed sessions only (claude -p = sdk-cli); cut = mtime floor else newest 150
@@ -304,7 +317,7 @@ def _load(cut=0):                                     # typed sessions only (cla
         if ms and c and c[1] == "cli" and os.path.isdir(c[2]):
             rows.append([os.path.getmtime(f), os.path.basename(f)[:-6], c[2], len(ms),
                          "\n".join(ms).replace('\\"', '"').replace("\\n", " ")])
-    return rows
+    return sorted(rows + _agy(cut), key=lambda r: -r[0])
 
 
 
@@ -326,7 +339,7 @@ def pick():
         tty.setcbreak(0)
         while True:
             ql = q.lower() if mode == "/" else ""     # rank: most user-text hits first, then newest; best sits AT the menu
-            m = sorted(((r, l) for r, l in corp if ql in l), key=lambda x: (-x[1].count(ql), -x[0][0])) if ql else corp
+            m = sorted(((r, l) for r, l in corp if ql in l), key=lambda x: (not x[0][4].lower().startswith(ql), -x[1].count(ql), -x[0][0])) if ql else corp   # text-prefix hits first: "agy" = agy rows, not claude convos about agy
             W, H = os.get_terminal_size()
             items = [r for r, _l in reversed(m[:H - 5])]
             sel = max(0, min(sel, len(items) - 1))
