@@ -399,7 +399,7 @@ static void handle(int c){
             char ts[16];time_t t=time(0);strftime(ts,16,"%H:%M:%S",localtime(&t));
             if(!strncmp(gurl,"https",5)){const char*h=strrchr(gurl,'/')+1;snprintf(saved,512,"✓ %s pushed · <a href=\"%s\" style=color:#fff>%s</a>",ts,gurl,h);}
             else snprintf(saved,512,"✓ %s saved locally · ✗ not pushed — %s",ts,gurl[0]?gurl:"no git output");
-        }else snprintf(saved,512,"✗ SAVE FAILED");
+        }
         {char lg[P];snprintf(lg,P,"%s/local/serve.log",AROOT);FILE*l=fopen(lg,"a");if(l){fprintf(l,"save %s %s\n",rel,ok?gurl:"WRITEFAIL");fclose(l);}}
         size_t nl=0;char*nf=readf(fp,&nl);
         docpage(c,rel,nf?nf:ct,nf?nl:(size_t)w,saved,ds);free(nf);return;}
