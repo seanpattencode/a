@@ -839,21 +839,20 @@ static void handle(int c){
             snprintf(cm,32,"a music %s \"$K\"",req[10]=='c'?"cfg":req[10]=='t'?"trim":"rm");
             FILE*p=popen(cm,"r");size_t n=p?fread(b,1,255,p):0;if(p)pclose(p);
             sresp(c,200,TP,b,(int)n);return;}
-        if(req[10]=='g'||req[10]=='f'){char id[32]={0};struct stat st;   /* one streamer, cached+growing: WebKit needs 206+total */
+        if(req[10]=='g'||req[10]=='f'){char id[32]={0},fl[P+300],pt[P+308],h[300];struct stat st;int fr=0;   /* one streamer: cached+growing file, else ranges proxied from a fresh .url (no .on = nothing kept); WebKit needs 206+total */
             if(req[10]=='f')docrel(req,rel);
             else{qp(req,"?f=",id,32);setenv("I",id,1);
-                #define RES {FILE*ip=popen("sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q","r");if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}}
+                #define RES {FILE*ip=popen("sed -n \"s|^$I  ||p\" \"$MC/.index\" 2>&-|sed q","r");if(ip){if(fgets(rel,P,ip))rel[strcspn(rel,"\n")]=0;pclose(ip);}snprintf(h,300,"%s/.url%s",mc,id);fr=!stat(h,&st)&&time(0)-st.st_mtime<18000;}   /* fr: yt urls expire in 6h */
                 RES}
             if(fork())return;
-            char fl[P+300],pt[P+308],h[300];
             #define FLP snprintf(fl,sizeof fl,"%s/%s",mc,rel),snprintf(pt,sizeof pt,"%s.part",fl)
             FLP;
             if(id[0]&&(!rel[0]||access(fl,F_OK))){
-                if(!rel[0]){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}
-                    for(int w=0;w<600&&!rel[0];w++){usleep(100000);RES}
-                    if(!rel[0])_exit(0);
+                if(!rel[0]||!fr){if(!fork()){execlp("a","a","music","pre",id,(char*)0);_exit(0);}
+                    for(int w=0;w<600&&!(rel[0]&&fr);w++){usleep(100000);RES}
+                    if(!(rel[0]&&fr))_exit(0);
                     FLP;}
-                if(!fork()){execlp("a","a","music","get",id,(char*)0);_exit(0);}}
+                snprintf(h,300,"%s/.on",mc);if(!access(h,F_OK)&&!fork()){execlp("a","a","music","get",id,(char*)0);_exit(0);}}
             #undef RES
             #undef FLP
             if(!rel[0])_exit(0);
@@ -866,8 +865,8 @@ static void handle(int c){
             else if(T)hl+=snprintf(h+hl,300-(size_t)hl,"Content-Length:%lld\r\n\r\n",T);
             else hl+=snprintf(h+hl,300-(size_t)hl,"Cache-Control:no-store\r\n\r\n");
             if(write(c,h,(size_t)hl)!=hl)_exit(0);
-            if(rg&&T&&id[0]&&access(fl,F_OK)&&(stat(pt,&st)||s0>(long long)st.st_size)){char pc[176];   /* range past .part: proxy upstream — players demand tail cues before starting */
-                snprintf(pc,176,"exec curl -s -r %lld-%lld \"$(cat \"$MC/.url$I\" 2>&-)\"",s0,e0);
+            if(T&&id[0]&&access(fl,F_OK)&&(stat(pt,&st)||s0>(long long)st.st_size)){char pc[256];   /* no .part (stream-only) or a range past it: proxy upstream in 4MB legs (open-ended ranges are paced to the bitrate, bounded ones run 40MB/s); players demand tail cues before starting */
+                snprintf(pc,256,"U=$(cat \"$MC/.url$I\");o=%lld;E=%lld;while [ $o -le $E ];do e=$((o+4194303));[ $e -gt $E ]&&e=$E;curl -sf -r $o-$e \"$U\"||exit;o=$((e+1));done",s0,e0);
                 dup2(c,1);execl("/bin/sh","sh","-c",pc,(char*)0);_exit(0);}
             off=s0;
             for(int idle=0;idle<600;idle++){int fd=open(access(fl,F_OK)?pt:fl,O_RDONLY);

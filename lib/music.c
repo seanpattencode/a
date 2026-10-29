@@ -1,4 +1,4 @@
-/* a music [term|yt q|play id|play stop|get id|pre id..|trim id|cfg|rm id] — cache-first gdrive+youtube; piped: yt prints id<TAB>title, play <id> detaches. termux deps: yt-dlp rclone termux-api ffmpeg */
+/* a music [term|yt q|play id|play stop|get id|pre id..|trim id|cfg|rm id] — gdrive+youtube; stream-only unless .on (keep local copies, capped); piped: yt prints id<TAB>title, play <id> detaches. termux deps: yt-dlp rclone termux-api ffmpeg */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +23,7 @@ static void lines(const char*f,...){char b[1200];va_list a;va_start(a,f);vsnprin
 static char*res(const char*q){lines("sed -n 's|^%s  ||p' \"%s/.index\" 2>&-|sed q",q,C);return N?L[0]:(char*)q;}   /* id → cached name via .index (N = hit) */
 static char*fp(const char*f){static char p[880];snprintf(p,880,"%s/%s",C,f);return p;}
 static void killf(const char*n){FILE*k=fopen(fp(n),"r");if(k){int d;while(fscanf(k,"%d",&d)==1)kill(-d,SIGTERM);fclose(k);}}
+static pid_t bg(void){pid_t c=fork();if(!c){setsid();int d=open("/dev/null",O_WRONLY);dup2(d,1);dup2(d,2);}return c;}   /* run_lab builds this file alone: util.c's bg isn't here */
 static void ff(const char*p){execlp("ffplay","ffplay","-nodisp","-autoexit","-v","16",p,(char*)0);_exit(1);}
 static void play(const char*f,const char*src){printf("playing %s: %s\n",src,f);fflush(stdout);
     char*p=fp(f);
@@ -31,17 +32,18 @@ static void play(const char*f,const char*src){printf("playing %s: %s\n",src,f);f
     pid_t k=fork();if(!k)ff(p);
     puts("\033[90m[esc] stop\033[0m");signal(SIGCHLD,nop);raw(1);
     char c;(void)!read(0,&c,1);raw(0);kill(k,SIGTERM);waitpid(k,0,0);exit(0);}
-static void cfg(const char*set){   /* .cfg = "<cap-GB> <clip>"; 0 = keep all */
+static void prune(void){   /* no .on: keep nothing; else drop oldest past cap; .index keeps the how-to-get */
+    sh("cd \"%s\";[ -e .on ]||{ rm -f -- * 2>&-;exit 0; };[ -s .cfg ]||exit 0;set -- $(cat .cfg);L=$(awk -v g=\"$1\" 'BEGIN{printf \"%%d\",g*1024}');[ \"$L\" -gt 0 ]||exit 0;"
+       "while [ $(du -sm . 2>&-|cut -f1) -gt $L ];do f=$(ls -1tr 2>&-|grep -v '\\.part$'|sed q);[ -n \"$f\" ]||break;rm -f \"$f\";done",C);}
+static void cfg(const char*set){   /* .cfg "<cap-GB> <clip>" (0 = keep all); .on = keep local copies (default: stream only); prints cap clip on usedMB */
     setenv("K",set?set:"",1);
     sh("cd \"%s\";[ -s .cfg ]||echo '5 1'>.cfg;set -- $(cat .cfg);A=$1;B=$2;"
-       "case \"$K\" in cap-*)A=${K#cap-};;trim-*)B=${K#trim-};;esac;"
-       "echo \"$A $B\">.cfg;printf '%%s %%s %%s' \"$A\" \"$B\" \"$(du -sm . 2>&-|cut -f1)\"",C);}
-static void prune(void){   /* drop oldest past cap; .index keeps the how-to-get */
-    sh("cd \"%s\";[ -s .cfg ]||exit 0;set -- $(cat .cfg);L=$(awk -v g=\"$1\" 'BEGIN{printf \"%%d\",g*1024}');[ \"$L\" -gt 0 ]||exit 0;"
-       "while [ $(du -sm . 2>&-|cut -f1) -gt $L ];do f=$(ls -1tr 2>&-|grep -v '\\.part$'|sed q);[ -n \"$f\" ]||break;rm -f \"$f\";done",C);}
-static void trims(const char*id,const char*f,int full){   /* .trim "<id> <skip-in> <stop-at>": dead air at both ends */
+       "case \"$K\" in cap-*)A=${K#cap-};;trim-*)B=${K#trim-};;on-1)touch .on;;on-0)rm -f .on;;esac;echo \"$A $B\">.cfg",C);
+    prune();
+    sh("cd \"%s\";printf '%%s %%s %%s %%s' $(cat .cfg) \"$([ -e .on ]&&echo 1||echo 0)\" \"$(du -sm . 2>&-|cut -f1)\"",C);}
+static void trims(const char*id,const char*f,int full){   /* .trim "<id> <skip-in> <stop-at>": dead air at both ends; f "" = ffmpeg reads the .url over https */
     setenv("F",f,1);setenv("I",id,1);
-    sh("cd \"%s\";command -v ffmpeg>/dev/null||pkg install -y ffmpeg>/dev/null 2>&1;grep -q -- \"^$I \" .trim 2>&-&&%s exit 0;"
+    sh("cd \"%s\";F=${F:-$(cat \".url$I\" 2>&-)};command -v ffmpeg>/dev/null||pkg install -y ffmpeg>/dev/null 2>&1;grep -q -- \"^$I \" .trim 2>&-&&%s exit 0;"
        "D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 \"$F\");"
        "S=$(ffmpeg -v info -t 20 -i \"$F\" -af silencedetect=noise=-91dB:d=0.05 -f null - 2>&1|grep -o 'silence_[a-z]*: [0-9.]*'|awk '$1==\"silence_start:\"{n++;st=$2+0}$1==\"silence_end:\"{if(n==1&&st<0.05)print $2;exit}');"
        "E=$([ %d = 1 ]&&ffmpeg -v info -sseof -20 -i \"$F\" -af silencedetect=noise=-91dB:d=0.05 -f null - 2>&1|grep -o 'silence_[a-z]*: [0-9.]*'|awk -v D=$D 'BEGIN{o=D>25?D-20:0}$1==\"silence_start:\"{s=$2}$1==\"silence_end:\"{e=$2}END{if(s!=\"\"&&D-(o+e)<0.5)printf \"%%.3f\",o+s}');"
@@ -55,15 +57,16 @@ static char*get(const char*id){
         if(t)exit(1);sh("yt-dlp -U 2>&-||pip install -q -U yt-dlp --user --break-system-packages 2>&-");}
     snprintf(f,256,"%s",strrchr(L[0],'/')+1);
     setenv("I",id,1);setenv("N2",f,1);sh("grep -q -- \"^$I  \" \"%s/.index\" 2>&-||echo \"$I  $N2\">>\"%s/.index\"",C,C);
-    trims(id,fp(f),1);prune();
+    trims(id,fp(f),1);
     if(strcmp(R,"music"))sh("(rclone copy \"%s/%s\" %s&&rclone copy \"%s/.index\" %s)>/dev/null 2>&1 &",C,f,R,C,R);
     return f;}
-static void head(const char*id){   /* 160KB head = instant start; yt-dlp resumes the .part byte-exact; URL stays in shell (~1200 chars) */
+static void head(const char*id){   /* .url+.sz feed serve's proxy; .on: +160KB head (yt-dlp resumes the .part byte-exact); URL stays in shell (~1200 chars) */
     setenv("I",id,1);
     lines("cd \"%s\";M=$(mktemp);" Y " -f ba --print urls --print filename -o '%%(title)s.%%(ext)s' \"youtu.be/$I\">$M 2>&-;"
           "U=$(sed -n 1p $M);F=$(sed -n 2p $M);rm -f $M;[ -n \"$F\" ]||exit;"
-          "[ -e \"$F\" ]||curl -s -r 0-163839 \"$U\" -o \"$F.part\";"
-          "grep -q -- \"^$I  \" .index 2>&-||echo \"$I  $F\">>.index;printf %%s \"$F\"",C);
+          "printf %%s \"$U\">\".url$I\";sed -n 's/.*clen=\\([0-9]*\\).*/\\1/p' \".url$I\">\".sz$I\";"
+          "[ -e \"$F\" ]||[ ! -e .on ]||curl -s -r 0-163839 \"$U\" -o \"$F.part\";"
+          "grep -q -- \"^$I  \" .index 2>&-||echo \"$I  $F\">>.index;[ -e .on ]&&printf %%s \"$F\"",C);
     if(N){char hp[300];snprintf(hp,300,"%s.part",L[0]);trims(id,fp(hp),0);}}
 static void srch(const char*q){char b[1024];NI=0;
     snprintf(b,1024,Y" 'ytsearch5:%s' -O '%%(id)s %%(title).60s %%(duration_string)s'",q);
@@ -89,12 +92,12 @@ int main(int ac,char**av){
     int s=strstr(" yt y get g play pre trim cfg rm ",pat)?2:1;
     char q[512]="";for(int i=s;i<ac;i++)snprintf(q+strlen(q),512-strlen(q),"%s%s",i>s?" ":"",av[i]);
     if(s==2&&av[1][0]=='y'){srch(q);return 0;}
-    if(s==2&&av[1][0]=='c'){cfg(ac>2?av[2]:0);prune();return 0;}
+    if(s==2&&av[1][0]=='c'){cfg(ac>2?av[2]:0);return 0;}
     if(s==2&&av[1][0]=='r'){char*nm=res(q),b[300];
         int r1=!remove(fp(nm));snprintf(b,300,"%s.part",nm);int r2=!remove(fp(b));
         printf(r1||r2?"cleared %s%s\n":"x nothing local: %s%s\n",nm,r2?" (+part)":"");return 0;}
     if(s==2&&av[1][0]=='t'){char*nm=res(q),*x=fp(nm);
-        if(!access(x,F_OK))trims(q,x,1);
+        trims(q,access(x,F_OK)?"":x,1);
         setenv("I",q,1);
         sh("cd \"%s\";[ -s .cfg ]&&[ \"$(cut -d' ' -f2 .cfg)\" = 0 ]&&{ echo '0 0';exit 0; };"
            "awk -v k=\"$I\" 'substr($0,1,length(k)+1)==k\" \"{print $(NF-1),$NF;exit}' \"%s/.trim\" 2>&-",C,C);return 0;}
@@ -105,7 +108,7 @@ int main(int ac,char**av){
         pid_t ch=bg();if(!ch)ff(fp(f));
         FILE*w=fopen(fp(".play"),"w");if(w){fprintf(w,"%d\n",ch);fclose(w);}
         printf("playing: %s\nstop: a music play stop\n",f);return 0;}
-    if(s==2&&av[1][0]=='p'){killf(".pre");   /* next search kills the prefetch batch */
+    if(s==2&&av[1][0]=='p'){killf(".pre");prune();   /* next search kills the prefetch batch and enforces the keep-local setting */
         FILE*w=fopen(fp(".pre"),"w");
         for(int i=2;i<ac;i++){pid_t ch=bg();
             if(!ch){head(av[i]);_exit(0);}
