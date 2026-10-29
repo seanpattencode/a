@@ -48,17 +48,21 @@ static int notes_build(char*h,int cap){
     int hl=snprintf(h,(size_t)cap,SYNC_HTML,sync_age());
     DIR*d=opendir(nd);if(!d)return hl;struct dirent*e;
     char(*names)[64]=NULL;int nn=0,ncp=0;  /* a static[2048] dropped the newest */
-    while((e=readdir(d))){if(e->d_name[0]=='.'||!strstr(e->d_name,".txt"))continue;
+    while((e=readdir(d))){if(e->d_name[0]=='.'||(!strstr(e->d_name,".txt")&&!strstr(e->d_name,".png")))continue;
         if(nn>=ncp){ncp=ncp?ncp*2:2048;char(*t)[64]=realloc(names,(size_t)ncp*64);if(!t)break;names=t;}
         snprintf(names[nn++],64,"%s",e->d_name);}closedir(d);
     qsort(names,(size_t)nn,64,ncmp);   /* ncmp = newest first */
-    for(int i=0,shown=0;i<nn&&shown<4&&hl<cap-4096;i++){   /* 4 newest with text (skip malformed) */
+    for(int i=0,shown=0;i<nn&&shown<4&&hl<cap-4096;i++){   /* 4 newest notes, text or sketch (skip malformed) */
         char fp[P];snprintf(fp,P,"%s/%s",nd,names[i]);
-        FILE*f=fopen(fp,"r");if(!f)continue;char ln[4096];int got=0;
-        while(fgets(ln,4096,f)){if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;
-            const char*u=strrchr(names[i],'_');char hu[48]="";if(u){char ts[16];snprintf(ts,16,"%.15s",u+1);ts_human(ts,hu,48);}
-            hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span style=\"color:#888;display:inline-block;width:104px\">%s</span><span style=\"flex:1\">%s</span><a href=\"/doc?f=notes/%s\" style=\"color:#888;margin-left:8px;text-decoration:none\">edit</a></div>",names[i],hu,ln+6,names[i]);got=1;break;}}
-        fclose(f);shown+=got;}free(names);return hl;
+        const char*u=strrchr(names[i],'_');char hu[48]="";if(u){char ts[16];snprintf(ts,16,"%.15s",u+1);ts_human(ts,hu,48);}
+        char ln[4096];int png=strstr(names[i],".png")!=NULL;
+        if(!png){FILE*f=fopen(fp,"r");if(!f)continue;int got=0;
+            while(fgets(ln,4096,f))if(!strncmp(ln,"Text: ",6)){ln[strcspn(ln,"\n")]=0;got=1;break;}
+            fclose(f);if(!got)continue;}
+        hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<div class=ni><button onclick=\"arcn('%s',this)\" class=nx>x</button><span style=\"color:#888;display:inline-block;width:104px\">%s</span>",names[i],hu);
+        if(png)hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<img src=\"/notepng?n=%s\" height=64></div>",names[i]);
+        else hl+=snprintf(h+hl,(size_t)(cap-1-hl),"<span style=\"flex:1\">%s</span><a href=\"/doc?f=notes/%s\" style=\"color:#888;margin-left:8px;text-decoration:none\">edit</a></div>",ln+6,names[i]);
+        shown++;}free(names);return hl;
 }
 static void html_gen(void){
     char tf[P];snprintf(tf,P,"%s/lib/ui_full.html",SDIR);sgen_t=time(NULL);
@@ -887,6 +891,10 @@ static void handle(int c){
     if(!strncmp(req,"GET /api/sync-status",20)){int fd=open("/tmp/.a_git.lock",O_RDONLY);
         int busy=fd>=0&&flock(fd,LOCK_EX|LOCK_NB)<0;if(fd>=0){if(!busy)flock(fd,LOCK_UN);close(fd);}
         const char*r=busy?"syncing":sync_age();sresp(c,200,TP,r,(int)strlen(r));return;}
+    if(!strncmp(req,"GET /notepng",12)){char nm[128];qn(req,nm);   /* sketch for the note list; stamp names = immutable */
+        char fp[P];snprintf(fp,P,"%s/notes/%s",SROOT,nm);
+        size_t bl=0;char*b=bkok(nm)?readf(fp,&bl):0;if(!b){sresp(c,404,TP,"x",1);return;}
+        sresph(c,200,"image/png",b,(int)bl,"max-age=31536000");free(b);return;}
     if(!strncmp(req,"GET /note-list",14)){
         int cap=524288;char*html=malloc((size_t)cap);if(!html)return;
         int hl=notes_build(html,cap);sresp(c,200,TH,html,hl);free(html);return;}
