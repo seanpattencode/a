@@ -130,8 +130,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
     for(char*p=catalog;p&&(p=strstr(p,"\"slug\""))&&nmid<64;p+=6){char v[96]="";i_value(v,p,"\"visibility\"");if(!strcmp(v,"list"))i_value(mids[nmid++],p,"\"slug\"");}free(catalog);
     struct timespec tk=T0; const char*act="render";
     /* regen when any source newer (>= = same-second; %.0s eats SROOT); tty checks after frame 1 */
-    #define ISTALE {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications"};\
-        if(!stat(cache,&c))for(int i=0;i<6;i++){snprintf(q,P,F[i],SROOT,HOME);if(!stat(q,&s)&&s.st_mtime>=c.st_mtime){unlink(cache);goto bld;}}}
+    #define ISTALE {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications","%.0s%s/z/lib"};\
+        if(!stat(cache,&c))for(int i=0;i<7;i++){snprintf(q,P,F[i],SROOT,HOME);if(!stat(q,&s)&&s.st_mtime>=c.st_mtime){unlink(cache);goto bld;}}}
     if(!isatty(0))ISTALE
     bld:n=nfq=0;  /* detached regen lands after our read: mtime flip re-enters, typed buf survives */
     {static char*rd[3];char*F[]={cache,fc,wc},*p,*e,*c;size_t l;

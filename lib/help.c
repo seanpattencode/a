@@ -65,6 +65,10 @@ static void gen_icache(void){
         if(si&&(!dot||(strcmp(dot,".py")&&strcmp(dot,".c")&&strcmp(dot,".sh")&&strcmp(dot,".html"))))continue;
         const char*tg=!si&&dot&&!strcmp(dot,".html")?"page":sl[si];if(si!=1&&dot)*dot=0;
         d4(md,e->d_name,tg,ds);fprintf(f,"%s\t%s\n",nm,ds);}closedir(d);}}
+    {char zd[P];snprintf(zd,P,"%s/z/lib",HOME);DIR*d=opendir(zd);struct dirent*e; /* z tools compete in the selector: rows fire `a cmd z <t>` (Sean 2026-10-30) */
+    if(d){while((e=readdir(d))){char*dot=strrchr(e->d_name,'.');
+        if(e->d_name[0]=='.'||e->d_name[0]=='_'||!dot||(strcmp(dot,".py")&&strcmp(dot,".sh")&&strcmp(dot,".c")))continue;
+        d4(zd,e->d_name,"z",ds);*dot=0;fprintf(f,"cmd z %s\t%s\n",e->d_name,ds);}closedir(d);}}
     {char rd[P];snprintf(rd,P,"%s/repos",AROOT);DIR*d=opendir(rd);struct dirent*re;
     if(d){while((re=readdir(d))){if(re->d_name[0]=='.')continue;
         char rp[P];snprintf(rp,P,"%s/%s",rd,re->d_name);DIR*sd=opendir(rp);struct dirent*se;
