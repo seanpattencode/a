@@ -701,6 +701,16 @@ static void handle(int c){
         char np[P];snprintf(np,P,"%s/%s",ad,b+1);
         if(rename(fp,np)){sresp(c,500,TP,"rename failed",13);return;}
         sresp(c,200,TP,"ok",2);return;}
+    if(!strncmp(req,"POST /note-img",14)){ /* mouse sketch -> notes/<stamp>.png + gh commit receipt (ARCH 13). Sean 2026-10-25: sketches stay under 1KB — that size lives in git beside notes; larger (audio/photo/video) belongs in cloud storage (rclone->gdrive), never git */
+        char*bd=bb?bb+4:0;int blen=cl?atoi(cl+15):0,avail=bd?rn-(int)(bd-req):0;if(blen>avail)blen=avail;
+        if(!bd||blen<8){sresp(c,400,TP,"no png",6);return;}
+        if(blen>1024){const char*e1="x sketches stay under 1KB in git - larger media goes to cloud storage";sresp(c,413,TP,e1,(int)strlen(e1));return;}
+        char nd[P];snprintf(nd,P,"%s/notes",SROOT);mkdirp(nd);
+        struct timespec tp;clock_gettime(CLOCK_REALTIME,&tp);time_t now=tp.tv_sec;char ts2[32];strftime(ts2,32,"%Y%m%dT%H%M%S",localtime(&now));
+        char fn[P];snprintf(fn,P,"%s/%08x_%s.%09ld.png",nd,(unsigned)tp.tv_nsec^(unsigned)now,ts2,tp.tv_nsec);
+        FILE*f=fopen(fn,"wb");int ok=f&&fwrite(bd,1,(size_t)blen,f)==(size_t)blen;if(f)fclose(f);
+        if(!ok){sresp(c,500,TP,"write failed",12);return;}
+        char m[256]="";note_url(fn,"sketch",m);sresp(c,200,TPC,m,(int)strlen(m));return;}
     if(!strncmp(req,"POST /api/omni",14)||!strncmp(req,"POST /note",10)){
         char*body=strstr(req,"\r\n\r\n");if(!body){sresp(c,400,TP,"bad",3);return;}
         body+=4;char*dq=strstr(body,"&d=");int dn=dq&&dq[3]>='0'?atoi(dq+3):-1;

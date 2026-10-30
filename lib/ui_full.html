@@ -20,11 +20,13 @@
 <div id=v_mic class=v><div style="flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid #333;text-align:center"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center"><div id=mdot onclick="mtg()" style="cursor:pointer;width:44px;height:44px;border-radius:50%;border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:22px">🎤</div><div id=mss style="color:#888;font-size:16px">mic off — tap or space</div><div class=oc style="height:36px"><b>mic &#9662;</b><select id=msel></select></div><div class=oc style="height:36px"><b>device ▾</b><select id=mdev onchange="mdv(value)">__DO__</select></div></div><div id=mh style="color:#888;font:13px monospace">say: <b>"new agent"</b> · <b>"next agent"</b> · <b>"close agent"</b> · <b>"backspace"</b> word · <b>"clear"</b> line · <b>"enter"</b> send · <b>"stop"</b> off · <b>"device homebox"</b> switch</div><div id=mt2 style="color:#fff;font-size:22px;max-width:96vw;min-height:28px"></div></div><iframe id=mif style="flex:1;width:100%;border:0;background:#000"></iframe></div>
 <div id=v_note class=v style="padding-top:20px;align-items:center">
   <form id=nf style="display:flex;flex-direction:column;gap:10px;width:95vw">
+    <div id=dw style="display:none;flex-direction:column;gap:10px;align-items:center"><canvas id=dcv width=128 height=64 style="width:min(512px,90vw);image-rendering:pixelated;background:#fff;touch-action:none;cursor:crosshair"></canvas><div style="display:flex;gap:10px;width:100%"><button class=b type=button id=dsb onclick="dsave()" style="flex:1"></button><button class=b type=button onclick="dclr()">clear</button></div></div>
     <textarea id=nc autofocus rows=1 placeholder="note — type, enter to save (shift-enter newline)" class=f style="width:100%;font-size:16px;padding:22px;box-sizing:border-box;resize:none;overflow:hidden" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();nf.requestSubmit()}"></textarea>
-    <div style="display:flex;gap:10px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class=b type=submit style="flex:1">save</button>
       <button class=b type=button onclick="var n=0;ns.textContent='⟳ syncing…';fetch('/api/sync',{method:'POST'});var p=setInterval(()=>fetch('/api/sync-status').then(r=>r.text()).then(t=>{if(t=='syncing')ns.textContent='⟳ syncing… '+(++n)+'s';else{clearInterval(p);ns.textContent='✓ synced '+t;fetch('/note-list').then(r=>r.text()).then(h=>nl.innerHTML=h)}}),1000)">sync</button>
       <button class=b type=button data-go="/term">term</button>
+      <button class=b type=button onclick="dw.style.display=dw.style.display=='none'?'flex':'none'">draw</button>
     </div>
   </form>
   <div id=ns style="width:95vw;min-height:24px;margin-top:8px;font-size:18px;word-break:break-all"></div>
@@ -49,6 +51,16 @@ function show(p){if(p==='#mic')p='/mic';if(!views[p])p='/';pms.hidden=p==='#prof
 function arcn(f,el){fetch('/api/note/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({f:f})});el.parentElement.remove();}
 window.onpopstate=function(){show(location.hash||location.pathname)}; 
 nf.onsubmit=function(e){e.preventDefault();var c=nc.value.trim();if(!c)return;nc.value='';nc.style.height='auto';ns.innerHTML='<span style="color:#ccc">⟳ syncing… </span>'+c;fetch('/note',{method:'POST',headers:HF,body:'c='+encodeURIComponent(c)}).then(function(r){if(!r.ok)throw 0;return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);if(m)ns.innerHTML='<span style="color:#ccc">saved → </span><a href="'+m[0]+'" target=_blank style="color:#fff">'+m[0]+'</a>';else ns.textContent=t.split('\n').filter(function(l){return l.trim().indexOf('saved')===0})[0]||'saved ✓';fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})}).catch(function(){ns.innerHTML='<span style="color:#fff">save FAILED</span>'});};
+/* sketch notes (Sean 2026-10-25): keep under 1KB — that size lives in git beside notes; anything larger (audio/photo/video) goes to cloud storage via rclone, not git */
+var dcx=dcv.getContext('2d'),dlx;
+function dclr(){dcx.fillStyle='#fff';dcx.fillRect(0,0,128,64);dcx.fillStyle='#000';dsz()}dclr();
+function dxy(e){var r=dcv.getBoundingClientRect();return[Math.min(127,Math.max(0,(e.clientX-r.left)*128/r.width|0)),Math.min(63,Math.max(0,(e.clientY-r.top)*64/r.height|0))]}
+function dln(a,b,x,y){var dx=Math.abs(x-a),dy=Math.abs(y-b),sx=a<x?1:-1,sy=b<y?1:-1,e=dx-dy,t;for(;;){dcx.fillRect(a,b,1,1);if(a==x&&b==y)break;t=2*e;if(t>-dy){e-=dy;a+=sx}if(t<dx){e+=dx;b+=sy}}}
+dcv.onpointerdown=function(e){e.preventDefault();dcv.setPointerCapture(e.pointerId);var p=dxy(e);dln(p[0],p[1],p[0],p[1]);dlx=p};
+dcv.onpointermove=function(e){if(!e.buttons||!dlx)return;var p=dxy(e);dln(dlx[0],dlx[1],p[0],p[1]);dlx=p};
+dcv.onpointerup=function(){dlx=0;dsz()};
+function dsz(){dcv.toBlob(function(b){dsb.textContent='save sketch · '+b.size+'B / 1KB'+(b.size>1024?' — TOO BIG':'')},'image/png')}
+function dsave(){var t0=performance.now();ns.textContent='⟳ saving sketch…';dcv.toBlob(function(b){fetch('/note-img',{method:'POST',body:b}).then(function(r){return r.text()}).then(function(t){var m=t.match(/https?:\/\/\S+/);ns.innerHTML=(m?'<span style="color:#ccc">saved → </span><a href="'+m[0]+'" target=_blank style="color:#fff">'+m[0]+'</a>':'✗ '+t)+' '+(performance.now()-t0).toFixed(1)+'ms';dclr();fetch('/note-list').then(function(r){return r.text()}).then(function(h){nl.innerHTML=h})})},'image/png')}
 
 var _act='[data-go],.pg,button,a[href],[onclick]',_in='input,select,textarea';
 addEventListener('pointerdown',function(e){if(e.button||e.metaKey||e.ctrlKey||e.shiftKey)return;
