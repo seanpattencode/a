@@ -23,11 +23,11 @@ static int m_pick(const char *cat,const char *const *items,int n,char *out,size_
             printf("\n  %s%.*s\033[0m  \033[90m%s\033[0m",i==sel?"\033[7m> ":"  ",t?(int)(t-it):(int)strlen(it),it,t?t+1:"");
         }
         {struct timespec pn;clock_gettime(CLOCK_MONOTONIC,&pn);
-         printf("\033[%d;%dH\033[2m%.3fms\033[0m\033[%d;%dH",top,x+2,(double)(pn.tv_sec-pk.tv_sec)*1e3+(double)(pn.tv_nsec-pk.tv_nsec)/1e6,top,x);fflush(stdout);}
+         printf("\033[%d;%dH\033[2m%.3fms\033[0m\033[%d;%dH",top,x+2,(pn.tv_sec-pk.tv_sec)*1e3+(pn.tv_nsec-pk.tv_nsec)/1e6,top,x);fflush(stdout);}
         unsigned char c;if(read(0,&c,1)<1)break;
         clock_gettime(CLOCK_MONOTONIC,&pk);
-        if(c==27){int av;usleep(2000);ioctl(0,FIONREAD,&av);char s[2];
-            if(av<1||read(0,s,1)<1||!strchr("[O",s[0])||read(0,s+1,1)<1)break;
+        if(c==27){char s[2];struct pollfd p={0,POLLIN,0};
+            if(poll(&p,1,2)<1||read(0,s,1)<1||!strchr("[O",s[0])||read(0,s+1,1)<1)break;
             sel+=(s[1]=='B')-(s[1]=='A');continue;}
         if(c==3)break;
         if(c==21){f[0]=0;fl=sel=0;}
