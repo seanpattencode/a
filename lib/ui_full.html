@@ -162,4 +162,9 @@ function mput(p){var w=p.toLowerCase().replace(/[^a-z ]/g,'').trim(),d=/^device 
  if(w=='stop')return mtg();if(d)return mdv(([...mdev.options].find(o=>o.text.toLowerCase().replace(/[^a-z]/g,'').includes(d[1].replace(/ /g,'')))||{}).value);
  fetch('/api/omni',{method:'POST',body:'q='+encodeURIComponent((mdev.value?'ssh '+mdev.value+' ':'cmd ')+'s=$(tmux display -p "#{client_session}");tmux '+(k||'send -l -- "$(echo '+btoa(unescape(encodeURIComponent(p+' ')))+'|base64 -d)"').replace(/^\w+/,'$& -t "$s"'))}).then(r=>r.text()).then(t=>mt2.textContent='→ '+p+' · '+t.replace(/<[^>]*>/g,''))}
 function mrx(s){var t=s.slice(1).trim();if(!MR)return A.hear(false);t&&(mt2.textContent=t,s[0]=='='&&mput(t))}
+/* gamepad → menu keys: pad lanes/d-pad/stick/hat = arrows, else Enter; armed on first press */
+var GPV={},GPK=['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'],gpk=k=>{var t=document.activeElement;if(!t||t==document.body)t=qi;t.dispatchEvent(new KeyboardEvent('keydown',{key:k,bubbles:1}))};
+addEventListener('gamepadconnected',()=>{(function gp(){navigator.getGamepads().forEach((p,i)=>{if(!p)return;
+ p.buttons.forEach((b,j)=>{var k=i+'.'+j,m=(p.mapping=='standard'?{12:0,13:1,14:2,15:3}:{2:0,1:1,0:2,3:3})[j];if(b.pressed&&!GPV[k])gpk(GPK[m]??'Enter');GPV[k]=b.pressed});
+ [[1,-1,0],[1,1,1],[0,-1,2],[0,1,3],[7,-1,0],[7,1,1],[6,-1,2],[6,1,3]].forEach((a,d)=>{var k=i+'x'+d,on=a[1]*(p.axes[a[0]]||0)>.5;if(on&&!GPV[k])gpk(GPK[a[2]]);GPV[k]=on})});requestAnimationFrame(gp)})()},{once:1});
 </script>
