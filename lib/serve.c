@@ -571,12 +571,12 @@ static void handle(int c){
             "#bk{position:fixed;top:12px;bottom:120px;left:0;right:0;max-width:680px;margin:0 auto;overflow:hidden;white-space:pre-wrap;overflow-wrap:break-word;color:#ddd;font:21px/1.85 Georgia,serif;padding:0 32px;box-sizing:border-box}"
             "#tr{position:fixed;bottom:0;left:0;right:0;height:112px;display:flex;align-items:center;background:#000;z-index:9}"
             "#tr a,#op a{color:#fff;text-decoration:none;padding:0 18px;font:56px/112px " UM "}"
-            "#hud{margin-left:auto;min-width:0;overflow:hidden;color:#999;font:16px " UM ";padding:0 12px}"
+            "#hud{margin-left:auto;min-width:0;overflow:hidden;white-space:nowrap;color:#999;font:16px/112px " UM ";padding:0 12px;cursor:pointer}"
             "#mp{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;max-height:62vh;overflow:auto;background:#000;color:#fff;font:20px " UM ";z-index:9;scrollbar-color:#666 #000}#mp::-webkit-scrollbar{display:block;width:12px;background:#000}#mp::-webkit-scrollbar-thumb{background:#666}#mh{position:sticky;top:0;background:#000}"
             "#mp div{padding:10px 12px;border-bottom:1px solid #1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#mp b{color:#ccc;font-weight:400;padding:0 10px}::highlight(spk){background:#764;color:#fff}::highlight(fnd){background:#a80;color:#000}"
-            "#fp,#op,#np{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;background:#000;z-index:9;padding:10px 12px;box-sizing:border-box}"
-            "#fq,#nq,#mq{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px " UM ";padding:8px 10px}#fc{color:#999;font:22px " UM ";padding-left:12px}</style>"
-            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=mn>\xe2\x9c\x8e</a><a id=mo>\xe2\x8b\xaf</a><div id=hud></div></div><div id=mp></div><div id=op><a id=mc style=display:none>\xe2\x98\xb0</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a></div><div id=fp><input id=fq placeholder=find><span id=fc></span></div><div id=np><input id=nq placeholder=note></div><pre id=bk>");
+            "#fp,#op,#np,#pj{display:none;position:fixed;bottom:112px;left:0;right:0;max-width:680px;margin:0 auto;background:#000;z-index:9;padding:10px 12px;box-sizing:border-box}"
+            "#fq,#nq,#mq,#pn{width:65%%;background:#111;color:#fff;border:1px solid #333;font:22px " UM ";padding:8px 10px}#fc{color:#999;font:22px " UM ";padding-left:12px}#fx{color:#fff;float:right;font:26px/42px " UM ";padding:0 14px}</style>"
+            "<div id=tr><a id=ms>\xe2\x96\xb6</a><a id=mn>\xe2\x9c\x8e</a><a id=mo>\xe2\x8b\xaf</a><div id=hud></div></div><div id=mp></div><div id=op><a id=mc style=display:none>\xe2\x98\xb0</a><a id=ma>+\xe2\x9a\x91</a><a id=mt>\xe2\x9a\x91</a><a id=mf>\xe2\x8c\x95</a></div><div id=fp><input id=fq placeholder=find><span id=fc></span><a id=fx>\xe2\x9c\x95</a></div><div id=pj><input id=pn inputmode=numeric></div><div id=np><input id=nq placeholder=note></div><pre id=bk>");
         memcpy(pg+hl,esc,el);hl+=(int)el;free(esc);
         hl+=snprintf(pg+hl,cap-(size_t)hl,  /* browsers split big text into 64K chunk nodes — map (chunk,local)<->global offset */
             "</pre><script>var N=\"%s\",P=%ld,K=bk,ns=[].slice.call(K.childNodes),T=0,bs=[];"
@@ -623,7 +623,7 @@ static void handle(int c){
             "R(h[0]);U();fc.textContent=(FI+1)+'/'+FH.length;clearTimeout(st);st=setTimeout(save,500)}"
             "function FT(s){fp.style.display=s?'block':'none';if(s){fq.focus();fq.select()}else{fq.blur();try{CSS.highlights.delete('fnd')}catch(x){}}}"
             "mf.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();FT(fp.style.display!='block')});"
-            "fp.addEventListener('pointerdown',function(e){e.stopPropagation()});"
+            "fp.addEventListener('pointerdown',function(e){e.stopPropagation();if(e.target==fx){e.preventDefault();FT(0)}});"
             /* overflow #op = needed-not-essential; items stop pointerdown, pointerup closes it; note receipt in hud */
             "mo.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();op.style.display=op.style.display=='block'?'none':'block'});"
             "op.addEventListener('pointerdown',function(e){e.stopPropagation()});op.addEventListener('pointerup',function(){op.style.display='none'});"
@@ -631,6 +631,10 @@ static void handle(int c){
             "np.addEventListener('pointerdown',function(e){e.stopPropagation()});"
             "nq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Escape')np.style.display='none';else if(e.key==='Enter'&&nq.value.trim()){fetch('/api/omni',{method:'POST',headers:{'Content-Type':'" UE "'},body:'q='+encodeURIComponent('book note '+N+' @'+O()+' '+nq.value.trim())}).then(function(r){return r.text()}).then(function(t){hud.textContent=t.replace(/<[^>]*>/g,'').trim().slice(0,40);setTimeout(U,3000)});nq.value='';np.style.display='none'}});"
             "fq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Enter'){if(fq.value!==FV){FV=fq.value;FN(FV)}FG(e.shiftKey?-1:1)}else if(e.key==='Escape')FT(0)});"
+            /* phone has no Escape: ✕ (in fp's handler) closes find; pg x/y tap = page-number jump */
+            "hud.onpointerdown=function(e){e.preventDefault();var s=pj.style.display!='block';pj.style.display=s?'block':'none';if(s){pn.value='';pn.placeholder='page 1-'+(NP()+1);pn.focus()}};"
+            "pj.onpointerdown=function(e){e.stopPropagation()};"
+            "pn.onkeydown=function(e){e.stopPropagation();if(e.key==='Escape')pj.style.display='none';else if(e.key==='Enter'&&pn.value>0){G(pn.value-1|0);pj.style.display='none';pn.blur()}};"
             /* speak: apk in-app (A.say narrator, _srng word ranges) else server a say with live=1 stderr stream (voice= + \xe2\x96\xb6 i/N sentence lines); chunk highlighted on start either way; _sdone + X-Next chain chunks */
             "var sp=0,cs=0,nx=0,ct='',MD='';function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}U()}"
             "function SQ(){var r=/(?<=[.!?])\\s+|\\n\\s*\\n+/g,o=[],a=0,m;while(m=r.exec(ct)){if(/\\S/.test(ct.slice(a,m.index)))o.push([a,m.index]);a=r.lastIndex}if(/\\S/.test(ct.slice(a)))o.push([a,ct.length]);return o}"
