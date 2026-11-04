@@ -587,19 +587,19 @@ static void handle(int c){
             "for(var i=0;i<ns.length;i++){bs.push(T);T+=ns[i].length||0;}"
             "function C(x,y){var n,o,r;if(document.caretRangeFromPoint){r=document.caretRangeFromPoint(x,y);if(!r)return null;n=r.startContainer;o=r.startOffset;}else if(document.caretPositionFromPoint){r=document.caretPositionFromPoint(x,y);if(!r)return null;n=r.offsetNode;o=r.offset;}else return null;for(var j=0;j<ns.length;j++)if(ns[j]===n)return bs[j]+o;return null;}"
             "function O(){var r=K.getBoundingClientRect(),o;for(var y=2;y<120;y+=8){o=C(r.left+32,r.top+y);if(o!=null)return o;}return P;}"
-            "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange();g.setStart(ns[i],Math.min(f-bs[i],ns[i].length));g.collapse(true);var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top;pg=Math.floor(K.scrollTop/ph());}"   /* floor = the page the line is on: the flip after a jump moves on from it instead of skipping half a page (round) */
-            "function U(){hud.textContent='pg '+(pg+1)+'/'+(NP()+1)+(sp&&MD?' \xc2\xb7 '+MD:'');}"
+            "function R(f){var i=ns.length-1;while(i>0&&f<bs[i])i--;var g=document.createRange(),k=Math.min(f-bs[i],ns[i].length);g.setStart(ns[i],k);g.setEnd(ns[i],Math.min(k+1,ns[i].length));var c=g.getClientRects()[0]||g.getBoundingClientRect();K.scrollTop+=c.top-K.getBoundingClientRect().top-(lh-c.height)/2;pg=Math.floor((K.scrollTop+1)/ph());}"   /* floor = the page the line is on, round skipped half a page after a jump; 1-char range: a collapsed range at a soft wrap reports the line ABOVE, so R(O()) climbed a line; glyph top - half-leading = line top; +1: device-pixel scroll snap read a page-boundary line as the page before */
+            "function U(){hud.textContent='pg '+(pg+1)+'/'+(NP()+1)+(sp&&MD?' \xc2\xb7 '+MD:'');}function US(){U();clearTimeout(st);st=setTimeout(save,500);}"
             "function save(){var b='pos='+O(),u='/book?n='+encodeURIComponent(N);navigator.sendBeacon?navigator.sendBeacon(u,new Blob([b],{type:'" UE "'})):fetch(u,{method:'POST',headers:{'Content-Type':'" UE "'},body:b});}"
             /* whole-screen pages via scrollTop (sync, sub-ms); flip on pointerdown/wheel/keys */
             "var lh=parseFloat(getComputedStyle(K).lineHeight),pg=0,st;"
             "function fit(){K.style.bottom='120px';K.style.bottom=(120+K.clientHeight%%lh)+'px';}"   /* whole-line snap (%% = JS modulo in this fmt) */
             "function ph(){return Math.max(lh,Math.floor(K.clientHeight/lh)*lh);}"
             "function NP(){return Math.max(0,Math.ceil((K.scrollHeight-K.clientHeight)/ph()));}"
-            "function G(p){p=Math.max(0,Math.min(p,NP()));K.scrollTop=p*ph();pg=p;U();clearTimeout(st);st=setTimeout(save,500);}"
+            "function G(p){p=Math.max(0,Math.min(p,NP()));K.scrollTop=p*ph();pg=p;US();}"
             "addEventListener('pointerdown',function(e){G(pg+(e.clientX<innerWidth/3?-1:1));e.preventDefault();});"
             "addEventListener('wheel',function(e){if(mp.contains(e.target))return;G(pg+(e.deltaY>0?1:-1));e.preventDefault();},{passive:false});"
             "addEventListener('keydown',function(e){var k=e.key;if(((e.ctrlKey||e.metaKey)&&(k==='f'||k==='F'))||k==='/'){FT(1);e.preventDefault();return}if(k===' '||k==='PageDown'||k==='ArrowRight'||k==='ArrowDown')G(pg+1);else if(k==='b'||k==='PageUp'||k==='ArrowLeft'||k==='ArrowUp')G(pg-1);else return;e.preventDefault();});"
-            "addEventListener('resize',function(){fit();G(pg);});"
+            "function RS(){fit();R(O());US();}addEventListener('resize',RS);"   /* a phone keyboard shrinks the viewport: keep the first visible line (R of what is on top); G(pg) re-applied the page index to the new page height = other text, a found phrase vanished on x */
             "requestAnimationFrame(function(){fit();if(P>0){R(P);K.scrollTop=pg*ph();}U();});"
             "addEventListener('pagehide',save);addEventListener('visibilitychange',function(){if(document.hidden)save();});"
             /* marks: col6 csv, server reply authoritative; stopPropagation vs the pager; TX offsets == file offsets */
@@ -616,7 +616,7 @@ static void handle(int c){
             "mt.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();PP(MH,1)});mc.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();PP(TC,2)});"
             "var pd,py;mp.addEventListener('pointerdown',function(e){e.stopPropagation();pd=e.target.closest('[data-o]');py=e.clientY;if(e.target.id!='mq')e.preventDefault()});"   /* a row acts on lift, on the row that took the press, if the finger did not move: a drag scrolls the list (Chrome cancels the pointer), and the tap that opened the list cannot fall through onto a row */
             "mp.addEventListener('pointerup',function(e){var r=e.target.closest('[data-o]');if(!r||r!==pd||Math.abs(e.clientY-py)>8)return;var x=e.target.getAttribute('data-x');if(x){MW('del='+x);return}"
-            "JR(r)});function JR(r){R(+r.getAttribute('data-o'));U();clearTimeout(st);st=setTimeout(save,500);mp.style.display='none'}"   /* the line lands at the top (no page snap: a chapter heading must show); the next flip realigns to pages */
+            "JR(r)});function JR(r){R(+r.getAttribute('data-o'));US();mp.style.display='none'}"   /* the line lands at the top (no page snap: a chapter heading must show); the next flip realigns to pages */
             "fetch('/bookmark?n='+encodeURIComponent(N)).then(function(r){return r.text()}).then(MR);"
             /* chapters = output/toc.txt (a book toc: epub nav/ncx titles mapped into this text, offset\ttitle); \xe2\x98\xb0 shows only when it exists, rows reuse the marks popup + jump */
             "fetch('/bookfile?n='+encodeURIComponent(N)+'&f=output/toc.txt').then(function(r){return r.ok?r.text():''}).then(function(t){t=t.split('\\n').filter(Boolean).map(function(l){var i=l.indexOf('\\t');return '<div data-o='+l.slice(0,i)+'>'+EH(l.slice(i+1))+'</div>'}).join('');if(t){TC=HD('contents')+t;mc.style.display=''}});"
@@ -624,7 +624,7 @@ static void handle(int c){
             "var FH=[],FI=-1,FV=null;"
             "function FN(v){FH=[];FI=-1;if(!/\\S/.test(v))return;var q=v.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&').replace(/[\\s\\u2014\\u2013-]+/g,'[\\\\s\\\\u2014\\\\u2013-]+'),rx=new RegExp(q,'gi'),m;while((m=rx.exec(TX))&&FH.length<500)FH.push([m.index,m.index+m[0].length])}"
             "function FG(d){if(!FH.length){fc.textContent='0/0';return}FI=((FI+d)%%FH.length+FH.length)%%FH.length;var h=FH[FI];try{CSS.highlights.set('fnd',new Highlight(RG(h[0],h[1])))}catch(x){}"
-            "R(h[0]);U();fc.textContent=(FI+1)+'/'+FH.length;clearTimeout(st);st=setTimeout(save,500)}"
+            "R(h[0]);US();fc.textContent=(FI+1)+'/'+FH.length}"
             "function FT(s){fp.style.display=s?'block':'none';if(s){fq.focus();fq.select()}else{fq.blur();try{CSS.highlights.delete('fnd')}catch(x){}}}"
             "mf.addEventListener('pointerdown',function(e){e.stopPropagation();e.preventDefault();FT(fp.style.display!='block')});"
             "fp.addEventListener('pointerdown',function(e){e.stopPropagation();if(e.target==fx){e.preventDefault();FT(0)}});"
@@ -636,9 +636,9 @@ static void handle(int c){
             "nq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Escape')np.style.display='none';else if(e.key==='Enter'&&nq.value.trim()){fetch('/api/omni',{method:'POST',headers:{'Content-Type':'" UE "'},body:'q='+encodeURIComponent('book note '+N+' @'+O()+' '+nq.value.trim())}).then(function(r){return r.text()}).then(function(t){hud.textContent=t.replace(/<[^>]*>/g,'').trim().slice(0,40);setTimeout(U,3000)});nq.value='';np.style.display='none'}});"
             "fq.addEventListener('keydown',function(e){e.stopPropagation();if(e.key==='Enter'){if(fq.value!==FV){FV=fq.value;FN(FV)}FG(e.shiftKey?-1:1)}else if(e.key==='Escape')FT(0)});"
             /* phone has no Escape: ✕ (in fp's handler) closes find; pg x/y tap = page-number jump */
-            "hud.onpointerdown=function(e){e.preventDefault();var s=pj.style.display!='block';pj.style.display=s?'block':'none';if(s){pn.value='';pn.placeholder='page 1-'+(NP()+1);pn.focus()}};"
+            "var PH;hud.onpointerdown=function(e){e.preventDefault();var s=pj.style.display!='block';pj.style.display=s?'block':'none';if(s){PH=ph();pn.value='';pn.placeholder='page 1-'+(NP()+1);pn.focus()}};"
             "pj.onpointerdown=function(e){e.stopPropagation()};"
-            "pn.onkeydown=function(e){e.stopPropagation();if(e.key==='Escape')pj.style.display='none';else if(e.key==='Enter'&&pn.value>0){G(pn.value-1|0);pj.style.display='none';pn.blur()}};"
+            "pn.onkeydown=function(e){e.stopPropagation();if(e.key==='Escape')pj.style.display='none';else if(e.key==='Enter'&&pn.value>0){K.scrollTop=(pn.value-1)*PH;RS();pj.style.display='none';pn.blur()}};"
             /* speak: apk in-app (A.say narrator, _srng word ranges) else server a say with live=1 stderr stream (voice= + \xe2\x96\xb6 i/N sentence lines); chunk highlighted on start either way; _sdone + X-Next chain chunks */
             "var sp=0,cs=0,nx=0,ct='',MD='';function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}U()}"
             "function SQ(){var r=/(?<=[.!?])\\s+|\\n\\s*\\n+/g,o=[],a=0,m;while(m=r.exec(ct)){if(/\\S/.test(ct.slice(a,m.index)))o.push([a,m.index]);a=r.lastIndex}if(/\\S/.test(ct.slice(a)))o.push([a,ct.length]);return o}"
