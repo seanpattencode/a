@@ -459,13 +459,17 @@ static void handle(int c){
         if(!pq||strstr(req,"stop=")){sresp(c,200,TP,"off",3);return;}
         char tf[P];bkfile(nm,tf);size_t tl=0;char*txt=readf(tf,&tl);
         if(!txt){sresp(c,404,TP,"x",1);return;}
-        size_t o=(size_t)atol(pq+4);if(o>=tl)o=tl?tl-1:0;
+        size_t o=0;{long u=atol(pq+4);while(o<tl&&u>0){unsigned char b2=(unsigned char)txt[o++];if(b2=='\r'&&o<tl&&txt[o]=='\n')continue;if(b2<0x80||b2>=0xC0)u-=b2>=0xF0?2:1;}while(o<tl&&((unsigned char)txt[o]&0xC0)==0x80)o++;}if(o>=tl)o=tl?tl-1:0;   /* pos= and X-Next are TX units (UTF-16, CRLF folded) = the page's O(); treating them as bytes read audio pages early on curly-quote books */
         size_t e2=o+1400>tl?tl:o+1400,x=e2;
         while(x<tl&&x<e2+300&&!(strchr(".!?",txt[x-1])&&(txt[x]==' '||txt[x]=='\n')))x++;
         if(x<tl)e2=x;
-        char*ch=malloc(e2-o+1);memcpy(ch,txt+o,e2-o);ch[e2-o]=0;free(txt);
-        if(strstr(req,"txt=1")){char hh[192];int hn=snprintf(hh,192,"HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nContent-Length:%zu\r\nX-Next:%zu\r\nConnection:close\r\n\r\n",e2-o,e2);   /* apk speaks it (A.say); X-Next chains chunks */
-            (void)!write(c,hh,(size_t)hn);(void)!write(c,ch,e2-o);free(ch);return;}
+        while(e2>o&&((unsigned char)txt[e2]&0xC0)==0x80)e2--;   /* the byte cap must not cut mid UTF-8 char: a split char decodes to U+FFFD and derails the unit count */
+        size_t w=0,nu=0;char*ch=malloc(e2-o+1);   /* one pass: nu = X-Next in units, ch = chunk folded like the parser (CRLF->LF, lone CR->LF) so its offsets index TX */
+        for(size_t i=0;i<e2;i++){char cc=txt[i];if(cc=='\r'){if(i+1<tl&&txt[i+1]=='\n')continue;cc='\n';}
+            unsigned char b2=(unsigned char)cc;if(b2<0x80||b2>=0xC0)nu+=b2>=0xF0?2:1;if(i>=o)ch[w++]=cc;}
+        ch[w]=0;free(txt);
+        if(strstr(req,"txt=1")){char hh[192];int hn=snprintf(hh,192,"HTTP/1.1 200 OK\r\nContent-Type:text/plain; charset=utf-8\r\nContent-Length:%zu\r\nX-Next:%zu\r\nConnection:close\r\n\r\n",w,nu);   /* apk speaks it (A.say); X-Next chains chunks */
+            (void)!write(c,hh,(size_t)hn);(void)!write(c,ch,w);free(ch);return;}
         int lv=!!strstr(req,"live=1"),lp[2];if(lv&&pipe(lp))lv=0;   /* live=1: stream say's stderr (voice= header + \xe2\x96\xb6 i/N per sentence) until it exits */
         pid_t k=fork();
         if(!k){setsid();int dn=open("/dev/null",O_WRONLY);if(dn>=0)dup2(dn,1);
@@ -638,7 +642,7 @@ static void handle(int c){
             /* speak: apk in-app (A.say narrator, _srng word ranges) else server a say with live=1 stderr stream (voice= + \xe2\x96\xb6 i/N sentence lines); chunk highlighted on start either way; _sdone + X-Next chain chunks */
             "var sp=0,cs=0,nx=0,ct='',MD='';function UP(){ms.textContent=sp?'\\u25a0':'\\u25b6';try{window.A&&A.media(sp,N)}catch(x){}U()}"
             "function SQ(){var r=/(?<=[.!?])\\s+|\\n\\s*\\n+/g,o=[],a=0,m;while(m=r.exec(ct)){if(/\\S/.test(ct.slice(a,m.index)))o.push([a,m.index]);a=r.lastIndex}if(/\\S/.test(ct.slice(a)))o.push([a,ct.length]);return o}"
-            "function SPN(p){fetch('/booksay?n='+encodeURIComponent(N)+'&pos='+p+'&txt=1').then(function(r){nx=+r.headers.get('x-next')||0;return r.text()}).then(function(t){var i=TX.indexOf(t.slice(0,60),Math.max(0,p-800));cs=i<0?p:i;ct=t;sp=1;_srng(0,t.length);"
+            "function SPN(p){fetch('/booksay?n='+encodeURIComponent(N)+'&pos='+p+'&txt=1').then(function(r){nx=+r.headers.get('x-next')||0;return r.text()}).then(function(t){cs=p;ct=t;sp=1;_srng(0,t.length);"
             "if(window.A&&A.say){try{A.pitch&&A.pitch(''+(localStorage.bkp||.48))}catch(x){}A.say(t);setTimeout(function(){try{MD=A.voice()||MD}catch(x){}U()},1200);UP()}else{UP();LV(p)}})}"
             "function LV(p){fetch('/booksay?n='+encodeURIComponent(N)+'&pos='+p+'&live=1').then(function(r){var d=r.body.getReader(),x=new TextDecoder(),b='',sq=SQ();"
             "function st(o2){b+=x.decode(o2.value||new Uint8Array(0),{stream:!o2.done});var L=b.split('\\n');b=o2.done?'':L.pop();"
