@@ -1,4 +1,4 @@
-/* a music [term|yt q|play id|play stop|get id|pre id..|trim id|cfg|rm id] — gdrive+youtube; stream-only unless .on (keep local copies, capped); piped: yt prints id<TAB>title, play <id> detaches. termux deps: yt-dlp rclone termux-api ffmpeg */
+/* a music [term|yt q|play id|play stop|get id|pre id..|trim id|cfg|rm id] — cached Drive/YouTube. Piped: yt=id<TAB>title; play detaches. */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,10 +20,10 @@ static int sh(const char*f,...){char b[2048];va_list a;va_start(a,f);vsnprintf(b
 static void lines(const char*f,...){char b[1200];va_list a;va_start(a,f);vsnprintf(b,1200,f,a);va_end(a);
     N=0;FILE*p=popen(b,"r");if(!p)return;
     while(N<64&&fgets(L[N],256,p)){L[N][strcspn(L[N],"\n")]=0;if(L[N][0])N++;}pclose(p);}
-static char*res(const char*q){lines("sed -n 's|^%s  ||p' \"%s/.index\" 2>&-|sed q",q,C);return N?L[0]:(char*)q;}   /* id → cached name via .index (N = hit) */
+static char*res(const char*q){lines("sed -n 's|^%s  ||p' \"%s/.index\" 2>&-",q,C);return N?L[0]:(char*)q;}   /* id → cached name via .index (N = hit) */
 static char*fp(const char*f){static char p[880];snprintf(p,880,"%s/%s",C,f);return p;}
 static void killf(const char*n){FILE*k=fopen(fp(n),"r");if(k){int d;while(fscanf(k,"%d",&d)==1)kill(-d,SIGTERM);fclose(k);}}
-static pid_t bg(void){pid_t c=fork();if(!c){setsid();int d=open("/dev/null",O_WRONLY);dup2(d,1);dup2(d,2);}return c;}   /* run_lab builds this file alone: util.c's bg isn't here */
+static pid_t bg(void){pid_t p=fork();if(!p){setsid();freopen("/dev/null","w",stdout);dup2(1,2);}return p;}
 static void ff(const char*p){execlp("ffplay","ffplay","-nodisp","-autoexit","-v","16",p,(char*)0);_exit(1);}
 static void play(const char*f,const char*src){printf("playing %s: %s\n",src,f);fflush(stdout);
     char*p=fp(f);
@@ -56,8 +56,8 @@ static char*get(const char*id){
     for(int t=0;;t++){lines(Y" -f ba -o \"%s/%%(title)s.%%(ext)s\" --print after_move:filepath 'youtu.be/%s'",C,id);if(N)break;   /* 403 = stale yt-dlp: update, retry once */
         if(t)exit(1);sh("yt-dlp -U 2>&-||pip install -q -U yt-dlp --user --break-system-packages 2>&-");}
     snprintf(f,256,"%s",strrchr(L[0],'/')+1);
-    setenv("I",id,1);setenv("N2",f,1);sh("grep -q -- \"^$I  \" \"%s/.index\" 2>&-||echo \"$I  $N2\">>\"%s/.index\"",C,C);
     trims(id,fp(f),1);
+    sh("grep -q -- \"^$I  \" \"%s/.index\" 2>&-||echo \"$I  ${F##*/}\">>\"%s/.index\"",C,C);
     if(strcmp(R,"music"))sh("(rclone copy \"%s/%s\" %s&&rclone copy \"%s/.index\" %s)>/dev/null 2>&1 &",C,f,R,C,R);
     return f;}
 static void head(const char*id){   /* .url+.sz feed serve's proxy; .on: +160KB head (yt-dlp resumes the .part byte-exact); URL stays in shell (~1200 chars) */
@@ -91,30 +91,31 @@ int main(int ac,char**av){
     char pat[16];snprintf(pat,16," %.12s ",ac>1?av[1]:"-");
     int s=strstr(" yt y get g play pre trim cfg rm ",pat)?2:1;
     char q[512]="";for(int i=s;i<ac;i++)snprintf(q+strlen(q),512-strlen(q),"%s%s",i>s?" ":"",av[i]);
-    if(s==2&&av[1][0]=='y'){srch(q);return 0;}
-    if(s==2&&av[1][0]=='c'){cfg(ac>2?av[2]:0);return 0;}
-    if(s==2&&av[1][0]=='r'){char*nm=res(q),b[300];
+    if(s==2){
+    if(av[1][0]=='y'){srch(q);return 0;}
+    if(av[1][0]=='c'){cfg(ac>2?av[2]:0);return 0;}
+    if(av[1][0]=='r'){char*nm=res(q),b[300];
         int r1=!remove(fp(nm));snprintf(b,300,"%s.part",nm);int r2=!remove(fp(b));
         printf(r1||r2?"cleared %s%s\n":"x nothing local: %s%s\n",nm,r2?" (+part)":"");return 0;}
-    if(s==2&&av[1][0]=='t'){char*nm=res(q),*x=fp(nm);
+    if(av[1][0]=='t'){char*nm=res(q),*x=fp(nm);
         trims(q,access(x,F_OK)?"":x,1);
         setenv("I",q,1);
         sh("cd \"%s\";[ -s .cfg ]&&[ \"$(cut -d' ' -f2 .cfg)\" = 0 ]&&{ echo '0 0';exit 0; };"
            "awk -v k=\"$I\" 'substr($0,1,length(k)+1)==k\" \"{print $(NF-1),$NF;exit}' \"%s/.trim\" 2>&-",C,C);return 0;}
-    if(s==2&&av[1][0]=='p'&&av[1][1]=='l'){killf(".play");
+    if(av[1][0]=='p'&&av[1][1]=='l'){killf(".play");
         if(!strcmp(q,"stop")){puts("stopped");return 0;}
         char*f=get(q);
         if(isatty(0))play(f,"pick");
         pid_t ch=bg();if(!ch)ff(fp(f));
         FILE*w=fopen(fp(".play"),"w");if(w){fprintf(w,"%d\n",ch);fclose(w);}
         printf("playing: %s\nstop: a music play stop\n",f);return 0;}
-    if(s==2&&av[1][0]=='p'){killf(".pre");prune();   /* next search kills the prefetch batch and enforces the keep-local setting */
+    if(av[1][0]=='p'){killf(".pre");prune();   /* next search kills the prefetch batch and enforces the keep-local setting */
         FILE*w=fopen(fp(".pre"),"w");
         for(int i=2;i<ac;i++){pid_t ch=bg();
             if(!ch){head(av[i]);_exit(0);}
             if(w)fprintf(w,"%d\n",ch);}
         if(w)fclose(w);return 0;}
-    if(s==2){puts(get(q));return 0;}
+    puts(get(q));return 0;}
     lines("ls \"%s\" 2>&-",C);
     if(ac>1)term(q);
     if(!isatty(0)){for(int i=0;i<N;i++)puts(L[i]);return 0;}
