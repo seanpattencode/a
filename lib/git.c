@@ -29,14 +29,14 @@ static void sync_repo(void) {
     int fd=open("/tmp/.a_git.lock",O_CREAT|O_WRONLY|O_CLOEXEC,0644);
     if(fd>=0&&flock(fd,LOCK_EX|LOCK_NB)){close(fd);return;}
     char c[B];
-    snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD >/dev/null||exit;"
-        "[ -f \"$D/.git/index.lock\" ]&&! pgrep -x git >/dev/null&&rm -f \"$D/.git/index.lock\";"
+    snprintf(c,B,"{ D='%s';g(){ git -C \"$D\" \"$@\";};g rev-parse --abbrev-ref HEAD||exit;"
+        "[ -f \"$D/.git/index.lock\" ]&&! pgrep -x git&&rm -f \"$D/.git/index.lock\";"
         "[ -d \"$D/.git/rebase-merge\" ]&&{ g branch -f rescue-$(date +%%s) HEAD;g rebase --abort;};"
         "[ -f \"$D/.git/MERGE_HEAD\" ]&&g merge --abort;"
         "g add -A -- . ':!activity';g ls-files -z --others --exclude-standard activity|g add --sparse --pathspec-from-file=- --pathspec-file-nul;g commit -qm sync;"
-        "g fetch -q origin main 2>/dev/null;b=$(g rev-list --count HEAD..origin/main 2>/dev/null);"
+        "g fetch -q origin main;b=$(g rev-list --count HEAD..origin/main);"
         "[ \"${b:-0}\" -gt 0 ]&&g branch -f rescue-$(date +%%s) HEAD;"
-        "n=$(g rev-parse origin/main);o=$n;for r in $(g for-each-ref --sort=refname --format='%%(refname:short)' 'refs/heads/rescue-*');do t=$(g merge-tree --write-tree --no-messages -X ours -X no-renames $r $n)||exit;n=$(printf sync|g commit-tree $t -p $n -p $r)||exit;g branch -D $r;done;[ \"$n\" = \"$o\" ]||{ h=$(g rev-parse HEAD);g diff --no-renames --name-only -z $h $n -- . ':!activity'|g restore --source=$n --worktree --pathspec-from-file=- --pathspec-file-nul;g reset -q --soft $n;g read-tree $n;g ls-files -z activity|g update-index --skip-worktree -z --stdin;};"
+        "n=$(g rev-parse origin/main);o=$n;for r in $(g for-each-ref --sort=refname --format='%%(refname:short)' 'refs/heads/rescue-*');do t=$(g merge-tree --write-tree --no-messages -X ours -X no-renames $r $n|sed 1q);n=$(printf sync|g commit-tree $t -p $n -p $r)||exit;g branch -D $r;done;[ \"$n\" = \"$o\" ]||{ h=$(g rev-parse HEAD);g diff --no-renames --name-only -z $h $n -- . ':!activity'|g restore --source=$n --worktree --pathspec-from-file=- --pathspec-file-nul;g reset -q --soft $n;g read-tree $n;g ls-files -z activity|g update-index --skip-worktree -z --stdin;};"
         "g pull --no-rebase --no-edit -q origin main||g merge --abort;g push -q origin main;g gc --auto -q;} >/dev/null 2>&1",SROOT);  /* gated gc inside the flock (agit-gc.md) */
     (void)!system(c);if(fd>=0)close(fd);
 }
