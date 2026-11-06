@@ -111,6 +111,8 @@ _tok_chk() { local f="$D/adata/git/perf/tok.txt" t c r  # entropy deadmen (human
 [[ -d /data/data/com.termux ]]&&_QT=--target=aarch64-linux-android30
 _abin() { [[ "$D" == *"/adata/worktrees/"* ]]&&ABIN="$D"||ABIN="$D/adata/local"
     BIN="$HOME/.local/bin";[[ -d $ABIN && -d $BIN ]]||mkdir -p "$ABIN" "$BIN";}
+_lnk() { [[ "$ABIN" == */adata/local && ( ! -x "$BIN/a" || "$D" -ef "$HOME/a" ) ]]||return 0  # only ~/a (or a first install / dangling link) may point a/h: a scratch clone's build hijacked them onto its empty /tmp adata — a 0 = invalid index (2026-11-06)
+    local b;for b in "$BIN" /data/data/com.termux/files/usr/bin;do [[ -d $b ]]&&{ ln -sf "$ABIN/a" "$b/a"; ln -sf "$ABIN/a" "$b/h";};done;return 0;}
 _checkers() {
     _c(){ n=$1;shift;{ ! command -v "$1" &>/dev/null||"$@";}>"$T/$n" 2>&1||touch "$T/$n.f";}
     _rgcc(){ command -v gcc &>/dev/null&&! gcc --version 2>&1|grep -q clang;}
@@ -142,7 +144,7 @@ build) _PT=${EPOCHREALTIME/./}
         _ensure_cc; E=$($CC $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { _build_fix "$E"; exit 1; }
     fi
     [[ -z $TCT && ! -x $HOME/.local/bin/tcc && ! -d /data/data/com.termux && $OSTYPE != cygwin ]]&&{ (T_=$(mktemp -d)&&git clone -q --depth 1 https://github.com/TinyCC/tinycc.git $T_&&cd $T_&&./configure --prefix=$HOME/.local&&make -j8&&make install;rm -rf $T_) >/dev/null 2>&1 & }
-    [[ "$ABIN" == */adata/local && ! "$BIN/a" -ef "$ABIN/a" ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }; _perf_chk build
+    _lnk; _perf_chk build
     { rm -f "$ABIN/i_cache.txt";"$ABIN/a" i; } </dev/null >/dev/null 2>&1 &  # bg menu-cache regen: next a <1ms
     [[ $OSTYPE == cygwin ]]&&{ if timeout -k 4 3 /usr/bin/python3 -c pass 2>/dev/null;then rm -f "$ABIN/python3";else printf '#!/bin/sh\necho "x python3 hangs on this cygwin (A_PYOK=1 unblocks)">&2;exit 1\n'>"$ABIN/python3";chmod +x "$ABIN/python3";fi;("$ABIN/a" ui reload >&- 2>&- &); }  # python3 startup-hang (win 29667): healthy drops the shim, hung keeps it; stderr-only so popen stays clean; serve's forks crash on a new exe: restart
     [[ -d /data/data/com.termux ]]&&/system/bin/cmd package query-activities --brief --user 0 -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null|awk '/\//{gsub(/^ +/,"");p=$0;sub(/\/.*/,"",p);sub(/.*\./,"",p);printf"open %s\t%s · app\n",$0,p}'>$ABIN/apps.txt&
@@ -162,7 +164,7 @@ build) _PT=${EPOCHREALTIME/./}
     ;;
 check) _PT=${EPOCHREALTIME/./};_tok_chk
     _abin; _ensure_cc; E=$($CC $_QT -w -O0 -o "$ABIN/a" "$D/a.c" -lutil 2>&1) || { echo "$E"; exit 1; }
-    [[ "$ABIN" == */adata/local ]] && { ln -sf "$ABIN/a" "$BIN/a"; ln -sf "$ABIN/a" "$BIN/h"; [[ -d /data/data/com.termux/files/usr/bin ]]&&{ ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/a; ln -sf "$ABIN/a" /data/data/com.termux/files/usr/bin/h; }; }
+    _lnk
     T=$(mktemp -d);trap "rm -rf $T" EXIT;F="$D/a.c";A=;_warn_flags
     _checkers
     if ls "$T"/*.f &>/dev/null;then cat "$T"/[0-9]* 2>/dev/null; exit 1
