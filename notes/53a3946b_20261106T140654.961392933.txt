@@ -1,0 +1,4 @@
+Text: [LLM decode of the 14:05 per-step math verbatim]: fleet effectiveness ≈ v · p^N · u — speed once, correctness to the chain-length power, uptime falling superlinearly with speed (KE v², bearing life load^-3, fatigue stress^-3..-10). Worked: 20 steps, 2x speed at p=.95 = .72 tasks per unit time vs 1x at p=.99 = .82; slow wins before rework or breakage. Slowness buys the per-step vision verifier (local PC or cloud), so p comes from software, not hardware precision — the p source for a toy-grade 100:1 fleet; vN multiplexing applied in time. Same exponent as the workcycle 200-tok verified step. Added to plan.txt ROBOT DOCTRINE block.
+Status: pending
+Device: ubuntuSSD4Tb
+Created: 20261106T140654
