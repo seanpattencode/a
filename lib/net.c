@@ -1,11 +1,16 @@
+/* detached sh -c cmd ->lg; holds lk till the chain exits (fd inherited, no CLOEXEC; 746+27 pile-ups); -1 = busy */
+static int bg_locked(const char*lk,const char*lg,const char*cmd){
+    int lf=open(lk,O_CREAT|O_WRONLY,0644);
+    if(lf>=0&&flock(lf,LOCK_EX|LOCK_NB)){close(lf);return -1;}
+    if(!fork()){setsid();int d=open(lg,O_WRONLY|O_CREAT|O_APPEND,0644),n=open("/dev/null",O_RDONLY);dup2(n,0);dup2(d,1);dup2(d,2);
+        execl("/bin/sh","sh","-c",cmd,(char*)0);_exit(127);}
+    if(lf>=0)close(lf);return 0;}
 static void bg_backup_jsonl(void) {
-    int lf=open("/tmp/.a_bk.lock",O_CREAT|O_WRONLY,0644);if(lf>=0&&flock(lf,LOCK_EX|LOCK_NB)){close(lf);return;} /* single-flight (746 piled on fedora 10-22); no CLOEXEC on purpose: the nohup chain inherits the fd, so the lock lives exactly as long as the upload */
-    char c[B]; snprintf(c, B, "nohup sh -c 'D=%s/backup/%s;mkdir -p $D&&"
+    char c[B]; snprintf(c, B, "D=%s/backup/%s;mkdir -p $D&&"
         "find ~/.claude/projects -name \"*.jsonl\" 2>/dev/null|while read f;do [ \"$f\" -nt \"$D/$(basename \"$f\")\" ]&&cp \"$f\" $D/ 2>/dev/null;done;"  /* -nt: growing sessions re-stage (cp -n froze first-sync prefix; cp -u absent on mac) */
         "r=$(rclone listremotes 2>/dev/null|grep \"^a-gdrive2:\"|head -1|tr -d \":\");"
-        "[ -n \"$r\" ]&&rclone copy $D \"$r:adata/backup/%s/\" --include \"*.jsonl\" --include \"*.log\" -q"
-        "' </dev/null >/dev/null 2>&1 &", AROOT, DEV, DEV);
-    (void)!system(c);if(lf>=0)close(lf);
+        "[ -n \"$r\" ]&&rclone copy $D \"$r:adata/backup/%s/\" --include \"*.jsonl\" --include \"*.log\" -q", AROOT, DEV, DEV);
+    bg_locked("/tmp/.a_bk.lock","/dev/null",c);
 }
 
 static int cmd_email(int argc, char **argv) { AB;(void)argc;
@@ -109,12 +114,14 @@ static int cmd_sync(int argc, char **argv) { (void)argc;(void)argv;AB;
     (void)!system(c);
     bg_backup_jsonl();
     {char rc[64];pcmd("rclone listremotes 2>/dev/null|grep '^a-gdrive2:'|head -1|tr -d ':'",rc,64);rc[strcspn(rc,"\n")]=0;
-    if(rc[0]){int lf=open("/tmp/.a_sync_rc.lock",O_CREAT|O_WRONLY|O_CLOEXEC,0644);if(lf>=0&&flock(lf,LOCK_EX|LOCK_NB)){puts("x cloud legs busy: another a sync");return 0;} /* single-flight: 27 piled up 10-11 */
+    if(rc[0]){char lg[P];snprintf(lg,P,"%s/sync_cloud.log",DDIR);
         char cd[P],bd[P];snprintf(cd,P,"%s/context",AROOT);snprintf(bd,P,"%s/books",AROOT);mkdirp(cd);mkdirp(bd);
-        snprintf(c,B,"rclone copy '%s' '%s:adata/context/' -q -L 2>/dev/null;rclone copy '%s:adata/context/' '%s' -q 2>/dev/null",cd,rc,rc,cd);(void)!system(c);
-        snprintf(c,B,"cd '%s'&&ls -d .[!.]*/ 2>/dev/null|sed -e 's/[][*?{}\\\\]/\\\\&/g' -e 's|^\\.\\(.*\\)/$|- \\1/**|'>\"${TMPDIR:-/tmp}/.bk_arc\";printf '+ */output/*.txt\\n- *\\n'>>\"${TMPDIR:-/tmp}/.bk_arc\"",bd);(void)!system(c);
-        snprintf(c,B,"rclone copy '%s' '%s:adata/books/' --filter '- .*/**' --filter '+ */output/*.txt' --filter '- *' -q -L 2>/dev/null;rclone copy '%s:adata/books/' '%s' --filter-from \"${TMPDIR:-/tmp}/.bk_arc\" -q 2>/dev/null",bd,rc,rc,bd);(void)!system(c);
-        puts("✓ context + books");}}
+        snprintf(c,B,"date '+== %%F %%T start';"
+            "rclone copy '%s' '%s:adata/context/' -q -L;rclone copy '%s:adata/context/' '%s' -q;"
+            "cd '%s'||exit;ls -d .[!.]*/ 2>/dev/null|sed -e 's/[][*?{}\\\\]/\\\\&/g' -e 's|^\\.\\(.*\\)/$|- \\1/**|'>\"${TMPDIR:-/tmp}/.bk_arc\";printf '+ */output/*.txt\\n- *\\n'>>\"${TMPDIR:-/tmp}/.bk_arc\";"
+            "rclone copy . '%s:adata/books/' --fast-list --filter '- .*/**' --filter '+ */output/*.txt' --filter '- *' -q -L;rclone copy '%s:adata/books/' . --fast-list --filter-from \"${TMPDIR:-/tmp}/.bk_arc\" -q;" /* fast-list or drive-403 crawl: 900 per-dir lists */
+            "date '+== %%F %%T done'",cd,rc,rc,cd,bd,rc,rc);
+        printf(bg_locked("/tmp/.a_sync_rc.lock",lg,c)?"→ cloud legs running — tail -f %s\n":"→ context+books detached — tail -f %s\n",lg);}}
     return 0;
 }
 
@@ -143,9 +150,7 @@ static int cmd_update(int argc, char **argv) { AB;
     puts("✓ Updated (bg)");
     {if(!bg()){
         snprintf(c,B,"sh '%s/a.c'",SDIR);(void)!system(c);
-        if(dc){char vp[P];snprintf(vp,P,"%s/venv/bin/pip",AROOT);
-            if(!access(vp,X_OK)){snprintf(c,B,"'%s' install -q pexpect prompt_toolkit aiohttp 2>/dev/null",vp);(void)!system(c);}
-            snprintf(c,B,"bash '%s/a.c' shell 2>&-;bash '%s/a.c' node 2>&-",SDIR,SDIR);(void)!system(c);
+        if(dc){snprintf(c,B,"bash '%s/a.c' shell 2>&-;bash '%s/a.c' node 2>&-",SDIR,SDIR);(void)!system(c);
             if(!access("/data/data/com.termux",F_OK)){char td[P];snprintf(td,P,"%s/.tmp",HOME);mkdirp(td);
                 snprintf(c,B,"tmux set-environment -g CLAUDE_CODE_TMPDIR '%s' 2>/dev/null",td);(void)!system(c);}}
         snprintf(c,B,"'%s/a' update cache",DDIR);(void)!system(c);
