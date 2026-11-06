@@ -1,0 +1,4 @@
+Text: [SEAN, verbatim 2026-11-06 14:05 — per-step correctness math; robots = agent operation]: "i think its the same math as my belief on agent operation. more correc tthings chain better over fewer steps. speed actually buys less than you think vs more correct steps, and a slower robot then can be reworked and correced making prob per step higher ex we can do more sophisticated vision recognition checks over local pc or cloud to make sure ation is good, which actually raises effectiveness of fleet, and fewer parts breaking means less down time from slower operations we all know that faster means alot more chance to break not just a little from phyiscs  equations. add taht."
+Status: pending
+Device: ubuntuSSD4Tb
+Created: 20261106T140654
