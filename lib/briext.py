@@ -50,7 +50,7 @@ FF={
 // (fires even in throttled tabs), replies POST /resp with the cmd id; privileged actions (open/screenshot/navigate/tabs) run HERE.
 const POLL = 'http://127.0.0.1:1234/poll', RESP = 'http://127.0.0.1:1234/resp';
 let BRI_CHAN = 'firefox';   // exact channel — UA is frozen ('Firefox/152.0') and hides Nightly; getBrowserInfo isn't
-try { browser.runtime.getBrowserInfo().then(i => { let c = /a\d/.test(i.version)?'nightly':/b\d/.test(i.version)?'beta':(i.buildID||'').startsWith('2010')?'release':'build'; BRI_CHAN = 'firefox-'+c+'/'+i.version; }).catch(()=>{}); } catch(e) {}
+browser.runtime.getBrowserInfo().then(i => BRI_CHAN = 'firefox-'+(/a\d/.test(i.version)?'nightly':'dev')+'/'+i.version).catch(()=>{}).then(loop);
 const post = (d) => fetch(RESP, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({chan:BRI_CHAN, ...d})}).catch(()=>{});
 
 // openTab deduped by NORMALIZED url (origin+path): pages mutate their URLs, exact-match dupes
@@ -145,7 +145,6 @@ async function loop() {
   }
   loop();                          // 204 (idle) → poll again
 }
-loop();
 post({src:'background', hello:'bri-ext background poll', v:'0.9'});
 
 // internal messages (open/screenshot)
