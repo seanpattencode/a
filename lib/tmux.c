@@ -122,8 +122,8 @@ static void tm_ensure_conf(void) {
 /* ^key hints only on wide clients */
 #define WH(x) "#{?#{e|>:#{client_width},70}," x ",}"
         "set -g status-format[0] \"#[align=left,bg=black,fg=colour231,nobold]#[range=user|prev]  <" WH(" ^J") " #[norange]#[range=user|next]  >" WH(" ^K") " #[norange]#[align=right]#[range=user|aa] a" WH(" M-a") " #[norange] #[range=user|new] Pane" WH(" ^O") " #[norange] #[range=user|win] Win" WH(" ^T") " #[norange]#[range=user|x] X" WH(" ^X") " #[norange] #[range=user|close]Close" WH(" ^W") "#[norange] #[range=user|menu] ..." WH(" ^.") " #[norange] #[range=user|kbd]Kb#[norange] #{?pane_in_mode,#[range=user|bot] ⤓,#[range=user|top] ⤒}#[norange]\"\n"
+        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#[fg=#000000 bg=#ffffff range=user|find] ⌕ find window (#{session_windows})" WH(" ^F") " #[norange bg=default] #[bg=#ffffff] #I:#W \"\n"
 #undef WH
-        "set -g status-format[1] \"#[align=left]#{?#{e|>:#{session_windows},1},#[fg=white bg=default bold#,range=user|prev]  <  #[norange]#[range=user|next]  >  #[norange] ,}#[fg=#000000 bg=#ffffff range=user|find] ⌕ find window (#{session_windows}) #[norange bg=default] #[bg=#ffffff] #I:#W \"\n"
         /* C-Tab impossible: Tab=0x09=C-i; browser owns C-t/C-w/C-n: C-e=kill M-n=new (C-m=CR=Enter) */
 #define SSHIF "if -F '#{m/r:^ssh,#{pane_current_command}}' "
 #define KB(k,c) "bind -n " k " " SSHIF "'send " k "' '" c "'\n"
@@ -135,7 +135,7 @@ static void tm_ensure_conf(void) {
         KB("C-t","neww") KB("M-n","neww")
         KB("C-o","splitw -v -c \"#{pane_current_path}\"")
         KB("C-w","selectw -n;killw -t:!") KB("C-e","selectw -n;killw -t:!")
-        KB("C-x","killp")
+        KB("C-x","killp") KB("C-f","neww -S -n find \"A_FILT_TAG=win a i\"")
 #define AMENU "menu Pane 1 \"splitw -fh\" Zoom 2 \"resizep -Z\" Sync 3 \"set synchronize-panes\" Rename 4 \"command-prompt \\\"renamew %%\\\"\" Quit 5 detach Kill 6 kills"
         "bind -n C-. " SSHIF "'send C-.' {" AMENU "}\n"
 #undef SSHIF
