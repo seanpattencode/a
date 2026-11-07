@@ -14,7 +14,7 @@ private const val BASE="http://127.0.0.1:1112"
 // next-tmux-session: target the ATTACHED client's session; ssh/mosh/sshpass pane = send C-b n keystrokes (rides to the remote tmux), else local next-window
 const val TMUXNEXT="S=\$(tmux list-clients -F '#{client_session}'|head -1);[ -n \"\$S\" ]||S=\$(tmux display -p '#{session_name}');C=\$(tmux display -t \"\$S\" -p '#{pane_current_command}');case \"\$C\" in ssh|mosh|sshpass)tmux send-keys -t \"\$S\" C-b n;;*)tmux next-window -t \"\$S\";;esac"
 // all logic = termux `a` via RUN_COMMAND (cold-starts termux too); arg as $1, no injection
-fun txRun(c:Context,script:String,vararg arg:String){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
+fun txRun(c:Context,script:String,vararg arg:String,pi:PendingIntent?=null){val i=Intent().setClassName("com.termux","com.termux.app.RunCommandService").setAction("com.termux.RUN_COMMAND");i.putExtra("com.termux.RUN_COMMAND_PATH","/data/data/com.termux/files/usr/bin/bash");i.putExtra("com.termux.RUN_COMMAND_ARGUMENTS",arrayOf("-lc",script,"a",*arg));i.putExtra("com.termux.RUN_COMMAND_BACKGROUND",true);i.putExtra("com.termux.RUN_COMMAND_PENDING_INTENT",pi);try{if(Build.VERSION.SDK_INT>=26)c.startForegroundService(i) else c.startService(i)}catch(e:Exception){}}
 class M:Activity(){
 companion object{init{System.loadLibrary("anative")};@JvmStatic var su=false}
 private lateinit var w:WebView;private val h=Handler(Looper.getMainLooper());private var n=0;private var cur="$BASE/";private var loaded=false
@@ -693,8 +693,8 @@ class Home : Activity() {
                 val r = nTouch(e.action and 0xFF, e.x, e.y)
                 when {
                     r > 0 -> launch(r - 1)
-                    r == -1 -> nQuery()?.let { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(it)))) }
-                    r == -4 -> nQuery()?.let { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("market://search?q=" + android.net.Uri.encode(it)))) }
+                    r <= -10 -> nQuery()?.let { q -> val d = DQ[-10 - r]; if (r > -12) startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(d + android.net.Uri.encode(q))))
+                        else { android.widget.Toast.makeText(this@Home, "→ $d$q", 1).show(); txRun(this@Home, "$d\"\$1\"", q, pi = createPendingResult(1, Intent(), android.app.PendingIntent.FLAG_MUTABLE)); nResume() } }
                     r == -2 -> nPkg(nTop())?.let { startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$it"))) }
                     r == -3 -> { val i = nTop(); nPkg(i)?.let { p -> nPin(i); if (!pins.remove(p)) pins.add(p); ex.execute { db.execSQL("DELETE FROM pin WHERE p=?", arrayOf(p)); if (p in pins) db.execSQL("INSERT INTO pin VALUES(?)", arrayOf(p)) } } }
                 }
@@ -709,6 +709,9 @@ class Home : Activity() {
     }
 
     override fun onResume() { super.onResume(); nResume(); if (::bmp.isInitialized) v.invalidate(); ex.execute { scan() } }
+    // = launcher.c LBL rows; kb types only [0-9a-z ]: safe through homebox's shell
+    private val DQ = listOf("https://www.google.com/search?q=", "market://search?q=", "a ssh homebox a c '~/a' ", "a note ", "a task ")
+    override fun onActivityResult(rq: Int, rc: Int, d: Intent?) { d?.getBundleExtra("result")?.let { android.widget.Toast.makeText(this, it.getString("stdout")?.trim()?.ifEmpty { null } ?: it.getString("stderr"), 1).show() } }
 
     private fun atlas(sz: Float): IntArray {
         val p = Paint().apply { textSize = sz; color = -1; isAntiAlias = true; typeface = Typeface.MONOSPACE; textAlign = Paint.Align.CENTER }
@@ -902,8 +905,8 @@ JF(void, nRender)(JNIEnv* e, jclass c, jintArray arr) {
 
     if (F[0].px) {
         if (nf == 0 && ql > 0) {
-            static const char* LBL[2] = {"Google: ", "Play Store: "};
-            for (int j = 0; j < 2; j++) { char buf[80]; int l = (int)strlen(LBL[j]);
+            static const char* LBL[5] = {"Google: ", "Play Store: ", "Claude Code: ", "Note: ", "Task: "};
+            for (int j = 0; j < 5; j++) { char buf[80]; int l = (int)strlen(LBL[j]);
                 memcpy(buf, LBL[j], l); memcpy(buf+l, Q, ql); buf[l+ql] = 0;
                 drawcenter((uint32_t*)p, stride, &F[0], buf, lh - rh*(j+1) + rh/2 - F[0].ch/2, 0xFFFFFF); }
         } else for (int i = 0; i < nf; i++) {
@@ -944,7 +947,7 @@ JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
             if (pressed >= 0) {
                 char ch = kbchar(pressed); int pnf = nf, typed = 0;
                 if (ch == '\b') { if (ql > 0) ql--; }
-                else if (ch == '\n') { if (nf > 0) return flt[sel]+1; if (ql > 0) return -1; }
+                else if (ch == '\n') { if (nf > 0) return flt[sel]+1; if (ql > 0) return -10; }
                 else if (ch == '\x01') { if (nf > 0) return -3; }
                 else if (ch == '\x02') { if (nf > 0) return -2; }
                 else if (ql < 63) { Q[ql++] = ch; typed = 1; }
@@ -956,7 +959,7 @@ JF(jint, nTouch)(JNIEnv* e, jclass c, jint act, jfloat x, jfloat y) {
             if (x < edge || x > W - edge) { drag = 1; ly = y; ty = y; sv = 0; }
             else { int i = (int)((lh - y + scr) / rh);
                 if (i >= 0 && i < nf) return flt[i]+1;
-                if (nf == 0 && ql > 0) return i == 1 ? -4 : -1; }
+                if (nf == 0 && ql > 0 && i < 5) return -10 - i; }
         } break;
     case 1: case 3: pressed = -1; drag = 0; break;
     case 2: if (drag) { sv = y - ly; scr += (int)(y - ly); ly = y;
