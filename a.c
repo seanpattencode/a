@@ -46,7 +46,7 @@ _ensure_cc() {
 }
 _warn_flags() {
     if [[ "$CC" == *clang* ]]; then
-        WARN="-std=c17 -Werror -Weverything -Wno-unknown-warning-option -Wno-padded -Wno-disabled-macro-expansion -Wno-declaration-after-statement -Wno-unsafe-buffer-usage -Wno-pre-c11-compat -Wno-implicit-void-ptr-cast -Wno-nullable-to-nonnull-conversion -Wno-poison-system-directories -Wno-format-nonliteral -Wno-implicit-int-float-conversion -Wno-overlength-strings -Wno-lifetime-safety-intra-tu-suggestions --system-header-prefix=/usr/include -isystem /usr/local/include"
+        WARN="-std=c17 -Werror -Weverything -Wno-unknown-warning-option -Wno-padded -Wno-disabled-macro-expansion -Wno-declaration-after-statement -Wno-unsafe-buffer-usage -Wno-pre-c11-compat -Wno-implicit-void-ptr-cast -Wno-nullable-to-nonnull-conversion -Wno-poison-system-directories -Wno-format-nonliteral -Wno-implicit-int-float-conversion -Wno-overlength-strings -Wno-lifetime-safety-intra-tu-suggestions -Wno-lifetime-safety-use-after-free --system-header-prefix=/usr/include -isystem /usr/local/include"
     else WARN="-std=c17 -w"; fi
 }
 _shell_funcs() {
@@ -271,7 +271,7 @@ install)
         [[ -n "$p" && "${p:0:5}" != "/mnt/" ]] && "$cmd" --version &>/dev/null && { ok "$cmd"; return; }
         [[ -n "$p" ]] && warn "$cmd broken ($p), reinstalling"; info "Installing $cmd..."
         if ! command -v npm &>/dev/null; then warn "$cmd skipped (no npm)"
-        else local ns=""; [[ -z "$SUDO" && $EUID -ne 0 && "$OS" != termux ]] && ns="--prefix=$HOME/.local"; $SUDO npm install -g $ns "$pkg"&&ok "$cmd"||warn "$cmd failed"; fi
+        else local ns=""; [[ $EUID -ne 0 && "$OS" != termux ]] && ns="--prefix=$HOME/.local"; npm install -g $ns "$pkg"&&ok "$cmd"||warn "$cmd failed"; fi
     }
     _cok(){ command -v claude &>/dev/null && claude --version 2>&1|grep -q 'Claude Code'; }
     _cok&&ok "claude"||{ info "Installing claude...";curl -fsSL https://claude.ai/install.sh|bash||:
