@@ -128,6 +128,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         i_value(models[i],d,i==3?"default =":i==1?"model =":"\"model\"");free(d);sess_t*s=find_sess(agents[i]);if(s)i_value(models[i],s->cmd," --model ");}
     char mids[64][96],mpath[P];int nmid=0;snprintf(mpath,P,"%s/.codex/models_cache.json",HOME);char*catalog=readf(mpath,NULL);
     for(char*p=catalog;p&&(p=strstr(p,"\"slug\""))&&nmid<64;p+=6){char v[96]="";i_value(v,p,"\"visibility\"");if(!strcmp(v,"list"))i_value(mids[nmid++],p,"\"slug\"");}free(catalog);
+    char cml[24][64],mj[P];int ncml=0;snprintf(mj,P,"%s/models.json",DDIR);char*cmj=readf(mj,NULL);   /* mined from the claude binary by lib/models.py */
+    for(char*p=cmj;p&&(p=strstr(p,"\"claude-"))&&ncml<24;p+=8)snprintf(cml[ncml++],64,"%.*s",(int)strcspn(p+1,"\""),p+1);free(cmj);
     struct timespec tk=T0; const char*act="render";
     /* regen when any source newer (>= = same-second; %.0s eats SROOT); tty checks after frame 1 */
     #define ISTALE {struct stat c,s;char q[P];const char*F[]={"%s/bookmarks.txt","%s/ssh","%s/workspace/cmds","%s/workspace/projects","%.0s%s/.local/share/applications","%.0s/usr/share/applications","%.0s%s/z/lib"};\
@@ -157,7 +159,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
      for(int i=0;i<ls0&&k<63;i++){if(strncmp(lines[i],"ssh ",4))continue;char*s=lines[i]+4,*tb=strchr(s,'\t');
          if(tb&&strncmp(s,"add\t",4)&&strncmp(s,"all\t",4))snprintf(SR[k++],96,"/device %.*s%s",(int)(tb-s),s,tb);}
      for(int i=0;SLP[i]&&n<2048;i++)lines[n++]=SLP[i];
-     for(int i=0;SLO[i]&&n<2048;i++)lines[n++]=SLO[i];
+     for(int i=0;SLO[i]&&n<2048;i++){if(ncml&&!strncmp(SLO[i],"/model claude-",14))continue;lines[n++]=SLO[i];}
+     static char MR[24][80];for(int i=0;i<ncml&&n<2048;i++){snprintf(MR[i],80,"/model %s",cml[i]);lines[n++]=MR[i];}
      for(int i=0;i<k&&n<2048;i++)lines[n++]=SR[i];}
     #define BFIT do{if(blen+2>bcap){bcap*=2;buf=realloc(buf,(size_t)bcap);}}while(0)
     #define SNIP do{int k2=blen<191?blen:191;if(k2<blen)while(k2>0&&(buf[k2]&0xC0)==0x80)k2--;for(int k=0;k<k2;k++)lastpr[k]=buf[k]=='\n'||buf[k]=='\t'?' ':buf[k];lastpr[k2]=0;}while(0)
@@ -175,8 +178,8 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         int slm=!cfgmode&&!plen&&fl&&fb[0]=='/'&&sl_known(fb);
         const char*sto=cfget("i_to");int tgt=!strcmp(sto,"note")?1:!strcmp(sto,"task")?2:!strcmp(sto,"search")?3:0;
         if(cfgmode){if(cfgmode==1)for(int i=0;i<4;i++)fm[nm++]=agents[i];
-            if(cfgmode==2){fm[nm++]="default";if(!strcmp(ag,"codex"))for(int i=0;i<nmid;i++)fm[nm++]=mids[i];}
-            for(int i=0;SLO[i];i++)if(cfgmode==3?!strncmp(SLO[i],"/effort ",8):cfgmode==2&&!strcmp(ag,"claude")&&!strncmp(SLO[i],"/model claude-",14))fm[nm++]=SLO[i]+(cfgmode==3?8:7);
+            if(cfgmode==2){fm[nm++]="default";if(!strcmp(ag,"codex"))for(int i=0;i<nmid;i++)fm[nm++]=mids[i];if(!strcmp(ag,"claude"))for(int i=0;i<ncml;i++)fm[nm++]=cml[i];}
+            for(int i=0;SLO[i];i++)if(cfgmode==3?!strncmp(SLO[i],"/effort ",8):cfgmode==2&&!ncml&&!strcmp(ag,"claude")&&!strncmp(SLO[i],"/model claude-",14))fm[nm++]=SLO[i]+(cfgmode==3?8:7);
             int j=0;for(int i=0;i<nm;i++)if(!blen||strcasestr(fm[i],buf))fm[j++]=fm[i];nm=j;if(!nm&&cfgmode==2)fm[nm++]=buf;}
         else for (int i=0;i<n&&nm<2048&&blen<256;i++) {
             if(slm!=(i>=ls0))continue;
@@ -248,6 +251,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         #undef FP
         twrite(rb,(size_t)rl);
         if(sv){sv=0;tcsetattr(0,TCSANOW,&raw_t);init_dev();
+            if(!bg()){char c2[B];snprintf(c2,B,"c=$(command -v claude)&&[ \"$c\" -nt '%s' ]&&exec python3 '%s/lib/models.py'",mj,SDIR);execl("/bin/sh","sh","-c",c2,(char*)0);_exit(0);}   /* -nt is also true when the cache is missing */
             if(!ft0){char sp[P];snprintf(sp,P,"%s/i_frame.%dx%d",DDIR,ws.ws_row,ws.ws_col);int fd=open(sp,O_WRONLY|O_CREAT|O_TRUNC,0644);  /* per-size frames; torn read = one cosmetic frame */
             if(fd>=0){(void)!write(fd,"\033[?1049h\033[?1000h\033[?1006h\033[?2004h",ifr_on?32:0);(void)!write(fd,rb,(size_t)rl);close(fd);}}
             ISTALE}}
