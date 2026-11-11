@@ -217,7 +217,7 @@ static int cmd_ssh(int argc,char**argv){
             if(o[0]){ssh_savex(dir,h->name,h->host,h->pw,"OS",o);printf("✓ %s\n",h->name);}
             else printf("x %s\n",h->name);}
         return 0;}
-    /* tunnel <host> [rport=1111] [lport=auto] [bg]: ssh -N -L to view a device's own serve here; bg = -f, returns once the forward is up (serve engages with it) */
+    /* tunnel host [remote=1111] [local=auto] [bg]; dedicated SSH, no expiring mux */
     if(!strcmp(sub,"tunnel")&&argc>3){
         int x=ssh_idx(argv[3],H,nh);
         if(x<0||x>=nh){printf("x No host %s\n",argv[3]);return 1;}
@@ -228,7 +228,7 @@ static int cmd_ssh(int argc,char**argv){
             int ok=bind(s,(void*)&la,sizeof la)==0;close(s);if(ok)break;}
             snprintf(lport,8,"%d",p);}
         char hp[256],port[8];ssh_parse(H[x].host,hp,port);
-        char opts[256];snprintf(opts,256,"-N%s -oStrictHostKeyChecking=accept-new -oConnectTimeout=8 -L %s:127.0.0.2:%s",argc>6?" -f":"",lport,rport);   /* 127.0.0.2: serve shows its red REMOTE banner (mac lo0 lacks it: ifconfig lo0 alias 127.0.0.2) */
+        char opts[256];snprintf(opts,256,"-Snone -N%s -oExitOnForwardFailure=yes -oStrictHostKeyChecking=accept-new -oConnectTimeout=8 -L %s:127.0.0.2:%s",argc>6?" -f":"",lport,rport);   /* .2 = REMOTE banner; mac needs lo0 alias */
         char c[B];ssh_pre(c,B,H[x].pw[0]?H[x].pw:NULL,opts,port,hp);
         printf("→ http://127.0.0.1:%s  (%s :%s over ssh · Ctrl-C to close)\n",lport,H[x].name,rport);fflush(stdout);
         execl("/bin/sh","sh","-c",c,(char*)NULL);_exit(127);}

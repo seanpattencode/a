@@ -119,12 +119,12 @@ _checkers() {
     _c 1 $CC $WARN $A -fsyntax-only "$F" &
     _c 3 clang-tidy --checks='-*,bugprone-branch-clone,bugprone-infinite-loop,bugprone-sizeof-*' -warnings-as-errors='*' "$F" -- $A -std=c17 -w &
     { ! _rgcc||gcc -std=c17 -Werror=logical-op -Werror=duplicated-cond -Werror=duplicated-branches -Werror=trampolines $A -fsyntax-only "$F";}>"$T/4" 2>&1||touch "$T/4.f" &
-    { mkdir -p "$T/s/lib";cd "$D"&&for f in a.c lib/*.c;do awk '/^#if 0/{s=1}s{if(/^#endif/)s=0;print"";next}1' $f>"$T/s/$f";done;cd "$T/s"&&_c 6 cppcheck --error-exitcode=1 -q --suppress=memleakOnRealloc $A a.c;} & _c 7 frama-c -eva -eva-no-print -no-unicode -cpp-extra-args="$A" "$F" &
+    { mkdir -p "$T/s/lib";cd "$D"&&for f in a.c lib/*.c;do awk '/^#if 0/{s=1}s{if(/^#endif/)s=0;print"";next}1' $f>"$T/s/$f";done;cd "$T/s"&&_c 6 cppcheck --error-exitcode=1 -q --suppress=memleakOnRealloc --suppress=normalCheckLevelMaxBranches $A a.c;} & _c 7 frama-c -eva -eva-no-print -no-unicode -cpp-extra-args="$A" "$F" &
 { $CC $A -fsanitize=undefined,address -fno-omit-frame-pointer -w -o "$T/a.san" "$F"&&A_BENCH=1 "$T/a.san" help >"$T/9" 2>&1;! grep -q 'runtime error\|SUMMARY:.*Sanitizer' "$T/9";}||touch "$T/9.f" &
-    { ! command -v infer &>/dev/null||{ infer run --no-progress-bar -o "$T/infer" -- clang $A -w -c "$F" -o /dev/null >"$T/10" 2>&1;! grep -q 'NULLPTR_DEREFERENCE\|BUFFER_OVERRUN\|USE_AFTER_FREE' "$T/infer/report.txt" 2>/dev/null;};}||touch "$T/10.f" &
+    { ! infer --version &>/dev/null||{ infer run --no-progress-bar -o "$T/infer" -- clang $A -w -c "$F" -o /dev/null >"$T/10" 2>&1;! grep -q 'NULLPTR_DEREFERENCE\|BUFFER_OVERRUN\|USE_AFTER_FREE' "$T/infer/report.txt" 2>/dev/null;};}||touch "$T/10.f" &
     wait
 }
-_o3(){ $CC $A -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -w -o "$ABIN/a.opt" "$F" -lutil;}  # glibc-static first: 2.1x faster than musl (measured); musl fallback
+_o3(){ $CC $A -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null||{ command -v musl-gcc>/dev/null&&musl-gcc -std=gnu11 -D_GNU_SOURCE -O3 -march=native -static -w -o "$ABIN/a.opt" "$F" -lutil 2>/dev/null;}||$CC $A -O3 -march=native -w -o "$ABIN/a.opt" "$F" -lutil;}  # static glibc measured 2.1x musl
 case "${1:-build}" in
 node) N="$HOME/.local/bin/node"; [[ -x "$N" ]] && V="$("$N" -v)" && [[ "$V" == v2[2-9]* || "$V" == v[3-9]* ]] && { ok "node $V"; exit 0; }; _install_node ;;
 build) _PT=${EPOCHREALTIME/./}
