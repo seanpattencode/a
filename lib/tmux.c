@@ -76,12 +76,12 @@ static void jcmd_fill(char*b,int cont,const char*wd,const char*extra){
     write_prompt_file(ctxf,wd,NULL);
     if(extra&&extra[0]){char xf[P];snprintf(xf,P,"%s/a_xtra_%d.txt",TMP,(int)getpid());writef(xf,extra);
         snprintf(xsuf,512," \"$(cat '%s')\"",xf);}
-    const char*ag=cfget("m_agent");if(!*ag)ag="claude";const char*md=cfget("m_model"),*ef=cfget("m_effort");char run[B];
+    const char*ag=getenv("A_AGENT"),*md=getenv("A_MODEL"),*ef=getenv("A_EFFORT");if(!ag||!*ag)ag=cfget("m_agent");if(!*ag)ag="claude";if(!md||!*md)md=cfget("m_model");if(!ef||!*ef)ef=cfget("m_effort");char run[B];
     int by=strcmp(cfget("m_perms"),"ask")!=0;
-    if(strstr(ag,"codex"))snprintf(run,B,"codex -c model_reasoning_effort=\"%s\" --model %s%s%s",*ef?ef:"xhigh",*md?md:"gpt-5.5",by?" --dangerously-bypass-approvals-and-sandbox":"",xsuf);
-    else if(strstr(ag,"agy")||strstr(ag,"gemini"))snprintf(run,B,"agy%s%s%s%s%s%s",*md?" --model ":"",md,*ef?" --effort ":"",ef,by?" --dangerously-skip-permissions":"",xsuf);   /* stale m_agent=gemini heals here */
+    if(strstr(ag,"codex"))snprintf(run,B,"codex -c model_reasoning_effort=\"%s\" --model %s%s%s",*ef?ef:"max",*md?md:"gpt-6-astra",by?" --dangerously-bypass-approvals-and-sandbox":"",xsuf);
+    else if(strstr(ag,"agy")||strstr(ag,"gemini"))snprintf(run,B,"agy%s%s%s%s%s%s%s",*md?" --model ":"",md,*ef?" --effort ":"",ef,by?" --dangerously-skip-permissions":"",*xsuf?" -i":"",xsuf);   /* stale m_agent=gemini heals here */
     else{const char*sid=getenv("SID");char sp[96]="";if(sid&&*sid)snprintf(sp,96,"--session-id %s ",sid);
-        snprintf(run,B,ACAT " >>%s 2>/dev/null;claude %s%s--model %s --effort %s --append-system-prompt-file %s%s%s",ctxf,sp,by?"--dangerously-skip-permissions ":"",*md?md:"claude-fable-5",*ef?ef:"max",ctxf,cont?" --continue":"",xsuf);}
+        snprintf(run,B,ACAT " >>%s 2>/dev/null;claude %s%s--model %s --effort %s --append-system-prompt-file %s%s%s",ctxf,sp,by?"--dangerously-skip-permissions ":"",*md?md:"claude-fable-5-2",*ef?ef:"max",ctxf,cont?" --continue":"",xsuf);}
     snprintf(b,B,"tmux splitw -vd -p50 -t $TMUX_PANE;%s;e=$?;[ $e -ne 0 ]&&echo \"$(date) $e $(pwd)\">>%s/crashes.log;exec bash",run,LOGDIR);}
 
 static void tm_ensure_conf(void) {
