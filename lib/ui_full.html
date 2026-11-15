@@ -138,14 +138,13 @@ function brg(){return [].slice.call(omni.querySelectorAll('button')).reverse().c
 v_index.addEventListener('focusin',hl);v_index.addEventListener('keydown',function(e){var r=brg(),i=r.indexOf(e.target),k=e.key;if(i<0||e.ctrlKey||e.metaKey||e.altKey)return;if(k==='ArrowDown'){if(r[i+1])r[i+1].focus()}else if(k==='ArrowUp')(r[i-1]||qi).focus();else if(k==='Enter')e.target.click();else if(k==='Escape'||k.length===1&&k!==' ')return qi.focus();else return;e.preventDefault()});
 omni.onsubmit=function(e){e.preventDefault();var raw=qi.value.trim(),v=raw,sh=_sg()[_cs];if(!v){if(sh&&sh.dataset.p)navpage(sh.dataset.p);return}
   if(v[0]==='/'&&slash(sh&&sh.dataset.c&&sh.dataset.c[0]==='/'?sh.dataset.c:v,v))return;
-  if(sh&&sh.dataset.n){sav(sh.dataset.n,raw);return}if(sh&&sh.dataset.g){gsearch();return}
+  if(sh&&(sh.dataset.n||sh.dataset.g||/^web http/.test(sh.dataset.c))){sh.click();if(sh.dataset.c){qi.value='';qi.oninput()}return}
   var pm=PAGES.filter(function(p){return p[1]===v||p[0]===v||p[0]==='/'+v||p[0]==='#'+v});if(pm.length){qi.value='';navpage(pm[0][0]);return} 
   if((!sh||sh.dataset.a)&&/note|task|google/.test(agv())){agv()=='google'?gsearch():sav(agv(),raw);return}
   if(views['/'+v]){go('/'+v);qi.value='';return}
   /* Enter = the highlighted suggestion: what you see is what runs */
   if(sh&&!/^\d+$/.test(v)&&!_cmds.some(function(c){return c[0]===v.split(' ')[0]})){
     if(sh.dataset.p){qi.value='';navpage(sh.dataset.p);return}
-    if(sh.dataset.c&&sh.dataset.c.slice(0,8)==='web http'){window.open(sh.dataset.c.slice(4),'_blank');qi.value='';qi.oninput();return}
     if(sh.dataset.c)v=raw=sh.dataset.c;}
   var tok=v.split(' ')[0],isagent=false;if(sh&&sh.dataset.a||!/^\d+$/.test(v)&&!_cmds.some(function(c){return c[0]===tok})){isagent=true;var am=AGO[AG][2]?[amd.value,aef.value]:['',''];qh.textContent='→ '+(dev.value?dev.value+' · ':'')+AGO[AG][1]+(am[0]&&' · '+am[0])+(am[1]&&' · '+am[1])+': '+raw;qh.style.color='#fff';v=(dev.value?'ssh '+dev.value+' '+(am[0]&&'A_MODEL='+am[0]+' ')+(am[1]&&'A_EFFORT='+am[1]+' ')+'a ':'')+agv()+' '+(dev.value?'':pj.value+' ')+raw+(dev.value?' ; echo --- windows --- ; tmux lsw -t a 2>&1 | tail -8':'');}else if(dev.value)v='ssh '+dev.value+' a '+v;qh.style.color='#555';
   var dv=dev.value;if(isagent)fetch('/api/savep',{method:'POST',headers:HF,body:'q='+encodeURIComponent((dv||'local')+'\t'+agv()+'\t'+raw)});
