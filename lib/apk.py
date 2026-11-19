@@ -22,6 +22,7 @@ private var rt:LinearLayout?=null
 private fun pg(s:String)=w.loadDataWithBaseURL(null,"<body style='font:18px monospace;padding:20px;background:#000;color:#0f0'>$s","text/html","utf-8",null)
 private fun jsEval(s:String)=h.post{w.evaluateJavascript(s,null)}
 @JavascriptInterface fun retry(){h.post{spawn();n=0;w.loadUrl(cur)}}
+@JavascriptInterface fun term(){retry();packageManager.getLaunchIntentForPackage("com.android.virtualization.terminal")?.let{startActivity(it)}}
 @JavascriptInterface fun native(name:String){h.post{nav?.invoke(name)}}   // web home menu -> a native view (setup/native/read/rec); localhost menu lists these when window.A exists
 @JavascriptInterface fun recs():Int=(getSystemService(AUDIO_SERVICE) as android.media.AudioManager).activeRecordingConfigurations.size   // other apps' live captures: /mic warns they get silence
 private var sr:SpeechRecognizer?=null
@@ -89,7 +90,7 @@ else if(p.any{checkSelfPermission(it)!=0}){requestPermissions(p.toTypedArray(),8
 override fun onConsoleMessage(m:ConsoleMessage):Boolean{android.util.Log.w("AWV","[${m.messageLevel()}] ${m.message()} @ ${m.sourceId()}:${m.lineNumber()}");return true}}
 webViewClient=object:WebViewClient(){override fun onPageFinished(v:WebView,url:String){if(url.startsWith("http")){loaded=true;android.util.Log.i("aPerf","cold: home painted "+(android.os.SystemClock.elapsedRealtime()-android.os.Process.getStartElapsedRealtime())+"ms after proc start")}}
 override fun doUpdateVisitedHistory(v:WebView,url:String?,re:Boolean){if(url?.startsWith(BASE)==true){cur=url;getSharedPreferences("nav",0).edit().putString("cur",url).apply()}}  // persist BASE urls only (SPA pushState incl); never restore a foreign page
-override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button>")}}}}
+override fun onReceivedError(v:WebView,r:WebResourceRequest,e:WebResourceError){if(r.isForMainFrame){if(n++<8){pg("<h2>Starting a serve...</h2>$n/8");h.postDelayed({v.loadUrl(cur)},1500)}else pg("<h2>a serve not reachable</h2><button onclick='A.retry()'>Retry</button> <button onpointerdown='A.term()'>VM off? Open Terminal</button>")}}}}
 val nv=T(this);val st=Stp(this@M);val rd=Rdr(this);val rc=Rec(this@M);val fr=FrameLayout(this);val vs=listOf<View>(nv,w,st,rd,rc);vs.forEach{fr.addView(it);it.visibility=View.GONE}
 fun show(i:Int){vs.forEachIndexed{j,v->v.visibility=if(j==i)View.VISIBLE else View.GONE};vs[i].invalidate()}
 val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setBackgroundColor(0xFF000000.toInt())}.also{rt=it}
