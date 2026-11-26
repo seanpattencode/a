@@ -63,7 +63,7 @@ static int fqhead[256];static int fqnext[1024];static unsigned char fqlen[1024];
 static void fq_index(void){for(int z=0;z<256;z++)fqhead[z]=-1;
     for(int i=0;i<nfq;i++){fqlen[i]=(unsigned char)strlen(fq[i].n);int c=(unsigned char)fq[i].n[0];if(c>='A'&&c<='Z')c+=32;fqnext[i]=fqhead[c];fqhead[c]=i;}}
 static int fq_get(const char*s){int b=0,bl=0;int c=(unsigned char)s[0];if(c>='A'&&c<='Z')c+=32;
-    for(int i=fqhead[c];i>=0;i=fqnext[i]){int l=fqlen[i];if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return !strncmp(s,"home\t",5)?0x7fffffff:strstr(s,"\tproject")||(s[0]>='0'&&s[0]<='9'&&strstr(s,"\tcmd"))?(1<<30)-atoi(s):b;}
+    for(int i=fqhead[c];i>=0;i=fqnext[i]){int l=fqlen[i];if(l>bl&&!strncasecmp(s,fq[i].n,(size_t)l)&&(!s[l]||s[l]=='\t')){b=fq[i].c;bl=l;}}return strstr(s,"\tproject")||(s[0]>='0'&&s[0]<='9'&&strstr(s,"\tcmd"))?(1<<30)-atoi(s):b;}
 typedef struct{char*s;int k,i;}LNK;  /* decorate-sort: fq_get once per line */
 static int lnk_cmp(const void*a,const void*b){const LNK*x=a,*y=b;return x->k!=y->k?y->k-x->k:x->i-y->i;}
 /* POST-PAINT only: the fork (~30ms on cygwin) must never sit on the key→frame path; .t stamp gates to <=1/s */
@@ -212,7 +212,7 @@ static int cmd_i(int argc, char **argv) { (void)argc; (void)argv;
         if(cfgmode)FP("%s> %s\033[90m  %s · ESC back\033[0m\033[K\n",cfgmode==1?"agent":cfgmode==2?"model":"effort",buf,cfgmode==2?"type model ID or pick default":"pick to continue");
         else if(jstat[0]&&!blen&&!plen)FP("> \033[90m%s · \033[37m%s %.3fms\033[0m\033[K\n",jstat,act,fms);
         else if(!blen&&!plen){char sn2[32]="";const char*ps=getenv("A_PSSEEN");if(ps)snprintf(sn2,32,"seen %.8s ps · ",ps);else if(ifr_ms>0)snprintf(sn2,32,"seen %.3f · ",ifr_ms);  /* ps: PowerShell painted the cached frame in-process before this exe even loaded */
-            FP("> \033[90m↵ home · / commands · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
+            FP("> \033[90m/ commands · type to filter · ^G config · \033[37m%s%s %.3fms\033[0m\033[K\n",sn2,act,fms);}
         else{int W=Wc;
             FP("\033[?7h%s> \033[90m%s\033[0m%s \033[K\n",plen?prefix:"",cnt,vis);  /* ' ' wraps a full row */
             if(!plen&&!slm){const char*lb=tgt==1?"✎ save note":tgt==2?"☐ add task":tgt==3?"⌕ web search":"new tmux win";
